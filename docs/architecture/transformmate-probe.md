@@ -3,8 +3,9 @@
 Ветка `codex/transformmate-probe`, текущий worktree. Owned paths:
 `src/server/transformmate`, `scripts/transformmate-*.ts`, task-specific unit tests,
 эта документация, README, `.env.example`, `package.json`, `.gitignore`.
-Upstream payload тренировок остаётся `unknown`. Контракты приложения, UI,
-SQLite, cron и импорт тренировок не меняются. TransformMate вызывается только GET.
+Подтверждённые list/detail payload имеют серверные wire schemas и TypeScript-типы.
+Контракты приложения, UI, SQLite, cron и импорт тренировок не меняются.
+TransformMate вызывается только GET.
 
 ## Bootstrap
 
@@ -26,6 +27,8 @@ npm run transformmate:probe
 npm run transformmate:probe -- --save
 # Полные redacted ответы для исследования:
 npm run transformmate:probe -- --save --raw
+# Проверить detail; вместо 123 укажите ID из списка:
+npm run transformmate:probe -- --training-id 123 --save
 ```
 
 Обе команды загружают `.env`, не переопределяя уже заданные переменные процесса.
@@ -34,6 +37,33 @@ Auth-probe обращается только к Firebase и выводит `expi
 проверяет `/users/me/` и `/workouts/trainings/`. При ошибке `/users/me/` он
 останавливается. В выводе статус, схема JWT и размер массива тренировок; для
 объекта — keys. `--raw` выводит полные тела, ошибки показываются и без флага.
+
+## Типизированные ответы
+
+`schemas.ts` содержит Zod wire schemas; `types.ts` экспортирует выведенные из них
+`TransformMateTrainingSummary`, `TransformMateTrainingDetail`,
+`TransformMateWorkoutExercise`, `TransformMatePlanMetrics`, `TransformMateFactMetrics`,
+типы подходов и значений. Это upstream-типы, не `WorkoutPlan`/`WorkoutSession`.
+
+`getTrainings()` возвращает `RawResponse<TransformMateTrainingSummary[]>`,
+`getTraining(id)` — `RawResponse<TransformMateTrainingDetail>`. Они проверяют JSON
+на границе HTTP. Список — массив, пагинация не предполагается. ID detail должен
+быть положительным safe integer. `getTrainingsRaw()` и `getTrainingRaw(id)` оставлены
+для диагностики изменений API; их body — `unknown`. `/users/me/` остаётся raw.
+
+У detail путь `protocols[].workout_exercises[].metrics[]`; `type` различает `plan`
+и `fact`. Fact-set требует boolean `is_done`, plan-set этого поля не требует.
+Weight/reps определяются через `measure.key`; `metric_values[].value` всегда
+остаётся строкой, без числового coercion. Неизвестные ключи метрик и дополнительные
+JSON-поля сохраняются. `last_results` допускает `{}` и сокращённую форму
+`{type,sets:[{set_metrics:[{type,measure:{id},metric_values}]}]}` без set id/order/is_done.
+`best_result`, заполненный `week`, warmup и неизвестные payload не получают
+выдуманной доменной структуры. Коллекции техники и mediareports пока `unknown[]`.
+
+Наблюдалось изменение fact-set ID и plan metric-value ID после заполнения факта.
+Wire client возвращает remote IDs как данные и не считает их стабильной identity.
+Synthetic fixtures помечены `source: demo`, используются только тестами;
+реальные raw responses и credentials не коммитятся.
 
 ## Provider и HTTP client
 
@@ -80,6 +110,8 @@ redacted `body`. Сохраняются `INVALID_REFRESH_TOKEN`, `TOKEN_EXPIRED`
 сетевая ошибка — `NETWORK_ERROR`. CLI печатает только status/code.
 
 `TransformMateApiError`: `status`, `statusText`, `contentType`, `isJson`, `body`.
+`TransformMateResponseError`: успешный HTTP-ответ не соответствует wire schema;
+в ошибке только endpoint/status, без payload и Zod issues.
 Транспортные ошибки имеют фиксированное сообщение без исходной причины.
 Provider/API key, refresh и все выданные ID tokens редактируются при попадании
 в ответы; JSON token/Authorization поля также скрываются. Секреты и auth headers
@@ -87,8 +119,9 @@ Provider/API key, refresh и все выданные ID tokens редактир�
 ответственность за их собственные логи остаётся у вызывающего кода.
 
 `--save` сохраняет тело JSON ответа тренировок (включая JSON ошибки) в
-`.tmp/transformmate-trainings.json`, права 0600. `.tmp/` gitignored. Файл может
-содержать личные данные; храните локально. Exit code 1 означает ошибку Firebase,
+`.tmp/transformmate-trainings.json`, права 0600. `.tmp/` gitignored.
+`--training-id` с `--save` также сохраняет `.tmp/transformmate-training-<id>.json`.
+Файлы могут содержать личные данные; храните локально. Exit code 1 означает ошибку Firebase,
 TransformMate, конфигурации, транспорта или файловой операции.
 
 Unit tests проверяют форму Firebase refresh, кэш/expiry/force refresh, rotation,

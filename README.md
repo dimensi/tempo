@@ -75,6 +75,8 @@ credentials из первого SSO/Charles: `TRANSFORMMATE_FIREBASE_API_KEY` и
 ```sh
 npm run transformmate:auth-probe
 npm run transformmate:probe -- --save
+# Вместо 123 укажите ID из списка тренировок:
+npm run transformmate:probe -- --training-id 123 --save
 ```
 
 ID token обновляется автоматически; `TRANSFORMMATE_ID_TOKEN` больше не нужен
@@ -82,6 +84,9 @@ ID token обновляется автоматически; `TRANSFORMMATE_ID_TO
 Секреты нельзя коммитить. `--save` сохраняет JSON в ignored-файл
 `.tmp/transformmate-trainings.json`; `--raw` печатает полные ответы.
 [Кэш, rotation и диагностика](docs/architecture/transformmate-probe.md).
+
+Клиент имеет типизированные `getTrainings()` / `getTraining(id)` с runtime validation
+реального wire-контракта. Маппинга в WorkoutPlan/WorkoutSession и изменений БД нет.
 
 ## Развёртывание
 

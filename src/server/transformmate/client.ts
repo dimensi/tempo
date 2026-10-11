@@ -2,7 +2,13 @@ import 'server-only';
 import {
   FirebaseRefreshError,
   TransformMateApiError,
+  TransformMateResponseError,
 } from '@/server/transformmate/errors';
+import { z } from 'zod';
+import {
+  transformMateTrainingsSchema,
+  transformMateTrainingDetailSchema,
+} from '@/server/transformmate/schemas';
 import { createSecretRedactor } from '@/server/transformmate/redaction';
 import type {
   TransformMateTokenProvider,
@@ -98,8 +104,31 @@ export function createTransformMateClient(options: {
     }
   }
 
+  async function validated<T>(
+    path: string,
+    schema: z.ZodType<T>,
+  ): Promise<RawResponse<T>> {
+    const response = await get(path);
+    const parsed = schema.safeParse(response.body);
+    if (!response.isJson || !parsed.success) {
+      // Do not expose payload values or validation issues in errors.
+      throw new TransformMateResponseError(path, response.status);
+    }
+    return { ...response, body: parsed.data };
+  }
+  function detailPath(id: number) {
+    if (!Number.isSafeInteger(id) || id <= 0)
+      throw new Error('Invalid TransformMate training ID');
+    return `workouts/trainings/${id}/`;
+  }
+
   return {
     getMe: () => get('users/me/'),
     getTrainingsRaw: () => get('workouts/trainings/'),
+    getTrainingRaw: (id: number) => get(detailPath(id)),
+    getTrainings: () =>
+      validated('workouts/trainings/', transformMateTrainingsSchema),
+    getTraining: (id: number) =>
+      validated(detailPath(id), transformMateTrainingDetailSchema),
   };
 }

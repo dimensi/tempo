@@ -26,6 +26,7 @@ export async function probeTransformMate(options: {
   fetch?: typeof fetch;
   log: (message: string) => void;
   raw?: boolean;
+  trainingId?: number;
 }) {
   const client = createTransformMateClient({
     ...options,
@@ -45,8 +46,8 @@ export async function probeTransformMate(options: {
   const me = await capture(client.getMe);
   print('/users/me/', me);
   if (me.status < 200 || me.status >= 300)
-    return { scheme: 'JWT', me, trainings: null };
-  const trainings = await capture(client.getTrainingsRaw);
+    return { scheme: 'JWT', me, trainings: null, detail: null };
+  const trainings = await capture(client.getTrainings);
   print('/workouts/trainings/', trainings);
   if (trainings.isJson) {
     if (Array.isArray(trainings.body))
@@ -60,5 +61,13 @@ export async function probeTransformMate(options: {
         `trainings JSON: ${trainings.body === null ? 'null' : typeof trainings.body}`,
       );
   }
-  return { scheme: 'JWT', me, trainings };
+  const trainingId = options.trainingId;
+  const detail =
+    trainingId === undefined ||
+    trainings.status < 200 ||
+    trainings.status >= 300
+      ? null
+      : await capture(() => client.getTraining(trainingId));
+  if (detail) print(`/workouts/trainings/${options.trainingId}/`, detail);
+  return { scheme: 'JWT', me, trainings, detail };
 }

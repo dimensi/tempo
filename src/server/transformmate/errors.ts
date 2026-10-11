@@ -31,3 +31,15 @@ export class FirebaseRefreshError extends Error {
     this.name = 'FirebaseRefreshError';
   }
 }
+
+export class TransformMateResponseError extends Error {
+  constructor(
+    public readonly endpoint: string,
+    public readonly status: number,
+  ) {
+    super(
+      `TransformMate response contract mismatch: ${endpoint} (HTTP ${status})`,
+    );
+    this.name = 'TransformMateResponseError';
+  }
+}
