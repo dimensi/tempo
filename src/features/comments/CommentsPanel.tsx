@@ -1,0 +1,234 @@
+'use client';
+import { useEffect, useState } from 'react';
+import {
+  Alert,
+  Button,
+  Group,
+  Paper,
+  Stack,
+  Text,
+  Textarea,
+  Title,
+} from '@mantine/core';
+import type { CommentDto, CommentTarget } from '@/contracts/comments';
+import { commentMessages as m } from './messages';
+function TargetCommentsPanel({
+  ownerId,
+  target,
+}: {
+  ownerId: string;
+  target: CommentTarget;
+}) {
+  const [rows, setRows] = useState<CommentDto[]>([]);
+  const [body, setBody] = useState('');
+  const [parentId, setParentId] = useState<string>();
+  const [editing, setEditing] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const targetType = target.type;
+  const targetId = target.id;
+  useEffect(() => {
+    const controller = new AbortController();
+    const q = new URLSearchParams({ ownerId, type: targetType, targetId });
+    void fetch(`/api/comments?${q}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        if (!controller.signal.aborted) setRows(data);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [ownerId, targetType, targetId]);
+  async function refresh() {
+    const q = new URLSearchParams({ ownerId, type: targetType, targetId });
+    const response = await fetch(`/api/comments?${q}`);
+    if (!response.ok) throw new Error();
+    setRows(await response.json());
+  }
+  async function save() {
+    setBusy(true);
+    setError(false);
+    try {
+      const response = await fetch(
+        editing ? `/api/comments/${editing}` : '/api/comments',
+        {
+          method: editing ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            editing
+              ? { ownerId, body }
+              : {
+                  ownerId,
+                  target: { type: targetType, id: targetId },
+                  body,
+                  parentId,
+                },
+          ),
+        },
+      );
+      if (!response.ok) throw new Error();
+      setBody('');
+      setParentId(undefined);
+      setEditing(undefined);
+      await refresh();
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove(id: string) {
+    setBusy(true);
+    setError(false);
+    try {
+      const response = await fetch(`/api/comments/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ownerId }),
+      });
+      if (!response.ok) throw new Error();
+      await refresh();
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Stack>
+      <Title order={2}>{m.title}</Title>
+      {error && (
+        <Alert color="red" role="alert">
+          {m.error}
+        </Alert>
+      )}
+      {loading ? (
+        <Text>{m.loading}</Text>
+      ) : rows.length === 0 ? (
+        <Text c="dimmed">{m.empty}</Text>
+      ) : (
+        rows.map((row) => (
+          <Paper key={row.id} withBorder p="sm">
+            <Stack gap="xs">
+              <Text fw={600}>{row.authorName}</Text>
+              {row.parentId && (
+                <Text size="xs" c="dimmed">
+                  {m.reply}:{' '}
+                  {
+                    rows.find((parent) => parent.id === row.parentId)
+                      ?.authorName
+                  }
+                </Text>
+              )}
+              <Text
+                style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+              >
+                {row.body}
+              </Text>
+              <Group>
+                {!row.parentId && (
+                  <Button
+                    mih={44}
+                    variant="subtle"
+                    disabled={busy}
+                    onClick={() => {
+                      setParentId(row.id);
+                      setEditing(undefined);
+                      setBody('');
+                    }}
+                  >
+                    {m.reply}
+                  </Button>
+                )}
+                {row.canEdit && (
+                  <>
+                    <Button
+                      mih={44}
+                      variant="subtle"
+                      disabled={busy}
+                      onClick={() => {
+                        setEditing(row.id);
+                        setParentId(undefined);
+                        setBody(row.body);
+                      }}
+                    >
+                      {m.edit}
+                    </Button>
+                    <Button
+                      mih={44}
+                      variant="subtle"
+                      color="red"
+                      disabled={busy}
+                      onClick={() => void remove(row.id)}
+                    >
+                      {m.remove}
+                    </Button>
+                  </>
+                )}
+              </Group>
+            </Stack>
+          </Paper>
+        ))
+      )}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <Stack>
+          {parentId && (
+            <Text>
+              {m.reply}: {rows.find((row) => row.id === parentId)?.authorName}
+            </Text>
+          )}
+          <Textarea
+            label={m.body}
+            required
+            maxLength={4000}
+            autosize
+            minRows={3}
+            value={body}
+            onChange={(e) => setBody(e.currentTarget.value)}
+          />
+          <Group>
+            <Button mih={44} type="submit" disabled={loading} loading={busy}>
+              {editing ? m.save : m.send}
+            </Button>
+            {(editing || parentId) && (
+              <Button
+                mih={44}
+                variant="subtle"
+                onClick={() => {
+                  setEditing(undefined);
+                  setParentId(undefined);
+                  setBody('');
+                }}
+              >
+                {m.cancel}
+              </Button>
+            )}
+          </Group>
+        </Stack>
+      </form>
+    </Stack>
+  );
+}
+
+export function CommentsPanel(props: {
+  ownerId: string;
+  target: CommentTarget;
+}) {
+  return (
+    <TargetCommentsPanel
+      key={`${props.ownerId}:${props.target.type}:${props.target.id}`}
+      {...props}
+    />
+  );
+}
