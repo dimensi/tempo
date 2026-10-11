@@ -15,7 +15,7 @@ export async function yazioOwner(headers: Headers) {
   if (!scoped.ok) throw new NutritionAccessError(scoped.status);
   return ownerId;
 }
-export function configuredStore() {
+export function configuredStore(ownerId: string) {
   const env = readServerEnv();
   if (!env.YAZIO_TOKEN_FILE) throw new Error('No token file configured');
   const path = resolve(env.YAZIO_TOKEN_FILE);
@@ -28,12 +28,13 @@ export function configuredStore() {
     path.startsWith(uploads + sep)
   )
     throw new Error('Invalid token location');
-  return fileTokenStore(path);
+  return fileTokenStore(path, ownerId, env.BETTER_AUTH_SECRET ?? '');
 }
 export async function getYazioStatus(headers: Headers) {
   const ownerId = await yazioOwner(headers);
   const pathConfigured = Boolean(readServerEnv().YAZIO_TOKEN_FILE);
-  const configured = pathConfigured && Boolean(await configuredStore().load());
+  const configured =
+    pathConfigured && Boolean(await configuredStore(ownerId).load());
   return {
     configured,
     tokenFileConfigured: pathConfigured,
@@ -41,7 +42,20 @@ export async function getYazioStatus(headers: Headers) {
   };
 }
 export async function saveExistingToken(headers: Headers, input: unknown) {
-  await yazioOwner(headers);
+  const ownerId = await yazioOwner(headers);
   const token = tokenSchema.parse(input);
-  await configuredStore().save(token);
+  const store = configuredStore(ownerId);
+  await store.load();
+  if ((await yazioOwner(headers)) !== ownerId)
+    throw new NutritionAccessError(403);
+  await store.save(token);
+}
+export async function disconnectYazio(headers: Headers) {
+  const ownerId = await yazioOwner(headers);
+  const store = configuredStore(ownerId);
+  await store.load();
+  if ((await yazioOwner(headers)) !== ownerId)
+    throw new NutritionAccessError(403);
+  await store.disconnect();
+  return { configured: false as const };
 }

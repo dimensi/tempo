@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       await syncNutritionPeriod(
         ownerId,
         period,
-        await nutritionUpstream(configuredStore()),
+        await nutritionUpstream(configuredStore(ownerId)),
         nutritionRepository(),
       ),
     );
