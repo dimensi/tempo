@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MantineProvider } from '@mantine/core';
-import { DiaryView, type DiaryPhoto } from '@/features/nutrition';
+import { DiaryView, type DiaryPhoto } from '@/features/nutrition/ui/diary-view';
 import { day } from '../unit/diary/fixture';
 
 function Harness() {

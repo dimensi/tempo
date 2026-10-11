@@ -6,6 +6,8 @@ test('synthetic diary: exact values, photo confirmation, upload and mobile geome
   page,
 }) => {
   // Isolated browser component harness; security is covered by real login in diary.spec.
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
   const bundle = await build({
     entryPoints: ['tests/e2e/diary-harness.tsx'],
     bundle: true,
@@ -14,12 +16,18 @@ test('synthetic diary: exact values, photo confirmation, upload and mobile geome
     platform: 'browser',
     define: { 'process.env.NODE_ENV': '"development"' },
   });
-  await page.goto('/login');
-  await page.setContent('<div id="root"></div>');
+  await page.route('**/diary-component-test', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div></body></html>',
+    }),
+  );
+  await page.goto('/diary-component-test');
   await page.addStyleTag({
     content: await readFile('node_modules/@mantine/core/styles.css', 'utf8'),
   });
   await page.addScriptTag({ content: bundle.outputFiles[0]!.text });
+  expect(errors).toEqual([]);
   await expect(page.getByText('Демонстрационные данные')).toBeVisible();
   await expect(page.getByText('123,456789 ккал').first()).toBeVisible();
   await expect(
@@ -59,4 +67,5 @@ test('synthetic diary: exact values, photo confirmation, upload and mobile geome
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  expect(errors).toEqual([]);
 });
