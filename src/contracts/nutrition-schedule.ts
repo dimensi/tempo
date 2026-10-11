@@ -6,6 +6,7 @@ export const nutritionTimezoneSchema = z
   .min(1)
   .max(100)
   .refine((value) => {
+    if (/^[+-]/.test(value)) return false;
     try {
       new Intl.DateTimeFormat('en', { timeZone: value }).format();
       return true;

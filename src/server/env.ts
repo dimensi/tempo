@@ -7,6 +7,7 @@ const schema = z.object({
   BETTER_AUTH_URL: z.url().default('http://localhost:3000'),
   BETTER_AUTH_SECRET: z.string().min(32).optional(),
   DEMO_MODE: z.enum(['true', 'false']).default('false'),
+  ENABLE_NUTRITION_SCHEDULER: z.enum(['true', 'false']).default('false'),
   YAZIO_TOKEN_FILE: z.string().optional(),
   UPLOADS_DIR: z.string().default('./.data/uploads'),
 });
