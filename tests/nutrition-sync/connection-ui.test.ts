@@ -298,10 +298,43 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     await delay(300);
     expect(await delayedStart.inputValue()).toBe(chosenFrom);
     await delayed.close();
+    // A legacy UTC schedule must still display timestamps in this browser's Moscow clock.
+    expect(
+      (
+        await owner.request.post(origin + '/api/yazio/connect', {
+          headers: { origin },
+          data: {
+            email: 'synthetic-yazio@example.test',
+            password,
+            confirmed: true,
+            timezone: 'UTC',
+            initialFrom: chosenFrom,
+          },
+        })
+      ).status(),
+    ).toBe(200);
+    const legacy = await (
+      await owner.request.get(origin + '/api/yazio/status')
+    ).json();
+    expect(legacy.schedule.timezone).toBe('UTC');
     await owner.reload();
     await owner
       .getByRole('button', { name: 'Обновить сейчас', exact: true })
       .waitFor();
+    const browserSuccess = new Date(legacy.schedule.lastSuccess).toLocaleString(
+      'ru-RU',
+      { timeZone: 'Europe/Moscow' },
+    );
+    await owner
+      .getByText('Последнее успешное обновление: ' + browserSuccess, {
+        exact: true,
+      })
+      .waitFor();
+    expect(browserSuccess).not.toBe(
+      new Date(legacy.schedule.lastSuccess).toLocaleString('ru-RU', {
+        timeZone: 'UTC',
+      }),
+    );
     expect(await beginning.inputValue()).toBe(chosenFrom);
     await owner
       .getByRole('button', { name: 'Дополнительные настройки', exact: true })

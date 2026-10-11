@@ -468,7 +468,7 @@ export function YazioSettingsForm({
             {messages.lastSuccess}:{' '}
             {ready && status.schedule.lastSuccess
               ? new Date(status.schedule.lastSuccess).toLocaleString('ru-RU', {
-                  timeZone: status.schedule.timezone,
+                  timeZone: timezone,
                 })
               : messages.noRuns}
           </Text>
@@ -478,7 +478,7 @@ export function YazioSettingsForm({
             status.schedule.schedulerActive &&
             status.schedule.nextRunAt
               ? new Date(status.schedule.nextRunAt).toLocaleString('ru-RU', {
-                  timeZone: status.schedule.timezone,
+                  timeZone: timezone,
                 })
               : messages.pendingRun}
           </Text>
