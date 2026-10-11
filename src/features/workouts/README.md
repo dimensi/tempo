@@ -18,6 +18,8 @@ HTTP: `GET /api/workouts?ownerId=…`; `POST /api/workouts/{plans,sessions}?owne
 
 Core must add owner-only `workouts:log` (available on `feat/domain-core`). Coordinator must register both `workoutPlans` and `workoutSessions` in Drizzle schema discovery and generate/review/apply SQL + metadata serially. This feature intentionally contains no migration and makes no core/shared changes. Runtime uses the common `getDatabase()` connection; JSON columns are validated into DTOs on read.
 
+For the current flat auth schema, discovery can use `schema: ['./src/server/db/schema.ts', './src/server/db/schema/*.ts']`. Do not re-export this feature from the same auth schema file while this feature imports `user` from it: that would introduce a cycle. If a central schema entry is desired, first move auth tables into their own leaf file and coordinate imports.
+
 Dedicated contract unit tests, in-memory SQLite persistence and real guards integration tests cover snapshots, revisions, scoped queries, grants/revocation and owner-only logging. Dedicated Playwright tests use real Better Auth sessions and `.data/e2e.sqlite` only, with test DDL for these two tables until coordinated migrations land; they do not validate production migrations. Browser scenarios cover forms, plan → actual → plan edit/delete → stable history, trainer access/revocation, cross-owner/foreign-origin rejection and mobile overflow. Core smoke tests remain untouched.
 
 Deferred: exercise library, social features, calendar view, upstream integration. Dates are explicit ISO local days; kg is explicit and nullable. No normalization algorithms or calculated training load.

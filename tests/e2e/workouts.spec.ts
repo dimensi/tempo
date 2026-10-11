@@ -59,11 +59,15 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
   await page.goto('/workouts');
   await page.getByRole('button', { name: 'Создать план', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Название плана', { exact: true }).fill(title);
   await dialog
-    .getByLabel('Название тренировки 1', { exact: true })
+    .getByRole('textbox', { name: 'Название плана', exact: true })
+    .fill(title);
+  await dialog
+    .getByRole('textbox', { name: 'Название тренировки 1', exact: true })
     .fill('Силовая');
-  await dialog.getByLabel('Упражнение 1', { exact: true }).fill('Приседание');
+  await dialog
+    .getByRole('textbox', { name: 'Упражнение 1', exact: true })
+    .fill('Приседание');
   await dialog.getByLabel('Вес, кг 1.1', { exact: true }).fill('40');
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(dialog).not.toBeVisible();
@@ -85,7 +89,7 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
     .getByRole('button', { name: 'Редактировать', exact: true })
     .click();
   await dialog
-    .getByLabel('Название плана', { exact: true })
+    .getByRole('textbox', { name: 'Название плана', exact: true })
     .fill(`${title} изменён`);
   await dialog.getByLabel('Вес, кг 1.1', { exact: true }).fill('60');
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();

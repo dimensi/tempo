@@ -10,6 +10,7 @@ export const workoutMessages = {
   remove: 'Удалить',
   confirmDelete: 'Подтвердить удаление',
   cancel: 'Отмена',
+  close: 'Закрыть',
   save: 'Сохранить',
   planTitle: 'Название плана',
   descriptionLabel: 'Описание',

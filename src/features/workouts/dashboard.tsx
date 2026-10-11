@@ -398,6 +398,7 @@ export function WorkoutsDashboard({
         closeOnClickOutside={!busy}
         closeOnEscape={!busy}
         withCloseButton={!busy}
+        closeButtonProps={{ 'aria-label': m.close, size: 44 }}
       >
         {editor?.kind === 'plan' && (
           <PlanForm
@@ -453,6 +454,7 @@ export function WorkoutsDashboard({
         closeOnEscape={!busy}
         closeOnClickOutside={!busy}
         withCloseButton={!busy}
+        closeButtonProps={{ 'aria-label': m.close, size: 44 }}
       >
         <Stack>
           <Text>{m.confirmText}</Text>

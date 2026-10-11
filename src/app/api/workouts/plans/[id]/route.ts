@@ -1,10 +1,15 @@
 import { updateWorkoutPlan, deleteWorkoutPlan } from '@/server/workouts';
-import { checkWorkoutOrigin, workoutResponse } from '@/server/workouts/http';
+import {
+  checkWorkoutOrigin,
+  workoutResponse,
+  workoutUpdateBody,
+  workoutDeleteBody,
+} from '@/server/workouts/http';
 type Context = { params: Promise<{ id: string }> };
 export async function PUT(request: Request, context: Context) {
   return workoutResponse(async () => {
     checkWorkoutOrigin(request);
-    const { revision, data } = await request.json();
+    const { revision, data } = workoutUpdateBody.parse(await request.json());
     return updateWorkoutPlan(
       request.headers,
       new URL(request.url).searchParams.get('ownerId') ?? '',
@@ -17,7 +22,7 @@ export async function PUT(request: Request, context: Context) {
 export async function DELETE(request: Request, context: Context) {
   return workoutResponse(async () => {
     checkWorkoutOrigin(request);
-    const { revision } = await request.json();
+    const { revision } = workoutDeleteBody.parse(await request.json());
     await deleteWorkoutPlan(
       request.headers,
       new URL(request.url).searchParams.get('ownerId') ?? '',

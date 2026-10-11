@@ -1,15 +1,23 @@
 import 'server-only';
-import { ZodError } from 'zod';
+import { z, ZodError } from 'zod';
 import { WorkoutAccessError, WorkoutError } from './index';
 import { workoutMessages as m } from '@/features/workouts';
+import { readServerEnv } from '@/server/env';
+export const workoutUpdateBody = z
+  .object({ revision: z.unknown(), data: z.unknown() })
+  .strict();
+export const workoutDeleteBody = z.object({ revision: z.unknown() }).strict();
 
 export async function workoutResponse(operation: () => Promise<unknown>) {
   try {
-    return Response.json({
-      contractVersion: 1,
-      source: 'user',
-      data: await operation(),
-    });
+    return Response.json(
+      {
+        contractVersion: 1,
+        source: 'user',
+        data: await operation(),
+      },
+      { headers: { 'Cache-Control': 'private, no-store' } },
+    );
   } catch (error) {
     const status =
       error instanceof WorkoutAccessError || error instanceof WorkoutError
@@ -27,13 +35,16 @@ export async function workoutResponse(operation: () => Promise<unknown>) {
             : status === 400
               ? m.validation
               : m.error;
-    return Response.json({ error: message }, { status });
+    return Response.json(
+      { error: message },
+      { status, headers: { 'Cache-Control': 'private, no-store' } },
+    );
   }
 }
 
 /** Browser mutations require a same-origin request; cookie auth alone is insufficient. */
 export function checkWorkoutOrigin(request: Request) {
   const origin = request.headers.get('origin');
-  if (!origin || origin !== new URL(request.url).origin)
+  if (!origin || origin !== new URL(readServerEnv().BETTER_AUTH_URL).origin)
     throw new WorkoutAccessError(403);
 }
