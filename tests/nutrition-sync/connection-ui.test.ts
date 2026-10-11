@@ -6,7 +6,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium, type Browser } from '@playwright/test';
 import { expect, it } from 'vitest';
 
-const origin = 'http://localhost:3135';
+const port = process.env.NUTRITION_CONNECTION_E2E_PORT ?? '3135';
+const origin = `http://localhost:${port}`;
 const tokenPath = './.data/e2e-yazio-connection.json';
 const password = 'Synthetic-YAZIO-password-only';
 it('real owner connects/disconnects through UI with synthetic OAuth; clears passwords, encrypts tokens, and denies trainer/anonymous', async () => {
@@ -50,7 +51,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
   try {
     server = spawn(
       process.execPath,
-      ['node_modules/next/dist/bin/next', 'dev', '--port', '3135'],
+      ['node_modules/next/dist/bin/next', 'dev', '--port', port],
       { env, stdio: ['ignore', 'pipe', 'pipe'] },
     );
     server.stdout!.on('data', (chunk) => {
@@ -362,7 +363,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     await new Promise<void>((resolve) => server!.once('exit', () => resolve()));
     server = spawn(
       process.execPath,
-      ['node_modules/next/dist/bin/next', 'dev', '--port', '3135'],
+      ['node_modules/next/dist/bin/next', 'dev', '--port', port],
       {
         env: { ...env, YAZIO_TOKEN_FILE: '' },
         stdio: ['ignore', 'pipe', 'pipe'],
