@@ -7,6 +7,7 @@ export default defineConfig({
       'tests/unit/**/*.test.ts',
       'tests/integration/**/*.test.ts',
       'tests/nutrition-sync/**/*.test.ts',
+      'tests/nutrition-scheduler/**/*.test.ts',
     ],
     environment: 'node',
   },

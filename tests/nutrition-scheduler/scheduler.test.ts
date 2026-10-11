@@ -1,0 +1,581 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { eq } from 'drizzle-orm';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { openDatabase } from '@/server/db/connection';
+import { user } from '@/server/db/schema';
+import { nutritionSchedule } from '@/server/db/schema/nutrition-schedule';
+import { nutritionRepository } from '@/server/nutrition/repository';
+import type { NutritionUpstream } from '@/server/yazio/adapter';
+import type { YazioTokenStore } from '@/server/yazio/client';
+import {
+  createNutritionScheduler,
+  nutritionLocalDate,
+  stopNutritionScheduler,
+  startNutritionScheduler,
+} from '@/server/jobs/nutrition-scheduler';
+import { readServerEnv } from '@/server/env';
+import { nutritionScheduleInputSchema } from '@/contracts/nutrition-schedule';
+
+vi.mock('server-only', () => ({}));
+let database: ReturnType<typeof openDatabase>;
+let directory: string;
+const token = {
+  token_type: 'Bearer',
+  access_token: 'synthetic',
+  refresh_token: 'synthetic',
+  expires_in: 100,
+  expires_at: 9999999999,
+};
+const emptySummary = {
+  meals: Object.fromEntries(
+    ['breakfast', 'lunch', 'dinner', 'snack'].map((kind) => [
+      kind,
+      { nutrients: {} },
+    ]),
+  ),
+} as Awaited<ReturnType<NutritionUpstream['summary']>>;
+function source(): NutritionUpstream {
+  return {
+    items: vi.fn(async () => ({
+      products: [],
+      recipe_portions: [],
+      simple_products: [],
+    })),
+    summary: vi.fn(async () => emptySummary),
+    images: vi.fn(async () => ({})),
+    product: vi.fn(async () => null),
+    recipe: vi.fn(async () => null),
+  };
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+function setup() {
+  const upstream = source();
+  const store: YazioTokenStore = {
+    load: vi.fn(async () => token),
+    save: vi.fn(async () => {}),
+    assertCurrent: vi.fn(async () => {}),
+  };
+  const repository = nutritionRepository(database);
+  const deps = {
+    database,
+    automaticEnabled: vi.fn(() => true),
+    configured: vi.fn(() => true),
+    store: vi.fn(() => store),
+    source: vi.fn(async () => upstream),
+    repository,
+  };
+  const service = createNutritionScheduler(deps);
+  return { upstream, store, repository, deps, service };
+}
+const period = { from: '2026-10-11', to: '2026-10-11' };
+const input = { timezone: 'Europe/Moscow', initialFrom: '2026-10-01' };
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-11T22:30:00Z'));
+  directory = mkdtempSync(join(tmpdir(), 'nutrition-scheduler-'));
+  database = openDatabase(`file:${join(directory, 'test.sqlite')}`);
+  migrate(database.db, { migrationsFolder: './drizzle' });
+  for (const [id, role] of [
+    ['owner', 'OWNER'],
+    ['trainer', 'TRAINER'],
+  ] as const)
+    database.db
+      .insert(user)
+      .values({
+        id,
+        role,
+        name: id,
+        email: `${id}@example.test`,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .run();
+});
+afterEach(() => {
+  stopNutritionScheduler();
+  database.sqlite.close();
+  rmSync(directory, { recursive: true, force: true });
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
+
+describe('durable owner schedule', () => {
+  it.each([
+    ['2026-10-12', ['2026-10-12']],
+    ['2026-10-10', ['2026-10-10', '2026-10-11', '2026-10-12']],
+    [
+      '2026-10-01',
+      [
+        '2026-10-06',
+        '2026-10-07',
+        '2026-10-08',
+        '2026-10-09',
+        '2026-10-10',
+        '2026-10-11',
+        '2026-10-12',
+      ],
+    ],
+  ])(
+    'clips hourly history at persisted initialFrom %s',
+    async (initialFrom, expected) => {
+      const { service, upstream } = setup();
+      service.enable('owner', { timezone: 'Europe/Moscow', initialFrom });
+      await vi.advanceTimersByTimeAsync(3600000);
+      await service.tick();
+      expect(
+        vi.mocked(upstream.items).mock.calls.map(([date]) => date),
+      ).toEqual(expected);
+    },
+  );
+  it('keeps the end date rolling with local today after the initial bound', async () => {
+    const { service, upstream } = setup();
+    service.enable('owner', {
+      timezone: 'Europe/Moscow',
+      initialFrom: '2026-10-12',
+    });
+    await vi.advanceTimersByTimeAsync(3600000);
+    await service.tick();
+    expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
+      '2026-10-12',
+    ]);
+    vi.mocked(upstream.items).mockClear();
+    await vi.advanceTimersByTimeAsync(86400000);
+    await service.tick();
+    expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
+      '2026-10-12',
+      '2026-10-13',
+    ]);
+    expect(service.status('owner').initialFrom).toBe('2026-10-12');
+  });
+  it('adopts a connected manual-first legacy owner before the first poll and runs hourly afterwards', async () => {
+    const { service, upstream } = setup();
+    expect(database.db.select().from(nutritionSchedule).all()).toEqual([]);
+    await service.run('owner', period, {
+      mode: 'manual',
+      timezone: input.timezone,
+    });
+    expect(service.status('owner')).toMatchObject({
+      enabled: true,
+      timezone: input.timezone,
+      initialFrom: period.from,
+      nextRunAt: new Date(Date.now() + 3600000).toISOString(),
+    });
+    vi.mocked(upstream.items).mockClear();
+    await service.tick();
+    expect(upstream.items).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3600000);
+    await service.tick();
+    expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
+      '2026-10-11',
+      '2026-10-12',
+    ]);
+  });
+  it('never re-enables an explicitly disabled row during a valid manual sync', async () => {
+    const { service } = setup();
+    service.disable('owner');
+    await service.run('owner', period, {
+      mode: 'manual',
+      timezone: input.timezone,
+    });
+    expect(service.status('owner')).toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+    });
+  });
+  it('does not auto-enable a newly inserted manual row when disconnect occurs during token load', async () => {
+    const { service, store, deps } = setup();
+    const pending = deferred<typeof token | null>();
+    vi.mocked(store.load).mockReturnValue(pending.promise);
+    const running = service.run('owner', period, { mode: 'manual' });
+    const rejected = expect(running).rejects.toMatchObject({
+      code: 'LEASE_LOST',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    service.disable('owner');
+    pending.resolve(token);
+    await rejected;
+    expect(service.status('owner')).toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+    });
+    expect(deps.source).not.toHaveBeenCalled();
+  });
+  it('leaves an hour for initial manual loading after connect instead of racing the browser', async () => {
+    const { service, deps } = setup();
+    service.enable('owner', input);
+    expect(service.status('owner').nextRunAt).toBe(
+      new Date(Date.now() + 3600000).toISOString(),
+    );
+    await service.tick();
+    expect(deps.store).not.toHaveBeenCalled();
+    expect(deps.source).not.toHaveBeenCalled();
+    expect((await service.run('owner', period, { mode: 'manual' })).state).toBe(
+      'completed',
+    );
+  });
+  it('reclaims an expired lease after restart and fences the old generation from writes or release', async () => {
+    const { service, deps, upstream, repository } = setup();
+    service.enable('owner', input);
+    const pending = deferred<Awaited<ReturnType<NutritionUpstream['items']>>>();
+    vi.mocked(upstream.items).mockReturnValue(pending.promise);
+    const replaced = vi.spyOn(repository, 'replaceDay');
+    const running = service.run('owner', period, { mode: 'manual' });
+    const rejected = expect(running).rejects.toMatchObject({
+      code: 'LEASE_LOST',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // Model a stopped process without running its heartbeat, then reopen the
+    // same WAL database as the replacement process. Keep its old promise only
+    // to verify late results cannot corrupt the new lease/status/snapshot.
+    vi.setSystemTime(Date.now() + 3600001);
+    const reopened = openDatabase(`file:${join(directory, 'test.sqlite')}`);
+    try {
+      const newSource = source();
+      vi.resetModules();
+      const { createNutritionScheduler: restartedFactory } =
+        await import('@/server/jobs/nutrition-scheduler');
+      const restarted = restartedFactory({
+        ...deps,
+        database: reopened,
+        repository: nutritionRepository(reopened),
+        source: async () => newSource,
+      });
+      await restarted.tick();
+      expect(newSource.items).toHaveBeenCalledTimes(7);
+      const completed = restarted.status('owner');
+      expect(completed).toMatchObject({
+        running: false,
+        lastError: null,
+        lastSuccess: new Date().toISOString(),
+      });
+      pending.resolve({
+        products: [],
+        recipe_portions: [],
+        simple_products: [],
+      });
+      await rejected;
+      expect(replaced).not.toHaveBeenCalled();
+      expect(restarted.status('owner')).toEqual(completed);
+      expect(nutritionRepository(reopened).status('owner').state).toBe(
+        'completed',
+      );
+      await restarted.tick();
+      expect(newSource.items).toHaveBeenCalledTimes(7);
+    } finally {
+      pending.resolve({
+        products: [],
+        recipe_portions: [],
+        simple_products: [],
+      });
+      await running.catch(() => {});
+      reopened.sqlite.close();
+    }
+  });
+  it('will not renew an expired lease or commit after losing it', async () => {
+    const { service, upstream, repository } = setup();
+    const pending = deferred<Awaited<ReturnType<NutritionUpstream['items']>>>();
+    vi.mocked(upstream.items).mockReturnValue(pending.promise);
+    const replace = vi.spyOn(repository, 'replaceDay');
+    const running = service.run('owner', period, { mode: 'manual' });
+    const rejected = expect(running).rejects.toMatchObject({
+      code: 'LEASE_LOST',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const expired = Date.now() - 1;
+    database.db
+      .update(nutritionSchedule)
+      .set({ leaseExpiresAt: expired })
+      .run();
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(
+      database.db.select().from(nutritionSchedule).get()!.leaseExpiresAt,
+    ).toBe(expired);
+    pending.resolve({ products: [], recipe_portions: [], simple_products: [] });
+    await rejected;
+    expect(replace).not.toHaveBeenCalled();
+    expect(service.status('owner').lastError).toBe('LEASE_LOST');
+    expect(repository.status('owner')).toMatchObject({
+      state: 'failed',
+      failedDates: [period.from],
+    });
+  });
+  it('uses local today, last seven dates every hour and preserves manual history across ticks', async () => {
+    const { service, upstream } = setup();
+    service.enable('owner', input);
+    await service.run(
+      'owner',
+      { from: '2026-09-01', to: '2026-10-11' },
+      { mode: 'manual', timezone: input.timezone },
+    );
+    expect(service.status('owner').initialFrom).toBe('2026-09-01');
+    vi.mocked(upstream.items).mockClear();
+    await vi.advanceTimersByTimeAsync(3600000);
+    await service.tick();
+    expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
+      '2026-10-06',
+      '2026-10-07',
+      '2026-10-08',
+      '2026-10-09',
+      '2026-10-10',
+      '2026-10-11',
+      '2026-10-12',
+    ]);
+    expect(service.status('owner').initialFrom).toBe('2026-09-01');
+    await service.tick();
+    expect(upstream.items).toHaveBeenCalledTimes(7);
+  });
+  it('never constructs upstream without config, encrypted token, enabled schedule or owner', async () => {
+    const { service, deps, store } = setup();
+    deps.configured.mockReturnValue(false);
+    await service.tick();
+    expect(deps.store).not.toHaveBeenCalled();
+    await expect(
+      service.run('owner', period, { mode: 'manual' }),
+    ).rejects.toMatchObject({ code: 'NOT_CONFIGURED' });
+    expect(deps.store).not.toHaveBeenCalled();
+    deps.configured.mockReturnValue(true);
+    vi.mocked(store.load).mockResolvedValue(null);
+    service.enable('owner', input);
+    await service.tick();
+    expect(deps.source).not.toHaveBeenCalled();
+    service.disable('owner');
+    vi.mocked(store.load).mockClear();
+    await service.tick();
+    expect(store.load).not.toHaveBeenCalled();
+    await expect(
+      service.run('trainer', period, { mode: 'manual' }),
+    ).rejects.toMatchObject({ code: 'NOT_CONFIGURED' });
+    expect(() => service.enable('trainer', input)).toThrow();
+    deps.automaticEnabled.mockReturnValue(false);
+    service.enable('owner', input);
+    await service.tick();
+    expect(store.load).not.toHaveBeenCalled();
+    database.db.delete(user).where(eq(user.id, 'owner')).run();
+    deps.automaticEnabled.mockReturnValue(true);
+    await service.tick();
+    expect(deps.source).not.toHaveBeenCalled();
+  });
+  it('holds the shared manual/hourly lease before source construction and through heartbeat', async () => {
+    const { service, deps, upstream } = setup();
+    const pending = deferred<Awaited<ReturnType<NutritionUpstream['items']>>>();
+    vi.mocked(upstream.items).mockReturnValue(pending.promise);
+    deps.source.mockImplementation(async () => {
+      expect(
+        database.db.select().from(nutritionSchedule).get()?.leaseId,
+      ).toBeTruthy();
+      return upstream;
+    });
+    service.enable('owner', input);
+    const running = service.run('owner', period, { mode: 'manual' });
+    await vi.advanceTimersByTimeAsync(0);
+    await service.tick();
+    await expect(
+      createNutritionScheduler(deps).run('owner', period, { mode: 'manual' }),
+    ).rejects.toThrow('Sync already running');
+    await vi.advanceTimersByTimeAsync(130000);
+    expect(
+      database.db.select().from(nutritionSchedule).get()!.leaseExpiresAt,
+    ).toBeGreaterThan(Date.now());
+    expect(deps.source).toHaveBeenCalledTimes(1);
+    pending.resolve({ products: [], recipe_portions: [], simple_products: [] });
+    expect((await running).state).toBe('completed');
+    expect(service.status('owner').running).toBe(false);
+  });
+  it('does not free the lease on an early rejected sibling while another read is pending', async () => {
+    const { service, upstream } = setup();
+    const pending =
+      deferred<Awaited<ReturnType<NutritionUpstream['images']>>>();
+    vi.mocked(upstream.images).mockReturnValue(pending.promise);
+    vi.mocked(upstream.items).mockRejectedValue(
+      new Error('SECRET RAW UPSTREAM'),
+    );
+    const running = service.run('owner', period, { mode: 'manual' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(service.status('owner').running).toBe(true);
+    await expect(
+      service.run('owner', period, { mode: 'manual' }),
+    ).rejects.toThrow('Sync already running');
+    pending.resolve({});
+    expect((await running).state).toBe('failed');
+    expect(service.status('owner').lastError).toBe('SYNC_FAILED');
+  });
+  it('fences old results and completion across disconnect/reconnect without dropping the current lease', async () => {
+    const { service, upstream, repository } = setup();
+    const pending = deferred<Awaited<ReturnType<NutritionUpstream['items']>>>();
+    vi.mocked(upstream.items).mockReturnValue(pending.promise);
+    const replace = vi.spyOn(repository, 'replaceDay');
+    service.enable('owner', input);
+    const running = service.run('owner', period, { mode: 'manual' });
+    const rejected = expect(running).rejects.toMatchObject({
+      code: 'LEASE_LOST',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const lease = database.db.select().from(nutritionSchedule).get()!.leaseId;
+    service.disable('owner');
+    expect(service.status('owner')).toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+    });
+    service.enable('owner', { timezone: 'UTC', initialFrom: '2026-10-05' });
+    expect(database.db.select().from(nutritionSchedule).get()!.leaseId).toBe(
+      lease,
+    );
+    await expect(
+      service.run('owner', period, { mode: 'manual' }),
+    ).rejects.toThrow('Sync already running');
+    const expected = service.status('owner');
+    pending.resolve({ products: [], recipe_portions: [], simple_products: [] });
+    await rejected;
+    expect(replace).not.toHaveBeenCalled();
+    expect(service.status('owner')).toEqual({ ...expected, running: false });
+    expect(database.db.select().from(nutritionSchedule).get()!.epoch).toBe(3);
+  });
+  it('uses bounded retry backoff for failed and partial results and resets after success', async () => {
+    const { service, upstream } = setup();
+    service.enable('owner', input);
+    await vi.advanceTimersByTimeAsync(3600000);
+    vi.mocked(upstream.items).mockRejectedValue(
+      new Error('TOKEN PASSWORD RAW ERROR'),
+    );
+    for (const [attempt, delay] of [
+      [1, 60000],
+      [2, 300000],
+      [3, 900000],
+      [3, 3600000],
+    ] as const) {
+      const current = Date.now();
+      await service.tick();
+      expect(service.status('owner')).toMatchObject({
+        attempt,
+        lastError: 'SYNC_FAILED',
+        nextRunAt: new Date(current + delay).toISOString(),
+      });
+      await vi.advanceTimersByTimeAsync(delay);
+    }
+    vi.mocked(upstream.items).mockImplementation(async (date) => {
+      if (date.endsWith('12')) throw new Error('raw');
+      return { products: [], recipe_portions: [], simple_products: [] };
+    });
+    await service.tick();
+    expect(service.status('owner').lastError).toBe('SYNC_FAILED');
+    await vi.advanceTimersByTimeAsync(3600000);
+    vi.mocked(upstream.items).mockResolvedValue({
+      products: [],
+      recipe_portions: [],
+      simple_products: [],
+    });
+    await service.tick();
+    expect(service.status('owner')).toMatchObject({
+      attempt: 0,
+      lastError: null,
+      lastSuccess: new Date().toISOString(),
+      nextRunAt: new Date(Date.now() + 3600000).toISOString(),
+    });
+  });
+  it('adopts only a legacy connected owner using UTC and never mutates status GET or re-enables disconnect', async () => {
+    const { service, upstream, store } = setup();
+    expect(service.status('owner').enabled).toBe(false);
+    expect(database.db.select().from(nutritionSchedule).all()).toEqual([]);
+    await service.tick();
+    expect(store.load).toHaveBeenCalled();
+    expect(service.status('owner')).toMatchObject({
+      enabled: true,
+      timezone: 'UTC',
+      initialFrom: null,
+    });
+    expect(upstream.items).toHaveBeenCalledTimes(7);
+    service.disable('owner');
+    vi.mocked(store.load).mockClear();
+    await vi.advanceTimersByTimeAsync(7200000);
+    await service.tick();
+    expect(store.load).not.toHaveBeenCalled();
+    expect(service.status('owner').enabled).toBe(false);
+  });
+  it('does not adopt encrypted null or late token-load results after disconnect', async () => {
+    const { service, store, deps } = setup();
+    const pending = deferred<typeof token | null>();
+    vi.mocked(store.load).mockReturnValue(pending.promise);
+    const ticking = service.tick();
+    await vi.advanceTimersByTimeAsync(0);
+    service.disable('owner');
+    pending.resolve(token);
+    await ticking;
+    expect(service.status('owner').enabled).toBe(false);
+    expect(deps.source).not.toHaveBeenCalled();
+    database.db.delete(nutritionSchedule).run();
+    vi.mocked(store.load).mockResolvedValue(null);
+    await service.tick();
+    expect(service.status('owner')).toMatchObject({
+      enabled: false,
+      lastError: 'NOT_CONFIGURED',
+    });
+    expect(deps.source).not.toHaveBeenCalled();
+  });
+});
+
+it('validates IANA/local midnight/DST and strict feature env with disabled defaults', () => {
+  expect(
+    nutritionLocalDate(Date.parse('2026-10-11T22:30:00Z'), 'Europe/Moscow'),
+  ).toBe('2026-10-12');
+  expect(
+    nutritionLocalDate(Date.parse('2026-03-08T07:30:00Z'), 'America/New_York'),
+  ).toBe('2026-03-08');
+  expect(() =>
+    nutritionScheduleInputSchema.parse({ ...input, timezone: 'Food/Guess' }),
+  ).toThrow();
+  expect(readServerEnv({ NODE_ENV: 'test' }).ENABLE_NUTRITION_SCHEDULER).toBe(
+    'false',
+  );
+  expect(() =>
+    readServerEnv({ NODE_ENV: 'test', ENABLE_NUTRITION_SCHEDULER: 'yes' }),
+  ).toThrow();
+  const { service } = setup();
+  expect(() =>
+    service.enable('owner', { ...input, initialFrom: '2026-10-13' }),
+  ).toThrow();
+});
+it('never boots timers for dev/build/edge/disabled runtime or missing configuration', () => {
+  for (const mode of [
+    {
+      NODE_ENV: 'development',
+      NEXT_RUNTIME: 'nodejs',
+      ENABLE_NUTRITION_SCHEDULER: 'true',
+    },
+    {
+      NODE_ENV: 'production',
+      NEXT_RUNTIME: 'nodejs',
+      NEXT_PHASE: 'phase-production-build',
+      ENABLE_NUTRITION_SCHEDULER: 'true',
+    },
+    {
+      NODE_ENV: 'production',
+      NEXT_RUNTIME: 'edge',
+      ENABLE_NUTRITION_SCHEDULER: 'true',
+    },
+  ]) {
+    for (const [key, value] of Object.entries(mode)) vi.stubEnv(key, value);
+    startNutritionScheduler();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.unstubAllEnvs();
+  }
+  vi.stubEnv('NODE_ENV', 'production');
+  vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+  vi.stubEnv('BETTER_AUTH_URL', 'https://example.test');
+  vi.stubEnv('BETTER_AUTH_SECRET', 'synthetic-test-only-secret-1234567890');
+  startNutritionScheduler();
+  expect(vi.getTimerCount()).toBe(0);
+  vi.stubEnv('ENABLE_NUTRITION_SCHEDULER', 'true');
+  startNutritionScheduler();
+  expect(vi.getTimerCount()).toBe(0);
+});
