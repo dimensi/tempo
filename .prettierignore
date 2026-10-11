@@ -7,4 +7,3 @@ test-results
 .data
 next-env.d.ts
 dist-cli
-native-modules/

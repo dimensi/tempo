@@ -10,4 +10,3 @@ test-results/
 coverage/
 *.tsbuildinfo
 dist-cli/
-native-modules/

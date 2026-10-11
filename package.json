@@ -4,8 +4,8 @@
   "description": "",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "build": "next build && node scripts/prepare-standalone.mjs",
+    "start": "node scripts/start.mjs",
     "lint": "eslint . && tsx scripts/check-boundaries.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
