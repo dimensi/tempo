@@ -1,0 +1,21 @@
+services:
+  app:
+    build: .
+    image: ghcr.io/dimensi/yazio-dashboard:latest
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL: file:/app/data/nutrition.sqlite
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://nutrition.dimensi.dev}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set a strong BETTER_AUTH_SECRET}
+      UPLOADS_DIR: /app/uploads
+      DEMO_MODE: 'false'
+      YAZIO_TOKEN_FILE: ${YAZIO_TOKEN_FILE:-}
+    volumes:
+      - database:/app/data
+      - uploads:/app/uploads
+    ports:
+      - '127.0.0.1:${APP_PORT:-3000}:3000'
+volumes:
+  database:
+  uploads:

@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.env*
+!.env.example
+.data
+*.sqlite*
+*.db*
+playwright-report
+test-results
+coverage
+dist-cli

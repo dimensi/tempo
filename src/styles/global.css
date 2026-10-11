@@ -1,0 +1,21 @@
+body {
+  margin: 0;
+}
+* {
+  box-sizing: border-box;
+}
+main {
+  min-width: 0;
+}
+.skip-link {
+  position: fixed;
+  top: -80px;
+  left: 16px;
+  z-index: 1000;
+  padding: 12px;
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+}
+.skip-link:focus {
+  top: 12px;
+}
