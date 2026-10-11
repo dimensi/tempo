@@ -77,7 +77,7 @@ try {
                     date: `${day} 12:00:00`,
                     daytime: 'lunch',
                     product_id: 'synthetic-product',
-                    amount: 10,
+                    amount: scenario === 'image-error' ? 20 : 10,
                     serving: null,
                     serving_quantity: null,
                   },
