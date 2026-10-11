@@ -62,4 +62,16 @@ node tests/nutrition-scheduler/runtime-smoke.mjs
 
 The smoke owns temporary DB/files and starts/stops only its own real standalone Node servers. It inherits no production secret/token environment, opens no browser, uses an absent synthetic token path, and verifies delayed registration, legacy disabled adoption, restart/expired-lease recovery and stale-running reconciliation. It must create no credential files and make no upstream request. It removes its fixtures afterwards. Record the actual smoke output and tested head in the PR; a prepared command alone is not a passing result or evidence about production.
 
-Runtime smoke is prepared but has not yet been executed at this document's initial commit. Dedicated lease/runtime tests have passed; full check, E2E and real standalone smoke must be reported against the final integration head before release. Synthetic verification does not establish live account synchronization or production scheduler activation.
+Local validation passed on the scheduler working tree using the shared UX calendar helpers: full `pnpm check` (161 tests and production build), all 32 desktop/mobile E2E scenarios on port 3127, and the real standalone runtime smoke. The smoke returned:
+
+```json
+{
+  "timer": "production-delayed",
+  "browserRequired": false,
+  "restart": "expired-lease-reclaimed",
+  "upstream": "blocked-without-token",
+  "credentialFilesCreated": false
+}
+```
+
+CI must still pass on the final published integration head before merge. Consumer hooks/UI integration is a separate acceptance step before enabling deployment. These synthetic checks do not establish live account synchronization or production scheduler activation.

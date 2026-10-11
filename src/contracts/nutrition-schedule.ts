@@ -1,19 +1,9 @@
 import { z } from 'zod';
 import { diaryDateSchema } from '@/contracts/nutrition';
 
-export const nutritionTimezoneSchema = z
-  .string()
-  .min(1)
-  .max(100)
-  .refine((value) => {
-    if (/^[+-]/.test(value)) return false;
-    try {
-      new Intl.DateTimeFormat('en', { timeZone: value }).format();
-      return true;
-    } catch {
-      return false;
-    }
-  }, 'Invalid IANA timezone');
+import { timezoneSchema } from '@/contracts/nutrition-sync-dates';
+
+export const nutritionTimezoneSchema = timezoneSchema;
 export const nutritionScheduleInputSchema = z
   .object({
     timezone: nutritionTimezoneSchema,

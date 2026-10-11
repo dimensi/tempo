@@ -13,6 +13,7 @@ import {
   type NutritionScheduleStatus,
 } from '@/contracts/nutrition-schedule';
 import { periodSchema } from '@/contracts/nutrition-sync';
+import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
 import { fileTokenStore } from '@/server/yazio/token-store';
 import {
   nutritionUpstream,
@@ -52,20 +53,7 @@ export class NutritionScheduleError extends Error {
 }
 
 export function nutritionLocalDate(now: number, timezone: string) {
-  const parts = new Intl.DateTimeFormat('en', {
-    timeZone: nutritionTimezoneSchema.parse(timezone),
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
-  const value = (kind: Intl.DateTimeFormatPartTypes) =>
-    parts.find((p) => p.type === kind)!.value;
-  return `${value('year')}-${value('month')}-${value('day')}`;
-}
-function shiftDate(date: string, days: number) {
-  return new Date(Date.parse(date) + days * 86400000)
-    .toISOString()
-    .slice(0, 10);
+  return dateInTimezone(new Date(now), timezone);
 }
 const iso = (value: number | null) =>
   value === null ? null : new Date(value).toISOString();
