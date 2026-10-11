@@ -2,7 +2,7 @@
 
 ## Current preview
 
-The coordinator confirmed preview revision `b8b8a1cd154063b713db417a7ab2c2d3d9388a8c` at [nutrition.dimensi.dev](https://nutrition.dimensi.dev). Later main commits require an explicit release. The live YAZIO token is unset; synthetic upstream tests and real authentication/grant/revocation tests do not establish live account synchronization.
+The coordinator confirmed the initial verified preview revision `b8b8a1cd154063b713db417a7ab2c2d3d9388a8c` at [nutrition.dimensi.dev](https://nutrition.dimensi.dev). This is a historical verification point, not the current latest after subsequent upgrades. Record the exact deployed revision and image ID/digest for each release; later main commits require explicit deployment. The live YAZIO token is unset; synthetic upstream tests and real authentication/grant/revocation tests do not establish live account synchronization.
 
 The home-server stack is `/opt/compose/yazio-dashboard`, Compose project `nutrition`, with `compose.yaml`, server-local `compose.home.yaml` and `runtime.env`:
 

@@ -68,7 +68,7 @@ pnpm dev
 
 ## Развёртывание
 
-Preview доступен на [nutrition.dimensi.dev](https://nutrition.dimensi.dev). Подтверждённая deployed revision: `b8b8a1cd154063b713db417a7ab2c2d3d9388a8c`; более поздние изменения main автоматически там не появляются. На home-server stack расположен в `/opt/compose/yazio-dashboard`, Compose project — `nutrition`. Server-local `compose.home.yaml` подключает external network `web` с alias `nutrition` и убирает host port; Caddy направляет публичный HTTPS hostname на приложение.
+Preview доступен на [nutrition.dimensi.dev](https://nutrition.dimensi.dev). Исходная проверенная preview revision — `b8b8a1cd154063b713db417a7ab2c2d3d9388a8c`; это историческая точка проверки, а не указание текущего latest после обновлений. Оператор фиксирует точную deployed revision и image ID/digest при каждом релизе; изменения main автоматически не развёртываются. На home-server stack расположен в `/opt/compose/yazio-dashboard`, Compose project — `nutrition`. Server-local `compose.home.yaml` подключает external network `web` с alias `nutrition` и убирает host port; Caddy направляет публичный HTTPS hostname на приложение.
 
 Runtime работает от пользователя node, применяет миграции перед стартом, хранит SQLite в `database`, приватные фотографии в `uploads`. В образ включены Chromium, соответствующий закреплённому Playwright, и DejaVu font; disposable Docker smoke проверяет PDF rendering, backup и restore. Это готовность runtime, а не завершённый PDF product flow.
 
