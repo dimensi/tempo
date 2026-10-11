@@ -1,7 +1,7 @@
 'use client';
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import Decimal from 'decimal.js';
+import { formatDecimal, toChartNumber } from '@/lib/number-display';
 import { LineChart } from '@mantine/charts';
 import {
   Alert,
@@ -26,13 +26,7 @@ import {
 import { presetRange } from './range';
 import { analyticsMessages as m } from './messages';
 import { nutrients } from './summary';
-const display = (value: string | null) =>
-  value === null
-    ? m.noData
-    : new Decimal(value)
-        .toDecimalPlaces(2)
-        .toNumber()
-        .toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+const display = (value: string | null) => formatDecimal(value) ?? m.noData;
 export function AnalyticsDashboard({
   summary,
   measurements,
@@ -62,7 +56,7 @@ export function AnalyticsDashboard({
       ? [
           {
             date: record.measuredAt,
-            value: Number(value.value),
+            value: toChartNumber(value.value),
             exact: value.value,
             id: record.id,
           },
@@ -146,7 +140,7 @@ export function AnalyticsDashboard({
           <Paper key={key} withBorder p="md">
             <Stack gap="xs">
               <Text fw={600}>{m[key]}</Text>
-              <Text size="xl">
+              <Text size="xl" style={{ overflowWrap: 'anywhere' }}>
                 {display(summary.nutrients[key].mean)}{' '}
                 {key === 'calories' ? m.kcal : m.grams}
               </Text>
@@ -182,7 +176,7 @@ export function AnalyticsDashboard({
                   calories:
                     day.totals.calories === null
                       ? null
-                      : Number(day.totals.calories),
+                      : toChartNumber(day.totals.calories),
                 }))}
                 dataKey="date"
                 series={[
@@ -191,7 +185,7 @@ export function AnalyticsDashboard({
                 connectNulls={false}
                 curveType="linear"
                 valueFormatter={(value) =>
-                  `${value.toLocaleString('ru-RU')} ${m.kcal}`
+                  `${formatDecimal(value) ?? m.noData} ${m.kcal}`
                 }
               />
               <Table.ScrollContainer minWidth={460}>
@@ -256,7 +250,7 @@ export function AnalyticsDashboard({
                 curveType="linear"
                 connectNulls={false}
                 valueFormatter={(value) =>
-                  `${value.toLocaleString('ru-RU')} ${unit}`
+                  `${formatDecimal(value) ?? m.noData} ${unit}`
                 }
               />
               <Table>

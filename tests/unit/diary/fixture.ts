@@ -23,16 +23,21 @@ export const entry: NutritionEntry = {
   massG: null,
   volumeMl: '250',
   ingredientMassEstimateG: null,
-  totals: { calories: '123.456789', protein: null, fat: '0', carbs: '12' },
-  issues: ['Неизвестен белок'],
+  totals: { calories: '123.456789', protein: null, fat: '3.45', carbs: '6.15' },
+  issues: ['Неизвестен белок', 'mass-unavailable'],
 };
 export const day: NutritionDay = {
   date: '2026-01-01',
   fetchedAt: '2026-01-02T00:00:00Z',
   totals: entry.totals,
   knownTotals: { ...entry.totals, protein: '0' },
-  officialTotals: { ...entry.totals, calories: '123' },
-  delta: { ...unknown, calories: '0.456789' },
+  officialTotals: {
+    ...entry.totals,
+    calories: '123',
+    fat: '3.4499999999999997',
+    carbs: '6.1499999999999995',
+  },
+  delta: { ...unknown, calories: '0.456789', fat: '3e-16', carbs: '5e-16' },
   meals: meals.map((kind) => ({
     kind,
     entries: kind === 'lunch' ? [entry] : [],

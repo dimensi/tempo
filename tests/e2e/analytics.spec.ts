@@ -149,6 +149,31 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
     await page.request.delete(
       `/api/measurements/${measurement.id}?ownerId=${ownerId}`,
     );
+    snapshot.totals.calories = '1e400';
+    snapshot.knownTotals.calories = '1e400';
+    snapshot.officialTotals.calories = '1e400';
+    snapshot.delta.calories = '0';
+    db.prepare(
+      'UPDATE nutrition_days SET snapshot = ? WHERE owner_id = ? AND date = ?',
+    ).run(JSON.stringify(snapshot), ownerId, snapshot.date);
+    await page.goto('/analytics?from=2026-10-01&to=2026-10-03');
+    const content = page.getByRole('main');
+    const calorieRow = content.getByRole('row').filter({
+      has: page.getByRole('cell', { name: '2026-10-01', exact: true }),
+    });
+    await expect(
+      calorieRow.getByRole('cell', { name: '1 × 10^400', exact: true }),
+    ).toBeVisible();
+    await expect(content).not.toContainText('Infinity');
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: test.info().outputPath('large-number-display.png'),
+      fullPage: true,
+    });
     await page.goto('/analytics?from=2020-01-01&to=2020-01-03');
     await expect(
       page.getByRole('main').getByText('За этот период нет записей питания.'),

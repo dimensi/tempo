@@ -25,7 +25,7 @@ import {
   type SafeMealPhotoView,
 } from '@/contracts/nutrition';
 import { diaryMessages as m } from './messages';
-import { displayValue, entryAmounts } from './presentation';
+import { displayValue, displayIssue, entryAmounts } from './presentation';
 
 export interface DiaryPhoto extends SafeMealPhotoView {
   href: string;
@@ -43,7 +43,15 @@ export interface DiaryViewProps {
   };
 }
 
-function Totals({ totals, label }: { totals: NutritionTotals; label: string }) {
+function Totals({
+  totals,
+  label,
+  kind = 'value',
+}: {
+  totals: NutritionTotals;
+  label: string;
+  kind?: 'value' | 'delta';
+}) {
   return (
     <Stack gap="xs">
       <Text fw={600}>{label}</Text>
@@ -53,8 +61,15 @@ function Totals({ totals, label }: { totals: NutritionTotals; label: string }) {
             <Text size="sm" c="dimmed">
               {m.nutrients[key]}
             </Text>
-            <Text style={{ overflowWrap: 'anywhere' }}>
-              {displayValue(totals[key], key === 'calories' ? 'ккал' : 'г')}
+            <Text
+              title={totals[key] ?? undefined}
+              style={{ overflowWrap: 'anywhere' }}
+            >
+              {displayValue(
+                totals[key],
+                key === 'calories' ? 'ккал' : 'г',
+                kind,
+              )}
             </Text>
           </Box>
         ))}
@@ -118,7 +133,10 @@ export function DiaryView({
             )}
             <Totals totals={day.knownTotals} label={m.known} />
             <Totals totals={day.officialTotals} label={m.official} />
-            <Totals totals={day.delta} label={m.delta} />
+            <Totals totals={day.delta} label={m.delta} kind="delta" />
+            <Text size="sm" c="dimmed">
+              {m.roundingNote}
+            </Text>
           </Stack>
         </Card>
       )}
@@ -143,7 +161,7 @@ export function DiaryView({
                   <Totals totals={meal.totals} label={m.totals} />
                   <Totals totals={meal.knownTotals} label={m.known} />
                   <Totals totals={meal.officialTotals} label={m.official} />
-                  <Totals totals={meal.delta} label={m.delta} />
+                  <Totals totals={meal.delta} label={m.delta} kind="delta" />
                 </>
               )}
               {!meal?.entries.length && <Text c="dimmed">{m.noEntries}</Text>}
@@ -177,7 +195,7 @@ export function DiaryView({
                               size="sm"
                               style={{ overflowWrap: 'anywhere' }}
                             >
-                              {issue}
+                              {displayIssue(issue)}
                             </Text>
                           ))}
                         </Stack>

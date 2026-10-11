@@ -5,6 +5,7 @@ import { MantineProvider } from '@mantine/core';
 import { DiaryView } from '@/features/nutrition';
 import {
   displayValue,
+  displayIssue,
   entryAmounts,
 } from '@/features/nutrition/ui/presentation';
 import { day, entry } from './fixture';
@@ -13,7 +14,10 @@ describe('diary presentation', () => {
   it('distinguishes unknown, zero and exact residuals', () => {
     expect(displayValue(null, 'г')).toBe('нет данных');
     expect(displayValue('0', 'г')).toBe('0 г');
-    expect(displayValue('1.23456789e-12')).toBe('1,23456789e-12');
+    expect(displayValue('1.23456789e-12')).toBe('1,23 × 10^-12');
+    expect(displayValue('3e-16', 'г', 'delta')).toBe('≈ 0 г');
+    expect(displayIssue('mass-unavailable')).toContain('Масса не указана');
+    expect(displayIssue('Неизвестен белок')).toBe('Неизвестен белок');
     expect(entryAmounts(entry)).toContainEqual(['Масса', 'нет данных']);
     expect(entryAmounts(entry)).toContainEqual(['Объём', '250 мл']);
   });
@@ -35,7 +39,7 @@ describe('diary presentation', () => {
       'Обед',
       'Ужин',
       'Перекус',
-      '123,456789 ккал',
+      '123,46 ккал',
       'Известная часть',
       'По сводке YAZIO',
       'Разница со сводкой',
