@@ -2,17 +2,6 @@ import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import type { WorkoutsData } from '@/contracts/workouts';
 
-test.beforeAll(() => {
-  // Only disposable E2E DB; deployment migrations are coordinated separately.
-  const database = new Database('.data/e2e.sqlite');
-  try {
-    database.exec(`CREATE TABLE IF NOT EXISTS workout_plans (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS workout_sessions (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, data TEXT NOT NULL, date TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`);
-  } finally {
-    database.close();
-  }
-});
-
 async function login(page: Page, role: 'owner' | 'trainer' = 'owner') {
   await page.goto('/login');
   await page.getByLabel('Электронная почта').fill(`${role}@example.test`);

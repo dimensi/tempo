@@ -1,13 +1,4 @@
 import { test, expect } from '@playwright/test';
-import Database from 'better-sqlite3';
-// Only the disposable E2E DB gets temporary DDL until coordinator generates migrations.
-test.beforeAll(() => {
-  const db = new Database('.data/e2e.sqlite');
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS trainer_invitations(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES user(id),email TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,expires_at INTEGER NOT NULL,consumed_at INTEGER,created_at INTEGER NOT NULL);`,
-  );
-  db.close();
-});
 test('real invited trainer login, owner grant revocation and direct API isolation', async ({
   page,
   browser,
@@ -136,6 +127,95 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
       )
     ).status(),
   ).toBe(403);
+  const measurementResponse = await page.request.post(
+    `/api/measurements?ownerId=${ownerId}`,
+    {
+      data: {
+        measuredAt: '2026-10-11',
+        values: [{ metric: 'weight', value: '70.125', unit: 'kg' }],
+        note: 'Synthetic comment target',
+      },
+    },
+  );
+  expect(measurementResponse.status()).toBe(201);
+  const measurement = await measurementResponse.json();
+  const scope = {
+    ownerId,
+    target: { type: 'measurement', id: measurement.id },
+  };
+  const create = await page.request.post('/api/comments', {
+    data: { ...scope, body: 'Owner comment' },
+  });
+  expect(create.ok()).toBe(true);
+  const root = await create.json();
+  const replyResponse = await context.request.post('/api/comments', {
+    data: { ...scope, parentId: root.id, body: 'Trainer reply' },
+  });
+  expect(replyResponse.ok()).toBe(true);
+  const reply = await replyResponse.json();
+  expect(
+    (
+      await context.request.patch(`/api/comments/${root.id}`, {
+        data: { ownerId, body: 'Hijack' },
+      })
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await context.request.patch(`/api/comments/${reply.id}`, {
+        data: { ownerId, body: 'Edited reply' },
+      })
+    ).ok(),
+  ).toBe(true);
+  const commentsUrl = `/api/comments?ownerId=${ownerId}&type=measurement&targetId=${measurement.id}`;
+  const listed = await context.request.get(commentsUrl);
+  expect(listed.ok()).toBe(true);
+  expect(await listed.json()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: reply.id, body: 'Edited reply' }),
+    ]),
+  );
+  for (const target of [
+    { type: 'measurement', id: 'missing' },
+    { type: 'nutrition_day', id: '2026-10-11' },
+  ])
+    expect(
+      (
+        await page.request.post('/api/comments', {
+          data: { ownerId, target, body: 'Rejected target' },
+        })
+      ).status(),
+    ).toBe(404);
+  const workoutResponse = await page.request.post(
+    `/api/workouts/sessions?ownerId=${ownerId}`,
+    {
+      headers: { origin: 'http://localhost:3100' },
+      data: {
+        date: '2026-10-11',
+        title: 'Synthetic workout',
+        exercises: [],
+        status: 'skipped',
+        note: '',
+      },
+    },
+  );
+  expect(workoutResponse.ok()).toBe(true);
+  const workout = (await workoutResponse.json()).data;
+  const workoutScope = { ownerId, target: { type: 'workout', id: workout.id } };
+  const workoutComment = await page.request.post('/api/comments', {
+    data: { ...workoutScope, body: 'Workout comment' },
+  });
+  expect(workoutComment.ok()).toBe(true);
+  expect(
+    (
+      await page.request.delete(
+        `/api/comments/${(await workoutComment.json()).id}`,
+        {
+          data: { ownerId },
+        },
+      )
+    ).ok(),
+  ).toBe(true);
   expect(
     (
       await page.request.delete('/api/trainers', {
@@ -143,6 +223,33 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
       })
     ).ok(),
   ).toBe(true);
+  expect((await context.request.get(commentsUrl)).status()).toBe(403);
+  expect(
+    (
+      await context.request.delete(`/api/comments/${reply.id}`, {
+        data: { ownerId },
+      })
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await page.request.delete(`/api/comments/${root.id}`, {
+        data: { ownerId },
+      })
+    ).ok(),
+  ).toBe(true);
+  const retained = await page.request.get(commentsUrl);
+  expect(await retained.json()).toEqual([
+    expect.objectContaining({ id: reply.id, parentId: null }),
+  ]);
+  expect(
+    (
+      await page.request.delete(
+        `/api/measurements/${measurement.id}?ownerId=${ownerId}`,
+      )
+    ).status(),
+  ).toBe(204);
+  expect((await page.request.get(commentsUrl)).status()).toBe(404);
   expect(
     (
       await context.request.get(

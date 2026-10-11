@@ -7,6 +7,8 @@ export const ru = {
   password: 'Пароль',
   navigation: 'Навигация',
   theme: 'Переключить тему',
+  trainerSettings: 'Доступ тренеров',
+  yazioSettings: 'Подключение YAZIO',
   loginError: 'Не удалось войти. Проверьте почту и пароль.',
   sections: [
     {

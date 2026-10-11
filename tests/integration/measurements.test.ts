@@ -2,11 +2,21 @@ import { vi, it, expect } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { openDatabase } from '@/server/db/connection';
 import { measurementRepository } from '@/server/measurements/repository';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { user } from '@/server/db/schema';
 it('persists partial measurements and scopes all CRUD by owner', () => {
   const { db, sqlite } = openDatabase('file::memory:');
-  sqlite.exec(
-    'CREATE TABLE measurements (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, measured_at TEXT NOT NULL, values_json TEXT NOT NULL, note TEXT)',
-  );
+  migrate(db, { migrationsFolder: './drizzle' });
+  db.insert(user)
+    .values({
+      id: 'owner',
+      role: 'OWNER',
+      name: 'Synthetic owner',
+      email: 'owner@example.test',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .run();
   try {
     const repo = measurementRepository(db);
     const input = {
