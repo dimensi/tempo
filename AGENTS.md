@@ -43,6 +43,8 @@ Write meaningful unit tests for business rules, integration tests for persistenc
 
 ## Checks and PRs
 
+Do not add backward compatibility. Replace obsolete routes, interfaces and contracts directly; do not introduce compatibility shims, legacy fallbacks, deprecation layers or dual support solely to retain old behavior. Preserve user data, credentials and security controls when making these changes.
+
 Run: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:e2e`. For infra changes build the image and run the disposable Docker smoke test. No fictional success scripts or claimed unrun checks.
 
 One agent = one branch = one Git worktree. Never commit directly to main. Keep PRs narrow; describe changed behavior, contracts/migrations, checks actually run, risks and remaining limitations. Do not commit `.env`, databases, tokens, uploads, test artifacts or production data. Never merge/deploy without the task's authorization. Do not invent product schemas or normalization algorithms.
