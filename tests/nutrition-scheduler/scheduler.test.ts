@@ -111,6 +111,56 @@ afterEach(() => {
 });
 
 describe('durable owner schedule', () => {
+  it('adopts a connected manual-first legacy owner before the first poll and runs hourly afterwards', async () => {
+    const { service, upstream } = setup();
+    expect(database.db.select().from(nutritionSchedule).all()).toEqual([]);
+    await service.run('owner', period, {
+      mode: 'manual',
+      timezone: input.timezone,
+    });
+    expect(service.status('owner')).toMatchObject({
+      enabled: true,
+      timezone: input.timezone,
+      initialFrom: period.from,
+      nextRunAt: new Date(Date.now() + 3600000).toISOString(),
+    });
+    vi.mocked(upstream.items).mockClear();
+    await service.tick();
+    expect(upstream.items).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3600000);
+    await service.tick();
+    expect(upstream.items).toHaveBeenCalledTimes(7);
+  });
+  it('never re-enables an explicitly disabled row during a valid manual sync', async () => {
+    const { service } = setup();
+    service.disable('owner');
+    await service.run('owner', period, {
+      mode: 'manual',
+      timezone: input.timezone,
+    });
+    expect(service.status('owner')).toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+    });
+  });
+  it('does not auto-enable a newly inserted manual row when disconnect occurs during token load', async () => {
+    const { service, store, deps } = setup();
+    const pending = deferred<typeof token | null>();
+    vi.mocked(store.load).mockReturnValue(pending.promise);
+    const running = service.run('owner', period, { mode: 'manual' });
+    const rejected = expect(running).rejects.toMatchObject({
+      code: 'LEASE_LOST',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    service.disable('owner');
+    pending.resolve(token);
+    await rejected;
+    expect(service.status('owner')).toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+    });
+    expect(deps.source).not.toHaveBeenCalled();
+  });
   it('leaves an hour for initial manual loading after connect instead of racing the browser', async () => {
     const { service, deps } = setup();
     service.enable('owner', input);

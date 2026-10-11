@@ -156,12 +156,14 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       throw new NutritionSyncBusyError('Sync already running');
     const leaseId = randomUUID();
     const started = now();
-    const acquired = db.transaction((tx) => {
-      tx.insert(nutritionSchedule)
+    const claim = db.transaction((tx) => {
+      const created = !!tx
+        .insert(nutritionSchedule)
         .values({ ownerId })
         .onConflictDoNothing()
-        .run();
-      return tx
+        .returning()
+        .get();
+      const acquired = tx
         .update(nutritionSchedule)
         .set({
           leaseId,
@@ -185,7 +187,9 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         )
         .returning()
         .get();
+      return { acquired, created };
     });
+    const { acquired, created } = claim;
     if (!acquired) throw new NutritionSyncBusyError('Sync already running');
     active.add(ownerId);
     const pending = new Set<Promise<unknown>>();
@@ -306,6 +310,15 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       if (!(await tokenStore.load()))
         throw new NutritionScheduleError('NOT_CONFIGURED');
       assertCurrent();
+      if (created && options.mode === 'manual') {
+        // A legacy connected owner may manually sync before the first timer
+        // adoption. Only this freshly inserted row can be enabled here; an
+        // explicit disable/reconnect increments epoch and defeats this fence.
+        db.update(nutritionSchedule)
+          .set({ enabled: true, nextRunAt: now() + HOUR })
+          .where(fence())
+          .run();
+      }
       // Every token load/refresh save is fenced before SDK construction or auth.
       const guardedStore: YazioTokenStore = {
         async load() {
