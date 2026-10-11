@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import {
   Alert,
   Badge,
@@ -19,6 +19,9 @@ import {
   nutritionSyncMessages as messages,
   type SyncStatus,
 } from '@/contracts/nutrition-sync';
+const subscribeToHydration = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
 
 export function YazioSettingsForm({
   initial,
@@ -30,6 +33,11 @@ export function YazioSettingsForm({
   };
 }) {
   const [status, setStatus] = useState(initial);
+  const ready = useSyncExternalStore(
+    subscribeToHydration,
+    clientReady,
+    serverReady,
+  );
   const [token, setToken] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -84,6 +92,7 @@ export function YazioSettingsForm({
   }
   return (
     <Stack maw={600}>
+      {!ready && <Text role="status">{messages.loading}</Text>}
       <Title order={1}>{messages.title}</Title>
       <Badge color={status.configured ? 'teal' : 'gray'}>
         {status.configured ? messages.configured : messages.absent}
@@ -107,7 +116,11 @@ export function YazioSettingsForm({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          const input = { email, password };
+          if (!ready || busy || !status.tokenFileConfigured || !consent) {
+            setPassword('');
+            return;
+          }
+          const input = { email, password, confirmed: true };
           setPassword('');
           void submit('/api/yazio/connect', input);
         }}
@@ -120,7 +133,7 @@ export function YazioSettingsForm({
             value={email}
             onChange={(event) => setEmail(event.currentTarget.value)}
             required
-            disabled={busy || !status.tokenFileConfigured}
+            disabled={!ready || busy || !status.tokenFileConfigured}
           />
           <PasswordInput
             label={messages.password}
@@ -131,13 +144,17 @@ export function YazioSettingsForm({
               'aria-label': messages.passwordVisibility,
             }}
             required
-            disabled={busy || !status.tokenFileConfigured}
+            disabled={!ready || busy || !status.tokenFileConfigured}
           />
           <Button
             type="submit"
             loading={busy}
             disabled={
-              !status.tokenFileConfigured || !email || !password || !consent
+              !ready ||
+              !status.tokenFileConfigured ||
+              !email ||
+              !password ||
+              !consent
             }
           >
             {messages.connect}
@@ -146,7 +163,7 @@ export function YazioSettingsForm({
             label={messages.connectionConsent}
             checked={consent}
             onChange={(event) => setConsent(event.currentTarget.checked)}
-            disabled={busy || !status.tokenFileConfigured}
+            disabled={!ready || busy || !status.tokenFileConfigured}
           />
         </Stack>
       </form>
@@ -154,7 +171,7 @@ export function YazioSettingsForm({
         <Button
           color="red"
           variant="light"
-          disabled={busy}
+          disabled={!ready || busy}
           onClick={() => setDisconnectOpen(true)}
         >
           {messages.disconnect}
@@ -176,7 +193,7 @@ export function YazioSettingsForm({
               loading={busy}
               onClick={() => {
                 setDisconnectOpen(false);
-                void submit('/api/yazio/disconnect', {});
+                void submit('/api/yazio/disconnect', { confirmed: true });
               }}
             >
               {messages.disconnect}
@@ -194,8 +211,15 @@ export function YazioSettingsForm({
             <form
               onSubmit={(event) => {
                 event.preventDefault();
+                if (!ready || busy || !status.tokenFileConfigured || !consent) {
+                  setToken('');
+                  return;
+                }
                 try {
-                  void submit('/api/yazio/token', JSON.parse(token));
+                  void submit('/api/yazio/token', {
+                    token: JSON.parse(token),
+                    confirmed: true,
+                  });
                 } catch {
                   setToken('');
                   setResult('failure');
@@ -211,12 +235,14 @@ export function YazioSettingsForm({
                   spellCheck={false}
                   minRows={4}
                   required
-                  disabled={busy || !status.tokenFileConfigured}
+                  disabled={!ready || busy || !status.tokenFileConfigured}
                 />
                 <Button
                   type="submit"
                   loading={busy}
-                  disabled={!status.tokenFileConfigured || !token || !consent}
+                  disabled={
+                    !ready || !status.tokenFileConfigured || !token || !consent
+                  }
                 >
                   {messages.save}
                 </Button>
@@ -228,6 +254,7 @@ export function YazioSettingsForm({
       <form
         onSubmit={(event) => {
           event.preventDefault();
+          if (!ready || busy || !status.configured) return;
           void submit('/api/yazio/sync', { mode: 'period', from, to });
         }}
       >
@@ -239,6 +266,7 @@ export function YazioSettingsForm({
               value={from}
               onChange={(event) => setFrom(event.currentTarget.value)}
               required
+              disabled={!ready || busy}
             />
             <TextInput
               label={messages.to}
@@ -246,15 +274,20 @@ export function YazioSettingsForm({
               value={to}
               onChange={(event) => setTo(event.currentTarget.value)}
               required
+              disabled={!ready || busy}
             />
           </Group>
-          <Button type="submit" loading={busy} disabled={!status.configured}>
+          <Button
+            type="submit"
+            loading={busy}
+            disabled={!ready || !status.configured}
+          >
             {messages.period}
           </Button>
           <Button
             variant="light"
             loading={busy}
-            disabled={!status.configured}
+            disabled={!ready || !status.configured}
             onClick={() =>
               void submit('/api/yazio/sync', {
                 mode: 'recent',

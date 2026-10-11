@@ -6,6 +6,10 @@ import { nutritionRepository } from '@/server/nutrition/repository';
 import { fileTokenStore } from './token-store';
 import { tokenSchema } from './client';
 import { resolve, sep } from 'node:path';
+import {
+  yazioTokenImportSchema,
+  yazioConfirmationSchema,
+} from '@/contracts/nutrition-sync';
 
 export async function yazioOwner(headers: Headers) {
   const access = await authorize(headers, 'yazio:manage');
@@ -43,15 +47,16 @@ export async function getYazioStatus(headers: Headers) {
 }
 export async function saveExistingToken(headers: Headers, input: unknown) {
   const ownerId = await yazioOwner(headers);
-  const token = tokenSchema.parse(input);
+  const token = tokenSchema.parse(yazioTokenImportSchema.parse(input).token);
   const store = configuredStore(ownerId);
   await store.load();
   if ((await yazioOwner(headers)) !== ownerId)
     throw new NutritionAccessError(403);
   await store.save(token);
 }
-export async function disconnectYazio(headers: Headers) {
+export async function disconnectYazio(headers: Headers, input: unknown) {
   const ownerId = await yazioOwner(headers);
+  yazioConfirmationSchema.parse(input);
   const store = configuredStore(ownerId);
   await store.load();
   if ((await yazioOwner(headers)) !== ownerId)

@@ -41,9 +41,16 @@ export const yazioCredentialsSchema = z
   .object({
     email: z.email().max(254),
     password: z.string().min(1).max(1024),
+    confirmed: z.literal(true),
   })
   .strict();
 export type YazioCredentialsInput = z.infer<typeof yazioCredentialsSchema>;
+export const yazioTokenImportSchema = z
+  .object({ token: z.unknown(), confirmed: z.literal(true) })
+  .strict();
+export const yazioConfirmationSchema = z
+  .object({ confirmed: z.literal(true) })
+  .strict();
 export const nutritionSyncMessages = {
   title: 'Подключение YAZIO',
   configured: 'Токен подключён',
@@ -63,6 +70,7 @@ export const nutritionSyncMessages = {
   disconnectHelp:
     'Токены подключения будут удалены. Сохранённый дневник и фотографии останутся.',
   cancel: 'Отмена',
+  loading: 'Загрузка…',
   storeUnavailable:
     'Подключение пока недоступно: администратору нужно настроить защищённое хранение подключения YAZIO.',
   httpsRequired: 'Для подключения YAZIO откройте приложение по HTTPS.',

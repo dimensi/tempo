@@ -34,6 +34,7 @@ const token = {
 const input = {
   email: 'synthetic-yazio@example.test',
   password: 'Synthetic-YAZIO-password-only',
+  confirmed: true,
 };
 const origin = 'http://localhost:3135';
 let ownerHeaders: Headers;
@@ -41,6 +42,7 @@ let trainerHeaders: Headers;
 const { getAuth } = await import('@/server/auth');
 const { POST } = await import('@/app/api/yazio/connect/route');
 const { POST: disconnect } = await import('@/app/api/yazio/disconnect/route');
+const { POST: importToken } = await import('@/app/api/yazio/token/route');
 beforeAll(async () => {
   vi.stubEnv('BETTER_AUTH_URL', origin);
   vi.stubEnv(
@@ -178,6 +180,32 @@ it('rejects wrong Origin, bounded malformed input, and absent storage before ups
   expect(synthetic.exchange).not.toHaveBeenCalled();
   expect(synthetic.save).not.toHaveBeenCalled();
 });
+it('requires literal confirmation for connect/import/disconnect before upstream or store operations', async () => {
+  for (const confirmed of [undefined, false]) {
+    expect(
+      (await POST(request(ownerHeaders, { ...input, confirmed }))).status,
+    ).toBe(400);
+    expect(
+      (await importToken(request(ownerHeaders, { token, confirmed }))).status,
+    ).toBe(400);
+    expect(
+      (await disconnect(request(ownerHeaders, { confirmed }))).status,
+    ).toBe(400);
+  }
+  expect(synthetic.exchange).not.toHaveBeenCalled();
+  expect(synthetic.load).not.toHaveBeenCalled();
+  expect(synthetic.save).not.toHaveBeenCalled();
+  expect(synthetic.disconnect).not.toHaveBeenCalled();
+});
+it('accepts advanced confirmed token import and persists only validated token fields', async () => {
+  const response = await importToken(
+    request(ownerHeaders, { token: { ...token, ...input }, confirmed: true }),
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ configured: true });
+  expect(synthetic.save).toHaveBeenCalledWith(token);
+  expect(synthetic.exchange).not.toHaveBeenCalled();
+});
 it('sanitizes upstream and save errors, and never returns email/password/token or writes on exchange failure', async () => {
   const secrets = JSON.stringify({ ...input, ...token });
   synthetic.exchange.mockRejectedValueOnce(new Error(secrets));
@@ -250,7 +278,7 @@ it('rechecks OWNER permissions after asynchronous disconnect preparation', async
         release = () => resolve(null);
       }),
   );
-  const pending = disconnect(request(ownerHeaders));
+  const pending = disconnect(request(ownerHeaders, { confirmed: true }));
   await vi.waitFor(() => expect(synthetic.load).toHaveBeenCalledTimes(1));
   database.db
     .update(user)

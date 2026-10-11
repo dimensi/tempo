@@ -62,7 +62,10 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     let ready = false;
     for (let i = 0; i < 120; i++) {
       if (server.exitCode !== null)
-        throw new Error('Disposable test server exited');
+        throw new Error(
+          'Disposable test server exited: ' +
+            output.slice(-10).join('').replaceAll(password, '[redacted]'),
+        );
       try {
         if ((await fetch(origin + '/login')).ok) {
           ready = true;
@@ -73,7 +76,8 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     }
     expect(ready).toBe(true);
     browser = await chromium.launch();
-    const owner = await browser.newPage();
+    const ownerContext = await browser.newContext();
+    const owner = await ownerContext.newPage();
     const errors: string[] = [];
     owner.on('pageerror', (error) => errors.push(error.message));
     const anonymous = await owner.request.post(origin + '/api/yazio/connect', {
@@ -119,7 +123,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       name: 'Пароль YAZIO',
       exact: true,
     });
-    await expect(email.isEnabled()).resolves.toBe(true);
+    await expect.poll(() => email.isEnabled(), { timeout: 10000 }).toBe(true);
     expect(
       await owner
         .getByRole('textbox', { name: 'Существующий токен JSON', exact: true })
@@ -163,6 +167,47 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     ])
       expect(envelope).not.toContain(value);
     expect(JSON.parse(envelope).version).toBe(1);
+    // Stored connection exists, but SSR controls must remain disabled while JS is delayed.
+    const delayed = await owner.context().newPage();
+    delayed.on('pageerror', (error) => errors.push(error.message));
+    let releaseScripts!: () => void;
+    const scripts = new Promise<void>((resolve) => {
+      releaseScripts = resolve;
+    });
+    await delayed.route(
+      (url) =>
+        url.pathname.startsWith('/_next/static/') &&
+        url.pathname.endsWith('.js'),
+      async (route) => {
+        await scripts;
+        await route.continue();
+      },
+    );
+    await delayed.goto(origin + '/settings/yazio', { waitUntil: 'commit' });
+    const delayedEmail = delayed.getByRole('textbox', {
+      name: 'Email аккаунта YAZIO',
+      exact: true,
+    });
+    await delayedEmail.waitFor();
+    expect(await delayedEmail.isDisabled()).toBe(true);
+    expect(
+      await delayed
+        .getByRole('button', { name: 'Подключить YAZIO', exact: true })
+        .isDisabled(),
+    ).toBe(true);
+    await expect(
+      delayedEmail.fill('synthetic-yazio@example.test', { timeout: 300 }),
+    ).rejects.toThrow();
+    releaseScripts();
+    await expect
+      .poll(() => delayedEmail.isEnabled(), { timeout: 15000 })
+      .toBe(true);
+    await delayedEmail.fill('synthetic-yazio@example.test');
+    await delay(300);
+    expect(await delayedEmail.inputValue()).toBe(
+      'synthetic-yazio@example.test',
+    );
+    await delayed.close();
     await owner.reload();
     await owner
       .getByRole('button', { name: 'Отключить YAZIO', exact: true })
