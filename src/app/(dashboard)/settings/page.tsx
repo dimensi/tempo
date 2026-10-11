@@ -31,7 +31,7 @@ export default async function Page() {
       </Stack>
       <SettingsNavigation>
         <Stack gap={48}>
-          <YazioSettingsForm initial={status} />
+          <YazioSettingsForm initial={status} embedded />
           <section id="trainers" tabIndex={-1} aria-label={ru.trainerSettings}>
             <TrainerSettings
               ownerId={session.user.id}

@@ -1,6 +1,6 @@
 .layout {
   display: grid;
-  grid-template-columns: 190px minmax(0, 720px);
+  grid-template-columns: 190px minmax(0, 600px);
   gap: 48px;
   align-items: start;
 }
@@ -39,6 +39,16 @@
 
 .content {
   min-width: 0;
+}
+
+.content :global([id='sync']),
+.content :global([id='trainers']) {
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding-top: 32px;
+}
+
+.content :global([id='sync']) {
+  margin-top: 24px;
 }
 
 .content :global([id='connection']),

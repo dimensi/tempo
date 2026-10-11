@@ -25,7 +25,7 @@ async function login(page: Page) {
 
 test('section navigation keeps form values through anchors and history', async ({
   page,
-}) => {
+}, testInfo) => {
   await login(page);
   await page.goto('/settings');
   const navigation = page.getByRole('navigation', { name: 'Разделы настроек' });
@@ -54,6 +54,13 @@ test('section navigation keeps form values through anchors and history', async (
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  if (process.env.SETTINGS_SCREENSHOT_DIR) {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({
+      path: `${process.env.SETTINGS_SCREENSHOT_DIR}/settings-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
+  }
 });
 
 test('keyboard anchors focus the embedded section', async ({ page }) => {
