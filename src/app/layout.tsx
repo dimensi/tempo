@@ -8,6 +8,18 @@ import { Providers } from '@/components/shared/providers';
 export const metadata = {
   title: { default: 'Питание и движение', template: '%s · Питание и движение' },
   description: 'Личное пространство питания и тренировок',
+  icons: {
+    icon: [
+      { url: '/branding/mark.svg', type: 'image/svg+xml' },
+      { url: '/branding/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/branding/favicon-16.png', sizes: '16x16', type: 'image/png' },
+    ],
+    apple: {
+      url: '/branding/apple-touch-icon.png',
+      sizes: '180x180',
+      type: 'image/png',
+    },
+  },
 };
 export default function RootLayout({
   children,
