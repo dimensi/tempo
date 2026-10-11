@@ -117,9 +117,9 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
       .getByRole('textbox', { name: 'С', exact: true })
       .fill('2026-10-04');
     await page.getByRole('button', { name: 'Показать', exact: true }).click();
-    await expect(page.getByRole('alert')).toContainText(
-      'Выберите корректный период',
-    );
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Выберите корректный период' }),
+    ).toBeVisible();
     const trainerPage = await context.newPage();
     await login(trainerPage, 'trainer');
     expect((await trainerPage.request.get(query + ownerId)).status()).toBe(403);
@@ -127,6 +127,10 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
       'INSERT INTO trainer_access(trainer_id,owner_id,created_at) VALUES(?,?,?)',
     ).run(trainerId, ownerId, Date.now());
     expect((await trainerPage.request.get(query + ownerId)).status()).toBe(200);
+    await trainerPage.goto('/analytics?from=2026-10-01&to=2026-10-03');
+    await expect(
+      trainerPage.getByRole('cell', { name: '80,13', exact: true }),
+    ).toBeVisible();
     expect((await trainerPage.request.get(query + 'foreign')).status()).toBe(
       403,
     );
@@ -134,12 +138,16 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
       trainerId,
     );
     expect((await trainerPage.request.get(query + ownerId)).status()).toBe(403);
+    await trainerPage.reload();
+    await expect(
+      trainerPage.getByText('Нет доступа к данным владельца.'),
+    ).toBeVisible();
     await page.request.delete(
       `/api/measurements/${measurement.id}?ownerId=${ownerId}`,
     );
     await page.goto('/analytics?from=2020-01-01&to=2020-01-03');
     await expect(
-      page.getByText('За этот период нет записей питания.'),
+      page.getByRole('main').getByText('За этот период нет записей питания.'),
     ).toBeVisible();
   } finally {
     db.prepare('DELETE FROM trainer_access WHERE trainer_id = ?').run(
