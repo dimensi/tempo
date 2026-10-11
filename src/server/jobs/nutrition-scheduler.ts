@@ -237,7 +237,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         )
         .run();
     }
-    function complete(error: ErrorCode | null) {
+    function complete(error: ErrorCode | null, foodSucceeded = false) {
       db.transaction(() => {
         const condition =
           error === 'LEASE_LOST'
@@ -269,7 +269,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         }
         db.update(nutritionSchedule)
           .set({
-            lastSuccess: error ? current.lastSuccess : now(),
+            lastSuccess: foodSucceeded ? now() : current.lastSuccess,
             lastError: error,
             attempt: error ? Math.min(current.attempt + 1, 3) : 0,
             nextRunAt: current.enabled
@@ -283,13 +283,10 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
     try {
       if (options.mode === 'manual') {
-        // Preserve the first/earliest explicitly selected manual history boundary.
+        // Persist the last explicitly selected manual history boundary.
         db.update(nutritionSchedule)
           .set({
-            initialFrom:
-              acquired.initialFrom && acquired.initialFrom < period.from
-                ? acquired.initialFrom
-                : period.from,
+            initialFrom: period.from,
             ...(options.timezone ? { timezone: options.timezone } : {}),
           })
           .where(fence())
@@ -394,7 +391,15 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         },
       );
       assertCurrent();
-      complete(result.state === 'completed' ? null : 'SYNC_FAILED');
+      const foodSucceeded = result.failedDates.length === 0;
+      complete(
+        !foodSucceeded
+          ? 'SYNC_FAILED'
+          : result.photoFailedDates.length
+            ? 'PHOTO_INCOMPLETE'
+            : null,
+        foodSucceeded,
+      );
       return result;
     } catch (error) {
       const code =
