@@ -226,7 +226,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     expect((await connected).status()).toBe(200);
     await owner
       .getByText(
-        'YAZIO подключён, но дневник не удалось загрузить. Нажмите «Обновить сейчас», чтобы повторить.',
+        'YAZIO подключён. Не удалось полностью загрузить дневник. Нажмите «Обновить сейчас», чтобы повторить.',
         { exact: true },
       )
       .waitFor();
