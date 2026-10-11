@@ -1,0 +1,55 @@
+// Replace the dictionary resolver when adding another locale.
+export const ru = {
+  appName: 'Питание и движение',
+  login: 'Войти',
+  logout: 'Выйти',
+  email: 'Электронная почта',
+  password: 'Пароль',
+  navigation: 'Навигация',
+  theme: 'Переключить тему',
+  loginError: 'Не удалось войти. Проверьте почту и пароль.',
+  sections: [
+    {
+      href: '/',
+      title: 'Обзор',
+      description: 'Ваше пространство для питания, здоровья и движения.',
+      area: 'dashboard',
+    },
+    {
+      href: '/diary',
+      title: 'Дневник питания',
+      description: 'Здесь появятся приёмы пищи и записи за день.',
+      area: 'nutrition',
+    },
+    {
+      href: '/measurements',
+      title: 'Замеры',
+      description: 'Здесь появится история физических показателей.',
+      area: 'measurements',
+    },
+    {
+      href: '/workouts',
+      title: 'Тренировки',
+      description: 'Здесь появятся тренировки и планы занятий.',
+      area: 'workouts',
+    },
+    {
+      href: '/analytics',
+      title: 'Аналитика',
+      description: 'Здесь появятся тенденции и динамика ваших показателей.',
+      area: 'analytics',
+    },
+    {
+      href: '/reports',
+      title: 'Отчёты',
+      description: 'Здесь появятся отчёты для вас и вашего тренера.',
+      area: 'reports',
+    },
+    {
+      href: '/settings',
+      title: 'Настройки',
+      description: 'Здесь появятся настройки подключения и доступа.',
+      area: 'settings',
+    },
+  ],
+};

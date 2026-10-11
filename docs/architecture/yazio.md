@@ -1,0 +1,11 @@
+# YAZIO integration foundation
+
+References: https://github.com/dimensi/yazio and https://github.com/dimensi/yazio-stats. Installed package `@dimensi/yazio@1.2.0` exposes `Yazio`, `YazioAuth`, `user.getDailySummary`, `user.getConsumedItems`, `user.getRecipe`, and token refresh callbacks. The published README still mentions the older `yazio` package and `getSummary`; implementation follows installed type declarations rather than those outdated examples.
+
+`src/server/yazio/client.ts` wraps library construction and refresh through an injected YazioTokenStore. `fileTokenStore(path)` validates full token metadata and persists refreshed secrets atomically with 0600 permissions. `YAZIO_TOKEN_FILE` optionally declares the connection secret path; operator-supplied JSON follows the published Token type: token_type, access_token, refresh_token, expires_in, expires_at. Do not guess expiry values. Token resolution, authentication and refresh remain library responsibility. No background job or API request runs automatically.
+
+`yazioRequest()` translates thrown upstream errors to a safe generic integration error without echoing secrets or personal data. It does not infer upstream status codes the library does not expose. Retry policy, incremental sync and durable user configuration belong to the later integration task.
+
+`src/server/jobs/contracts.ts` defines only an optional normalized sync adapter boundary. `src/contracts/v1.ts` describes application values, not upstream wire structures. Photos and product/recipe KBJU normalization require the separate research results; there are no photo fields, calorie calculators or normalization assumptions in this foundation.
+
+The status endpoint is owner-only and reports whether a token-file path is configured, not whether it has been tested. Trainer must never receive token-file contents. Do not place token files in `public/`, uploaded-photo directories or Git. Use a persistent secret path, for example `/app/data/yazio-token.json`, only after the actual integration is implemented and reviewed.
