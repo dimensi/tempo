@@ -64,6 +64,8 @@ export function YazioSettingsForm({
     | 'success'
     | 'failure'
     | 'connectionLoaded'
+    | 'connectionPhotoWarning'
+    | 'syncPhotoWarning'
     | 'connectionSyncFailed'
     | 'syncLoaded'
     | 'syncFailed'
@@ -172,11 +174,23 @@ export function YazioSettingsForm({
         outcome =
           !connected.syncError && connected.sync?.state === 'completed'
             ? 'connectionLoaded'
-            : 'connectionSyncFailed';
+            : connected.sync &&
+                connected.sync.failedDates.length === 0 &&
+                connected.sync.completedDates.length > 0 &&
+                connected.sync.photoFailedDates.length > 0
+              ? 'connectionPhotoWarning'
+              : 'connectionSyncFailed';
       } else if (path === '/api/yazio/sync') {
         const sync: SyncStatus = await response.json();
         setStatus((current) => ({ ...current, sync }));
-        outcome = sync.state === 'completed' ? 'syncLoaded' : 'syncFailed';
+        outcome =
+          sync.state === 'completed'
+            ? 'syncLoaded'
+            : sync.failedDates.length === 0 &&
+                sync.completedDates.length > 0 &&
+                sync.photoFailedDates.length > 0
+              ? 'syncPhotoWarning'
+              : 'syncFailed';
       } else {
         setStatus((current) => ({
           ...current,
@@ -290,7 +304,11 @@ export function YazioSettingsForm({
                 'rangeInvalid',
               ].includes(result)
                 ? 'red'
-                : 'teal'
+                : ['connectionPhotoWarning', 'syncPhotoWarning'].includes(
+                      result,
+                    )
+                  ? 'yellow'
+                  : 'teal'
             }
             role="status"
           >
@@ -460,6 +478,11 @@ export function YazioSettingsForm({
             </Accordion.Panel>
           </Accordion.Item>
         </Accordion>
+        {status.sync.photoFailedDates.length > 0 && (
+          <Alert color="yellow" role="status">
+            {messages.photoWarning} ({status.sync.photoFailedDates.length})
+          </Alert>
+        )}
         {status.configured && (
           <Stack gap="xs">
             <Text size="sm">
@@ -501,8 +524,13 @@ export function YazioSettingsForm({
           </Stack>
         )}
         <Text role="status">
-          {messages.status}: {messages.states[status.sync.state]} (
-          {status.sync.completedDates.length}/
+          {messages.foodStatus}:{' '}
+          {status.sync.state === 'partial' &&
+          status.sync.failedDates.length === 0 &&
+          status.sync.completedDates.length > 0
+            ? messages.states.completed
+            : messages.states[status.sync.state]}{' '}
+          ({status.sync.completedDates.length}/
           {status.sync.completedDates.length + status.sync.failedDates.length})
         </Text>
       </Stack>

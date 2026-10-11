@@ -139,6 +139,7 @@ beforeEach(() => {
     finishedAt: null,
     completedDates: [],
     failedDates: [],
+    photoFailedDates: [],
   });
   synthetic.profile.mockReset().mockResolvedValue({
     email: 'actual-yazio@example.test',
@@ -439,6 +440,7 @@ it('manual sync uses common lease service and preserves caller timezone', async 
     state: 'completed',
     completedDates: ['2026-01-01'],
     failedDates: [],
+    photoFailedDates: [],
     startedAt: null,
     finishedAt: null,
   });
@@ -482,6 +484,7 @@ it('revalidates real owner permission after server backfill before returning acc
     finishedAt: null,
     completedDates: [],
     failedDates: [],
+    photoFailedDates: [],
   });
   expect((await pending).status).toBe(403);
   database.db

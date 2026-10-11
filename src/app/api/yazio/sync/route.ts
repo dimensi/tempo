@@ -17,7 +17,13 @@ export async function POST(request: Request) {
       mode: 'manual',
       timezone: input.timezone ?? 'UTC',
     });
-    if (sync.state === 'completed') await refreshYazioAccount(request.headers);
+    if (
+      sync.state === 'completed' ||
+      (sync.state === 'partial' &&
+        sync.failedDates.length === 0 &&
+        sync.completedDates.length > 0)
+    )
+      await refreshYazioAccount(request.headers);
     await yazioOwner(request.headers);
     return json(sync);
   });

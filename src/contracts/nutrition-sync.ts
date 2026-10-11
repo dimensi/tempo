@@ -122,6 +122,11 @@ export const nutritionSyncMessages = {
   tokenHelp:
     'Необязательный импорт существующего JSON: token_type, access_token, refresh_token, expires_in, expires_at. Используйте значения из существующего токена; не заполняйте сроки вручную.',
   connectionLoaded: 'YAZIO подключён. Дневник загружен.',
+  connectionPhotoWarning:
+    'YAZIO подключён. Еда загружена; часть фотографий пока недоступна.',
+  syncPhotoWarning: 'Еда обновлена; часть фотографий пока недоступна.',
+  photoWarning: 'Некоторые фотографии пока недоступны.',
+  foodStatus: 'Загрузка еды',
   connectionSyncFailed:
     'YAZIO подключён. Не удалось полностью загрузить дневник. Нажмите «Обновить сейчас», чтобы повторить.',
   syncLoaded: 'Дневник обновлён.',
@@ -148,6 +153,8 @@ export const nutritionSyncMessages = {
     NOT_CONFIGURED: 'Подключение недоступно. Переподключите YAZIO.',
     SYNC_FAILED:
       'Не удалось полностью загрузить дневник. Сервер повторит попытку.',
+    PHOTO_INCOMPLETE:
+      'Еда загружена, но не все фотографии доступны. Сервер повторит загрузку фото.',
     LEASE_LOST: 'Загрузка была прервана. Сервер повторит попытку.',
   },
   states: {
