@@ -33,6 +33,8 @@ Every scheduled attempt refreshes exactly the last seven calendar dates includin
 
 When the app finds an existing OWNER connection with no schedule row, a delayed production poll acquires a lease and loads only a Boolean token-presence result inside the app. A connected legacy owner is adopted with UTC fallback and a due catch-up run; no human timezone is guessed. Missing/disconnected storage creates a disabled schedule with `NOT_CONFIGURED`. Existing disabled rows are never silently re-enabled by status or polling. New connection hooks enable them explicitly.
 
+If a connected legacy owner manually syncs before the first delayed poll, claim records that it created a new schedule row. Only that newly created manual row may be enabled after valid token load under the same UUID/epoch fence, using the selected timezone/history and a one-hour due time. An existing explicitly disabled row is never re-enabled by manual sync; disconnect during token loading also prevents late auto-enable.
+
 ## Lease, restart and retries
 
 `nutrition_schedule` persists owner scope, enabled state, timezone/history, schedule epoch, last success/error, next due time, retry attempt and lease UUID/start/expiry. The owner FK cascades on deletion. Root generates and reviews its versioned migration; no production schema push is used.
@@ -62,7 +64,7 @@ node tests/nutrition-scheduler/runtime-smoke.mjs
 
 The smoke owns temporary DB/files and starts/stops only its own real standalone Node servers. It inherits no production secret/token environment, opens no browser, uses an absent synthetic token path, and verifies delayed registration, legacy disabled adoption, restart/expired-lease recovery and stale-running reconciliation. It must create no credential files and make no upstream request. It removes its fixtures afterwards. Record the actual smoke output and tested head in the PR; a prepared command alone is not a passing result or evidence about production.
 
-Local validation passed on the scheduler working tree using the shared UX calendar helpers: full `pnpm check` (161 tests and production build), all 32 desktop/mobile E2E scenarios on port 3127, and the real standalone runtime smoke. The smoke returned:
+Local validation passed on the scheduler working tree using the shared UX calendar helpers: full `pnpm check` (164 tests, including 20 dedicated scheduler tests, and production build), all 32 desktop/mobile E2E scenarios on port 3127, and the real standalone runtime smoke. E2E and standalone smoke were repeated after the manual-first race fix. The smoke returned:
 
 ```json
 {
