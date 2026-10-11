@@ -111,6 +111,53 @@ afterEach(() => {
 });
 
 describe('durable owner schedule', () => {
+  it.each([
+    ['2026-10-12', ['2026-10-12']],
+    ['2026-10-10', ['2026-10-10', '2026-10-11', '2026-10-12']],
+    [
+      '2026-10-01',
+      [
+        '2026-10-06',
+        '2026-10-07',
+        '2026-10-08',
+        '2026-10-09',
+        '2026-10-10',
+        '2026-10-11',
+        '2026-10-12',
+      ],
+    ],
+  ])(
+    'clips hourly history at persisted initialFrom %s',
+    async (initialFrom, expected) => {
+      const { service, upstream } = setup();
+      service.enable('owner', { timezone: 'Europe/Moscow', initialFrom });
+      await vi.advanceTimersByTimeAsync(3600000);
+      await service.tick();
+      expect(
+        vi.mocked(upstream.items).mock.calls.map(([date]) => date),
+      ).toEqual(expected);
+    },
+  );
+  it('keeps the end date rolling with local today after the initial bound', async () => {
+    const { service, upstream } = setup();
+    service.enable('owner', {
+      timezone: 'Europe/Moscow',
+      initialFrom: '2026-10-12',
+    });
+    await vi.advanceTimersByTimeAsync(3600000);
+    await service.tick();
+    expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
+      '2026-10-12',
+    ]);
+    vi.mocked(upstream.items).mockClear();
+    await vi.advanceTimersByTimeAsync(86400000);
+    await service.tick();
+    expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
+      '2026-10-12',
+      '2026-10-13',
+    ]);
+    expect(service.status('owner').initialFrom).toBe('2026-10-12');
+  });
   it('adopts a connected manual-first legacy owner before the first poll and runs hourly afterwards', async () => {
     const { service, upstream } = setup();
     expect(database.db.select().from(nutritionSchedule).all()).toEqual([]);
@@ -129,7 +176,10 @@ describe('durable owner schedule', () => {
     expect(upstream.items).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(3600000);
     await service.tick();
-    expect(upstream.items).toHaveBeenCalledTimes(7);
+    expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
+      '2026-10-11',
+      '2026-10-12',
+    ]);
   });
   it('never re-enables an explicitly disabled row during a valid manual sync', async () => {
     const { service } = setup();

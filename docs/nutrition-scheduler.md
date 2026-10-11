@@ -29,7 +29,7 @@ The service and schema can be tested independently; they are not a complete user
 
 ## Dates, history and legacy connections
 
-Every scheduled attempt refreshes exactly the last seven calendar dates including today in the validated owner timezone. It does not interpret upstream meal timestamps as timezone evidence. New connect/reconnect sets the timezone from validated browser input. A manual request can update that timezone and preserves the earliest explicitly selected history `from` as `initialFrom`; subsequent hourly runs do not overwrite it or repeatedly reload all history. The UI can use this metadata to restore the user's selected history boundary. History synchronization remains a manual operation.
+Every scheduled attempt ends at today in the validated owner timezone and starts at `max(today - 6 calendar days, initialFrom)` when an initial bound is persisted. It therefore covers at most seven dates and never fetches before the chosen history start: starting today yields one date, starting two days ago yields three, and an older bound yields seven. The end date keeps rolling with local today; no end date is persisted. The scheduler does not interpret upstream meal timestamps as timezone evidence. New connect/reconnect sets the timezone from validated browser input. A manual request can update that timezone and preserves the earliest explicitly selected history `from` as `initialFrom`; subsequent hourly runs do not overwrite it or repeatedly reload all history. The UI can use this metadata to restore the user's selected history boundary. History synchronization remains a manual operation.
 
 When the app finds an existing OWNER connection with no schedule row, a delayed production poll acquires a lease and loads only a Boolean token-presence result inside the app. A connected legacy owner is adopted with UTC fallback and a due catch-up run; no human timezone is guessed. Missing/disconnected storage creates a disabled schedule with `NOT_CONFIGURED`. Existing disabled rows are never silently re-enabled by status or polling. New connection hooks enable them explicitly.
 
@@ -43,7 +43,7 @@ Manual and automatic runs share the same owner lease. Claim is atomic; heartbeat
 
 Disconnect/reconnect increments the schedule epoch. A late old result cannot write snapshots/cache/status, change the new due time or re-enable a disconnected schedule. Release compares UUID and cannot clear another run's lease. Terminal reconciliation of an expired own lease can mark its stale running sync status failed only while the UUID/epoch still belongs to that run; it never overwrites a replacement generation. The SDK adapter has bounded waits but does not expose transport cancellation, so fencing also protects late refresh persistence.
 
-After process restart, an overdue enabled schedule is attempted once after the delayed poll and expired-lease claim. Missed hours are not replayed individually. Successful runs set the next due time to one hour after completion. Failed or partial sync uses delays of 1 minute, 5 minutes and 15 minutes, then one hour for further failures. Attempts saturate at 3 and reset after success. Only `NOT_CONFIGURED`, `SYNC_FAILED` and `LEASE_LOST` are persisted as schedule errors.
+After process restart, an overdue enabled schedule is attempted once after the delayed poll and expired-lease claim, with the same initial-history bound. Missed hours are not replayed individually. Successful runs set the next due time to one hour after completion. Failed or partial sync uses delays of 1 minute, 5 minutes and 15 minutes, then one hour for further failures. Attempts saturate at 3 and reset after success. Only `NOT_CONFIGURED`, `SYNC_FAILED` and `LEASE_LOST` are persisted as schedule errors.
 
 ## Verification commands
 
@@ -64,7 +64,7 @@ node tests/nutrition-scheduler/runtime-smoke.mjs
 
 The smoke owns temporary DB/files and starts/stops only its own real standalone Node servers. It inherits no production secret/token environment, opens no browser, uses an absent synthetic token path, and verifies delayed registration, legacy disabled adoption, restart/expired-lease recovery and stale-running reconciliation. It must create no credential files and make no upstream request. It removes its fixtures afterwards. Record the actual smoke output and tested head in the PR; a prepared command alone is not a passing result or evidence about production.
 
-Local validation passed on the scheduler working tree using the shared UX calendar helpers: full `pnpm check` (164 tests, including 20 dedicated scheduler tests, and production build), all 32 desktop/mobile E2E scenarios on port 3127, and the real standalone runtime smoke. E2E and standalone smoke were repeated after the manual-first race fix. The smoke returned:
+The initial-history-bound patch passed full `pnpm check` (168 tests, including 24 dedicated scheduler tests, and production build). All 32 desktop/mobile E2E scenarios on port 3127 and the real standalone runtime smoke were executed on runtime head `6e83bfd89640d13d5be48ea633251f5e2ced6b47`, after the manual-first race fix and before the later period-clipping change. That later patch changes scheduled period selection; instrumentation/lease behavior is unchanged. The executed smoke returned:
 
 ```json
 {

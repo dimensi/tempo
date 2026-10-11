@@ -483,8 +483,12 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
     )
       return;
     const today = nutritionLocalDate(now(), schedule.timezone);
+    const recentFrom = shiftDate(today, -6);
     const period = {
-      from: shiftDate(today, -6),
+      from:
+        schedule.initialFrom && schedule.initialFrom > recentFrom
+          ? schedule.initialFrom
+          : recentFrom,
       to: today,
     };
     try {
