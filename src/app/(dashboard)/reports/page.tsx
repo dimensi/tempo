@@ -1,12 +1,11 @@
-import { SectionPlaceholder } from '@/components/shared/section-placeholder';
-import { ru } from '@/config/messages';
+import { ReportForm } from '@/features/reports';
+import { requireSession } from '@/server/auth/guards';
 export const metadata = { title: 'Отчёты' };
-export default function Page() {
-  const section = ru.sections[5]!;
+export default async function Page() {
+  const session = await requireSession();
   return (
-    <SectionPlaceholder
-      title={section.title}
-      description={section.description}
+    <ReportForm
+      ownerId={session.user.role === 'OWNER' ? session.user.id : null}
     />
   );
 }
