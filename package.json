@@ -17,6 +17,8 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:backup": "tsx scripts/backup.ts",
     "auth:create-user": "tsx scripts/create-user.ts",
+    "transformmate:probe": "node --conditions=react-server --import tsx scripts/transformmate-probe.ts",
+    "transformmate:auth-probe": "node --conditions=react-server --import tsx scripts/transformmate-auth-probe.ts",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "keywords": [],
