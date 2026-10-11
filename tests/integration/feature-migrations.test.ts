@@ -60,6 +60,10 @@ it('upgrades an existing foundation DB repeatedly without losing users or grants
       'workout_sessions',
       'comments',
       'trainer_invitations',
+      'nutrition_days',
+      'nutrition_photos',
+      'nutrition_cache',
+      'nutrition_sync_runs',
     ])
       expect(
         database.sqlite

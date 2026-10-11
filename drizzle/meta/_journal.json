@@ -15,6 +15,13 @@
       "when": 1791748267961,
       "tag": "0001_massive_marten_broadcloak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791748580345,
+      "tag": "0002_violet_black_knight",
+      "breakpoints": true
     }
   ]
 }

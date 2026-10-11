@@ -26,7 +26,7 @@ export async function listComments(
   if (!parsed.success) throw new CollaborationError(400);
   const { ownerId, target } = parsed.data;
   await access(headers, ownerId);
-  await requireCommentTarget(ownerId, target);
+  await requireCommentTarget(ownerId, target, headers);
   const viewerId = await access(headers, ownerId);
   return getDatabase()
     .db.select({ comment: comments, authorName: user.name })
@@ -57,7 +57,7 @@ export async function createComment(headers: Headers, raw: unknown) {
   if (!parsed.success) throw new CollaborationError(400);
   const { ownerId, target, body, parentId } = parsed.data;
   await access(headers, ownerId);
-  await requireCommentTarget(ownerId, target);
+  await requireCommentTarget(ownerId, target, headers);
   const authorId = await access(headers, ownerId);
   const db = getDatabase().db;
   if (parentId) {
@@ -113,10 +113,14 @@ export async function changeComment(
     .get();
   if (!row) throw new CollaborationError(404);
   if (row.authorId !== authorId) throw new CollaborationError(403);
-  await requireCommentTarget(input.ownerId, {
-    type: row.targetType,
-    id: row.targetId,
-  });
+  await requireCommentTarget(
+    input.ownerId,
+    {
+      type: row.targetType,
+      id: row.targetId,
+    },
+    headers,
+  );
   const currentAuthorId = await access(headers, input.ownerId);
   if (row.authorId !== currentAuthorId) throw new CollaborationError(403);
   const own = and(

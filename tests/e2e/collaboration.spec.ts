@@ -1,9 +1,20 @@
 import { test, expect } from '@playwright/test';
+import Database from 'better-sqlite3';
+import { meals, nutritionDaySchema } from '@/contracts/nutrition';
 test('real invited trainer login, owner grant revocation and direct API isolation', async ({
   page,
   browser,
   request,
 }) => {
+  const nutritionDate = new Date(
+    Date.UTC(
+      2026,
+      0,
+      1 + (test.info().project.name === 'mobile' ? 10 : 0) + test.info().retry,
+    ),
+  )
+    .toISOString()
+    .slice(0, 10);
   expect((await request.get('/api/trainers?ownerId=foreign')).status()).toBe(
     401,
   );
@@ -91,7 +102,7 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
   ).toBe(400);
   const signIn = () =>
     context.request.post('/api/auth/sign-in/email', {
-      headers: { origin: 'http://localhost:3100' },
+      headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
       data: {
         email: `invited-${test.info().project.name}@example.test`,
         password: 'Synthetic-password-123',
@@ -177,7 +188,7 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
   );
   for (const target of [
     { type: 'measurement', id: 'missing' },
-    { type: 'nutrition_day', id: '2026-10-11' },
+    { type: 'nutrition_day', id: nutritionDate },
   ])
     expect(
       (
@@ -186,10 +197,55 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
         })
       ).status(),
     ).toBe(404);
+  // Synthetic data in the same disposable DB prepared by Playwright migrations.
+  const database = new Database('.data/e2e.sqlite');
+  const zero = { calories: '0', protein: '0', fat: '0', carbs: '0' };
+  const day = nutritionDaySchema.parse({
+    date: nutritionDate,
+    fetchedAt: new Date().toISOString(),
+    meals: meals.map((kind) => ({
+      kind,
+      entries: [],
+      totals: zero,
+      knownTotals: zero,
+      officialTotals: zero,
+      delta: zero,
+    })),
+    totals: zero,
+    knownTotals: zero,
+    officialTotals: zero,
+    delta: zero,
+  });
+  try {
+    database
+      .prepare(
+        'INSERT INTO nutrition_days (owner_id, date, snapshot, fetched_at) VALUES (?, ?, ?, ?) ON CONFLICT(owner_id,date) DO UPDATE SET snapshot=excluded.snapshot, fetched_at=excluded.fetched_at',
+      )
+      .run(ownerId, day.date, JSON.stringify(day), day.fetchedAt);
+  } finally {
+    database.close();
+  }
+  const nutritionScope = {
+    ownerId,
+    target: { type: 'nutrition_day', id: day.date },
+  };
+  const nutritionComment = await context.request.post('/api/comments', {
+    data: { ...nutritionScope, body: 'Synthetic nutrition comment' },
+  });
+  expect(nutritionComment.ok()).toBe(true);
+  const nutritionCommentId = (await nutritionComment.json()).id;
+  const nutritionUrl = `/api/comments?ownerId=${ownerId}&type=nutrition_day&targetId=${day.date}`;
+  expect((await context.request.get(nutritionUrl)).ok()).toBe(true);
+  const daysUrl = `/api/nutrition/days?ownerId=${ownerId}&from=${day.date}&to=${day.date}`;
+  const daysResponse = await context.request.get(daysUrl);
+  expect(daysResponse.ok()).toBe(true);
+  expect(await daysResponse.json()).toEqual([day]);
+  expect((await page.request.get('/api/yazio/status')).ok()).toBe(true);
+  expect((await context.request.get('/api/yazio/status')).status()).toBe(403);
   const workoutResponse = await page.request.post(
     `/api/workouts/sessions?ownerId=${ownerId}`,
     {
-      headers: { origin: 'http://localhost:3100' },
+      headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
       data: {
         date: '2026-10-11',
         title: 'Synthetic workout',
@@ -224,6 +280,14 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
     ).ok(),
   ).toBe(true);
   expect((await context.request.get(commentsUrl)).status()).toBe(403);
+  expect((await context.request.get(daysUrl)).status()).toBe(403);
+  expect(
+    (
+      await context.request.delete(`/api/comments/${nutritionCommentId}`, {
+        data: { ownerId },
+      })
+    ).status(),
+  ).toBe(403);
   expect(
     (
       await context.request.delete(`/api/comments/${reply.id}`, {

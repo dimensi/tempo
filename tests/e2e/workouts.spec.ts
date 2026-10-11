@@ -116,7 +116,7 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
   await login(page);
   const id = await ownerId(page);
   const context = await browser.newContext({
-    baseURL: 'http://localhost:3100',
+    baseURL: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
   });
   const trainer = await context.newPage();
   const database = new Database('.data/e2e.sqlite');
@@ -156,7 +156,10 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     };
     const created = await trainer.request.post(
       `/api/workouts/plans?ownerId=${id}`,
-      { headers: { origin: 'http://localhost:3100' }, data: input },
+      {
+        headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+        data: input,
+      },
     );
     expect(created.ok()).toBe(true);
     const plan = (await created.json()).data;
@@ -170,7 +173,9 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     expect(
       (
         await trainer.request.post(`/api/workouts/sessions?ownerId=${id}`, {
-          headers: { origin: 'http://localhost:3100' },
+          headers: {
+            origin: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+          },
           data: actual,
         })
       ).status(),
@@ -180,7 +185,9 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
         await trainer.request.put(
           `/api/workouts/sessions/anything?ownerId=${id}`,
           {
-            headers: { origin: 'http://localhost:3100' },
+            headers: {
+              origin: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+            },
             data: { revision: 1, data: actual },
           },
         )
@@ -191,7 +198,9 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
         await trainer.request.delete(
           `/api/workouts/sessions/anything?ownerId=${id}`,
           {
-            headers: { origin: 'http://localhost:3100' },
+            headers: {
+              origin: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+            },
             data: { revision: 1 },
           },
         )
@@ -211,7 +220,7 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     const updated = await trainer.request.put(
       `/api/workouts/plans/${plan.id}?ownerId=${id}`,
       {
-        headers: { origin: 'http://localhost:3100' },
+        headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
         data: { revision: 1, data: { ...input, title: 'Исправленный план' } },
       },
     );
@@ -221,7 +230,9 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
         await trainer.request.put(
           `/api/workouts/plans/${plan.id}?ownerId=${id}`,
           {
-            headers: { origin: 'http://localhost:3100' },
+            headers: {
+              origin: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+            },
             data: { revision: 1, data: input },
           },
         )
