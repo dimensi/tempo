@@ -33,9 +33,20 @@ export async function createYazioClient(store: YazioTokenStore) {
   });
 }
 export async function yazioRequest<T>(operation: () => Promise<T>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await operation();
+    return await Promise.race([
+      operation(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('YAZIO request timeout')),
+          30000,
+        );
+      }),
+    ]);
   } catch {
     throw new YazioIntegrationError('UPSTREAM_FAILURE');
+  } finally {
+    clearTimeout(timeout);
   }
 }

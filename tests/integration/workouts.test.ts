@@ -42,10 +42,6 @@ const actual: WorkoutSessionCreate = {
 };
 beforeAll(() => {
   migrate(database.db, { migrationsFolder: './drizzle' });
-  // Feature-owned test DDL only; coordinator generates deployment migrations.
-  database.sqlite
-    .exec(`CREATE TABLE IF NOT EXISTS workout_plans (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS workout_sessions (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, data TEXT NOT NULL, date TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`);
   for (const [id, role] of [
     ['owner', 'OWNER'],
     ['trainer', 'TRAINER'],

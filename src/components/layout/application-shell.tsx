@@ -136,6 +136,25 @@ export function ApplicationShell({
                   />
                 );
               })}
+              {role === 'OWNER' &&
+                [
+                  { href: '/settings/trainers', title: ru.trainerSettings },
+                  { href: '/settings/yazio', title: ru.yazioSettings },
+                ].map((section) => (
+                  <NavLink
+                    key={section.href}
+                    component={Link}
+                    href={section.href}
+                    label={section.title}
+                    active={pathname === section.href}
+                    aria-current={
+                      pathname === section.href ? 'page' : undefined
+                    }
+                    onClick={close}
+                    py="sm"
+                    mb={4}
+                  />
+                ))}
             </nav>
             <Stack gap="xs">
               <Badge variant="light">

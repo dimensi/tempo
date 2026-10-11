@@ -25,9 +25,6 @@ const owner = () => {
 };
 beforeAll(() => {
   migrate(database.db, { migrationsFolder: './drizzle' });
-  database.sqlite.exec(
-    `CREATE TABLE trainer_invitations(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES user(id),email TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,expires_at INTEGER NOT NULL,consumed_at INTEGER,created_at INTEGER NOT NULL); CREATE TABLE comments(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES user(id),author_id TEXT NOT NULL REFERENCES user(id),target_type TEXT NOT NULL,target_id TEXT NOT NULL,parent_id TEXT,body TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);`,
-  );
   for (const [id, role] of [
     ['owner', 'OWNER'],
     ['trainer', 'TRAINER'],
@@ -49,6 +46,69 @@ beforeAll(() => {
   );
 });
 afterAll(() => database.sqlite.close());
+it('rechecks grants after an asynchronous target lookup for reads and mutations', async () => {
+  const scope = {
+    ownerId: 'owner',
+    target: { type: 'measurement', id: 'race-target' },
+  };
+  owner();
+  configureCommentTargets(() => true);
+  await setTrainerGrant(
+    headers,
+    { ownerId: 'owner', trainerId: 'trainer' },
+    true,
+  );
+  state.session = { user: { id: 'trainer', role: 'TRAINER' } };
+  const root = await createComment(headers, {
+    ...scope,
+    body: 'Before revocation',
+  });
+  for (const operation of [
+    () => listComments(headers, scope),
+    () => createComment(headers, { ...scope, body: 'After revocation' }),
+    () =>
+      changeComment(
+        headers,
+        root.id,
+        { ownerId: 'owner', body: 'Changed' },
+        false,
+      ),
+    () => changeComment(headers, root.id, { ownerId: 'owner' }, true),
+  ]) {
+    owner();
+    await setTrainerGrant(
+      headers,
+      { ownerId: 'owner', trainerId: 'trainer' },
+      true,
+    );
+    state.session = { user: { id: 'trainer', role: 'TRAINER' } };
+    let release!: () => void;
+    let entered!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    configureCommentTargets(async () => {
+      entered();
+      await pending;
+      return true;
+    });
+    const result = operation();
+    const rejected = expect(result).rejects.toMatchObject({ status: 403 });
+    await started;
+    database.db
+      .delete(trainerAccess)
+      .where(eq(trainerAccess.trainerId, 'trainer'))
+      .run();
+    release();
+    await rejected;
+  }
+  configureCommentTargets(
+    (ownerId, target) => ownerId === 'owner' && target.id === '2026-10-11',
+  );
+});
 it('checks session, owner scope and trainer management role', async () => {
   state.session = null;
   await expect(

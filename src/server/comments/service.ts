@@ -25,8 +25,9 @@ export async function listComments(
   const parsed = commentScope.safeParse(raw);
   if (!parsed.success) throw new CollaborationError(400);
   const { ownerId, target } = parsed.data;
+  await access(headers, ownerId);
+  await requireCommentTarget(ownerId, target, headers);
   const viewerId = await access(headers, ownerId);
-  await requireCommentTarget(ownerId, target);
   return getDatabase()
     .db.select({ comment: comments, authorName: user.name })
     .from(comments)
@@ -55,8 +56,9 @@ export async function createComment(headers: Headers, raw: unknown) {
   const parsed = createCommentInput.safeParse(raw);
   if (!parsed.success) throw new CollaborationError(400);
   const { ownerId, target, body, parentId } = parsed.data;
+  await access(headers, ownerId);
+  await requireCommentTarget(ownerId, target, headers);
   const authorId = await access(headers, ownerId);
-  await requireCommentTarget(ownerId, target);
   const db = getDatabase().db;
   if (parentId) {
     const parent = db
@@ -111,10 +113,16 @@ export async function changeComment(
     .get();
   if (!row) throw new CollaborationError(404);
   if (row.authorId !== authorId) throw new CollaborationError(403);
-  await requireCommentTarget(input.ownerId, {
-    type: row.targetType,
-    id: row.targetId,
-  });
+  await requireCommentTarget(
+    input.ownerId,
+    {
+      type: row.targetType,
+      id: row.targetId,
+    },
+    headers,
+  );
+  const currentAuthorId = await access(headers, input.ownerId);
+  if (row.authorId !== currentAuthorId) throw new CollaborationError(403);
   const own = and(
     eq(comments.id, id),
     eq(comments.ownerId, input.ownerId),

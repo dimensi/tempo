@@ -1,18 +1,20 @@
 import { test, expect } from '@playwright/test';
 import Database from 'better-sqlite3';
-// Only the disposable E2E DB gets temporary DDL until coordinator generates migrations.
-test.beforeAll(() => {
-  const db = new Database('.data/e2e.sqlite');
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS trainer_invitations(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES user(id),email TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,expires_at INTEGER NOT NULL,consumed_at INTEGER,created_at INTEGER NOT NULL);`,
-  );
-  db.close();
-});
+import { meals, nutritionDaySchema } from '@/contracts/nutrition';
 test('real invited trainer login, owner grant revocation and direct API isolation', async ({
   page,
   browser,
   request,
 }) => {
+  const nutritionDate = new Date(
+    Date.UTC(
+      2026,
+      0,
+      1 + (test.info().project.name === 'mobile' ? 10 : 0) + test.info().retry,
+    ),
+  )
+    .toISOString()
+    .slice(0, 10);
   expect((await request.get('/api/trainers?ownerId=foreign')).status()).toBe(
     401,
   );
@@ -100,7 +102,7 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
   ).toBe(400);
   const signIn = () =>
     context.request.post('/api/auth/sign-in/email', {
-      headers: { origin: 'http://localhost:3100' },
+      headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
       data: {
         email: `invited-${test.info().project.name}@example.test`,
         password: 'Synthetic-password-123',
@@ -136,6 +138,140 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
       )
     ).status(),
   ).toBe(403);
+  const measurementResponse = await page.request.post(
+    `/api/measurements?ownerId=${ownerId}`,
+    {
+      data: {
+        measuredAt: '2026-10-11',
+        values: [{ metric: 'weight', value: '70.125', unit: 'kg' }],
+        note: 'Synthetic comment target',
+      },
+    },
+  );
+  expect(measurementResponse.status()).toBe(201);
+  const measurement = await measurementResponse.json();
+  const scope = {
+    ownerId,
+    target: { type: 'measurement', id: measurement.id },
+  };
+  const create = await page.request.post('/api/comments', {
+    data: { ...scope, body: 'Owner comment' },
+  });
+  expect(create.ok()).toBe(true);
+  const root = await create.json();
+  const replyResponse = await context.request.post('/api/comments', {
+    data: { ...scope, parentId: root.id, body: 'Trainer reply' },
+  });
+  expect(replyResponse.ok()).toBe(true);
+  const reply = await replyResponse.json();
+  expect(
+    (
+      await context.request.patch(`/api/comments/${root.id}`, {
+        data: { ownerId, body: 'Hijack' },
+      })
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await context.request.patch(`/api/comments/${reply.id}`, {
+        data: { ownerId, body: 'Edited reply' },
+      })
+    ).ok(),
+  ).toBe(true);
+  const commentsUrl = `/api/comments?ownerId=${ownerId}&type=measurement&targetId=${measurement.id}`;
+  const listed = await context.request.get(commentsUrl);
+  expect(listed.ok()).toBe(true);
+  expect(await listed.json()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: reply.id, body: 'Edited reply' }),
+    ]),
+  );
+  for (const target of [
+    { type: 'measurement', id: 'missing' },
+    { type: 'nutrition_day', id: nutritionDate },
+  ])
+    expect(
+      (
+        await page.request.post('/api/comments', {
+          data: { ownerId, target, body: 'Rejected target' },
+        })
+      ).status(),
+    ).toBe(404);
+  // Synthetic data in the same disposable DB prepared by Playwright migrations.
+  const database = new Database('.data/e2e.sqlite');
+  const zero = { calories: '0', protein: '0', fat: '0', carbs: '0' };
+  const day = nutritionDaySchema.parse({
+    date: nutritionDate,
+    fetchedAt: new Date().toISOString(),
+    meals: meals.map((kind) => ({
+      kind,
+      entries: [],
+      totals: zero,
+      knownTotals: zero,
+      officialTotals: zero,
+      delta: zero,
+    })),
+    totals: zero,
+    knownTotals: zero,
+    officialTotals: zero,
+    delta: zero,
+  });
+  try {
+    database
+      .prepare(
+        'INSERT INTO nutrition_days (owner_id, date, snapshot, fetched_at) VALUES (?, ?, ?, ?) ON CONFLICT(owner_id,date) DO UPDATE SET snapshot=excluded.snapshot, fetched_at=excluded.fetched_at',
+      )
+      .run(ownerId, day.date, JSON.stringify(day), day.fetchedAt);
+  } finally {
+    database.close();
+  }
+  const nutritionScope = {
+    ownerId,
+    target: { type: 'nutrition_day', id: day.date },
+  };
+  const nutritionComment = await context.request.post('/api/comments', {
+    data: { ...nutritionScope, body: 'Synthetic nutrition comment' },
+  });
+  expect(nutritionComment.ok()).toBe(true);
+  const nutritionCommentId = (await nutritionComment.json()).id;
+  const nutritionUrl = `/api/comments?ownerId=${ownerId}&type=nutrition_day&targetId=${day.date}`;
+  expect((await context.request.get(nutritionUrl)).ok()).toBe(true);
+  const daysUrl = `/api/nutrition/days?ownerId=${ownerId}&from=${day.date}&to=${day.date}`;
+  const daysResponse = await context.request.get(daysUrl);
+  expect(daysResponse.ok()).toBe(true);
+  expect(await daysResponse.json()).toEqual([day]);
+  expect((await page.request.get('/api/yazio/status')).ok()).toBe(true);
+  expect((await context.request.get('/api/yazio/status')).status()).toBe(403);
+  const workoutResponse = await page.request.post(
+    `/api/workouts/sessions?ownerId=${ownerId}`,
+    {
+      headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+      data: {
+        date: '2026-10-11',
+        title: 'Synthetic workout',
+        exercises: [],
+        status: 'skipped',
+        note: '',
+      },
+    },
+  );
+  expect(workoutResponse.ok()).toBe(true);
+  const workout = (await workoutResponse.json()).data;
+  const workoutScope = { ownerId, target: { type: 'workout', id: workout.id } };
+  const workoutComment = await page.request.post('/api/comments', {
+    data: { ...workoutScope, body: 'Workout comment' },
+  });
+  expect(workoutComment.ok()).toBe(true);
+  expect(
+    (
+      await page.request.delete(
+        `/api/comments/${(await workoutComment.json()).id}`,
+        {
+          data: { ownerId },
+        },
+      )
+    ).ok(),
+  ).toBe(true);
   expect(
     (
       await page.request.delete('/api/trainers', {
@@ -143,6 +279,41 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
       })
     ).ok(),
   ).toBe(true);
+  expect((await context.request.get(commentsUrl)).status()).toBe(403);
+  expect((await context.request.get(daysUrl)).status()).toBe(403);
+  expect(
+    (
+      await context.request.delete(`/api/comments/${nutritionCommentId}`, {
+        data: { ownerId },
+      })
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await context.request.delete(`/api/comments/${reply.id}`, {
+        data: { ownerId },
+      })
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await page.request.delete(`/api/comments/${root.id}`, {
+        data: { ownerId },
+      })
+    ).ok(),
+  ).toBe(true);
+  const retained = await page.request.get(commentsUrl);
+  expect(await retained.json()).toEqual([
+    expect.objectContaining({ id: reply.id, parentId: null }),
+  ]);
+  expect(
+    (
+      await page.request.delete(
+        `/api/measurements/${measurement.id}?ownerId=${ownerId}`,
+      )
+    ).status(),
+  ).toBe(204);
+  expect((await page.request.get(commentsUrl)).status()).toBe(404);
   expect(
     (
       await context.request.get(

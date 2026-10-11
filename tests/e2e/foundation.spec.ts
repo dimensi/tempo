@@ -53,7 +53,7 @@ test('anonymous routes are protected and registration is closed', async ({
   }
   expect((await request.get('/api/yazio/status')).status()).toBe(401);
   const result = await request.post('/api/auth/sign-up/email', {
-    headers: { origin: 'http://localhost:3100' },
+    headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
     data: {
       name: 'Intruder',
       email: 'intruder@example.test',
@@ -134,7 +134,7 @@ test('trainer cannot access owner configuration or elevate their role', async ({
   await login(page, 'trainer');
   expect((await page.request.get('/api/yazio/status')).status()).toBe(403);
   await page.request.post('/api/auth/update-user', {
-    headers: { origin: 'http://localhost:3100' },
+    headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
     data: { role: 'OWNER' },
   });
   expect((await page.request.get('/api/yazio/status')).status()).toBe(403);
