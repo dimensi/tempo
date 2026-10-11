@@ -37,7 +37,8 @@ export async function readYazioAccount(
         url.protocol === 'https:' &&
         url.hostname === 'images.yazio-cdn.com' &&
         !url.username &&
-        !url.password
+        !url.password &&
+        (!url.port || url.port === '443')
       ) {
         url.search = '';
         url.hash = '';

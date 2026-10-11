@@ -1,3 +1,4 @@
+import type { Token } from '@dimensi/yazio/auth';
 import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
 import { beforeAll, afterAll, beforeEach, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
@@ -25,7 +26,7 @@ const synthetic = vi.hoisted(() => ({
     running: false,
   })),
   save: vi.fn(async () => {}),
-  load: vi.fn(async (): Promise<null> => null),
+  load: vi.fn(async (): Promise<Token | null> => null),
   disconnect: vi.fn(async () => {}),
 }));
 vi.mock('@/server/jobs/nutrition-scheduler', () => ({
@@ -488,6 +489,23 @@ it('revalidates real owner permission after server backfill before returning acc
     .set({ role: 'OWNER' })
     .where(eq(user.id, 'connection-owner'))
     .run();
+});
+it('an existing connection gets safe profile metadata without another credential exchange', async () => {
+  const { clearYazioAccount, getYazioAccount } =
+    await import('@/server/yazio/account');
+  const { refreshYazioAccount } = await import('@/server/yazio/settings');
+  clearYazioAccount('connection-owner');
+  const enabled = { ...synthetic.schedule(), enabled: true };
+  synthetic.schedule.mockReturnValueOnce(enabled).mockReturnValueOnce(enabled);
+  synthetic.load.mockResolvedValueOnce(token);
+  await refreshYazioAccount(ownerHeaders);
+  expect(synthetic.exchange).not.toHaveBeenCalled();
+  expect(synthetic.profile).toHaveBeenCalledWith(token);
+  expect(getYazioAccount('connection-owner')).toEqual({
+    email: 'actual-yazio@example.test',
+    name: 'YAZIO Profile',
+    avatar: 'https://images.yazio-cdn.com/avatar.png',
+  });
 });
 it('rejects a real session revoked during delayed exchange before persistence', async () => {
   let release!: (value: typeof token) => void;

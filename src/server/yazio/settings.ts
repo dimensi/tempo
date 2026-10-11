@@ -59,6 +59,34 @@ export async function getYazioStatus(headers: Headers) {
     schedule: getNutritionSchedule(ownerId),
   };
 }
+export async function refreshYazioAccount(headers: Headers) {
+  const ownerId = await yazioOwner(headers);
+  const current = getYazioAccount(ownerId);
+  if (
+    current?.name ||
+    current?.avatar ||
+    !getNutritionSchedule(ownerId).enabled
+  )
+    return;
+  try {
+    const store = configuredStore(ownerId);
+    const token = await store.load();
+    if (!token) return;
+    // The completed leased sync already handled authentication/refresh; this SDK read cannot refresh.
+    const account = await readYazioAccount(token);
+    await store.assertCurrent?.();
+    if ((await yazioOwner(headers)) !== ownerId)
+      throw new NutritionAccessError(403);
+    if (
+      getNutritionSchedule(ownerId).enabled &&
+      (account.email || account.name || account.avatar)
+    )
+      cacheYazioAccount(ownerId, account);
+  } catch (error) {
+    if (error instanceof NutritionAccessError) throw error;
+    // Optional profile lookup never turns a completed diary load into a failure.
+  }
+}
 export async function saveExistingToken(headers: Headers, input: unknown) {
   const ownerId = await yazioOwner(headers);
   const parsed = yazioTokenImportSchema.parse(input);
