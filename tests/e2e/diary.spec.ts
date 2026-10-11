@@ -28,10 +28,14 @@ test('authenticated diary date navigation and empty state', async ({
   } else expect(result.ok()).toBe(true);
   await expect(page).toHaveURL('/');
   await page.goto('/diary?date=2026-01-01');
+  await page.getByRole('button', { name: 'Перейти к другой дате' }).click();
   await page.getByLabel('Дата дневника').fill('2026-02-03');
   await page.getByRole('button', { name: 'Открыть день' }).click();
   await expect(page).toHaveURL('/diary?date=2026-02-03');
-  await expect(page.getByLabel('Дата дневника')).toHaveValue('2026-02-03');
+  await expect(page.locator('[aria-current="date"]')).toHaveAttribute(
+    'href',
+    '/diary?date=2026-02-03',
+  );
   await expect(
     page.getByText('Данные за этот день пока не загружены.'),
   ).toBeVisible();
