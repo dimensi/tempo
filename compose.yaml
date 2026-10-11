@@ -11,6 +11,7 @@ services:
       UPLOADS_DIR: /app/uploads
       DEMO_MODE: 'false'
       YAZIO_TOKEN_FILE: ${YAZIO_TOKEN_FILE:-}
+      ENABLE_NUTRITION_SCHEDULER: ${ENABLE_NUTRITION_SCHEDULER:-false}
     volumes:
       - database:/app/data
       - uploads:/app/uploads
