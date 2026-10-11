@@ -21,7 +21,7 @@ async function login(page: Page, email: string) {
     .id as string;
 }
 async function send(panel: Locator, body: string) {
-  await panel.getByLabel('Комментарий', { exact: true }).fill(body);
+  await panel.getByLabel('Комментарий').fill(body);
   await panel.getByRole('button', { name: 'Отправить', exact: true }).click();
   await expect(panel.getByText(body, { exact: true })).toBeVisible();
 }
@@ -85,10 +85,8 @@ test('measurement and actual-session comments compose after CRUD with real train
       .getByRole('button', { name: 'Записать тренировку', exact: true })
       .click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByLabel('Название тренировки', { exact: true }).fill(note);
-    await dialog
-      .getByLabel('Упражнение 1', { exact: true })
-      .fill('Synthetic squat');
+    await dialog.getByLabel('Название тренировки').fill(note);
+    await dialog.getByLabel('Упражнение 1').fill('Synthetic squat');
     await dialog
       .getByRole('button', { name: 'Сохранить', exact: true })
       .click();
@@ -173,9 +171,7 @@ test('measurement and actual-session comments compose after CRUD with real train
         .locator('..')
         .getByRole('button', { name: 'Изменить', exact: true })
         .click();
-      await panel
-        .getByLabel('Комментарий', { exact: true })
-        .fill(`${reply} edited`);
+      await panel.getByLabel('Комментарий').fill(`${reply} edited`);
       await panel
         .getByRole('button', { name: 'Сохранить', exact: true })
         .click();
@@ -213,9 +209,7 @@ test('measurement and actual-session comments compose after CRUD with real train
       );
     }
     const stalePanel = trainer.getByTestId(`session-${workoutId}`);
-    await stalePanel
-      .getByLabel('Комментарий', { exact: true })
-      .fill('Revoked write');
+    await stalePanel.getByLabel('Комментарий').fill('Revoked write');
     const denied = trainer.waitForResponse(
       (response) =>
         response.url().endsWith('/api/comments') &&
