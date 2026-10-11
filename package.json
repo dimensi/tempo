@@ -54,6 +54,7 @@
     "better-auth": "^1.7.7",
     "better-sqlite3": "^13.0.3",
     "dayjs": "^1.11.23",
+    "decimal.js": "10.6.0",
     "drizzle-orm": "^0.45.4",
     "next": "16.4.0",
     "react": "19.3.0",
