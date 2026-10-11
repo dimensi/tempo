@@ -263,7 +263,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         if (!current) return;
         // Only our own expired UUID/epoch can reconcile its stale running status.
         // A replacement lease or disconnect/reconnect epoch is never overwritten.
-        if (error === 'LEASE_LOST') {
+        if (error) {
           const status = repository.status(ownerId);
           if (status.state === 'running')
             repository.saveStatus(ownerId, {
