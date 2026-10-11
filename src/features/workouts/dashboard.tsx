@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   Alert,
   Badge,
@@ -98,9 +98,11 @@ function ExerciseTable({ exercises }: { exercises: WorkoutExercise[] }) {
 export function WorkoutsDashboard({
   ownerId,
   canLog,
+  renderComments,
 }: {
   ownerId: string;
   canLog: boolean;
+  renderComments?: (sessionId: string) => ReactNode;
 }) {
   const [data, setData] = useState<WorkoutsData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -382,6 +384,7 @@ export function WorkoutsDashboard({
                         </Button>
                       </Group>
                     )}
+                    {renderComments?.(session.id)}
                   </Stack>
                 </Paper>
               ))}

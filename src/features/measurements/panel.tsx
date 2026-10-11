@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Alert,
   Button,
@@ -26,9 +26,11 @@ import { measurementChange } from './history';
 export function MeasurementsPanel({
   ownerId,
   writable,
+  renderComments,
 }: {
   ownerId: string;
   writable: boolean;
+  renderComments?: (measurementId: string) => ReactNode;
 }) {
   const [items, setItems] = useState<Measurement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -297,6 +299,23 @@ export function MeasurementsPanel({
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
+      {renderComments &&
+        items.map((item) => (
+          <Paper
+            key={item.id}
+            withBorder
+            p="md"
+            data-testid={`measurement-comments-${item.id}`}
+          >
+            <Stack>
+              <Text fw={600}>{item.measuredAt}</Text>
+              {item.note && (
+                <Text style={{ overflowWrap: 'anywhere' }}>{item.note}</Text>
+              )}
+              {renderComments(item.id)}
+            </Stack>
+          </Paper>
+        ))}
     </Stack>
   );
 }
