@@ -40,7 +40,11 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
       source: 'manual' as const,
       observedAt: '2026-10-11T00:00:00Z',
     };
-    const photo = Buffer.from(png.split(',')[1]!, 'base64');
+    // Valid PNG with trailing padding exercises C's accepted camera-file budget.
+    const photo = Buffer.concat([
+      Buffer.from(png.split(',')[1]!, 'base64'),
+      Buffer.alloc(3 * 1024 * 1024),
+    ]);
     const adapter: ReportDataSource = {
       getNutritionDays: async () => [syntheticDay(undefined, 45)],
       listPhotos: async () => [metadata],

@@ -5,7 +5,7 @@ export const reportLimits = {
   days: 31,
   entries: 3000,
   photos: 60,
-  photoBytes: 2 * 1024 * 1024,
+  photoBytes: 8 * 1024 * 1024,
   totalPhotoBytes: 20 * 1024 * 1024,
   htmlBytes: 40 * 1024 * 1024,
 } as const;

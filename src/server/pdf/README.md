@@ -4,9 +4,9 @@ Owned implementation: `src/server/pdf`, reports UI/routes, v1 report request and
 
 Reports use authoritative `NutritionDay.totals`; the only derived metric is an exact decimal period sum. Missing dates and null nutrients remain unknown with separately labelled known totals. An empty dataset is 404, never an invented zero day. HTML/PDF share escaped markup and a local embedded Cyrillic font. No Chromium navigation to an internal endpoint: `page.setContent`, fresh context, no cookies, JavaScript disabled, all network blocked, data images/fonts only. Response is private/no-store with CSP and sandbox. Every request uses `reports:export` and owner scope, repeated before releasing output.
 
-## Source C integration gate
+## Source C integration
 
-`createNutritionReportSource(headers, api)` implements the agreed source C interface without DTO conversion or nutrient recalculation. Until C is merged `reportDataSource()` fails 503 with a useful Russian message; synthetic data exists only in tests. After C is merged, the reports owner must replace that function with:
+`reportDataSource(headers)` statically imports source C and composes its authorized public interface through `createNutritionReportSource`. There is no demo fallback or global test setter. The adapter preserves the agreed DTO without conversion or nutrient recalculation:
 
 ```ts
 import * as nutrition from '@/server/nutrition';
@@ -16,7 +16,7 @@ export function reportDataSource(headers: Headers): ReportDataSource {
 }
 ```
 
-Change `createReportHandler`'s source type to `(headers: Headers) => ReportDataSource` and invoke `source(request.headers)`. Imports must be static so Next traces the server module. Then replace the reports page's trainer ID input with `getAccessibleOwnerId(await headers())` from `@/server/access/owner` after the shared helper is merged. The helper does not replace the route's guard.
+The handler passes request headers to the adapter; Chromium never receives them. The reports page uses `getAccessibleOwnerId(await headers())` from `@/server/access/owner`. No trainer owner-ID input is exposed; a missing grant disables export controls. The helper does not replace the route guard.
 
 Source C must bound source reads before materializing days/photos; this service bounds the received dataset and each private image. Agreed source C methods do not accept AbortSignal; cancellation is checked before/after each read. There is no upstream request from the reports path.
 
@@ -54,8 +54,10 @@ CI currently runs Vitest before installing Chromium. Install the locked Chromium
 
 ## Limits and verification
 
-Max 31 days, 3000 entries, 60 raster photos, 2 MiB each / 20 MiB total, 16 million pixels each / 32 million total, 8 MiB source JSON, 40 MiB HTML. One full report request at a time in the supported single Next process, no unbounded queue. Browser launch max 15s, rendering max 25s with finally-close; data abort after 45s checked between source reads. Source strings max 1500 characters, summed decimals max 80 characters and exponent magnitude 100. No DB transaction spans rendering.
+Max 31 days, 3000 entries, 60 raster photos, 8 MiB each (aligned with source C) / 20 MiB total, 16 million pixels each / 32 million total, 8 MiB source JSON, 40 MiB HTML. One full report request at a time in the supported single Next process, no unbounded queue. Browser launch max 15s, rendering max 25s with finally-close; data abort after 45s checked between source reads. Source strings max 1500 characters, summed decimals max 80 characters and exponent magnitude 100. No DB transaction spans rendering.
 
 `tests/integration/pdf-rendering.test.ts` runs a genuine generator on synthetic days and a synthetic 2:1 raster photo for daily/weekly/custom periods. Optional `PDF_VERIFICATION_DIR` (existing directory) saves a PDF and raster screenshots for manual review. No personal data is used. `pdf-authorization.test.ts` exercises actual SQLite grants with a session fixture, including mid-generation revocation; E2E uses real Better Auth and no mocked security session.
 
-Remaining gate: real persisted source C data and shared owner helper integration, then rerun all checks and request-path success E2E. Until then the draft is not production-ready.
+`tests/e2e/reports-persisted.spec.ts` uses the disposable E2E DB for a synthetic persisted snapshot, uploads a synthetic 2:1 PNG through the authorized nutrition API, previews HTML and downloads a real PDF through the UI. It extracts Cyrillic and photo metadata from those actual downloaded bytes, then checks a real trainer session without grant, with grant, and after revocation. The real rendering integration test also exercises a valid PNG larger than 3 MiB.
+
+Remaining gates: coordinated runtime/CI patch, bounded source C snapshot reads before JSON parsing, and execution of the new persisted-data E2E on an environment that permits Chromium and Next.js IPC. Current local sandbox denies Chromium MachPortRendezvous and tsx IPC; these checks are not claimed passed after wiring.

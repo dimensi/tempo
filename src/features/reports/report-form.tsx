@@ -17,7 +17,6 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
   const [period, setPeriod] = useState('daily');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
-  const [owner, setOwner] = useState(ownerId ?? '');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [html, setHtml] = useState('');
@@ -35,7 +34,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
     setError('');
     setHtml('');
     const parsed = reportRequestSchema.safeParse({
-      ownerId: owner,
+      ownerId: ownerId ?? '',
       period,
       start,
       end: finish,
@@ -83,16 +82,9 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
       <Title order={1}>{m.title}</Title>
       <Text c="dimmed">{m.description}</Text>
       {ownerId === null && (
-        <TextInput
-          label={m.owner}
-          value={owner}
-          maxLength={128}
-          onChange={(event) => {
-            setOwner(event.currentTarget.value);
-            setHtml('');
-          }}
-          required
-        />
+        <Alert color="red" role="alert">
+          {m.denied}
+        </Alert>
       )}
       <Select
         label={m.period}
@@ -136,10 +128,19 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         </Alert>
       )}
       <Group>
-        <Button mih={44} disabled={busy} onClick={() => void generate('html')}>
+        <Button
+          mih={44}
+          disabled={busy || ownerId === null}
+          onClick={() => void generate('html')}
+        >
           {m.preview}
         </Button>
-        <Button mih={44} loading={busy} onClick={() => void generate('pdf')}>
+        <Button
+          mih={44}
+          loading={busy}
+          disabled={ownerId === null}
+          onClick={() => void generate('pdf')}
+        >
           {m.download}
         </Button>
       </Group>

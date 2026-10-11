@@ -26,6 +26,42 @@ function source(days = [syntheticDay()]): ReportDataSource {
   };
 }
 describe('report rules', () => {
+  it('allows C-compatible 8 MiB files but keeps the 20 MiB total photo budget', async () => {
+    const adapter = source();
+    adapter.listPhotos = async () =>
+      ['one', 'two', 'three'].map((id) => ({
+        id,
+        date: request.start,
+        daytime: 'breakfast' as const,
+        source: 'manual' as const,
+        observedAt: '2026-10-11T00:00:00Z',
+      }));
+    const bytes = Buffer.alloc(8 * 1024 * 1024);
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes);
+    bytes.write('IHDR', 12);
+    bytes.writeUInt32BE(450, 16);
+    bytes.writeUInt32BE(225, 20);
+    adapter.readPhoto = vi.fn(async () => ({
+      bytes,
+      mime: 'image/png' as const,
+    }));
+    await expect(
+      loadReportDataset(adapter, request, signal),
+    ).rejects.toMatchObject({ code: 'OVERSIZED' });
+    expect(adapter.readPhoto).toHaveBeenCalledTimes(3);
+    adapter.listPhotos = async () => [
+      {
+        id: 'one',
+        date: request.start,
+        daytime: 'breakfast',
+        source: 'manual',
+        observedAt: '2026-10-11T00:00:00Z',
+      },
+    ];
+    expect(
+      (await loadReportDataset(adapter, request, signal)).photos,
+    ).toHaveLength(1);
+  });
   it('rejects raster decompression bombs before browser decoding', () => {
     const bytes = Buffer.alloc(24);
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes);

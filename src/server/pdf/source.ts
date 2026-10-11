@@ -2,6 +2,7 @@ import 'server-only';
 import type { NutritionDay, SafeMealPhotoView } from '@/contracts/nutrition';
 import type { ReportRequest } from '@/contracts/reports';
 import { ReportError } from '@/server/pdf/errors';
+import * as nutrition from '@/server/nutrition';
 
 export interface ReportDataSource {
   // Implementations must enforce limits before materializing data, accept abort,
@@ -32,13 +33,12 @@ export type ReportDataset = {
   photos: Array<SafeMealPhotoView & { dataUri: string }>;
 };
 // Composition seam for source C. No silent demo fallback or global test setter.
-export function reportDataSource(): ReportDataSource {
-  throw new ReportError('UNAVAILABLE', 503);
+export function reportDataSource(headers: Headers): ReportDataSource {
+  return createNutritionReportSource(headers, nutrition);
 }
 export type ReportScope = Pick<ReportRequest, 'ownerId' | 'start' | 'end'>;
 
-// Exact source C public interface. Coordinator connects its server entry below
-// once C is merged; the renderer never receives headers or private locators.
+// Exact source C public interface; the renderer never receives headers or private locators.
 export interface NutritionReportApi {
   listNutritionDays(
     headers: Headers,

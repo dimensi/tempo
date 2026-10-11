@@ -1,11 +1,9 @@
 import { ReportForm } from '@/features/reports';
 import { requireSession } from '@/server/auth/guards';
+import { headers } from 'next/headers';
+import { getAccessibleOwnerId } from '@/server/access/owner';
 export const metadata = { title: 'Отчёты' };
 export default async function Page() {
-  const session = await requireSession();
-  return (
-    <ReportForm
-      ownerId={session.user.role === 'OWNER' ? session.user.id : null}
-    />
-  );
+  await requireSession();
+  return <ReportForm ownerId={await getAccessibleOwnerId(await headers())} />;
 }

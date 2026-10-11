@@ -81,11 +81,11 @@ it('rechecks grant after data generation and refuses to release bytes after mid-
   }));
   expect((await revoked(request())).status).toBe(403);
 });
-it('reports disconnected source meaningfully without exposing errors or secrets', async () => {
+it('reports empty persisted source meaningfully without inventing data', async () => {
   state.session = { user: { id: 'owner', role: 'OWNER' } };
   const response = await createReportHandler()(request());
-  expect(response.status).toBe(503);
-  expect(await response.text()).toContain('ещё не подключён');
+  expect(response.status).toBe(404);
+  expect(await response.text()).toContain('нет данных');
 });
 it('returns access denied when source authorization fails after mid-flight revocation', async () => {
   state.session = { user: { id: 'trainer', role: 'TRAINER' } };

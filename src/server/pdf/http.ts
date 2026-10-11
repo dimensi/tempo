@@ -13,9 +13,9 @@ const privateHeaders = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
 };
-// Factory permits integration before source C is available; authorization is never injectable.
+// Tests may supply a dataset adapter; authorization is never injectable.
 export function createReportHandler(
-  source: () => ReportDataSource = reportDataSource,
+  source: (headers: Headers) => ReportDataSource = reportDataSource,
 ) {
   return async (request: Request): Promise<Response> => {
     const query = new URL(request.url).searchParams;
@@ -42,7 +42,11 @@ export function createReportHandler(
           request.signal,
           AbortSignal.timeout(45000),
         ]);
-        const body = await generateReport(source(), data, signal);
+        const body = await generateReport(
+          source(request.headers),
+          data,
+          signal,
+        );
         // A grant revoked during generation cannot release a report.
         const current = await authorize(
           request.headers,
@@ -84,7 +88,6 @@ export function createReportHandler(
       const messages = {
         INVALID: m.invalid,
         NO_DATA: m.noData,
-        UNAVAILABLE: m.unavailable,
         RUNTIME: m.runtime,
         BUSY: m.busy,
         OVERSIZED: m.oversized,
