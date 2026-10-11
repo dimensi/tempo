@@ -20,6 +20,8 @@ export function createPhotoActions(ownerId: string, onUpdated: () => void) {
   async function request(url: string, options: RequestInit) {
     const response = await fetch(url, options);
     if (!response.ok) throw new Error('Photo operation failed');
+    // Finish the mutation response before a router refresh can replace the view.
+    await response.json();
     onUpdated();
   }
   return {

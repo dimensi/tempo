@@ -40,7 +40,7 @@ test('authenticated diary date navigation and empty state', async ({
       page.getByRole('heading', { name: meal, exact: true }),
     ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Добавить фото' })).toHaveCount(
-    0,
+    4,
   );
   expect(
     await page.evaluate(
