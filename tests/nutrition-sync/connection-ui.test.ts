@@ -385,6 +385,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
         'Подключение пока недоступно: администратору нужно настроить защищённое хранение подключения YAZIO.',
         { exact: true },
       )
+      .filter({ visible: true })
       .waitFor();
     expect(await email.isDisabled()).toBe(true);
     expect(await secret.isDisabled()).toBe(true);
