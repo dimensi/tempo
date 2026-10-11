@@ -50,6 +50,8 @@ describe('scoped loader', () => {
     expect(auth.mock.calls).toEqual([
       [headers, 'nutrition:read', 'owner'],
       [headers, 'measurements:read', 'owner'],
+      [headers, 'nutrition:read', 'owner'],
+      [headers, 'measurements:read', 'owner'],
     ]);
     expect(sources.listNutritionDays).toHaveBeenCalledWith(
       headers,
@@ -65,4 +67,21 @@ describe('scoped loader', () => {
       },
     ]);
   });
+});
+
+it('blocks a grant revoked during source reads', async () => {
+  auth
+    .mockResolvedValueOnce({ ok: true, session: {} } as Awaited<
+      ReturnType<typeof authorize>
+    >)
+    .mockResolvedValueOnce({ ok: true, session: {} } as Awaited<
+      ReturnType<typeof authorize>
+    >)
+    .mockResolvedValueOnce({ ok: false, status: 403 });
+  await expect(
+    loadAnalytics(new Headers(), 'owner', range, {
+      listNutritionDays: vi.fn().mockResolvedValue([]),
+      listMeasurements: vi.fn().mockResolvedValue([]),
+    }),
+  ).rejects.toMatchObject({ status: 403 });
 });

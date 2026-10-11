@@ -18,16 +18,11 @@ import {
 } from '@mantine/core';
 import type { AnalyticsSummary, AnalyticsRange } from '@/contracts/analytics';
 import { analyticsRangeSchema } from '@/contracts/analytics';
-import type { Measurement, MeasurementMetric } from '@/contracts/measurements';
-const measurementMetrics: MeasurementMetric[] = [
-  'weight',
-  'waist',
-  'chest',
-  'hips',
-  'neck',
-  'biceps',
-  'thigh',
-];
+import {
+  measurementMetrics,
+  type Measurement,
+  type MeasurementMetric,
+} from '@/contracts/measurements';
 import { presetRange } from './range';
 import { analyticsMessages as m } from './messages';
 import { nutrients } from './summary';

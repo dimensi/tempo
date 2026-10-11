@@ -102,12 +102,20 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
       ),
     ).toBe(true);
     await page.getByRole('button', { name: 'Месяц', exact: true }).click();
-    await expect(page).toHaveURL(/from=.*&to=/);
-    await page.getByLabel('С', { exact: true }).fill('2026-10-01');
-    await page.getByLabel('По', { exact: true }).fill('2026-10-03');
+    await expect(
+      page.getByText('Дней с записями: 1 / 30.', { exact: false }),
+    ).toBeVisible();
+    await page
+      .getByRole('textbox', { name: 'С', exact: true })
+      .fill('2026-10-01');
+    await page
+      .getByRole('textbox', { name: 'По', exact: true })
+      .fill('2026-10-03');
     await page.getByRole('button', { name: 'Показать', exact: true }).click();
     await expect(page).toHaveURL('/analytics?from=2026-10-01&to=2026-10-03');
-    await page.getByLabel('С', { exact: true }).fill('2026-10-04');
+    await page
+      .getByRole('textbox', { name: 'С', exact: true })
+      .fill('2026-10-04');
     await page.getByRole('button', { name: 'Показать', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText(
       'Выберите корректный период',
