@@ -18,7 +18,6 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconSunMoon,
-  IconLeaf,
   IconHome,
   IconToolsKitchen2,
   IconRuler,
@@ -29,6 +28,7 @@ import {
 } from '@tabler/icons-react';
 import { authClient } from '@/lib/auth-client';
 import { ru } from '@/config/messages';
+import { BrandMark } from '@/components/branding/brand-mark';
 const icons = [
   IconHome,
   IconToolsKitchen2,
@@ -97,7 +97,7 @@ export function ApplicationShell({
                 aria-expanded={opened}
                 style={{ width: 44, height: 44 }}
               />
-              <IconLeaf color="var(--mantine-color-teal-6)" aria-hidden />
+              <BrandMark />
               <Text fw={700} size="sm">
                 {ru.appName}
               </Text>
