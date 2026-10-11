@@ -14,11 +14,11 @@ docker compose -p nutrition -f compose.yaml -f compose.home.yaml --env-file runt
 
 The home override removes the host port and joins existing external network `web` with alias `nutrition`. The approved Caddy route forwards public HTTPS traffic to `nutrition:3000`. Base Compose alone binds loopback port 3000; it does not describe deployed home routing. Preserve the override and routing; no new Tunnel or public app port is needed.
 
-`BETTER_AUTH_URL` matches the public HTTPS origin for Secure cookies and trusted-origin checks. `runtime.env` stays outside Git with mode 0600; the operator manages secrets and the eventual persistent `YAZIO_TOKEN_FILE`. Keep `DEMO_MODE=false`. Never include tokens or personal data in logs or review artifacts.
+`BETTER_AUTH_URL` matches the public HTTPS origin for Secure cookies and trusted-origin checks. `runtime.env` stays outside Git with mode 0600; the operator manages secrets and the eventual persistent `YAZIO_TOKEN_FILE`. Persistent token-store setup requires separate operator approval; current settings accept full existing Token JSON, while email/password connection UI is pending. Keep `DEMO_MODE=false`. Never include tokens or personal data in logs or review artifacts.
 
 ## Runtime and owner bootstrap
 
-The image runs as non-root node and applies versioned migrations before serving. It includes standalone Next.js, bundled operator CLI, SQLite, the vendored SDK, Chromium matched to locked Playwright, and DejaVu font. `/api/health` reads the DB. Browser/font readiness is merged; product PDF reports remain pending PR #11 until its merge and release are verified.
+The image runs as non-root node and applies versioned migrations before serving. It includes standalone Next.js, bundled operator CLI, SQLite, the vendored SDK, Chromium matched to locked Playwright, and DejaVu font. `/api/health` reads the DB. PDF product reports are merged in main alongside browser/font readiness. Verify availability against the actual deployed release.
 
 Volumes `database` and `uploads` survive recreation. Use local disk, one Next.js process, WAL and a 5s busy timeout. Photos are private and served through owner-scoped authorization. Bind mounts require UID 1000 ownership and equivalent access controls.
 
@@ -28,7 +28,7 @@ The first owner is created by the user on the server:
 bash /opt/compose/yazio-dashboard/bootstrap-owner.sh
 ```
 
-The server-local helper prompts for a password with hidden input; the agent does not choose or collect it. Open registration is disabled. The owner then invites trainers and grants/revokes access through `/settings/trainers`. Other installations can use bundled `node scripts/create-user.mjs` with the documented `CREATE_USER_*` variables without logging or committing the password.
+The coordinator confirmed that the user has already created the first OWNER. Bootstrap is for a new empty stack, not a repeat setup step. The server-local helper prompts for a password with hidden input; the agent does not choose or collect it. Open registration is disabled. The owner then invites trainers and grants/revokes access through `/settings/trainers`. Other installations can use bundled `node scripts/create-user.mjs` with the documented `CREATE_USER_*` variables without logging or committing the password.
 
 ## Release validation
 
