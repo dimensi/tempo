@@ -20,18 +20,25 @@ const serverReady = () => false;
 export function ReportForm({ ownerId }: { ownerId: string | null }) {
   const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
   const [period, setPeriod] = useState('daily');
-  const [start, setStart] = useState('');
+  const [start, setStart] = useState<string | null>(null);
   const [end, setEnd] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [html, setHtml] = useState('');
   const pending = useRef<AbortController | null>(null);
   useEffect(() => () => pending.current?.abort(), []);
+  if (ready && start === null) {
+    const today = new Date();
+    setStart(
+      `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
+    );
+  }
+  const selectedStart = start ?? '';
   const finish =
     period === 'daily'
-      ? start
-      : period === 'weekly' && start
-        ? new Date(Date.parse(`${start}T00:00:00Z`) + 6 * 86400000)
+      ? selectedStart
+      : period === 'weekly' && selectedStart
+        ? new Date(Date.parse(`${selectedStart}T00:00:00Z`) + 6 * 86400000)
             .toISOString()
             .slice(0, 10)
         : end;
@@ -41,7 +48,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
     const parsed = reportRequestSchema.safeParse({
       ownerId: ownerId ?? '',
       period,
-      start,
+      start: selectedStart,
       end: finish,
       format,
     });
@@ -72,7 +79,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         const url = URL.createObjectURL(await response.blob());
         const link = document.createElement('a');
         link.href = url;
-        link.download = `nutrition-${start}-${finish}.pdf`;
+        link.download = `nutrition-${selectedStart}-${finish}.pdf`;
         link.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
@@ -110,7 +117,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         disabled={!ready}
         type="date"
         label={m.start}
-        value={start}
+        value={selectedStart}
         onChange={(event) => {
           setStart(event.currentTarget.value);
           setHtml('');
