@@ -56,6 +56,13 @@ test('section navigation keeps form values through anchors and history', async (
   ).toBe(true);
   if (process.env.SETTINGS_SCREENSHOT_DIR) {
     await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
     await page.screenshot({
       path: `${process.env.SETTINGS_SCREENSHOT_DIR}/settings-${testInfo.project.name}.png`,
       fullPage: true,
