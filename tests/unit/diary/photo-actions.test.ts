@@ -6,8 +6,26 @@ import {
 
 afterEach(() => vi.unstubAllGlobals());
 describe('authorized photo transport', () => {
+  it('refreshes only after the response body finishes', async () => {
+    let finish!: () => void;
+    const body = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const json = vi.fn(() => body);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json }));
+    const updated = vi.fn();
+    const operation = createPhotoActions('owner', updated).remove('photo');
+    await Promise.resolve();
+    expect(json).toHaveBeenCalledOnce();
+    expect(updated).not.toHaveBeenCalled();
+    finish();
+    await operation;
+    expect(updated).toHaveBeenCalledOnce();
+  });
   it('uses local scoped URLs and sends raw image bytes with the declared MIME type', async () => {
-    const fetch = vi.fn().mockResolvedValue({ ok: true });
+    const fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({}) });
     vi.stubGlobal('fetch', fetch);
     const updated = vi.fn();
     const actions = createPhotoActions('owner&scope', updated);
