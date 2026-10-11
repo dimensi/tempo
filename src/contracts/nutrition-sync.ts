@@ -59,31 +59,34 @@ export const syncStatusSchema = z.object({
   photoFailedDates: z.array(diaryDateSchema),
 });
 export type SyncStatus = z.infer<typeof syncStatusSchema>;
+export const yazioAccountSchema = z.object({
+  email: z.email().nullable(),
+  name: z.string().max(201).nullable(),
+  avatar: z.url().nullable(),
+});
+export type YazioAccount = z.infer<typeof yazioAccountSchema>;
 export const yazioCredentialsSchema = z
   .object({
     email: z.email().max(254),
     password: z.string().min(1).max(1024),
-    confirmed: z.literal(true),
-    timezone: timezoneSchema.optional(),
-    initialFrom: diaryDateSchema.optional(),
+    timezone: timezoneSchema,
+    initialFrom: diaryDateSchema,
   })
   .strict();
 export type YazioCredentialsInput = z.infer<typeof yazioCredentialsSchema>;
 export const yazioTokenImportSchema = z
   .object({
     token: z.unknown(),
-    confirmed: z.literal(true),
-    timezone: timezoneSchema.optional(),
-    initialFrom: diaryDateSchema.optional(),
+    timezone: timezoneSchema,
+    initialFrom: diaryDateSchema,
   })
   .strict();
 export function resolveConnectionSchedule(
-  input: { timezone?: string; initialFrom?: string },
+  input: { timezone: string; initialFrom: string },
   now = new Date(),
 ) {
-  const timezone = input.timezone ?? 'UTC';
-  const today = dateInTimezone(now, timezone);
-  const initialFrom = input.initialFrom ?? shiftDate(today, -6);
+  const timezone = timezoneSchema.parse(input.timezone);
+  const initialFrom = diaryDateSchema.parse(input.initialFrom);
   resolveSyncPeriod({ mode: 'period', from: initialFrom, timezone }, now);
   return { timezone, initialFrom };
 }
@@ -102,7 +105,10 @@ export const nutritionSyncMessages = {
   passwordVisibility: 'Показать или скрыть пароль YAZIO',
   connectionHelp:
     'Введите email и пароль YAZIO. Пароль не сохраняется. Загрузим дневник с выбранной даты по сегодня.',
-  connectionConsent: 'Разрешаю подключение и зашифрованное хранение токенов',
+  account: 'Аккаунт YAZIO',
+  syncTitle: 'Синхронизация дневника',
+  accountFallback: 'YAZIO подключён',
+  accountHelp: 'Подключение хранится зашифрованным. Пароль не сохраняется.',
   disconnect: 'Отключить YAZIO',
   disconnectTitle: 'Отключить подключение YAZIO?',
   disconnectHelp:

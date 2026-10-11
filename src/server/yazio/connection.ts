@@ -1,12 +1,13 @@
 import 'server-only';
+import { loadConnectedDiary } from './backfill';
 import { getTokenFromCredentials } from '@dimensi/yazio/api';
 import {
   yazioCredentialsSchema,
   resolveConnectionSchedule,
 } from '@/contracts/nutrition-sync';
-import { enableNutritionSchedule } from '@/server/jobs/nutrition-scheduler';
 import { NutritionAccessError } from '@/server/nutrition/access';
 import { tokenSchema, yazioRequest } from './client';
+import { readYazioAccount, cacheYazioAccount } from './account';
 import { configuredStore, yazioOwner } from './settings';
 
 export class YazioConnectionUnavailableError extends Error {
@@ -34,11 +35,15 @@ export async function connectYazio(headers: Headers, input: unknown) {
       }),
     ),
   );
+  const account = await readYazioAccount(token, credentials.email);
   // Session/role/owner can change while the upstream request is pending.
   if ((await yazioOwner(headers)) !== ownerId)
     throw new NutritionAccessError(403);
   // Retain the loaded generation: disconnect/another connection cancels this save.
   await store.save(token);
-  enableNutritionSchedule(ownerId, schedule);
-  return { configured: true as const };
+  cacheYazioAccount(ownerId, account);
+  const result = await loadConnectedDiary(ownerId, schedule, account);
+  if ((await yazioOwner(headers)) !== ownerId)
+    throw new NutritionAccessError(403);
+  return result;
 }

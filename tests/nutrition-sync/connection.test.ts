@@ -1,3 +1,4 @@
+import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
 import { beforeAll, afterAll, beforeEach, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { hashPassword } from 'better-auth/crypto';
@@ -7,6 +8,7 @@ import { user, account, session, trainerAccess } from '@/server/db/schema';
 
 const synthetic = vi.hoisted(() => ({
   exchange: vi.fn(),
+  profile: vi.fn(),
   upstream: vi.fn(),
   enable: vi.fn(),
   disable: vi.fn(),
@@ -35,6 +37,7 @@ vi.mock('@/server/jobs/nutrition-scheduler', () => ({
 vi.mock('server-only', () => ({}));
 vi.mock('@dimensi/yazio/api', () => ({
   getTokenFromCredentials: synthetic.exchange,
+  getUser: synthetic.profile,
 }));
 vi.mock('@/server/yazio/adapter', () => ({
   nutritionUpstream: synthetic.upstream,
@@ -55,10 +58,14 @@ const token = {
   expires_in: 3600,
   expires_at: 9999999999999,
 };
+const scheduleInput = {
+  timezone: 'UTC',
+  initialFrom: shiftDate(dateInTimezone(new Date()), -6),
+};
 const input = {
+  ...scheduleInput,
   email: 'synthetic-yazio@example.test',
   password: 'Synthetic-YAZIO-password-only',
-  confirmed: true,
 };
 const origin = 'http://localhost:3135';
 let ownerHeaders: Headers;
@@ -125,7 +132,20 @@ beforeAll(async () => {
 beforeEach(() => {
   synthetic.enable.mockClear();
   synthetic.disable.mockClear();
-  synthetic.run.mockClear();
+  synthetic.run.mockReset().mockResolvedValue({
+    state: 'completed',
+    startedAt: null,
+    finishedAt: null,
+    completedDates: [],
+    failedDates: [],
+  });
+  synthetic.profile.mockReset().mockResolvedValue({
+    email: 'actual-yazio@example.test',
+    first_name: 'YAZIO',
+    last_name: 'Profile',
+    profile_image: 'https://images.yazio-cdn.com/avatar.png?private=secret',
+    user_token: 'private-user-token',
+  });
   synthetic.schedule.mockClear();
   synthetic.exchange.mockReset().mockResolvedValue(token);
   synthetic.save.mockClear();
@@ -147,7 +167,7 @@ function request(headers: Headers, body: unknown = input) {
     body: JSON.stringify(body),
   });
 }
-it('real OWNER session exchanges via SDK and awaits saving only a full token; response has no credentials', async () => {
+it('real OWNER session exchanges via SDK and awaits saving only a full token; response has only safe YAZIO account metadata', async () => {
   synthetic.exchange.mockResolvedValue({ ...token, ...input });
   let release!: () => void;
   synthetic.save.mockImplementationOnce(
@@ -167,7 +187,17 @@ it('real OWNER session exchanges via SDK and awaits saving only a full token; re
   release();
   const response = await pending;
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ configured: true });
+  const responseBody = await response.json();
+  expect(responseBody).toMatchObject({
+    configured: true,
+    account: {
+      email: 'actual-yazio@example.test',
+      name: 'YAZIO Profile',
+      avatar: 'https://images.yazio-cdn.com/avatar.png',
+    },
+  });
+  expect(JSON.stringify(responseBody)).not.toContain('private-user-token');
+  expect(JSON.stringify(responseBody)).not.toContain('secret');
   expect(response.headers.get('cache-control')).toBe('no-store');
   expect(synthetic.exchange).toHaveBeenCalledWith({
     username: input.email,
@@ -214,30 +244,49 @@ it('rejects wrong Origin, bounded malformed input, and absent storage before ups
   expect(synthetic.exchange).not.toHaveBeenCalled();
   expect(synthetic.save).not.toHaveBeenCalled();
 });
-it('requires literal confirmation for connect/import/disconnect before upstream or store operations', async () => {
-  for (const confirmed of [undefined, false]) {
+it('connect/import use button intent and reject obsolete confirmation fields; disconnect still confirms', async () => {
+  expect((await POST(request(ownerHeaders, input))).status).toBe(200);
+  expect(
+    (await importToken(request(ownerHeaders, { token, ...scheduleInput })))
+      .status,
+  ).toBe(200);
+  for (const confirmed of [false, true]) {
     expect(
       (await POST(request(ownerHeaders, { ...input, confirmed }))).status,
     ).toBe(400);
     expect(
-      (await importToken(request(ownerHeaders, { token, confirmed }))).status,
+      (
+        await importToken(
+          request(ownerHeaders, { token, ...scheduleInput, confirmed }),
+        )
+      ).status,
     ).toBe(400);
+  }
+  synthetic.disable.mockClear();
+  synthetic.disconnect.mockClear();
+  for (const confirmed of [undefined, false])
     expect(
       (await disconnect(request(ownerHeaders, { confirmed }))).status,
     ).toBe(400);
-  }
-  expect(synthetic.exchange).not.toHaveBeenCalled();
-  expect(synthetic.load).not.toHaveBeenCalled();
-  expect(synthetic.save).not.toHaveBeenCalled();
-  expect(synthetic.disconnect).not.toHaveBeenCalled();
   expect(synthetic.disable).not.toHaveBeenCalled();
+  expect(synthetic.disconnect).not.toHaveBeenCalled();
 });
 it('accepts advanced confirmed token import and persists only validated token fields', async () => {
   const response = await importToken(
-    request(ownerHeaders, { token: { ...token, ...input }, confirmed: true }),
+    request(ownerHeaders, { token: { ...token, ...input }, ...scheduleInput }),
   );
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ configured: true });
+  const responseBody = await response.json();
+  expect(responseBody).toMatchObject({
+    configured: true,
+    account: {
+      email: 'actual-yazio@example.test',
+      name: 'YAZIO Profile',
+      avatar: 'https://images.yazio-cdn.com/avatar.png',
+    },
+  });
+  expect(JSON.stringify(responseBody)).not.toContain('private-user-token');
+  expect(JSON.stringify(responseBody)).not.toContain('secret');
   expect(synthetic.save).toHaveBeenCalledWith(token);
   expect(synthetic.exchange).not.toHaveBeenCalled();
 });
@@ -358,7 +407,7 @@ it('validates connection schedule before credentials or storage access', async (
     expect(
       (
         await importToken(
-          request(ownerHeaders, { token, confirmed: true, ...metadata }),
+          request(ownerHeaders, { token, ...scheduleInput, ...metadata }),
         )
       ).status,
     ).toBe(400);
@@ -410,6 +459,35 @@ it('manual sync uses common lease service and preserves caller timezone', async 
     { mode: 'manual', timezone: 'Europe/Moscow' },
   );
   expect(synthetic.upstream).not.toHaveBeenCalled();
+});
+it('revalidates real owner permission after server backfill before returning account data', async () => {
+  let release!: (value: unknown) => void;
+  synthetic.run.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  const pending = POST(request(ownerHeaders));
+  await vi.waitFor(() => expect(synthetic.run).toHaveBeenCalledTimes(1));
+  database.db
+    .update(user)
+    .set({ role: 'TRAINER' })
+    .where(eq(user.id, 'connection-owner'))
+    .run();
+  release({
+    state: 'completed',
+    startedAt: null,
+    finishedAt: null,
+    completedDates: [],
+    failedDates: [],
+  });
+  expect((await pending).status).toBe(403);
+  database.db
+    .update(user)
+    .set({ role: 'OWNER' })
+    .where(eq(user.id, 'connection-owner'))
+    .run();
 });
 it('rejects a real session revoked during delayed exchange before persistence', async () => {
   let release!: (value: typeof token) => void;

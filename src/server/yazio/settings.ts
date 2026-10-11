@@ -1,6 +1,6 @@
 import 'server-only';
+import { loadConnectedDiary } from './backfill';
 import {
-  enableNutritionSchedule,
   disableNutritionSchedule,
   getNutritionSchedule,
 } from '@/server/jobs/nutrition-scheduler';
@@ -8,6 +8,12 @@ import { authorize } from '@/server/auth/guards';
 import { readServerEnv } from '@/server/env';
 import { NutritionAccessError } from '@/server/nutrition/access';
 import { nutritionRepository } from '@/server/nutrition/repository';
+import {
+  readYazioAccount,
+  cacheYazioAccount,
+  clearYazioAccount,
+  getYazioAccount,
+} from './account';
 import { fileTokenStore } from './token-store';
 import { tokenSchema } from './client';
 import { resolve, sep } from 'node:path';
@@ -47,6 +53,7 @@ export async function getYazioStatus(headers: Headers) {
     pathConfigured && Boolean(await configuredStore(ownerId).load());
   return {
     configured,
+    account: configured ? getYazioAccount(ownerId) : null,
     tokenFileConfigured: pathConfigured,
     sync: nutritionRepository().status(ownerId),
     schedule: getNutritionSchedule(ownerId),
@@ -61,8 +68,15 @@ export async function saveExistingToken(headers: Headers, input: unknown) {
   await store.load();
   if ((await yazioOwner(headers)) !== ownerId)
     throw new NutritionAccessError(403);
+  const account = await readYazioAccount(token);
+  if ((await yazioOwner(headers)) !== ownerId)
+    throw new NutritionAccessError(403);
   await store.save(token);
-  enableNutritionSchedule(ownerId, schedule);
+  cacheYazioAccount(ownerId, account);
+  const result = await loadConnectedDiary(ownerId, schedule, account);
+  if ((await yazioOwner(headers)) !== ownerId)
+    throw new NutritionAccessError(403);
+  return result;
 }
 export async function disconnectYazio(headers: Headers, input: unknown) {
   const ownerId = await yazioOwner(headers);
@@ -72,6 +86,7 @@ export async function disconnectYazio(headers: Headers, input: unknown) {
   if ((await yazioOwner(headers)) !== ownerId)
     throw new NutritionAccessError(403);
   disableNutritionSchedule(ownerId);
+  clearYazioAccount(ownerId);
   await store.disconnect();
   return { configured: false as const };
 }
