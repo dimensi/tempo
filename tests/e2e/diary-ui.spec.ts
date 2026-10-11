@@ -29,9 +29,21 @@ test('synthetic diary: exact values, photo confirmation, upload and mobile geome
   await page.addScriptTag({ content: bundle.outputFiles[0]!.text });
   expect(errors).toEqual([]);
   await expect(page.getByText('Демонстрационные данные')).toBeVisible();
-  await expect(page.getByText('123,456789 ккал').first()).toBeVisible();
+  await expect(page.getByText('123,46 ккал').first()).toBeVisible();
   await expect(
     page.getByText('Масса: нет данных', { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('[title="3.4499999999999997"]')).toHaveText(
+    '3,45 г',
+  );
+  await expect(page.locator('[title="6.1499999999999995"]')).toHaveText(
+    '6,15 г',
+  );
+  await expect(page.locator('[title="3e-16"]')).toHaveText('≈ 0 г');
+  await expect(
+    page.getByText(
+      'Масса не указана в данных YAZIO. По количеству порций её определить нельзя.',
+    ),
   ).toBeVisible();
   await expect(page.getByText('Оценка ИИ')).toBeVisible();
   await expect(page.getByText('Слот комментариев')).toBeVisible();
@@ -67,5 +79,9 @@ test('synthetic diary: exact values, photo confirmation, upload and mobile geome
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  await page.screenshot({
+    path: test.info().outputPath('number-display.png'),
+    fullPage: true,
+  });
   expect(errors).toEqual([]);
 });
