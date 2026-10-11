@@ -1,12 +1,21 @@
-import { SectionPlaceholder } from '@/components/shared/section-placeholder';
-import { ru } from '@/config/messages';
-export const metadata = { title: 'Замеры' };
-export default function Page() {
-  const section = ru.sections[2]!;
+import { headers } from 'next/headers';
+import { requireSession } from '@/server/auth/guards';
+import { measurementOwner } from '@/server/measurements';
+import { MeasurementsPanel } from '@/features/measurements';
+import { measurementMessages as m } from '@/features/measurements';
+export const metadata = { title: m.title };
+export default async function Page() {
+  const session = await requireSession();
+  const ownerId = await measurementOwner(
+    await headers(),
+    session.user.id,
+    session.user.role,
+  );
+  if (!ownerId) return <p>{m.denied}</p>;
   return (
-    <SectionPlaceholder
-      title={section.title}
-      description={section.description}
+    <MeasurementsPanel
+      ownerId={ownerId}
+      writable={session.user.role === 'OWNER'}
     />
   );
 }
