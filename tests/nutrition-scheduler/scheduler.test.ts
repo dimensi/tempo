@@ -111,6 +111,19 @@ afterEach(() => {
 });
 
 describe('durable owner schedule', () => {
+  it('leaves an hour for initial manual loading after connect instead of racing the browser', async () => {
+    const { service, deps } = setup();
+    service.enable('owner', input);
+    expect(service.status('owner').nextRunAt).toBe(
+      new Date(Date.now() + 3600000).toISOString(),
+    );
+    await service.tick();
+    expect(deps.store).not.toHaveBeenCalled();
+    expect(deps.source).not.toHaveBeenCalled();
+    expect((await service.run('owner', period, { mode: 'manual' })).state).toBe(
+      'completed',
+    );
+  });
   it('reclaims an expired lease after restart and fences the old generation from writes or release', async () => {
     const { service, deps, upstream, repository } = setup();
     service.enable('owner', input);
@@ -125,7 +138,7 @@ describe('durable owner schedule', () => {
     // Model a stopped process without running its heartbeat, then reopen the
     // same WAL database as the replacement process. Keep its old promise only
     // to verify late results cannot corrupt the new lease/status/snapshot.
-    vi.setSystemTime(Date.now() + 121000);
+    vi.setSystemTime(Date.now() + 3600001);
     const reopened = openDatabase(`file:${join(directory, 'test.sqlite')}`);
     try {
       const newSource = source();
@@ -191,6 +204,11 @@ describe('durable owner schedule', () => {
     pending.resolve({ products: [], recipe_portions: [], simple_products: [] });
     await rejected;
     expect(replace).not.toHaveBeenCalled();
+    expect(service.status('owner').lastError).toBe('LEASE_LOST');
+    expect(repository.status('owner')).toMatchObject({
+      state: 'failed',
+      failedDates: [period.from],
+    });
   });
   it('uses local today, last seven dates every hour and preserves manual history across ticks', async () => {
     const { service, upstream } = setup();
@@ -326,6 +344,7 @@ describe('durable owner schedule', () => {
   it('uses bounded retry backoff for failed and partial results and resets after success', async () => {
     const { service, upstream } = setup();
     service.enable('owner', input);
+    await vi.advanceTimersByTimeAsync(3600000);
     vi.mocked(upstream.items).mockRejectedValue(
       new Error('TOKEN PASSWORD RAW ERROR'),
     );

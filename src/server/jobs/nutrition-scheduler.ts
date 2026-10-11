@@ -25,6 +25,7 @@ import {
 } from '@/server/nutrition/repository';
 import {
   NutritionSyncBusyError,
+  periodDates,
   syncNutritionPeriod,
 } from '@/server/jobs/nutrition-sync';
 import { fetchCdnImage, storeImage } from '@/server/nutrition/images';
@@ -123,7 +124,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         timezone: input.timezone,
         initialFrom: input.initialFrom,
         epoch: sql`${nutritionSchedule.epoch} + 1`,
-        nextRunAt: now(),
+        nextRunAt: now() + HOUR,
         attempt: 0,
         lastError: null,
       })
@@ -245,19 +246,47 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         .run();
     }
     function complete(error: ErrorCode | null) {
-      const current = row(ownerId);
-      if (!current) return;
-      db.update(nutritionSchedule)
-        .set({
-          lastSuccess: error ? current.lastSuccess : now(),
-          lastError: error,
-          attempt: error ? Math.min(current.attempt + 1, 3) : 0,
-          nextRunAt: current.enabled
-            ? now() + (error ? RETRY_MS[current.attempt]! : HOUR)
-            : null,
-        })
-        .where(fence())
-        .run();
+      db.transaction(() => {
+        const condition =
+          error === 'LEASE_LOST'
+            ? and(
+                ownerScope(ownerId),
+                eq(nutritionSchedule.leaseId, leaseId),
+                eq(nutritionSchedule.epoch, acquired.epoch),
+              )
+            : fence();
+        const current = db
+          .select()
+          .from(nutritionSchedule)
+          .where(condition)
+          .get();
+        if (!current) return;
+        // Only our own expired UUID/epoch can reconcile its stale running status.
+        // A replacement lease or disconnect/reconnect epoch is never overwritten.
+        if (error === 'LEASE_LOST') {
+          const status = repository.status(ownerId);
+          if (status.state === 'running')
+            repository.saveStatus(ownerId, {
+              ...status,
+              state: 'failed',
+              finishedAt: new Date(now()).toISOString(),
+              failedDates: periodDates(period).filter(
+                (date) => !status.completedDates.includes(date),
+              ),
+            });
+        }
+        db.update(nutritionSchedule)
+          .set({
+            lastSuccess: error ? current.lastSuccess : now(),
+            lastError: error,
+            attempt: error ? Math.min(current.attempt + 1, 3) : 0,
+            nextRunAt: current.enabled
+              ? now() + (error ? RETRY_MS[current.attempt]! : HOUR)
+              : null,
+          })
+          .where(condition)
+          .run();
+      });
     }
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
     try {
@@ -471,6 +500,7 @@ function runtimeScheduler() {
   return createNutritionScheduler({
     database: getDatabase(),
     automaticEnabled: () =>
+      !!globalScheduler.nutritionSchedulerTimer &&
       readServerEnv().ENABLE_NUTRITION_SCHEDULER === 'true' &&
       process.env.NODE_ENV === 'production' &&
       process.env.NEXT_PHASE !== 'phase-production-build',
