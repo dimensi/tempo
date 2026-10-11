@@ -9,15 +9,18 @@ export function summarizeDays(days: NutritionDay[], expectedDays: number) {
   for (const key of keys) {
     let total = new Exact(0),
       known = new Exact(0);
+    let hasKnown = false;
     let complete = days.length === expectedDays;
     for (const day of days) {
       if (day.totals[key] === null) complete = false;
       else total = total.plus(day.totals[key]!);
-      if (day.knownTotals[key] !== null)
+      if (day.knownTotals[key] !== null) {
+        hasKnown = true;
         known = known.plus(day.knownTotals[key]!);
+      }
     }
     totals[key] = complete ? total.toString() : null;
-    knownTotals[key] = days.length ? known.toString() : null;
+    knownTotals[key] = hasKnown ? known.toString() : null;
   }
   return { totals, knownTotals, availableDays: days.length, expectedDays };
 }

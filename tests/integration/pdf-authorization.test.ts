@@ -87,3 +87,20 @@ it('reports disconnected source meaningfully without exposing errors or secrets'
   expect(response.status).toBe(503);
   expect(await response.text()).toContain('ещё не подключён');
 });
+it('returns access denied when source authorization fails after mid-flight revocation', async () => {
+  state.session = { user: { id: 'trainer', role: 'TRAINER' } };
+  database.db
+    .insert(trainerAccess)
+    .values({ trainerId: 'trainer', ownerId: 'owner', createdAt: new Date() })
+    .run();
+  const revoked = createReportHandler(() => ({
+    ...source,
+    getNutritionDays: async () => {
+      database.db.delete(trainerAccess).run();
+      throw new Error('Private upstream detail');
+    },
+  }));
+  const result = await revoked(request());
+  expect(result.status).toBe(403);
+  expect(await result.text()).not.toContain('Private upstream detail');
+});

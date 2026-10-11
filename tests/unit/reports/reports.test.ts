@@ -6,6 +6,7 @@ import { renderReportHtml } from '@/server/pdf/template';
 import { loadReportDataset, withReportSlot } from '@/server/pdf/service';
 import type { ReportDataSource } from '@/server/pdf/source';
 import { syntheticDay } from './fixtures';
+import { photoPixels } from '@/server/pdf/images';
 const request = {
   contractVersion: 1 as const,
   ownerId: 'owner',
@@ -25,6 +26,19 @@ function source(days = [syntheticDay()]): ReportDataSource {
   };
 }
 describe('report rules', () => {
+  it('rejects raster decompression bombs before browser decoding', () => {
+    const bytes = Buffer.alloc(24);
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes);
+    bytes.write('IHDR', 12);
+    bytes.writeUInt32BE(450, 16);
+    bytes.writeUInt32BE(225, 20);
+    expect(photoPixels(bytes, 'image/png')).toBe(101250);
+    bytes.writeUInt32BE(100000, 16);
+    expect(() => photoPixels(bytes, 'image/png')).toThrow('OVERSIZED');
+    expect(() => photoPixels(Buffer.from('<svg/>'), 'image/svg+xml')).toThrow(
+      'INVALID',
+    );
+  });
   it('validates inclusive periods across leap dates, reversed/oversized and daily/weekly constraints', () => {
     expect(periodDates('2024-02-28', '2024-03-01')).toEqual([
       '2024-02-28',

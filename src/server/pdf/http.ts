@@ -71,6 +71,16 @@ export function createReportHandler(
         );
       });
     } catch (error) {
+      const current = await authorize(
+        request.headers,
+        'reports:export',
+        data.ownerId,
+      );
+      if (!current.ok)
+        return Response.json(
+          { error: m.denied },
+          { status: current.status, headers: privateHeaders },
+        );
       const messages = {
         INVALID: m.invalid,
         NO_DATA: m.noData,

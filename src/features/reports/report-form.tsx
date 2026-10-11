@@ -48,7 +48,13 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
     pending.current = new AbortController();
     setBusy(true);
     try {
-      const query = { ownerId: parsed.data.ownerId, period: parsed.data.period, start: parsed.data.start, end: parsed.data.end, format: parsed.data.format };
+      const query = {
+        ownerId: parsed.data.ownerId,
+        period: parsed.data.period,
+        start: parsed.data.start,
+        end: parsed.data.end,
+        format: parsed.data.format,
+      };
       const response = await fetch(
         `/api/reports?${new URLSearchParams(query)}`,
         { signal: pending.current.signal, cache: 'no-store' },

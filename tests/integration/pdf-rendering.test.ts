@@ -1,7 +1,7 @@
 import { afterAll, expect, it, vi } from 'vitest';
 import { chromium } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { syntheticDay } from '../unit/reports/fixtures';
@@ -99,7 +99,16 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
       )) {
         expect(Number(match[1])).toBeGreaterThanOrEqual(30);
         expect(Number(match[3])).toBeLessThanOrEqual(565);
-        expect(Number(match[4])).toBeLessThanOrEqual(825);
+        expect(Number(match[4])).toBeLessThanOrEqual(830);
+        if (
+          !/^[\d/]+$/.test(
+            match.input
+              .slice(match.index + match[0].length)
+              .split('</word>')[0]!
+              .replace(/^>/, ''),
+          )
+        )
+          expect(Number(match[4])).toBeLessThanOrEqual(805);
       }
       if (process.env.PDF_VERIFICATION_DIR && period === 'daily') {
         await writeFile(
@@ -115,6 +124,21 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
           '-png',
           filename,
           join(process.env.PDF_VERIFICATION_DIR, 'synthetic-report'),
+        ]);
+        const photoPage =
+          pages.findIndex((content) =>
+            content.includes('Завтрак · 2026-10-10'),
+          ) + 1;
+        expect(photoPage).toBeGreaterThan(0);
+        execFileSync('pdftoppm', [
+          '-f',
+          String(photoPage),
+          '-singlefile',
+          '-scale-to',
+          '1200',
+          '-png',
+          filename,
+          join(process.env.PDF_VERIFICATION_DIR, 'synthetic-photo-page'),
         ]);
       }
     }
@@ -133,15 +157,14 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
     preview.on('request', (request) => requests.push(request.url()));
     await prepareReportPage(preview, html);
     expect(requests.filter((url) => /^https?:|^file:/.test(url))).toEqual([]);
-    const image = await preview
-      .locator('img')
-      .evaluate((image) => ({
-        fit: getComputedStyle(image).objectFit,
-        ratio:
-          (image as HTMLImageElement).naturalWidth /
-          (image as HTMLImageElement).naturalHeight,
-      }));
+    const image = await preview.locator('img').evaluate((image) => ({
+      fit: getComputedStyle(image).objectFit,
+      ratio:
+        (image as HTMLImageElement).naturalWidth /
+        (image as HTMLImageElement).naturalHeight,
+    }));
     expect(image).toEqual({ fit: 'contain', ratio: 2 });
+    await preview.emulateMedia({ media: 'screen' });
     if (process.env.PDF_VERIFICATION_DIR)
       await preview.screenshot({
         path: join(process.env.PDF_VERIFICATION_DIR, 'synthetic-preview.png'),

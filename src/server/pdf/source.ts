@@ -36,3 +36,60 @@ export function reportDataSource(): ReportDataSource {
   throw new ReportError('UNAVAILABLE', 503);
 }
 export type ReportScope = Pick<ReportRequest, 'ownerId' | 'start' | 'end'>;
+
+// Exact source C public interface. Coordinator connects its server entry below
+// once C is merged; the renderer never receives headers or private locators.
+export interface NutritionReportApi {
+  listNutritionDays(
+    headers: Headers,
+    ownerId: string,
+    period: { from: string; to: string },
+  ): Promise<NutritionDay[]>;
+  listMealPhotos(
+    headers: Headers,
+    ownerId: string,
+    period: { from: string; to: string },
+  ): Promise<SafeMealPhotoView[]>;
+  readMealPhoto(
+    headers: Headers,
+    ownerId: string,
+    photoId: string,
+  ): Promise<{ bytes: Buffer; contentType: string }>;
+}
+export function createNutritionReportSource(
+  headers: Headers,
+  api: NutritionReportApi,
+): ReportDataSource {
+  return {
+    async getNutritionDays(ownerId, start, end, signal) {
+      signal.throwIfAborted();
+      const days = await api.listNutritionDays(headers, ownerId, {
+        from: start,
+        to: end,
+      });
+      signal.throwIfAborted();
+      return days;
+    },
+    async listPhotos(ownerId, start, end, signal) {
+      signal.throwIfAborted();
+      const photos = await api.listMealPhotos(headers, ownerId, {
+        from: start,
+        to: end,
+      });
+      signal.throwIfAborted();
+      return photos;
+    },
+    async readPhoto(ownerId, photoId, signal) {
+      signal.throwIfAborted();
+      const photo = await api.readMealPhoto(headers, ownerId, photoId);
+      signal.throwIfAborted();
+      if (
+        photo.contentType !== 'image/jpeg' &&
+        photo.contentType !== 'image/png' &&
+        photo.contentType !== 'image/webp'
+      )
+        throw new ReportError('INVALID', 422);
+      return { bytes: photo.bytes, mime: photo.contentType };
+    },
+  };
+}

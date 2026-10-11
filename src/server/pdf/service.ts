@@ -35,7 +35,8 @@ export async function readReportFont(): Promise<Uint8Array> {
       ? '/System/Library/Fonts/Supplemental/Arial.ttf'
       : '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf');
   try {
-    const file = await open(path, 'r');
+    // Operator-provided system font; never trace worktree files into standalone.
+    const file = await open(/* turbopackIgnore: true */ path, 'r');
     try {
       if ((await file.stat()).size > 2 * 1024 * 1024)
         throw new Error('Font too large');
