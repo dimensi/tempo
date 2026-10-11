@@ -127,7 +127,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     const photos = await (await owner.request.get(photosUrl)).json();
     expect(photos).toHaveLength(1);
     await owner
-      .getByRole('heading', { name: 'Подключение YAZIO', exact: true })
+      .getByRole('heading', { name: 'Аккаунт YAZIO', level: 2, exact: true })
       .waitFor();
     const email = owner.getByRole('textbox', {
       name: 'Email аккаунта YAZIO',
@@ -482,6 +482,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     }
     await owner.goto(origin + '/settings/yazio');
     await owner
+      .locator('#connection')
       .getByText(
         'Подключение пока недоступно: администратору нужно настроить защищённое хранение подключения YAZIO.',
         { exact: true },

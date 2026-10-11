@@ -71,7 +71,9 @@ test('real diary photos and comments persist; trainer is read-only and revoked U
 
   await page.goto(`/diary?date=${date}`);
   await expect(
-    page.getByText('Синтетический обед', { exact: true }),
+    page
+      .getByRole('region', { name: 'Обед', exact: true })
+      .getByText('Синтетический обед', { exact: true }),
   ).toBeVisible();
   await expect(page.getByText('123,46 ккал').first()).toBeVisible();
   const lunch = page.getByRole('region', { name: 'Обед', exact: true });
@@ -151,7 +153,9 @@ test('real diary photos and comments persist; trainer is read-only and revoked U
     ).toBe(true);
     await trainerPage.goto(`/diary?date=${date}`);
     await expect(
-      trainerPage.getByText('Синтетический обед', { exact: true }),
+      trainerPage
+        .getByRole('region', { name: 'Обед', exact: true })
+        .getByText('Синтетический обед', { exact: true }),
     ).toBeVisible();
     await expect(
       trainerPage.getByRole('img', {
