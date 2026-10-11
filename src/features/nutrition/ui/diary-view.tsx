@@ -14,7 +14,6 @@ import {
   SimpleGrid,
   Stack,
   Text,
-  TextInput,
   Title,
 } from '@mantine/core';
 import {
@@ -36,6 +35,7 @@ export interface DiaryViewProps {
   photos?: DiaryPhoto[];
   source?: 'demo';
   commentsSlot?: ReactNode;
+  navigationSlot?: ReactNode;
   // Coordinator supplies authorized operations; absent operations hide mutation controls.
   photoActions?: {
     upload: (date: string, meal: MealKind, file: File) => Promise<void>;
@@ -69,6 +69,7 @@ export function DiaryView({
   photos = [],
   source,
   commentsSlot,
+  navigationSlot,
   photoActions,
 }: DiaryViewProps) {
   const [pending, setPending] = useState(false);
@@ -92,21 +93,7 @@ export function DiaryView({
         <Title order={1}>{m.title}</Title>
         {source === 'demo' && <Badge color="orange">{m.demo}</Badge>}
       </Group>
-      <Box component="form" action="/diary" method="get">
-        <Group align="end">
-          <TextInput
-            type="date"
-            name="date"
-            label={m.date}
-            defaultValue={date}
-            required
-            style={{ flex: '1 1 180px' }}
-          />
-          <Button type="submit" mih={44}>
-            {m.open}
-          </Button>
-        </Group>
-      </Box>
+      {navigationSlot}
       {!day ? (
         <Alert>{m.empty}</Alert>
       ) : (
