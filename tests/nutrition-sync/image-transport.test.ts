@@ -195,20 +195,18 @@ it.each([302, 403, 429])(
   },
 );
 it('bounds recovery request count before downloading an oversized object', async () => {
-  network.request
-    .mockImplementationOnce(interrupted)
-    .mockImplementationOnce(
-      respond(
-        206,
-        {
-          'content-type': 'image/jpeg',
-          'content-range': 'bytes 0-8191/524289',
-          'content-length': '8192',
-          etag: '"version-one"',
-        },
-        Buffer.alloc(8192),
-      ),
-    );
+  network.request.mockImplementationOnce(interrupted).mockImplementationOnce(
+    respond(
+      206,
+      {
+        'content-type': 'image/jpeg',
+        'content-range': 'bytes 0-8191/524289',
+        'content-length': '8192',
+        etag: '"version-one"',
+      },
+      Buffer.alloc(8192),
+    ),
+  );
   await expect(
     fetchCdnImage('https://images.yazio-cdn.com/test.jpg'),
   ).rejects.toThrow('Invalid image range response');
