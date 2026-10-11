@@ -1,0 +1,12 @@
+{
+  "name": "yazio-vendor-toolchain",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "tsup": "8.5.0",
+    "typescript": "5.9.3",
+    "@types/node": "22.20.5",
+    "prettier": "3.9.10",
+    "zod": "3.25.76"
+  }
+}
