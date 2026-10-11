@@ -7,6 +7,7 @@ import { user, account, session, trainerAccess } from '@/server/db/schema';
 
 const synthetic = vi.hoisted(() => ({
   exchange: vi.fn(),
+  upstream: vi.fn(),
   save: vi.fn(async () => {}),
   load: vi.fn(async (): Promise<null> => null),
   disconnect: vi.fn(async () => {}),
@@ -14,6 +15,9 @@ const synthetic = vi.hoisted(() => ({
 vi.mock('server-only', () => ({}));
 vi.mock('@dimensi/yazio/api', () => ({
   getTokenFromCredentials: synthetic.exchange,
+}));
+vi.mock('@/server/yazio/adapter', () => ({
+  nutritionUpstream: synthetic.upstream,
 }));
 vi.mock('@/server/yazio/token-store', () => ({
   fileTokenStore: () => ({
@@ -42,6 +46,7 @@ let trainerHeaders: Headers;
 const { getAuth } = await import('@/server/auth');
 const { POST } = await import('@/app/api/yazio/connect/route');
 const { POST: disconnect } = await import('@/app/api/yazio/disconnect/route');
+const { POST: sync } = await import('@/app/api/yazio/sync/route');
 const { POST: importToken } = await import('@/app/api/yazio/token/route');
 beforeAll(async () => {
   vi.stubEnv('BETTER_AUTH_URL', origin);
@@ -294,6 +299,21 @@ it('rechecks OWNER permissions after asynchronous disconnect preparation', async
     .where(eq(user.id, 'connection-owner'))
     .run();
 });
+it.each([
+  { mode: 'period', from: '9999-12-31' },
+  { mode: 'period', from: '2026-01-01', to: '9999-12-31' },
+  { mode: 'recent', days: 7, through: '9999-12-31' },
+  { mode: 'period', from: '2026-01-02', to: '2026-01-01' },
+  { mode: 'period', from: '2026-01-01', timezone: 'Bad/Timezone' },
+])(
+  'rejects invalid sync before SDK preparation with real owner session %j',
+  async (body) => {
+    expect((await sync(request(ownerHeaders, body))).status).toBe(400);
+    expect(synthetic.upstream).not.toHaveBeenCalled();
+    expect(synthetic.load).not.toHaveBeenCalled();
+  },
+);
+
 it('rejects a real session revoked during delayed exchange before persistence', async () => {
   let release!: (value: typeof token) => void;
   synthetic.exchange.mockImplementationOnce(
