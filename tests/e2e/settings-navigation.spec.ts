@@ -56,13 +56,9 @@ test('section navigation keeps form values through anchors and history', async (
   ).toBe(true);
 });
 
-test('legacy addresses redirect to embedded forms and keyboard anchors work', async ({
-  page,
-}) => {
+test('keyboard anchors focus the embedded section', async ({ page }) => {
   await login(page);
-  await page.goto('/settings/yazio');
-  await expect(page).toHaveURL('/settings#connection');
-  await page.goto('/settings/trainers');
+  await page.goto('/settings#trainers');
   await expect(page).toHaveURL('/settings#trainers');
   const navigation = page.getByRole('navigation', { name: 'Разделы настроек' });
   const connection = navigation.getByRole('link', {

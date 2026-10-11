@@ -60,7 +60,7 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
   expect(
     (await page.request.get('/api/trainers?ownerId=foreign')).status(),
   ).toBe(403);
-  await page.goto('/settings/trainers');
+  await page.goto('/settings#trainers');
   const trainerSettings = page.getByRole('main');
   await trainerSettings
     .getByRole('textbox', { name: 'Email тренера', exact: true })
