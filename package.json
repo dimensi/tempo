@@ -42,7 +42,7 @@
     "vitest": "^5.0.3"
   },
   "dependencies": {
-    "@dimensi/yazio": "^1.2.0",
+    "@dimensi/yazio": "file:vendor/yazio",
     "@mantine/charts": "9.7.2",
     "@mantine/core": "9.7.2",
     "@mantine/dates": "9.7.2",

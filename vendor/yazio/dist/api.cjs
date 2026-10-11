@@ -1,0 +1,24 @@
+/* eslint-disable */
+const sdk = require('./sdk.cjs');
+exports.getTokenFromCredentials = sdk.getTokenFromCredentials;
+exports.getTokenFromRefreshToken = sdk.getTokenFromRefreshToken;
+exports.getProduct = sdk.getProduct;
+exports.searchProducts = sdk.searchProducts;
+exports.getUserConsumedItems = sdk.getUserConsumedItems;
+exports.addUserConsumedItem = sdk.addUserConsumedItem;
+exports.removeUserConsumedItem = sdk.removeUserConsumedItem;
+exports.getUserWeight = sdk.getUserWeight;
+exports.getUserSuggestedProducts = sdk.getUserSuggestedProducts;
+exports.getUserDietaryPreferences = sdk.getUserDietaryPreferences;
+exports.getUserExercises = sdk.getUserExercises;
+exports.getUserGoals = sdk.getUserGoals;
+exports.getUserSettings = sdk.getUserSettings;
+exports.getUserDailySummary = sdk.getUserDailySummary;
+exports.getUserWaterIntake = sdk.getUserWaterIntake;
+exports.getRecipe = sdk.getRecipe;
+exports.getUserRecipeIds = sdk.getUserRecipeIds;
+exports.deleteUserRecipe = sdk.deleteUserRecipe;
+exports.getUser = sdk.getUser;
+exports.getUserMealImages = sdk.getUserMealImages;
+exports.UserMealImagesSchema = sdk.UserMealImagesSchema;
+exports.GetUserMealImagesOptionsSchema = sdk.GetUserMealImagesOptionsSchema;
