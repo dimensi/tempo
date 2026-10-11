@@ -465,7 +465,9 @@ describe('durable owner schedule', () => {
         source: async () => newSource,
       });
       await restarted.tick();
-      expect(newSource.items).toHaveBeenCalledTimes(7);
+      expect(
+        vi.mocked(newSource.items).mock.calls.map(([date]) => date),
+      ).toEqual(['2026-10-11', '2026-10-12']);
       const completed = restarted.status('owner');
       expect(completed).toMatchObject({
         running: false,
@@ -484,7 +486,9 @@ describe('durable owner schedule', () => {
         'completed',
       );
       await restarted.tick();
-      expect(newSource.items).toHaveBeenCalledTimes(7);
+      expect(
+        vi.mocked(newSource.items).mock.calls.map(([date]) => date),
+      ).toEqual(['2026-10-11', '2026-10-12']);
     } finally {
       pending.resolve({
         products: [],
