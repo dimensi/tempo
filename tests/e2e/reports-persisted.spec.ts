@@ -175,7 +175,24 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect(granted.headers()['content-type']).toBe('application/pdf');
     expect((await granted.body()).subarray(0, 5).toString()).toBe('%PDF-');
     const trainerPage = await context.newPage();
-    await trainerPage.goto(`${origin}/reports`);
+    let releaseScripts!: () => void;
+    const scriptsReady = new Promise<void>((resolve) => {
+      releaseScripts = resolve;
+    });
+    await trainerPage.route('**/_next/**/*.js*', async (route) => {
+      await scriptsReady;
+      await route.continue();
+    });
+    try {
+      await trainerPage.goto(`${origin}/reports`, { waitUntil: 'commit' });
+      await expect(trainerPage.getByLabel('Начало')).toBeDisabled();
+      await expect(
+        trainerPage.getByRole('button', { name: 'Предпросмотр HTML' }),
+      ).toBeDisabled();
+    } finally {
+      releaseScripts();
+    }
+    await expect(trainerPage.getByLabel('Начало')).toBeEnabled();
     await expect(trainerPage.getByLabel('Идентификатор владельца')).toHaveCount(
       0,
     );

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Alert,
   Button,
@@ -13,7 +13,12 @@ import {
 import { reportRequestSchema } from '@/contracts/reports';
 import { reportMessages as m } from './messages';
 
+const subscribe = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
+
 export function ReportForm({ ownerId }: { ownerId: string | null }) {
+  const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
   const [period, setPeriod] = useState('daily');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
@@ -87,6 +92,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         </Alert>
       )}
       <Select
+        disabled={!ready}
         label={m.period}
         value={period}
         allowDeselect={false}
@@ -101,6 +107,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         ]}
       />
       <TextInput
+        disabled={!ready}
         type="date"
         label={m.start}
         value={start}
@@ -112,6 +119,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
       />
       {period === 'custom' && (
         <TextInput
+          disabled={!ready}
           type="date"
           label={m.end}
           value={end}
@@ -130,7 +138,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
       <Group>
         <Button
           mih={44}
-          disabled={busy || ownerId === null}
+          disabled={!ready || busy || ownerId === null}
           onClick={() => void generate('html')}
         >
           {m.preview}
@@ -138,7 +146,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         <Button
           mih={44}
           loading={busy}
-          disabled={ownerId === null}
+          disabled={!ready || ownerId === null}
           onClick={() => void generate('pdf')}
         >
           {m.download}
