@@ -7,6 +7,7 @@ export const permissions = [
   'measurements:write',
   'workouts:read',
   'workouts:plan',
+  'workouts:log',
   'comments:write',
   'reports:export',
   'yazio:manage',

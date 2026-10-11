@@ -12,11 +12,13 @@ describe('permissions', () => {
         'trainers:manage',
         'nutrition:write',
         'measurements:write',
+        'workouts:log',
       ] as const)
         expect(hasPermission(role, permission)).toBe(false);
   });
   it('allows trainer planning and reading', () => {
     expect(hasPermission('TRAINER', 'workouts:plan')).toBe(true);
+    expect(hasPermission('TRAINER', 'workouts:read')).toBe(true);
     expect(hasPermission('TRAINER', 'nutrition:read')).toBe(true);
   });
 });

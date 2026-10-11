@@ -10,10 +10,13 @@ Better Auth provides password hashing, server-side sessions, HttpOnly cookies an
 | measurements:write | yes   | no               |
 | workouts:read      | yes   | with owner grant |
 | workouts:plan      | yes   | with owner grant |
+| workouts:log       | yes   | no               |
 | comments:write     | yes   | with owner grant |
 | reports:export     | yes   | with owner grant |
 | yazio:manage       | yes   | no               |
 | trainers:manage    | yes   | no               |
+
+`workouts:plan` covers planned workouts; `workouts:log` covers actual workout results and is owner-only. A trainer may read and plan workouts with an owner grant, but cannot log results.
 
 `src/contracts/permissions.ts` defines capabilities. `src/server/auth/guards.ts` enforces authentication, capability and subject scope. `requireSession()` is a page gate; data handlers still call `authorize(request.headers, permission, ownerId)` and filter every query by the authorized owner ID. Missing ownerId fails closed for all data permissions. Global owner-only configuration actions may omit it. OWNER cannot access another owner's subject. TRAINER needs `trainer_access(trainerId, ownerId)`; it is not enough to have a trainer role.
 
