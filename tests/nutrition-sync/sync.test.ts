@@ -225,6 +225,94 @@ describe('whole-day synchronization', () => {
     expect(repository.deleteManual('another-owner', 'manual')).toBe(false);
     expect(repository.deleteManual('owner', 'manual')).toBe(true);
   });
+  it('makes validated food available when a photo download fails without claiming completion', async () => {
+    const source = upstream();
+    vi.mocked(source.images).mockResolvedValue({
+      lunch: 'https://images.yazio-cdn.com/synthetic.jpg',
+    });
+    const result = await syncNutritionPeriod(
+      'owner',
+      period,
+      source,
+      repository,
+      {
+        fetch: async () => {
+          throw new Error('Photo transport unavailable');
+        },
+        store: vi.fn(),
+      },
+    );
+    expect(result).toMatchObject({
+      state: 'partial',
+      completedDates: [date],
+      failedDates: [],
+      photoFailedDates: [date],
+    });
+    expect(
+      repository.day('owner', date)!.meals.flatMap((meal) => meal.entries),
+    ).toHaveLength(1);
+    expect(repository.photos('owner', date)).toEqual([]);
+  });
+  it('retains the existing failed photo slot and manual photos while refreshing valid food', async () => {
+    const source = upstream();
+    vi.mocked(source.images).mockResolvedValue({
+      lunch: 'https://images.yazio-cdn.com/old.jpg',
+    });
+    await syncNutritionPeriod('owner', period, source, repository, {
+      fetch: async () => ({
+        bytes: Buffer.from([255, 216, 255, 0]),
+        mime: 'image/jpeg',
+      }),
+      store: async () => ({
+        storageKey: 'a'.repeat(64),
+        contentHash: 'a'.repeat(64),
+      }),
+    });
+    const photo = repository.photo('owner', `owner:${date}:lunch:yazio`);
+    repository.addPhoto({
+      id: 'manual',
+      ownerId: 'owner',
+      date,
+      daytime: 'lunch',
+      source: 'manual',
+      storageKey: 'b'.repeat(64),
+      contentHash: 'b'.repeat(64),
+      sourceUrl: null,
+      observedAt: new Date().toISOString(),
+      mime: 'image/jpeg',
+    });
+    const items = await source.items(date);
+    vi.mocked(source.items).mockResolvedValue({
+      ...items,
+      products: items.products.map((entry) => ({ ...entry, amount: 20 })),
+    });
+    vi.mocked(source.images).mockResolvedValue({
+      lunch: 'https://images.yazio-cdn.com/new.jpg',
+    });
+    const result = await syncNutritionPeriod(
+      'owner',
+      period,
+      source,
+      repository,
+      {
+        fetch: async () => {
+          throw new Error('Photo timeout');
+        },
+        store: vi.fn(),
+      },
+    );
+    expect(result).toMatchObject({
+      state: 'partial',
+      completedDates: [date],
+      failedDates: [],
+      photoFailedDates: [date],
+    });
+    expect(repository.day('owner', date)!.meals[1]!.totals.calories).toBe('20');
+    expect(repository.photo('owner', `owner:${date}:lunch:yazio`)).toEqual(
+      photo,
+    );
+    expect(repository.photo('owner', 'manual')).not.toBeNull();
+  });
   it('rejects overlapping sync and resumes after completion', async () => {
     const source = upstream();
     let release!: () => void;

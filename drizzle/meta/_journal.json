@@ -29,6 +29,13 @@
       "when": 1791755901195,
       "tag": "0003_yellow_peter_parker",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791761561867,
+      "tag": "0004_nutrition_photo_status",
+      "breakpoints": true
     }
   ]
 }

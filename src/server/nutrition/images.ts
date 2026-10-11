@@ -65,7 +65,7 @@ export async function fetchCdnImage(value: string) {
   const addresses = await lookup(url.hostname, { all: true });
   if (!addresses.length || addresses.some((a) => !isPublicAddress(a.address)))
     throw new Error('Invalid image address');
-  // Pin the validated DNS answer; HTTPS still validates the original CDN hostname.
+  // Pin validated DNS answers; HTTPS still validates the original CDN hostname.
   const address = addresses[0]!;
   return new Promise<{ bytes: Buffer; mime: string }>(
     (resolveImage, reject) => {
@@ -73,8 +73,10 @@ export async function fetchCdnImage(value: string) {
         url,
         {
           signal: AbortSignal.timeout(15000),
-          lookup: (_host, _options, callback) =>
-            callback(null, address.address, address.family),
+          lookup: (_host, options, callback) => {
+            if (options.all) callback(null, addresses);
+            else callback(null, address.address, address.family);
+          },
           headers: { Accept: 'image/jpeg,image/png,image/webp' },
         },
         (response) => {

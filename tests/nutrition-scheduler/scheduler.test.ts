@@ -308,6 +308,7 @@ describe('durable owner schedule', () => {
     expect(repository.status('owner')).toMatchObject({
       state: 'failed',
       failedDates: [period.from],
+      photoFailedDates: [],
     });
   });
   it('uses local today, last seven dates every hour and preserves manual history across ticks', async () => {

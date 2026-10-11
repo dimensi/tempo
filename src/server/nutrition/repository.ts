@@ -194,6 +194,7 @@ export function nutritionRepository(database = getDatabase()) {
             finishedAt: null,
             completedDates: [],
             failedDates: [],
+            photoFailedDates: [],
           };
     },
     saveStatus(ownerId: string, status: SyncStatus) {
