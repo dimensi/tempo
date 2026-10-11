@@ -18,9 +18,17 @@ export function SettingsNavigation({ children }: { children: ReactNode }) {
     function update() {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
+        const atBottom =
+          window.scrollY > 0 &&
+          Math.ceil(window.scrollY + window.innerHeight) >=
+            document.documentElement.scrollHeight - 2;
         const current = sections.filter((section) => {
           const element = document.getElementById(section.id);
-          return element && element.getBoundingClientRect().top <= 170;
+          return (
+            element &&
+            element.getBoundingClientRect().top <=
+              (atBottom ? window.innerHeight : 170)
+          );
         });
         setActive(current.at(-1)?.id ?? 'connection');
       });
