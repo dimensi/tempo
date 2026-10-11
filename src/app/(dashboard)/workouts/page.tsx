@@ -1,12 +1,15 @@
-import { SectionPlaceholder } from '@/components/shared/section-placeholder';
-import { ru } from '@/config/messages';
-export const metadata = { title: 'Тренировки' };
-export default function Page() {
-  const section = ru.sections[3]!;
-  return (
-    <SectionPlaceholder
-      title={section.title}
-      description={section.description}
-    />
+import { Alert, Stack, Title } from '@mantine/core';
+import { WorkoutsDashboard, workoutMessages as m } from '@/features/workouts';
+import { workoutsPageAccess } from '@/server/workouts/page';
+export const metadata = { title: m.title };
+export default async function Page() {
+  const access = await workoutsPageAccess();
+  return access ? (
+    <WorkoutsDashboard {...access} />
+  ) : (
+    <Stack>
+      <Title order={1}>{m.title}</Title>
+      <Alert>{m.noAccess}</Alert>
+    </Stack>
   );
 }
