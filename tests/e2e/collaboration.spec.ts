@@ -61,23 +61,34 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
     (await page.request.get('/api/trainers?ownerId=foreign')).status(),
   ).toBe(403);
   await page.goto('/settings/trainers');
-  await page
-    .getByLabel('Email тренера')
+  const trainerSettings = page.getByRole('main');
+  await trainerSettings
+    .getByRole('textbox', { name: 'Email тренера', exact: true })
     .fill(`invited-${test.info().project.name}@example.test`);
-  await page.getByRole('button', { name: 'Создать приглашение' }).click();
-  const link = page.getByLabel('Скопируйте ссылку приглашения');
+  await trainerSettings
+    .getByRole('button', { name: 'Создать приглашение', exact: true })
+    .click();
+  const link = trainerSettings.getByRole('textbox', {
+    name: 'Скопируйте ссылку приглашения',
+    exact: true,
+  });
   await expect(link).not.toHaveValue('');
   const url = await link.inputValue();
   const context = await browser.newContext();
   const invitePage = await context.newPage();
   await invitePage.goto(url);
-  await invitePage.getByLabel('Имя').fill('Synthetic trainer');
+  await invitePage
+    .getByRole('textbox', { name: 'Имя', exact: true })
+    .fill('Synthetic trainer');
   await invitePage
     .getByLabel('Пароль (от 12 символов)')
+    .filter({ visible: true })
     .fill('Synthetic-password-123');
-  await invitePage.getByRole('button', { name: 'Принять приглашение' }).click();
+  await invitePage
+    .getByRole('button', { name: 'Принять приглашение', exact: true })
+    .click();
   await expect(
-    invitePage.getByText('Аккаунт создан.', { exact: false }),
+    invitePage.getByRole('alert').filter({ hasText: 'Аккаунт создан.' }),
   ).toBeVisible();
   expect(invitePage.url()).not.toContain('#');
   const token = new URL(url).hash.slice(1);
