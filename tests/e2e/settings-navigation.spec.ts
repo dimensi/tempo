@@ -29,8 +29,8 @@ test('section navigation keeps form values through anchors and history', async (
   await login(page);
   await page.goto('/settings');
   const navigation = page.getByRole('navigation', { name: 'Разделы настроек' });
-  const email = page.getByLabel('Email аккаунта YAZIO');
-  await email.fill('synthetic@example.test');
+  const startDate = page.getByLabel('Загрузить данные начиная с…');
+  await startDate.fill('2026-10-01');
   await navigation
     .getByRole('link', { name: 'Синхронизация', exact: true })
     .click();
@@ -47,7 +47,7 @@ test('section navigation keeps form values through anchors and history', async (
   await navigation
     .getByRole('link', { name: 'Подключение YAZIO', exact: true })
     .click();
-  await expect(email).toHaveValue('synthetic@example.test');
+  await expect(startDate).toHaveValue('2026-10-01');
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
   expect(
     await page.evaluate(
@@ -70,4 +70,31 @@ test('keyboard anchors focus the embedded section', async ({ page }) => {
   await expect(page).toHaveURL('/settings#connection');
   await expect(page.locator('#connection')).toBeFocused();
   await expect(connection).toHaveAttribute('aria-current', 'location');
+});
+
+test('trainer form keeps values and request errors when navigating sections', async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto('/settings#trainers');
+  await page.route('**/api/trainers/invitations', (route) =>
+    route.fulfill({ status: 503, body: '{}' }),
+  );
+  const trainerEmail = page.getByRole('textbox', { name: 'Email тренера' });
+  await trainerEmail.fill('synthetic-trainer@example.test');
+  await page
+    .getByRole('button', { name: 'Создать приглашение', exact: true })
+    .click();
+  await expect(page.locator('#trainers').getByRole('alert')).toHaveText(
+    'Не удалось выполнить запрос',
+  );
+  const navigation = page.getByRole('navigation', { name: 'Разделы настроек' });
+  await navigation
+    .getByRole('link', { name: 'Подключение YAZIO', exact: true })
+    .click();
+  await page.goBack();
+  await expect(trainerEmail).toHaveValue('synthetic-trainer@example.test');
+  await expect(page.locator('#trainers').getByRole('alert')).toHaveText(
+    'Не удалось выполнить запрос',
+  );
 });
