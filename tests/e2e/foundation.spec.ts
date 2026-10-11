@@ -121,6 +121,30 @@ test('owner shell, all pages, theme persistence, mobile overflow and logout', as
       ),
     ).toBe(true);
   }
+  const settings = page.getByRole('main');
+  const yazio = settings.getByRole('link', {
+    name: 'Подключение YAZIO',
+    exact: true,
+  });
+  const trainers = settings.getByRole('link', {
+    name: 'Доступ тренеров',
+    exact: true,
+  });
+  await expect(yazio).toBeVisible();
+  await expect(trainers).toBeVisible();
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Навигация' })
+      .getByRole('link', { name: 'Настройки', exact: true }),
+  ).toHaveCount(1);
+  await yazio.click();
+  await expect(page).toHaveURL('/settings/yazio');
+  await page.goto('/settings');
+  await page
+    .getByRole('main')
+    .getByRole('link', { name: 'Доступ тренеров', exact: true })
+    .click();
+  await expect(page).toHaveURL('/settings/trainers');
   expect((await page.request.get('/api/yazio/status')).status()).toBe(200);
   const menu = page.getByRole('button', { name: 'Навигация', exact: true });
   if (await menu.isVisible()) await menu.click();
@@ -132,6 +156,19 @@ test('trainer cannot access owner configuration or elevate their role', async ({
   page,
 }) => {
   await login(page, 'trainer');
+  await page.goto('/settings');
+  const settings = page.getByRole('main');
+  await expect(
+    settings.getByText(
+      'Подключением YAZIO и доступом тренеров управляет владелец аккаунта.',
+    ),
+  ).toBeVisible();
+  await expect(
+    settings.getByRole('link', { name: 'Подключение YAZIO', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    settings.getByRole('link', { name: 'Доступ тренеров', exact: true }),
+  ).toHaveCount(0);
   expect((await page.request.get('/api/yazio/status')).status()).toBe(403);
   await page.request.post('/api/auth/update-user', {
     headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
