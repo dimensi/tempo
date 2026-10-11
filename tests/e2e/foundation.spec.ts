@@ -70,6 +70,23 @@ test('owner shell, all pages, theme persistence, mobile overflow and logout', as
   await expect(
     page.getByRole('heading', { name: 'Обзор', exact: true }),
   ).toBeVisible();
+  const navigationToggle = page.getByRole('button', {
+    name: 'Навигация',
+    exact: true,
+  });
+  if (await navigationToggle.isVisible()) {
+    expect(await navigationToggle.boundingBox()).toMatchObject({
+      width: 44,
+      height: 44,
+    });
+    await navigationToggle.click();
+  }
+  await page
+    .getByRole('link', { name: 'Дневник питания', exact: true })
+    .click();
+  await expect(page).toHaveURL('/diary');
+  if (await navigationToggle.isVisible())
+    await expect(navigationToggle).toHaveAttribute('aria-expanded', 'false');
   const original = await page
     .locator('html')
     .getAttribute('data-mantine-color-scheme');

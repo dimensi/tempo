@@ -95,6 +95,7 @@ export function ApplicationShell({
                 size="sm"
                 aria-label={ru.navigation}
                 aria-expanded={opened}
+                style={{ width: 44, height: 44 }}
               />
               <IconLeaf color="var(--mantine-color-teal-6)" aria-hidden />
               <Text fw={700} size="sm">

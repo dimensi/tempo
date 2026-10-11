@@ -6,6 +6,6 @@ export const theme = createTheme({
   headings: { fontFamily: 'Arial, system-ui, sans-serif', fontWeight: '700' },
   components: {
     Button: { defaultProps: { size: 'md' } },
-    ActionIcon: { defaultProps: { size: 'lg' } },
+    ActionIcon: { defaultProps: { size: 44 } },
   },
 });
