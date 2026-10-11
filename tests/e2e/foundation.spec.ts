@@ -138,13 +138,13 @@ test('owner shell, all pages, theme persistence, mobile overflow and logout', as
       .getByRole('link', { name: 'Настройки', exact: true }),
   ).toHaveCount(1);
   await yazio.click();
-  await expect(page).toHaveURL('/settings/yazio');
+  await expect(page).toHaveURL('/settings#connection');
   await page.goto('/settings');
   await page
     .getByRole('main')
     .getByRole('link', { name: 'Доступ тренеров', exact: true })
     .click();
-  await expect(page).toHaveURL('/settings/trainers');
+  await expect(page).toHaveURL('/settings#trainers');
   expect((await page.request.get('/api/yazio/status')).status()).toBe(200);
   const menu = page.getByRole('button', { name: 'Навигация', exact: true });
   if (await menu.isVisible()) await menu.click();

@@ -14,9 +14,11 @@ import { trainerMessages as m } from './messages';
 export function TrainerSettings({
   ownerId,
   initialTrainers,
+  headingOrder = 1,
 }: {
   ownerId: string;
   initialTrainers: TrainerDto[];
+  headingOrder?: 1 | 2;
 }) {
   const [trainers, setTrainers] = useState(initialTrainers);
   const [email, setEmail] = useState('');
@@ -65,7 +67,7 @@ export function TrainerSettings({
   }
   return (
     <Stack>
-      <Title order={1}>{m.title}</Title>
+      <Title order={headingOrder}>{m.title}</Title>
       {error && (
         <Alert color="red" role="alert">
           {m.error}
