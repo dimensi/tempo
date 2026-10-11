@@ -39,7 +39,7 @@ export function DiaryClient({
   return (
     <DiaryView
       {...props}
-      navigationSlot={<DayNavigation date={props.date} />}
+      navigationSlot={<DayNavigation key={props.date} date={props.date} />}
       photos={diaryPhotos(ownerId, photos)}
       photoActions={
         canWrite

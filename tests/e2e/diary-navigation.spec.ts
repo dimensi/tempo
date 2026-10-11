@@ -80,10 +80,25 @@ test('real diary: week browsing, date selection, history and distant jump', asyn
   await page.goForward();
   await expect(selected).toHaveAttribute('href', '/diary?date=2024-03-04');
   await nav.getByRole('button', { name: 'Перейти к другой дате' }).click();
-  await page.getByLabel('Дата дневника').fill('2027-01-01');
+  await page.getByRole('textbox', { name: 'Год', exact: true }).fill('2027');
+  await page.getByLabel('Месяц', { exact: true }).selectOption('01');
+  await page.getByLabel('День', { exact: true }).selectOption('01');
+  await page.screenshot({
+    path: `test-results/day-jump-${test.info().project.name}.png`,
+    animations: 'disabled',
+  });
   await page.getByRole('button', { name: 'Открыть день' }).click();
   await expect(page).toHaveURL('/diary?date=2027-01-01');
   await expect(selected).toHaveAttribute('href', '/diary?date=2027-01-01');
+  await expect(selected).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL('/diary?date=2024-03-04');
+  await expect(selected).toHaveAttribute('href', '/diary?date=2024-03-04');
+  await expect(selected).toBeVisible();
+  await page.goForward();
+  await expect(page).toHaveURL('/diary?date=2027-01-01');
+  await expect(selected).toHaveAttribute('href', '/diary?date=2027-01-01');
+  await expect(selected).toBeVisible();
   await expect(
     page.getByText('Данные за этот день пока не загружены.'),
   ).toBeVisible();

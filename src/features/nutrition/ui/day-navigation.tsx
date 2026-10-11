@@ -11,7 +11,8 @@ import {
   Popover,
   Stack,
   Text,
-  TextInput,
+  NumberInput,
+  NativeSelect,
   VisuallyHidden,
 } from '@mantine/core';
 import {
@@ -22,6 +23,81 @@ import {
 import { shiftDate } from '@/contracts/nutrition-sync-dates';
 import { diaryMessages as m } from './messages';
 import { browserToday, weekDates } from './day-navigation-dates';
+
+function DateJump({
+  date,
+  onSelect,
+}: {
+  date: string;
+  onSelect: (date: string) => void;
+}) {
+  const [year, setYear] = useState<string | number>(Number(date.slice(0, 4)));
+  const [month, setMonth] = useState(date.slice(5, 7));
+  const [day, setDay] = useState(date.slice(8, 10));
+  const validYear =
+    typeof year === 'number' &&
+    Number.isInteger(year) &&
+    year >= 1 &&
+    year <= 9999;
+  const lastDay = new Date(
+    `${String(validYear ? year : 2000).padStart(4, '0')}-${month}-01T12:00:00Z`,
+  );
+  lastDay.setUTCMonth(lastDay.getUTCMonth() + 1, 0);
+  const days = lastDay.getUTCDate();
+  const selectedDay = String(Math.min(Number(day), days)).padStart(2, '0');
+  return (
+    <Box
+      component="form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (validYear)
+          onSelect(`${String(year).padStart(4, '0')}-${month}-${selectedDay}`);
+      }}
+    >
+      <Stack gap="sm">
+        <NumberInput
+          label={m.year}
+          value={year}
+          onChange={setYear}
+          min={1}
+          max={9999}
+          allowDecimal={false}
+          allowNegative={false}
+          required
+          size="md"
+        />
+        <Group grow wrap="nowrap">
+          <NativeSelect
+            label={m.month}
+            value={month}
+            onChange={(event) => setMonth(event.currentTarget.value)}
+            size="md"
+            data={Array.from({ length: 12 }, (_, index) => {
+              const value = String(index + 1).padStart(2, '0');
+              return {
+                value,
+                label: format(`2000-${value}-01`, { month: 'long' }),
+              };
+            })}
+          />
+          <NativeSelect
+            label={m.day}
+            value={selectedDay}
+            onChange={(event) => setDay(event.currentTarget.value)}
+            size="md"
+            data={Array.from({ length: days }, (_, index) => ({
+              value: String(index + 1).padStart(2, '0'),
+              label: String(index + 1),
+            }))}
+          />
+        </Group>
+        <Button type="submit" disabled={!validYear} mih={44}>
+          {m.open}
+        </Button>
+      </Stack>
+    </Box>
+  );
+}
 
 function DayLabel({ value }: { value: string }) {
   const { pending } = useLinkStatus();
@@ -67,19 +143,13 @@ export function DayNavigation({ date }: { date: string }) {
               {format(anchor, { month: 'long', year: 'numeric' })}
             </Button>
           </Popover.Target>
-          <Popover.Dropdown>
-            <Box component="form" action="/diary" method="get">
-              <Stack gap="sm">
-                <TextInput
-                  type="date"
-                  name="date"
-                  label={m.date}
-                  defaultValue={date}
-                  required
-                />
-                <Button type="submit">{m.open}</Button>
-              </Stack>
-            </Box>
+          <Popover.Dropdown w={280} maw="calc(100vw - 32px)">
+            <DateJump
+              date={date}
+              onSelect={(value) =>
+                router.push(`/diary?date=${value}`, { scroll: false })
+              }
+            />
           </Popover.Dropdown>
         </Popover>
         <Button
