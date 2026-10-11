@@ -90,9 +90,12 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
     expect(data.summary.days[1].totals.calories).toBeNull();
     expect(data.measurements[0].values[0].value).toBe('80.125');
     await page.goto('/analytics?from=2026-10-01&to=2026-10-03');
-    await expect(
-      page.getByText('Дней с записями: 1 / 3.', { exact: false }),
-    ).toBeVisible();
+    // Next.js may retain a hidden streaming copy outside the visible main.
+    const coverage = page.getByRole('main').getByText(/^Дней с записями:/);
+    await expect(coverage).toHaveText(
+      'Дней с записями: 1 / 3. Дней без записей: 2.',
+    );
+    await expect(coverage).toBeVisible();
     await expect(
       page.getByRole('cell', { name: '80,13', exact: true }),
     ).toBeVisible();
@@ -102,9 +105,10 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
       ),
     ).toBe(true);
     await page.getByRole('button', { name: 'Месяц', exact: true }).click();
-    await expect(
-      page.getByText('Дней с записями: 1 / 30.', { exact: false }),
-    ).toBeVisible();
+    await expect(coverage).toHaveText(
+      'Дней с записями: 1 / 30. Дней без записей: 29.',
+    );
+    await expect(coverage).toBeVisible();
     await page
       .getByRole('textbox', { name: 'С', exact: true })
       .fill('2026-10-01');
