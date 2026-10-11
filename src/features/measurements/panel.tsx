@@ -165,12 +165,10 @@ export function MeasurementsPanel({
                     label={`${m.metrics[key]} (${m.units[key === 'weight' ? 'kg' : 'cm']})`}
                     inputMode="decimal"
                     value={values[key] ?? ''}
-                    onChange={(e) =>
-                      setValues((old) => ({
-                        ...old,
-                        [key]: e.currentTarget.value,
-                      }))
-                    }
+                    onChange={(e) => {
+                      const value = e.currentTarget.value;
+                      setValues((old) => ({ ...old, [key]: value }));
+                    }}
                   />
                 ))}
               </SimpleGrid>
