@@ -1,6 +1,6 @@
 # yazio-dashboard
 
-Self-hosted личное пространство для питания, физических показателей и тренировок. Сейчас это работающий фундамент: авторизация, роли, адаптивный Mantine-каркас и страницы-заглушки. Дневник, синхронизация, аналитика и PDF ещё не реализованы.
+Self-hosted личное пространство для питания, физических показателей и тренировок. Реализованы авторизация, адаптивный Mantine-каркас, дневник питания, ручная синхронизация YAZIO за период, приватные фотографии, замеры, планы и результаты тренировок, аналитика и комментарии. Владелец приглашает тренеров и отзывает доступ через UI. PDF-отчёты ожидают merge PR #11; Chromium и шрифты для их runtime уже включены.
 
 ## Архитектура и стек
 
@@ -41,9 +41,9 @@ unset CREATE_USER_PASSWORD
 pnpm dev
 ```
 
-Откройте [localhost:3000](http://localhost:3000). Войти можно только созданным пользователем. Повторный owner блокируется уникальным индексом. Для тренера используйте `CREATE_USER_ROLE=TRAINER`; `GRANT_OWNER_ACCESS=true` явно разрешает доступ к данным owner. Без этого тренер может войти, но не читать данные владельца. Управление пользователями в UI пока отсутствует.
+Откройте [localhost:3000](http://localhost:3000). Войти можно только созданным пользователем. Повторный owner блокируется уникальным индексом. Для тренера используйте `CREATE_USER_ROLE=TRAINER`; `GRANT_OWNER_ACCESS=true` явно разрешает доступ к данным owner. Без этого тренер может войти, но не читать данные владельца. Владелец управляет приглашениями и grants на `/settings/trainers`; тренер принимает одноразовое приглашение. Открытая регистрация отключена.
 
-`DEMO_MODE=true` разрешает серверную загрузку маркированных fixtures для разработки будущих features. Авторизация остаётся обязательной. Текущие placeholders не показывают фиктивную статистику. В production demo запрещён.
+`DEMO_MODE=true` разрешает серверную загрузку маркированных fixtures для разработки будущих features. Авторизация остаётся обязательной. Рабочие страницы читают данные владельца; отсутствие данных отображается явно. Страница отчётов пока остаётся заглушкой. В production demo запрещён.
 
 ## Команды и проверки
 
@@ -62,25 +62,19 @@ pnpm dev
 | `pnpm auth:create-user`                     | Локальное создание owner/trainer                        |
 | `pnpm db:backup /secure/path/backup.sqlite` | Online backup с учётом WAL                              |
 
-Для E2E сначала `pnpm exec playwright install chromium`. Тесты запускают свой development server на 3100 и пересоздают только `.data/e2e.sqlite`. CI на каждом PR проверяет форматирование, lint, types, unit/integration, build, E2E и Docker smoke.
+Для E2E сначала `pnpm exec playwright install chromium`. Тесты запускают свой development server на 3100 (или `E2E_PORT`, например `E2E_PORT=3127 pnpm test:e2e`) и пересоздают только `.data/e2e.sqlite`. CI на каждом PR проверяет форматирование, lint, types, unit/integration, build, E2E и Docker smoke.
 
 `pnpm start` требует предварительно применённых миграций и production-конфигурации: HTTPS `BETTER_AUTH_URL`, сильный секрет и `DEMO_MODE=false`. Для локального HTTPS используйте reverse proxy. Для повседневной разработки используйте `pnpm dev`.
 
-## Docker / Portainer / Cloudflare Tunnel
+## Развёртывание
 
-```sh
-# В .env: BETTER_AUTH_URL=https://nutrition.dimensi.dev
-# BETTER_AUTH_SECRET=<случайный секрет минимум 32 символа>
-docker compose up -d --build
-```
+Preview доступен на [nutrition.dimensi.dev](https://nutrition.dimensi.dev). Подтверждённая deployed revision: `b8b8a1cd154063b713db417a7ab2c2d3d9388a8c`; более поздние изменения main автоматически там не появляются. На home-server stack расположен в `/opt/compose/yazio-dashboard`, Compose project — `nutrition`. Server-local `compose.home.yaml` подключает external network `web` с alias `nutrition` и убирает host port; Caddy направляет публичный HTTPS hostname на приложение.
 
-При старте применяются миграции. SQLite хранится в volume `database`, будущие фотографии — `uploads`. Контейнер работает от пользователя node. Сервис опубликован только на `127.0.0.1:3000`, для tunnel на хосте. Chromium в образ не установлен.
+Runtime работает от пользователя node, применяет миграции перед стартом, хранит SQLite в `database`, приватные фотографии в `uploads`. В образ включены Chromium, соответствующий закреплённому Playwright, и DejaVu font; disposable Docker smoke проверяет PDF rendering, backup и restore. Это готовность runtime, а не завершённый PDF product flow.
 
-Создание owner внутри контейнера: передайте те же `CREATE_USER_*` переменные в `docker compose exec -e … app node scripts/create-user.mjs`; не помещайте пароль в shell history. CLI bundled в production image. Для Portainer Git stack используйте репозиторий и `compose.yaml`, добавьте секрет и HTTPS URL через environment settings. Image можно собрать на сервере; registry publishing этим PR не настроен.
+Первого владельца создаёт сам пользователь на сервере командой `bash /opt/compose/yazio-dashboard/bootstrap-owner.sh`: пароль вводится скрыто. `runtime.env` хранится только на сервере с mode 0600. Реальный YAZIO token пока не настроен; синхронизация проверена на synthetic upstream, авторизация — реальными login/grant/revoke сценариями. Live sync и работа с личными данными требуют отдельной пользовательской проверки.
 
-В **существующем** Cloudflare Tunnel добавьте маршрут `nutrition.dimensi.dev` → `http://localhost:3000`, если cloudflared работает на хосте. Если cloudflared в Docker, подключите его и app к одной уже существующей Docker network и направьте на `http://app:3000`; loopback внутри cloudflared не является хостом. Детали: [deployment](docs/deployment.md).
-
-Production infrastructure и Tunnel этим PR не изменяются. Секреты и токены устанавливает оператор; открытая регистрация отсутствует.
+Подробности запуска, резервирования и rollback — [deployment](docs/deployment.md). Секреты устанавливает оператор; базы, uploads и token files не включаются в Git.
 
 ## Разработка несколькими агентами
 
