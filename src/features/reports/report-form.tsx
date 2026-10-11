@@ -21,17 +21,17 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
   const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
   const [period, setPeriod] = useState('daily');
   const [start, setStart] = useState<string | null>(null);
-  const [end, setEnd] = useState('');
+  const [end, setEnd] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [html, setHtml] = useState('');
   const pending = useRef<AbortController | null>(null);
   useEffect(() => () => pending.current?.abort(), []);
-  if (ready && start === null) {
+  if (ready && (start === null || end === null)) {
     const today = new Date();
-    setStart(
-      `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
-    );
+    const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    if (start === null) setStart(localToday);
+    if (end === null) setEnd(localToday);
   }
   const selectedStart = start ?? '';
   const finish =
@@ -41,7 +41,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         ? new Date(Date.parse(`${selectedStart}T00:00:00Z`) + 6 * 86400000)
             .toISOString()
             .slice(0, 10)
-        : end;
+        : (end ?? '');
   async function generate(format: 'html' | 'pdf') {
     setError('');
     setHtml('');
@@ -129,7 +129,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
           disabled={!ready}
           type="date"
           label={m.end}
-          value={end}
+          value={end ?? ''}
           onChange={(event) => {
             setEnd(event.currentTarget.value);
             setHtml('');

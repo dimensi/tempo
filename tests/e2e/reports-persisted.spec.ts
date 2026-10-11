@@ -113,6 +113,29 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       page.getByRole('heading', { name: 'Отчёты', exact: true }),
     ).toBeVisible();
     await expect(page.getByLabel('Начало')).toHaveValue('2026-10-12');
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page
+      .getByRole('option', { name: 'Произвольный период', exact: true })
+      .click();
+    await expect(page.getByLabel('Окончание')).toHaveValue('2026-10-12');
+    await page.getByLabel('Окончание').fill('2026-10-13');
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page.getByRole('option', { name: 'Неделя', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page
+      .getByRole('option', { name: 'Произвольный период', exact: true })
+      .click();
+    await expect(page.getByLabel('Окончание')).toHaveValue('2026-10-13');
+    await page.getByLabel('Окончание').fill('');
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page.getByRole('option', { name: 'День', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page
+      .getByRole('option', { name: 'Произвольный период', exact: true })
+      .click();
+    await expect(page.getByLabel('Окончание')).toHaveValue('');
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page.getByRole('option', { name: 'День', exact: true }).click();
     await page.screenshot({
       path: test.info().outputPath('reports-local-today.png'),
     });
