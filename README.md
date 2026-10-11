@@ -66,6 +66,28 @@ pnpm dev
 
 `pnpm start` требует предварительно применённых миграций и production-конфигурации: HTTPS `BETTER_AUTH_URL`, сильный секрет и `DEMO_MODE=false`. Для локального HTTPS используйте reverse proxy. Для повседневной разработки используйте `pnpm dev`.
 
+## TransformMate API probe
+
+Локальный исследовательский GET-клиент. В `.env` один раз задайте Firebase
+credentials из первого SSO/Charles: `TRANSFORMMATE_FIREBASE_API_KEY` и
+`TRANSFORMMATE_FIREBASE_REFRESH_TOKEN`.
+
+```sh
+npm run transformmate:auth-probe
+npm run transformmate:probe -- --save
+# Вместо 123 укажите ID из списка тренировок:
+npm run transformmate:probe -- --training-id 123 --save
+```
+
+ID token обновляется автоматически; `TRANSFORMMATE_ID_TOKEN` больше не нужен
+и не используется. Google `oauthAccessToken`/`oauthIdToken` для refresh не подходят.
+Секреты нельзя коммитить. `--save` сохраняет JSON в ignored-файл
+`.tmp/transformmate-trainings.json`; `--raw` печатает полные ответы.
+[Кэш, rotation и диагностика](docs/architecture/transformmate-probe.md).
+
+Клиент имеет типизированные `getTrainings()` / `getTraining(id)` с runtime validation
+реального wire-контракта. Маппинга в WorkoutPlan/WorkoutSession и изменений БД нет.
+
 ## Развёртывание
 
 Preview доступен на [nutrition.dimensi.dev](https://nutrition.dimensi.dev). Исходная проверенная preview revision — `b8b8a1cd154063b713db417a7ab2c2d3d9388a8c`; это историческая точка проверки, а не указание текущего latest после обновлений. Оператор фиксирует точную deployed revision и image ID/digest при каждом релизе; изменения main автоматически не развёртываются. На home-server stack расположен в `/opt/compose/yazio-dashboard`, Compose project — `nutrition`. Server-local `compose.home.yaml` подключает external network `web` с alias `nutrition` и убирает host port; Caddy направляет публичный HTTPS hostname на приложение.
