@@ -19,9 +19,10 @@ jobs:
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-dejavu-core poppler-utils
       - run: pnpm test
       - run: pnpm build
-      - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -33,4 +34,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t nutrition-foundation .
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - run: bash scripts/docker-smoke.sh
