@@ -220,9 +220,26 @@ test('measurement and actual-session comments compose after CRUD with real train
       .click();
     expect((await denied).status()).toBe(403);
     await expect(stalePanel.getByRole('alert')).toBeVisible();
+    await expect(stalePanel.getByLabel('Комментарий')).toHaveValue(
+      'Revoked write',
+    );
     await expect(
-      stalePanel.getByText('Revoked write', { exact: true }),
+      stalePanel.locator('p').filter({ hasText: /^Revoked write$/ }),
     ).toHaveCount(0);
+    const persistedAfterRevoke = await page.request.get(
+      `/api/comments?${new URLSearchParams({ ownerId, type: 'workout', targetId: workoutId })}`,
+    );
+    expect(persistedAfterRevoke.status()).toBe(200);
+    const savedComments = await persistedAfterRevoke.json();
+    expect(savedComments.map((row: { body: string }) => row.body)).toEqual([
+      'Owner workout comment',
+      'Trainer reply workout edited',
+    ]);
+    expect(
+      savedComments.some(
+        (row: { body: string }) => row.body === 'Revoked write',
+      ),
+    ).toBe(false);
     await page.goto('/measurements');
     const measurementRow = page.getByRole('row').filter({ hasText: note });
     await measurementRow
@@ -248,7 +265,9 @@ test('measurement and actual-session comments compose after CRUD with real train
     await expect(page.getByTestId(`session-${workoutId}`)).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
-    await page.request.delete('/api/trainers', { data: scope });
+    await page.request
+      .delete('/api/trainers', { data: scope, timeout: 5000 })
+      .catch(() => undefined);
     await trainerContext.close();
   }
 });
