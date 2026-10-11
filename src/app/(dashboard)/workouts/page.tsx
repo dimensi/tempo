@@ -1,10 +1,21 @@
 import { Alert, Stack, Title } from '@mantine/core';
 import { workoutMessages as m } from '@/features/workouts';
 import { WorkoutsWithComments } from './with-comments';
-import { workoutsPageAccess } from '@/server/workouts/page';
+import { headers } from 'next/headers';
+import { authorize, requireSession } from '@/server/auth/guards';
+import { getAccessibleOwnerId } from '@/server/access/owner';
 export const metadata = { title: m.title };
 export default async function Page() {
-  const access = await workoutsPageAccess();
+  const session = await requireSession();
+  const requestHeaders = await headers();
+  const ownerId = await getAccessibleOwnerId(requestHeaders);
+  const permission = ownerId
+    ? await authorize(requestHeaders, 'workouts:read', ownerId)
+    : null;
+  const access =
+    ownerId && permission?.ok
+      ? { ownerId, canLog: session.user.role === 'OWNER' }
+      : null;
   return access ? (
     <WorkoutsWithComments {...access} />
   ) : (

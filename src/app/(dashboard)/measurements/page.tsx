@@ -1,19 +1,18 @@
 import { headers } from 'next/headers';
-import { requireSession } from '@/server/auth/guards';
-import { measurementOwner } from '@/server/measurements';
-import { MeasurementsPanel } from '@/features/measurements';
+import { authorize, requireSession } from '@/server/auth/guards';
+import { getAccessibleOwnerId } from '@/server/access/owner';
+import { MeasurementsWithComments } from './with-comments';
 import { measurementMessages as m } from '@/features/measurements';
 export const metadata = { title: m.title };
 export default async function Page() {
   const session = await requireSession();
-  const ownerId = await measurementOwner(
-    await headers(),
-    session.user.id,
-    session.user.role,
-  );
+  const requestHeaders = await headers();
+  const ownerId = await getAccessibleOwnerId(requestHeaders);
   if (!ownerId) return <p>{m.denied}</p>;
+  const access = await authorize(requestHeaders, 'measurements:read', ownerId);
+  if (!access.ok) return <p>{m.denied}</p>;
   return (
-    <MeasurementsPanel
+    <MeasurementsWithComments
       ownerId={ownerId}
       writable={session.user.role === 'OWNER'}
     />
