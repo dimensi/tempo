@@ -22,6 +22,24 @@ globalThis.fetch = async (input, init) => {
       expires_in: 3600,
     });
   }
+  if (url.hostname === 'yzapi.yazio.com') {
+    if (url.pathname.endsWith('/user/consumed-items'))
+      return Response.json({
+        products: [],
+        recipe_portions: [],
+        simple_products: [],
+      });
+    if (url.pathname.endsWith('/user/widgets/daily-summary'))
+      return Response.json({
+        meals: Object.fromEntries(
+          ['breakfast', 'lunch', 'dinner', 'snack'].map((meal) => [
+            meal,
+            { nutrients: {} },
+          ]),
+        ),
+      });
+    if (url.pathname.includes('/user/meal-images/')) return Response.json({});
+  }
   if (url.hostname.endsWith('.yazio.com') || url.hostname === 'yazio.com')
     return Response.json(
       { error: 'unexpected synthetic upstream call' },

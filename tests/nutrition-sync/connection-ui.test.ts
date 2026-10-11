@@ -1,4 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { readFile, unlink } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium, type Browser } from '@playwright/test';
@@ -76,7 +78,9 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     }
     expect(ready).toBe(true);
     browser = await chromium.launch();
-    const ownerContext = await browser.newContext();
+    const ownerContext = await browser.newContext({
+      timezoneId: 'Europe/Moscow',
+    });
     const owner = await ownerContext.newPage();
     const errors: string[] = [];
     owner.on('pageerror', (error) => errors.push(error.message));
@@ -129,6 +133,31 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
         .getByRole('textbox', { name: 'Существующий токен JSON', exact: true })
         .count(),
     ).toBe(0);
+    const beginning = owner.getByLabel('Загрузить данные начиная с…');
+    const connectRequests: string[] = [];
+    owner.on('request', (request) => {
+      if (request.url().endsWith('/api/yazio/connect'))
+        connectRequests.push(request.url());
+    });
+    await beginning.fill('9999-12-31');
+    await email.fill('synthetic-yazio@example.test');
+    await secret.fill(password);
+    await owner.getByRole('checkbox').check();
+    await owner
+      .getByRole('button', {
+        name: 'Подключить и загрузить дневник',
+        exact: true,
+      })
+      .click();
+    await owner
+      .getByText(
+        'Выберите корректный период до 366 дней, не позже сегодняшнего дня.',
+        { exact: true },
+      )
+      .waitFor();
+    expect(connectRequests).toHaveLength(0);
+    expect(await secret.inputValue()).toBe('');
+    await beginning.fill(new Date().toISOString().slice(0, 10));
     await email.fill('failure@example.test');
     await secret.fill(password);
     await owner.getByRole('checkbox').check();
@@ -136,7 +165,10 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       response.url().endsWith('/api/yazio/connect'),
     );
     await owner
-      .getByRole('button', { name: 'Подключить YAZIO', exact: true })
+      .getByRole('button', {
+        name: 'Подключить и загрузить дневник',
+        exact: true,
+      })
       .click();
     expect((await rejected).status()).toBe(502);
     expect(await secret.inputValue()).toBe('');
@@ -144,6 +176,25 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       .getByText('Не удалось выполнить запрос', { exact: true })
       .waitFor();
     expect(await email.isEnabled()).toBe(true);
+    expect(await owner.getByLabel('Конец периода').count()).toBe(0);
+    const browserToday = await owner.evaluate(() =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow' }).format(
+        new Date(),
+      ),
+    );
+    const chosenFrom = new Date(Date.parse(browserToday) - 3 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    await beginning.fill(chosenFrom);
+    const syncBodies: unknown[] = [];
+    await owner.route('**/api/yazio/sync', async (route) => {
+      syncBodies.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'synthetic unavailable' }),
+      });
+    });
     await email.fill('synthetic-yazio@example.test');
     await secret.fill(password);
     await owner.getByRole('checkbox').check();
@@ -151,13 +202,45 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       response.url().endsWith('/api/yazio/connect'),
     );
     await owner
-      .getByRole('button', { name: 'Подключить YAZIO', exact: true })
+      .getByRole('button', {
+        name: 'Подключить и загрузить дневник',
+        exact: true,
+      })
       .click();
     expect((await connected).status()).toBe(200);
-    expect(await secret.inputValue()).toBe('');
     await owner
-      .getByRole('button', { name: 'Отключить YAZIO', exact: true })
+      .getByText(
+        'YAZIO подключён, но дневник не удалось загрузить. Нажмите «Обновить дневник», чтобы повторить.',
+        { exact: true },
+      )
       .waitFor();
+    expect(await secret.count()).toBe(0);
+    expect(syncBodies).toEqual([
+      { mode: 'period', from: chosenFrom, timezone: 'Europe/Moscow' },
+    ]);
+    expect(
+      (await (await owner.request.get(origin + '/api/yazio/status')).json())
+        .configured,
+    ).toBe(true);
+    await owner.unroute('**/api/yazio/sync');
+    await owner
+      .getByRole('button', { name: 'Обновить дневник', exact: true })
+      .click();
+    await owner.getByText('Дневник обновлён.', { exact: true }).waitFor();
+    const updated = await (
+      await owner.request.get(origin + '/api/yazio/status')
+    ).json();
+    expect(updated.sync.completedDates).toHaveLength(4);
+    expect(updated.sync.completedDates.at(-1)).toBe(browserToday);
+    expect(
+      await owner
+        .getByRole('button', { name: 'Отключить YAZIO', exact: true })
+        .count(),
+    ).toBe(0);
+    await owner.screenshot({
+      path: join(tmpdir(), 'yazio-ux-connected.png'),
+      fullPage: true,
+    });
     const envelope = await readFile(tokenPath, 'utf8');
     for (const value of [
       password,
@@ -184,34 +267,32 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       },
     );
     await delayed.goto(origin + '/settings/yazio', { waitUntil: 'commit' });
-    const delayedEmail = delayed.getByRole('textbox', {
-      name: 'Email аккаунта YAZIO',
-      exact: true,
-    });
-    await delayedEmail.waitFor();
-    expect(await delayedEmail.isDisabled()).toBe(true);
+    const delayedStart = delayed.getByLabel('Загрузить данные начиная с…');
+    await delayedStart.waitFor();
+    expect(await delayedStart.isDisabled()).toBe(true);
     expect(
       await delayed
-        .getByRole('button', { name: 'Подключить YAZIO', exact: true })
+        .getByRole('button', { name: 'Обновить дневник', exact: true })
         .isDisabled(),
     ).toBe(true);
     await expect(
-      delayedEmail.fill('synthetic-yazio@example.test', { timeout: 300 }),
+      delayedStart.fill(chosenFrom, { timeout: 300 }),
     ).rejects.toThrow();
     releaseScripts();
     await expect
-      .poll(() => delayedEmail.isEnabled(), { timeout: 15000 })
+      .poll(() => delayedStart.isEnabled(), { timeout: 15000 })
       .toBe(true);
-    await delayedEmail.fill('synthetic-yazio@example.test');
+    await delayedStart.fill(chosenFrom);
     await delay(300);
-    expect(await delayedEmail.inputValue()).toBe(
-      'synthetic-yazio@example.test',
-    );
+    expect(await delayedStart.inputValue()).toBe(chosenFrom);
     await delayed.close();
     await owner.reload();
     await owner
-      .getByRole('button', { name: 'Отключить YAZIO', exact: true })
+      .getByRole('button', { name: 'Обновить дневник', exact: true })
       .waitFor();
+    await owner
+      .getByRole('button', { name: 'Дополнительные настройки', exact: true })
+      .click();
     const trainer = await browser.newPage();
     await trainer.goto(origin + '/login');
     await trainer.getByLabel('Электронная почта').fill('trainer@example.test');
@@ -247,7 +328,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       .getByRole('dialog')
       .getByRole('button', { name: 'Отключить YAZIO', exact: true })
       .click();
-    await owner.getByText('Токен не подключён', { exact: true }).waitFor();
+    await owner.getByText('YAZIO не подключён', { exact: true }).waitFor();
     await owner.reload();
     expect(
       (await (await owner.request.get(origin + '/api/yazio/status')).json())
@@ -256,6 +337,24 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     expect(await (await owner.request.get(dayUrl)).json()).toEqual(snapshot);
     expect(await (await owner.request.get(photosUrl)).json()).toEqual(photos);
     expect(await secret.inputValue()).toBe('');
+    await email.fill('synthetic-yazio@example.test');
+    await secret.fill(password);
+    await owner.getByRole('checkbox').check();
+    await owner
+      .getByRole('button', {
+        name: 'Подключить и загрузить дневник',
+        exact: true,
+      })
+      .click();
+    await owner
+      .getByText('YAZIO подключён. Дневник загружен.', { exact: true })
+      .waitFor();
+    expect(
+      await owner
+        .getByRole('button', { name: 'Обновить дневник', exact: true })
+        .isEnabled(),
+    ).toBe(true);
+    expect(await owner.getByRole('checkbox').count()).toBe(0);
     // Reuse the real session while restarting with the operator setting absent.
     // This covers the reported disabled-fields state and its visible explanation.
     await owner.goto('about:blank');
@@ -290,7 +389,10 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     expect(await secret.isDisabled()).toBe(true);
     expect(
       await owner
-        .getByRole('button', { name: 'Подключить YAZIO', exact: true })
+        .getByRole('button', {
+          name: 'Подключить и загрузить дневник',
+          exact: true,
+        })
         .isDisabled(),
     ).toBe(true);
     expect(errors).toEqual([]);

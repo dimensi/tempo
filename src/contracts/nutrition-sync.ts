@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import { diaryDateSchema } from '@/contracts/nutrition';
+import {
+  timezoneSchema,
+  dateInTimezone,
+  shiftDate,
+} from '@/contracts/nutrition-sync-dates';
 
 export const ownerIdSchema = z.string().min(1).max(128);
 export const periodSchema = z
@@ -18,7 +23,8 @@ export const syncRequestSchema = z.discriminatedUnion('mode', [
     .object({
       mode: z.literal('period'),
       from: diaryDateSchema,
-      to: diaryDateSchema,
+      to: diaryDateSchema.optional(),
+      timezone: timezoneSchema.optional(),
     })
     .strict(),
   z
@@ -26,9 +32,24 @@ export const syncRequestSchema = z.discriminatedUnion('mode', [
       mode: z.literal('recent'),
       days: z.number().int().min(1).max(31),
       through: diaryDateSchema,
+      timezone: timezoneSchema.optional(),
     })
     .strict(),
 ]);
+export function resolveSyncPeriod(request: unknown, now = new Date()) {
+  const input = syncRequestSchema.parse(request);
+  const today = dateInTimezone(now, input.timezone);
+  const period =
+    input.mode === 'period'
+      ? { from: input.from, to: input.to ?? today }
+      : { from: shiftDate(input.through, 1 - input.days), to: input.through };
+  return periodSchema
+    .refine(
+      (value) => value.from <= today && value.to <= today,
+      'Future dates are not allowed',
+    )
+    .parse(period);
+}
 export const syncStatusSchema = z.object({
   state: z.enum(['idle', 'running', 'completed', 'partial', 'failed']),
   startedAt: z.string().nullable(),
@@ -53,18 +74,17 @@ export const yazioConfirmationSchema = z
   .strict();
 export const nutritionSyncMessages = {
   title: 'Подключение YAZIO',
-  configured: 'Токен подключён',
-  absent: 'Токен не подключён',
+  configured: 'YAZIO подключён',
+  absent: 'YAZIO не подключён',
   token: 'Существующий токен JSON',
   save: 'Подключить токен',
   email: 'Email аккаунта YAZIO',
   password: 'Пароль YAZIO',
-  connect: 'Подключить YAZIO',
+  connect: 'Подключить и загрузить дневник',
   passwordVisibility: 'Показать или скрыть пароль YAZIO',
   connectionHelp:
-    'Введите email и пароль вашего аккаунта YAZIO. Пароль используется один раз и не сохраняется. Токены подключения хранятся зашифрованными и автоматически обновляются. Синхронизация запускается вашими кнопками ниже.',
-  connectionConsent:
-    'Разрешаю подключить YAZIO и сохранить зашифрованные токены для дальнейшей синхронизации',
+    'Введите email и пароль YAZIO. Пароль не сохраняется. Загрузим дневник с выбранной даты по сегодня.',
+  connectionConsent: 'Разрешаю подключение и зашифрованное хранение токенов',
   disconnect: 'Отключить YAZIO',
   disconnectTitle: 'Отключить подключение YAZIO?',
   disconnectHelp:
@@ -74,15 +94,33 @@ export const nutritionSyncMessages = {
   storeUnavailable:
     'Подключение пока недоступно: администратору нужно настроить защищённое хранение подключения YAZIO.',
   httpsRequired: 'Для подключения YAZIO откройте приложение по HTTPS.',
-  advanced: 'Расширенные настройки: импорт токена',
+  advanced: 'Дополнительные настройки',
   tokenHelp:
     'Необязательный импорт существующего JSON: token_type, access_token, refresh_token, expires_in, expires_at. Используйте значения из существующего токена; не заполняйте сроки вручную.',
-  from: 'Начало периода',
+  connectionLoaded: 'YAZIO подключён. Дневник загружен.',
+  connectionSyncFailed:
+    'YAZIO подключён, но дневник не удалось загрузить. Нажмите «Обновить дневник», чтобы повторить.',
+  syncLoaded: 'Дневник обновлён.',
+  syncFailed:
+    'Не удалось полностью обновить дневник. Подключение сохранено. Попробуйте ещё раз.',
+  today: 'По сегодня',
+  toCustom: 'Указать другую дату окончания',
+  from: 'Загрузить данные начиная с…',
   to: 'Конец периода',
   period: 'Синхронизировать период',
-  recent: 'Обновить последние 7 дней',
+  recent: 'Обновить дневник',
   failure: 'Не удалось выполнить запрос',
   success: 'Запрос выполнен',
+  states: {
+    idle: 'Ожидает загрузки',
+    running: 'Загрузка',
+    completed: 'Загружено',
+    partial: 'Загружено частично',
+    failed: 'Ошибка загрузки',
+  },
+  rangeInvalid:
+    'Выберите корректный период до 366 дней, не позже сегодняшнего дня.',
+  rangeHelp: 'Можно загрузить до 366 дней за один раз.',
   status: 'Статус синхронизации',
   forbidden: 'Доступ запрещён',
   invalid: 'Некорректный запрос',
