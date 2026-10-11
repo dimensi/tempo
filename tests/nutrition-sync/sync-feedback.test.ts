@@ -47,6 +47,7 @@ it('separates genuine food completion, photo warnings and food failures', () => 
   ).toBe('incomplete');
 });
 it('requires the new photo field without a compatibility default', () => {
-  const { photoFailedDates: _, ...obsolete } = complete;
+  const obsolete: Partial<SyncStatus> = { ...complete };
+  delete obsolete.photoFailedDates;
   expect(syncStatusSchema.safeParse(obsolete).success).toBe(false);
 });
