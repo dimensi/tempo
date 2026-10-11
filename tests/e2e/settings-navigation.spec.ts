@@ -71,6 +71,7 @@ test('section navigation keeps form values through anchors and history', async (
 });
 
 test('keyboard anchors focus the embedded section', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await login(page);
   await page.goto('/settings#trainers');
   await expect(page).toHaveURL('/settings#trainers');
