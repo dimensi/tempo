@@ -64,12 +64,29 @@ export const yazioCredentialsSchema = z
     email: z.email().max(254),
     password: z.string().min(1).max(1024),
     confirmed: z.literal(true),
+    timezone: timezoneSchema.optional(),
+    initialFrom: diaryDateSchema.optional(),
   })
   .strict();
 export type YazioCredentialsInput = z.infer<typeof yazioCredentialsSchema>;
 export const yazioTokenImportSchema = z
-  .object({ token: z.unknown(), confirmed: z.literal(true) })
+  .object({
+    token: z.unknown(),
+    confirmed: z.literal(true),
+    timezone: timezoneSchema.optional(),
+    initialFrom: diaryDateSchema.optional(),
+  })
   .strict();
+export function resolveConnectionSchedule(
+  input: { timezone?: string; initialFrom?: string },
+  now = new Date(),
+) {
+  const timezone = input.timezone ?? 'UTC';
+  const today = dateInTimezone(now, timezone);
+  const initialFrom = input.initialFrom ?? shiftDate(today, -6);
+  resolveSyncPeriod({ mode: 'period', from: initialFrom, timezone }, now);
+  return { timezone, initialFrom };
+}
 export const yazioConfirmationSchema = z
   .object({ confirmed: z.literal(true) })
   .strict();
@@ -100,7 +117,7 @@ export const nutritionSyncMessages = {
     'Необязательный импорт существующего JSON: token_type, access_token, refresh_token, expires_in, expires_at. Используйте значения из существующего токена; не заполняйте сроки вручную.',
   connectionLoaded: 'YAZIO подключён. Дневник загружен.',
   connectionSyncFailed:
-    'YAZIO подключён, но дневник не удалось загрузить. Нажмите «Обновить дневник», чтобы повторить.',
+    'YAZIO подключён, но дневник не удалось загрузить. Нажмите «Обновить сейчас», чтобы повторить.',
   syncLoaded: 'Дневник обновлён.',
   syncFailed:
     'Не удалось полностью обновить дневник. Подключение сохранено. Попробуйте ещё раз.',
@@ -109,9 +126,25 @@ export const nutritionSyncMessages = {
   from: 'Загрузить данные начиная с…',
   to: 'Конец периода',
   period: 'Синхронизировать период',
-  recent: 'Обновить дневник',
+  recent: 'Обновить сейчас',
   failure: 'Не удалось выполнить запрос',
   success: 'Запрос выполнен',
+  hourly:
+    'Автоматически каждый час обновляются последние 7 дней, включая сегодня. Выбранную историю можно обновить кнопкой.',
+  schedulerInactive:
+    'Автоматическое обновление пока не включено на сервере. Можно обновить сейчас.',
+  scheduleDisabled: 'Автоматическое обновление отключено.',
+  lastSuccess: 'Последнее успешное обновление',
+  nextRun: 'Следующее обновление',
+  noRuns: 'Ещё не было',
+  pendingRun: 'Пока не назначено',
+  scheduledLoading: 'Загрузка дневника выполняется на сервере.',
+  scheduleErrors: {
+    NOT_CONFIGURED: 'Подключение недоступно. Переподключите YAZIO.',
+    SYNC_FAILED:
+      'Не удалось полностью загрузить дневник. Сервер повторит попытку.',
+    LEASE_LOST: 'Загрузка была прервана. Сервер повторит попытку.',
+  },
   states: {
     idle: 'Ожидает загрузки',
     running: 'Загрузка',

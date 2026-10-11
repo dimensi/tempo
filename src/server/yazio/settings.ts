@@ -1,4 +1,9 @@
 import 'server-only';
+import {
+  enableNutritionSchedule,
+  disableNutritionSchedule,
+  getNutritionSchedule,
+} from '@/server/jobs/nutrition-scheduler';
 import { authorize } from '@/server/auth/guards';
 import { readServerEnv } from '@/server/env';
 import { NutritionAccessError } from '@/server/nutrition/access';
@@ -9,6 +14,7 @@ import { resolve, sep } from 'node:path';
 import {
   yazioTokenImportSchema,
   yazioConfirmationSchema,
+  resolveConnectionSchedule,
 } from '@/contracts/nutrition-sync';
 
 export async function yazioOwner(headers: Headers) {
@@ -43,16 +49,20 @@ export async function getYazioStatus(headers: Headers) {
     configured,
     tokenFileConfigured: pathConfigured,
     sync: nutritionRepository().status(ownerId),
+    schedule: getNutritionSchedule(ownerId),
   };
 }
 export async function saveExistingToken(headers: Headers, input: unknown) {
   const ownerId = await yazioOwner(headers);
-  const token = tokenSchema.parse(yazioTokenImportSchema.parse(input).token);
+  const parsed = yazioTokenImportSchema.parse(input);
+  const schedule = resolveConnectionSchedule(parsed);
+  const token = tokenSchema.parse(parsed.token);
   const store = configuredStore(ownerId);
   await store.load();
   if ((await yazioOwner(headers)) !== ownerId)
     throw new NutritionAccessError(403);
   await store.save(token);
+  enableNutritionSchedule(ownerId, schedule);
 }
 export async function disconnectYazio(headers: Headers, input: unknown) {
   const ownerId = await yazioOwner(headers);
@@ -61,6 +71,7 @@ export async function disconnectYazio(headers: Headers, input: unknown) {
   await store.load();
   if ((await yazioOwner(headers)) !== ownerId)
     throw new NutritionAccessError(403);
+  disableNutritionSchedule(ownerId);
   await store.disconnect();
   return { configured: false as const };
 }

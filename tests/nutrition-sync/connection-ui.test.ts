@@ -211,7 +211,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     expect((await connected).status()).toBe(200);
     await owner
       .getByText(
-        'YAZIO подключён, но дневник не удалось загрузить. Нажмите «Обновить дневник», чтобы повторить.',
+        'YAZIO подключён, но дневник не удалось загрузить. Нажмите «Обновить сейчас», чтобы повторить.',
         { exact: true },
       )
       .waitFor();
@@ -225,12 +225,23 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     ).toBe(true);
     await owner.unroute('**/api/yazio/sync');
     await owner
-      .getByRole('button', { name: 'Обновить дневник', exact: true })
+      .getByRole('button', { name: 'Обновить сейчас', exact: true })
       .click();
     await owner.getByText('Дневник обновлён.', { exact: true }).waitFor();
     const updated = await (
       await owner.request.get(origin + '/api/yazio/status')
     ).json();
+    expect(updated.schedule.enabled).toBe(true);
+    expect(updated.schedule.timezone).toBe('Europe/Moscow');
+    expect(updated.schedule.initialFrom).toBe(chosenFrom);
+    expect(updated.schedule.lastSuccess).not.toBeNull();
+    expect(updated.schedule.schedulerActive).toBe(false);
+    await owner
+      .getByText(
+        'Автоматическое обновление пока не включено на сервере. Можно обновить сейчас.',
+        { exact: true },
+      )
+      .waitFor();
     expect(updated.sync.completedDates).toHaveLength(4);
     expect(updated.sync.completedDates.at(-1)).toBe(browserToday);
     expect(
@@ -273,7 +284,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     expect(await delayedStart.isDisabled()).toBe(true);
     expect(
       await delayed
-        .getByRole('button', { name: 'Обновить дневник', exact: true })
+        .getByRole('button', { name: 'Обновить сейчас', exact: true })
         .isDisabled(),
     ).toBe(true);
     await expect(
@@ -289,8 +300,9 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     await delayed.close();
     await owner.reload();
     await owner
-      .getByRole('button', { name: 'Обновить дневник', exact: true })
+      .getByRole('button', { name: 'Обновить сейчас', exact: true })
       .waitFor();
+    expect(await beginning.inputValue()).toBe(chosenFrom);
     await owner
       .getByRole('button', { name: 'Дополнительные настройки', exact: true })
       .click();
@@ -335,6 +347,10 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       (await (await owner.request.get(origin + '/api/yazio/status')).json())
         .configured,
     ).toBe(false);
+    expect(
+      (await (await owner.request.get(origin + '/api/yazio/status')).json())
+        .schedule.enabled,
+    ).toBe(false);
     expect(await (await owner.request.get(dayUrl)).json()).toEqual(snapshot);
     expect(await (await owner.request.get(photosUrl)).json()).toEqual(photos);
     expect(await secret.inputValue()).toBe('');
@@ -352,7 +368,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       .waitFor();
     expect(
       await owner
-        .getByRole('button', { name: 'Обновить дневник', exact: true })
+        .getByRole('button', { name: 'Обновить сейчас', exact: true })
         .isEnabled(),
     ).toBe(true);
     expect(await owner.getByRole('checkbox').count()).toBe(0);

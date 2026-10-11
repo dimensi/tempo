@@ -8,9 +8,29 @@ import { user, account, session, trainerAccess } from '@/server/db/schema';
 const synthetic = vi.hoisted(() => ({
   exchange: vi.fn(),
   upstream: vi.fn(),
+  enable: vi.fn(),
+  disable: vi.fn(),
+  run: vi.fn(),
+  schedule: vi.fn(() => ({
+    enabled: false,
+    schedulerActive: false,
+    timezone: 'UTC',
+    initialFrom: null,
+    lastSuccess: null,
+    lastError: null,
+    nextRunAt: null,
+    attempt: 0,
+    running: false,
+  })),
   save: vi.fn(async () => {}),
   load: vi.fn(async (): Promise<null> => null),
   disconnect: vi.fn(async () => {}),
+}));
+vi.mock('@/server/jobs/nutrition-scheduler', () => ({
+  enableNutritionSchedule: synthetic.enable,
+  disableNutritionSchedule: synthetic.disable,
+  getNutritionSchedule: synthetic.schedule,
+  runNutritionSync: synthetic.run,
 }));
 vi.mock('server-only', () => ({}));
 vi.mock('@dimensi/yazio/api', () => ({
@@ -103,6 +123,10 @@ beforeAll(async () => {
   }
 });
 beforeEach(() => {
+  synthetic.enable.mockClear();
+  synthetic.disable.mockClear();
+  synthetic.run.mockClear();
+  synthetic.schedule.mockClear();
   synthetic.exchange.mockReset().mockResolvedValue(token);
   synthetic.save.mockClear();
   synthetic.load.mockReset().mockResolvedValue(null);
@@ -139,6 +163,7 @@ it('real OWNER session exchanges via SDK and awaits saving only a full token; re
   });
   await vi.waitFor(() => expect(synthetic.save).toHaveBeenCalledTimes(1));
   expect(completed).toBe(false);
+  expect(synthetic.enable).not.toHaveBeenCalled();
   release();
   const response = await pending;
   expect(response.status).toBe(200);
@@ -149,6 +174,10 @@ it('real OWNER session exchanges via SDK and awaits saving only a full token; re
     password: input.password,
   });
   expect(synthetic.save).toHaveBeenCalledWith(token);
+  expect(synthetic.enable).toHaveBeenCalledWith(
+    'connection-owner',
+    expect.objectContaining({ timezone: 'UTC' }),
+  );
 });
 it('denies anonymous and real TRAINER sessions even with grant, before exchange or save', async () => {
   expect((await POST(request(new Headers({ origin })))).status).toBe(401);
@@ -201,6 +230,7 @@ it('requires literal confirmation for connect/import/disconnect before upstream 
   expect(synthetic.load).not.toHaveBeenCalled();
   expect(synthetic.save).not.toHaveBeenCalled();
   expect(synthetic.disconnect).not.toHaveBeenCalled();
+  expect(synthetic.disable).not.toHaveBeenCalled();
 });
 it('accepts advanced confirmed token import and persists only validated token fields', async () => {
   const response = await importToken(
@@ -293,6 +323,7 @@ it('rechecks OWNER permissions after asynchronous disconnect preparation', async
   release();
   expect((await pending).status).toBe(403);
   expect(synthetic.disconnect).not.toHaveBeenCalled();
+  expect(synthetic.disable).not.toHaveBeenCalled();
   database.db
     .update(user)
     .set({ role: 'OWNER' })
@@ -310,10 +341,76 @@ it.each([
   async (body) => {
     expect((await sync(request(ownerHeaders, body))).status).toBe(400);
     expect(synthetic.upstream).not.toHaveBeenCalled();
+    expect(synthetic.run).not.toHaveBeenCalled();
     expect(synthetic.load).not.toHaveBeenCalled();
   },
 );
 
+it('validates connection schedule before credentials or storage access', async () => {
+  for (const metadata of [
+    { timezone: 'Invalid/Zone' },
+    { initialFrom: '9999-12-31' },
+    { initialFrom: '2020-01-01' },
+  ]) {
+    expect(
+      (await POST(request(ownerHeaders, { ...input, ...metadata }))).status,
+    ).toBe(400);
+    expect(
+      (
+        await importToken(
+          request(ownerHeaders, { token, confirmed: true, ...metadata }),
+        )
+      ).status,
+    ).toBe(400);
+  }
+  expect(synthetic.exchange).not.toHaveBeenCalled();
+  expect(synthetic.load).not.toHaveBeenCalled();
+  expect(synthetic.enable).not.toHaveBeenCalled();
+});
+it('confirmed disconnect invalidates schedule before awaited token removal', async () => {
+  let release!: () => void;
+  synthetic.disconnect.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const pending = disconnect(request(ownerHeaders, { confirmed: true }));
+  await vi.waitFor(() => expect(synthetic.disconnect).toHaveBeenCalledTimes(1));
+  expect(synthetic.disable).toHaveBeenCalledWith('connection-owner');
+  expect(synthetic.disable.mock.invocationCallOrder[0]).toBeLessThan(
+    synthetic.disconnect.mock.invocationCallOrder[0]!,
+  );
+  release();
+  expect((await pending).status).toBe(200);
+});
+it('manual sync uses common lease service and preserves caller timezone', async () => {
+  synthetic.run.mockResolvedValue({
+    state: 'completed',
+    completedDates: ['2026-01-01'],
+    failedDates: [],
+    startedAt: null,
+    finishedAt: null,
+  });
+  expect(
+    (
+      await sync(
+        request(ownerHeaders, {
+          mode: 'period',
+          from: '2026-01-01',
+          to: '2026-01-01',
+          timezone: 'Europe/Moscow',
+        }),
+      )
+    ).status,
+  ).toBe(200);
+  expect(synthetic.run).toHaveBeenCalledWith(
+    'connection-owner',
+    { from: '2026-01-01', to: '2026-01-01' },
+    { mode: 'manual', timezone: 'Europe/Moscow' },
+  );
+  expect(synthetic.upstream).not.toHaveBeenCalled();
+});
 it('rejects a real session revoked during delayed exchange before persistence', async () => {
   let release!: (value: typeof token) => void;
   synthetic.exchange.mockImplementationOnce(

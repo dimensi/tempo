@@ -1,5 +1,5 @@
 'use client';
-import { useState, useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore, useEffect } from 'react';
 import {
   Alert,
   Badge,
@@ -20,6 +20,7 @@ import {
   type SyncStatus,
   resolveSyncPeriod,
 } from '@/contracts/nutrition-sync';
+import type { NutritionScheduleStatus } from '@/contracts/nutrition-schedule';
 import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
 const subscribeToHydration = () => () => {};
 const clientReady = () => true;
@@ -32,6 +33,7 @@ export function YazioSettingsForm({
     configured: boolean;
     tokenFileConfigured: boolean;
     sync: SyncStatus;
+    schedule: NutritionScheduleStatus;
   };
 }) {
   const [status, setStatus] = useState(initial);
@@ -46,7 +48,7 @@ export function YazioSettingsForm({
   const [consent, setConsent] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [httpsError, setHttpsError] = useState(false);
-  const [from, setFrom] = useState<string | null>(null);
+  const [from, setFrom] = useState<string | null>(initial.schedule.initialFrom);
   const [to, setTo] = useState('');
   const [customEnd, setCustomEnd] = useState(false);
   const timezone = ready
@@ -74,6 +76,46 @@ export function YazioSettingsForm({
       timezone: zone,
     };
   }
+  function connectionSchedule() {
+    const request = periodRequest();
+    return { timezone: request.timezone, initialFrom: request.from };
+  }
+  async function refreshStatus() {
+    try {
+      const response = await fetch('/api/yazio/status', {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) setStatus(await response.json());
+    } catch {
+      /* A read failure must not undo a completed connect/sync. */
+    }
+  }
+  useEffect(() => {
+    if (!ready || !status.configured) return;
+    const controller = new AbortController();
+    let pending = false;
+    const timer = setInterval(async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const response = await fetch('/api/yazio/status', {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (response.ok && !controller.signal.aborted)
+          setStatus(await response.json());
+      } catch {
+        /* Keep the last known safe status. */
+      } finally {
+        pending = false;
+      }
+    }, 30000);
+    return () => {
+      clearInterval(timer);
+      controller.abort();
+    };
+  }, [ready, status.configured]);
   async function loadDiary(body: unknown) {
     const response = await fetch('/api/yazio/sync', {
       method: 'POST',
@@ -115,6 +157,7 @@ export function YazioSettingsForm({
       setBusy(false);
       return;
     }
+    let outcome: Exclude<typeof result, null> = 'failure';
     try {
       const response = await fetch(path, {
         method: 'POST',
@@ -127,28 +170,30 @@ export function YazioSettingsForm({
         setStatus((current) => ({ ...current, configured: true }));
         try {
           await loadDiary(periodRequest());
-          setResult('connectionLoaded');
+          outcome = 'connectionLoaded';
         } catch {
-          setResult('connectionSyncFailed');
+          outcome = 'connectionSyncFailed';
         }
       } else if (path === '/api/yazio/sync') {
         const sync: SyncStatus = await response.json();
         setStatus((current) => ({ ...current, sync }));
-        setResult(sync.state === 'completed' ? 'syncLoaded' : 'syncFailed');
+        outcome = sync.state === 'completed' ? 'syncLoaded' : 'syncFailed';
       } else {
         setStatus((current) => ({
           ...current,
           configured: path === '/api/yazio/token',
         }));
-        setResult('success');
+        outcome = 'success';
       }
     } catch {
-      setResult(path === '/api/yazio/sync' ? 'syncFailed' : 'failure');
+      outcome = path === '/api/yazio/sync' ? 'syncFailed' : 'failure';
     } finally {
       setPassword('');
       setToken('');
       setConsent(false);
+      await refreshStatus();
       setBusy(false);
+      setResult(outcome);
     }
   }
   const connectionForm = (
@@ -163,7 +208,12 @@ export function YazioSettingsForm({
             setPassword('');
             return;
           }
-          const input = { email, password, confirmed: true };
+          const input = {
+            email,
+            password,
+            confirmed: true,
+            ...connectionSchedule(),
+          };
           setPassword('');
           void submit('/api/yazio/connect', input);
         }}
@@ -326,6 +376,7 @@ export function YazioSettingsForm({
                     void submit('/api/yazio/token', {
                       token: JSON.parse(token),
                       confirmed: true,
+                      ...connectionSchedule(),
                     });
                   } catch {
                     setToken('');
@@ -401,6 +452,43 @@ export function YazioSettingsForm({
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>
+      {status.configured && (
+        <Stack gap="xs">
+          <Text size="sm">
+            {!status.schedule.enabled
+              ? messages.scheduleDisabled
+              : status.schedule.schedulerActive
+                ? messages.hourly
+                : messages.schedulerInactive}
+          </Text>
+          {status.schedule.running && (
+            <Text role="status">{messages.scheduledLoading}</Text>
+          )}
+          <Text size="sm">
+            {messages.lastSuccess}:{' '}
+            {ready && status.schedule.lastSuccess
+              ? new Date(status.schedule.lastSuccess).toLocaleString('ru-RU', {
+                  timeZone: status.schedule.timezone,
+                })
+              : messages.noRuns}
+          </Text>
+          <Text size="sm">
+            {messages.nextRun}:{' '}
+            {ready &&
+            status.schedule.schedulerActive &&
+            status.schedule.nextRunAt
+              ? new Date(status.schedule.nextRunAt).toLocaleString('ru-RU', {
+                  timeZone: status.schedule.timezone,
+                })
+              : messages.pendingRun}
+          </Text>
+          {status.schedule.lastError && (
+            <Alert color="yellow" role="status">
+              {messages.scheduleErrors[status.schedule.lastError]}
+            </Alert>
+          )}
+        </Stack>
+      )}
       <Text role="status">
         {messages.status}: {messages.states[status.sync.state]} (
         {status.sync.completedDates.length}/
