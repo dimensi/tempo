@@ -113,7 +113,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       .fill('Test-only-password-12345');
     await owner.getByRole('button', { name: 'Войти', exact: true }).click();
     await owner.waitForURL(origin + '/');
-    await owner.goto(origin + '/settings/yazio');
+    await owner.goto(origin + '/settings#connection');
     const dayUrl =
       origin +
       '/api/nutrition/days/2026-01-01?ownerId=' +
@@ -299,7 +299,9 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
         await route.continue();
       },
     );
-    await delayed.goto(origin + '/settings/yazio', { waitUntil: 'commit' });
+    await delayed.goto(origin + '/settings#connection', {
+      waitUntil: 'commit',
+    });
     const delayedStart = delayed.getByLabel('Загрузить данные начиная с…');
     await delayedStart.waitFor();
     expect(await delayedStart.isDisabled()).toBe(true);
@@ -408,7 +410,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     expect(await (await owner.request.get(photosUrl)).json()).toEqual(photos);
     expect(await secret.inputValue()).toBe('');
     const departing = await ownerContext.newPage();
-    await departing.goto(origin + '/settings/yazio');
+    await departing.goto(origin + '/settings#connection');
     await departing.getByLabel('Загрузить данные начиная с…').fill(chosenFrom);
     await departing
       .getByRole('textbox', { name: 'Email аккаунта YAZIO', exact: true })
@@ -480,7 +482,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       } catch {}
       await delay(500);
     }
-    await owner.goto(origin + '/settings/yazio');
+    await owner.goto(origin + '/settings#connection');
     await owner
       .locator('#connection')
       .getByText(
