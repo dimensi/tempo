@@ -21,6 +21,7 @@ import {
   type SyncStatus,
   type YazioAccount,
   resolveSyncPeriod,
+  syncResultKind,
 } from '@/contracts/nutrition-sync';
 import type { NutritionScheduleStatus } from '@/contracts/nutrition-schedule';
 import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
@@ -171,24 +172,24 @@ export function YazioSettingsForm({
           account: connected.account,
           ...(connected.sync ? { sync: connected.sync } : {}),
         }));
+        const kind =
+          connected.sync && !connected.syncError
+            ? syncResultKind(connected.sync)
+            : 'incomplete';
         outcome =
-          !connected.syncError && connected.sync?.state === 'completed'
+          kind === 'loaded'
             ? 'connectionLoaded'
-            : connected.sync &&
-                connected.sync.failedDates.length === 0 &&
-                connected.sync.completedDates.length > 0 &&
-                connected.sync.photoFailedDates.length > 0
+            : kind === 'photos-pending'
               ? 'connectionPhotoWarning'
               : 'connectionSyncFailed';
       } else if (path === '/api/yazio/sync') {
         const sync: SyncStatus = await response.json();
         setStatus((current) => ({ ...current, sync }));
+        const kind = syncResultKind(sync);
         outcome =
-          sync.state === 'completed'
+          kind === 'loaded'
             ? 'syncLoaded'
-            : sync.failedDates.length === 0 &&
-                sync.completedDates.length > 0 &&
-                sync.photoFailedDates.length > 0
+            : kind === 'photos-pending'
               ? 'syncPhotoWarning'
               : 'syncFailed';
       } else {

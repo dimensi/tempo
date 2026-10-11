@@ -59,6 +59,15 @@ export const syncStatusSchema = z.object({
   photoFailedDates: z.array(diaryDateSchema),
 });
 export type SyncStatus = z.infer<typeof syncStatusSchema>;
+export function syncResultKind(sync: SyncStatus) {
+  const foodLoaded =
+    (sync.state === 'completed' || sync.state === 'partial') &&
+    sync.completedDates.length > 0 &&
+    sync.failedDates.length === 0;
+  if (!foodLoaded) return 'incomplete';
+  if (sync.photoFailedDates.length > 0) return 'photos-pending';
+  return sync.state === 'completed' ? 'loaded' : 'incomplete';
+}
 export const yazioAccountSchema = z.object({
   email: z.email().nullable(),
   name: z.string().max(201).nullable(),
