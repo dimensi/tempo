@@ -95,7 +95,9 @@ test('measurement and actual-session comments compose after CRUD with real train
       .click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Название (необязательно)').fill(note);
-    await dialog.getByLabel('Упражнение').fill('Synthetic squat');
+    await dialog
+      .getByRole('textbox', { name: 'Упражнение', exact: true })
+      .fill('Synthetic squat');
     await dialog
       .getByRole('button', { name: 'Сохранить', exact: true })
       .click();

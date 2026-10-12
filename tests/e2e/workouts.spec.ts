@@ -427,6 +427,11 @@ test('unnamed editor preserves drafts, handles errors and copies only the select
     path: test.info().outputPath('workout-editor.png'),
     fullPage: true,
   });
+  await page.getByRole('button', { name: 'Переключить тему' }).click();
+  await page.screenshot({
+    path: test.info().outputPath('workout-editor-dark.png'),
+    fullPage: true,
+  });
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -449,4 +454,64 @@ test('unnamed editor preserves drafts, handles errors and copies only the select
       (session) => session.planId === copied.id,
     ),
   ).toHaveLength(0);
+});
+
+test('a save settling after Back does not redirect or repeat the write', async ({
+  page,
+}) => {
+  test.skip(
+    test.info().project.name !== 'desktop',
+    'Viewport-independent asynchronous navigation guard.',
+  );
+  await login(page);
+  const id = await ownerId(page);
+  await page.goto('/workouts?date=2026-10-12');
+  await page
+    .getByRole('button', { name: 'Добавить тренировку', exact: true })
+    .click();
+  await page
+    .getByRole('textbox', { name: 'Упражнение', exact: true })
+    .fill('Delayed save');
+  await page
+    .getByRole('textbox', { name: 'Дата', exact: true })
+    .fill('2026-10-13');
+  let release!: () => void;
+  let notifySaved!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const saved = new Promise<void>((resolve) => {
+    notifySaved = resolve;
+  });
+  let posts = 0;
+  await page.route('**/api/workouts/plans?*', async (route) => {
+    posts++;
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    notifySaved();
+    await gate;
+    await route.fulfill({ response });
+  });
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await saved;
+  await page.goBack();
+  await expect(page).toHaveURL('/workouts?date=2026-10-12');
+  release();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          Object.keys(sessionStorage).filter((key) =>
+            key.startsWith('workout-draft:'),
+          ).length,
+      ),
+    )
+    .toBe(0);
+  await expect(page).toHaveURL('/workouts?date=2026-10-12');
+  expect(posts).toBe(1);
+  expect(
+    (await workouts(page, id)).plans.filter(
+      (plan) => plan.workouts[0]?.exercises[0]?.name === 'Delayed save',
+    ),
+  ).toHaveLength(1);
 });

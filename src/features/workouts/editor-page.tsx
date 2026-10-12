@@ -107,10 +107,12 @@ export function WorkoutEditorPage({
   const [error, setError] = useState<string | null>(null);
   const [cancel, setCancel] = useState(false);
   const requestId = useRef('');
+  const mounted = useRef(false);
   const dirty = useRef(false);
   const persisted = useRef(false);
   const [stored, setStored] = useState(false);
   useEffect(() => {
+    mounted.current = true;
     let alive = true;
     void fetch(`/api/workouts?ownerId=${encodeURIComponent(ownerId)}`, {
       cache: 'no-store',
@@ -181,6 +183,7 @@ export function WorkoutEditorPage({
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
+      mounted.current = false;
       alive = false;
       unsubscribe();
       window.removeEventListener('beforeunload', beforeUnload);
@@ -193,7 +196,7 @@ export function WorkoutEditorPage({
     } catch {
       /* Storage unavailable. */
     }
-    router.push(`/workouts?date=${destination}`);
+    if (mounted.current) router.push(`/workouts?date=${destination}`);
   };
   const change = (value: WorkoutPlanInput) => {
     dirty.current = true;
@@ -247,7 +250,7 @@ export function WorkoutEditorPage({
       );
       if (!response.ok) {
         if (response.status === 403 || response.status === 401) {
-          setReady(false);
+          if (mounted.current) setReady(false);
           try {
             sessionStorage.removeItem(key);
           } catch {
@@ -269,9 +272,10 @@ export function WorkoutEditorPage({
           : value.workouts[0]!.date,
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : m.error);
+      if (mounted.current)
+        setError(cause instanceof Error ? cause.message : m.error);
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
   return (

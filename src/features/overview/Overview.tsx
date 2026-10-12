@@ -17,6 +17,7 @@ import {
 import { LineChart } from '@mantine/charts';
 import type { OverviewData } from '@/contracts/overview';
 import { formatDecimal, toChartNumber } from '@/lib/number-display';
+import { workoutTitle } from '@/lib/workout-title';
 import { overviewMessages as m } from './messages';
 import { localCalendar, nextMidnightDelay } from './calendar';
 import classes from './overview.module.css';
@@ -157,7 +158,12 @@ export function Overview() {
                     </Text>
                     {current.workouts[key] ? (
                       <>
-                        <Text fw={600}>{current.workouts[key]!.title}</Text>
+                        <Text fw={600}>
+                          {workoutTitle(
+                            current.workouts[key]!.title,
+                            current.workouts[key]!.date,
+                          )}
+                        </Text>
                         <Text size="sm">
                           {date(current.workouts[key]!.date)}
                         </Text>
