@@ -10,6 +10,8 @@ export const measurementMessages = {
   empty: 'Замеров пока нет',
   history: 'История замеров',
   trend: 'Динамика',
+  localSource: 'Вручную',
+  yazioSource: 'YAZIO',
   error:
     'Не удалось сохранить изменения. Повторите попытку позже. Введённые значения сохранены.',
   validation:

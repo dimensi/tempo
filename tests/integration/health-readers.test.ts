@@ -12,6 +12,7 @@ import * as measurementPersistence from '@/server/measurements/repository';
 import { getStepsSummary, getWeightHistory } from '@/server/health';
 import { GET as stepsGET } from '@/app/api/health/steps/route';
 import { GET as weightGET } from '@/app/api/health/weight/route';
+import { weightTrendChart } from '@/features/measurements/history';
 const range = { from: '2026-10-10', to: '2026-10-12' };
 let ownerHeaders: Headers;
 let trainerHeaders: Headers;
@@ -116,7 +117,73 @@ afterAll(() => {
   database.sqlite.close();
   vi.unstubAllEnvs();
 });
-it('uses actual sessions: owner reads safe zero/gap/date/source projections and unknown units', async () => {
+it('existing raw weights project kg without conversion or storage changes, and repeated provider UUID remains one row', async () => {
+  const repo = persistence.yazioHealthRepository();
+  const record = {
+    source: 'yazio' as const,
+    externalId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    providerDate: '2026-05-01',
+    measuredDate: '2026-05-01',
+    rawValue: '72.375',
+    unit: null,
+    unitContext: 'lb',
+    upstreamSource: 'PRIVATE_SOURCE',
+    gateway: 'PRIVATE_GATEWAY',
+  };
+  repo.upsert(
+    'owner',
+    { weights: [record, record], dailySteps: [] },
+    '2026-10-12T12:00:00Z',
+  );
+  repo.upsert(
+    'owner',
+    {
+      weights: [
+        { ...record, providerDate: '2026-05-02', measuredDate: '2026-05-02' },
+      ],
+      dailySteps: [],
+    },
+    '2026-10-12T12:00:00Z',
+  );
+  measurementPersistence
+    .measurementRepository()
+    .create('owner', {
+      measuredAt: '2026-05-02',
+      values: [{ metric: 'weight', value: '72.125', unit: 'kg' }],
+      note: null,
+    });
+  const history = await getWeightHistory(ownerHeaders, {
+    from: '2026-05-01',
+    to: '2026-05-02',
+  });
+  expect(history.imported).toEqual([
+    {
+      measuredAt: '2026-05-02',
+      rawValue: '72.375',
+      unit: 'kg',
+      unitStatus: 'OWNER_CONFIRMED',
+      source: 'YAZIO',
+    },
+  ]);
+  expect(weightTrendChart(history)).toEqual([
+    { date: '2026-05-02', local: 72.125, yazio: 72.375 },
+  ]);
+  expect(
+    database.sqlite
+      .prepare(
+        'SELECT external_id AS id,raw_value AS value,unit,upstream_source AS source FROM yazio_weight_entries WHERE owner_id = ? AND external_id = ?',
+      )
+      .all('owner', record.externalId),
+  ).toEqual([
+    {
+      id: record.externalId,
+      value: '72.375',
+      unit: null,
+      source: 'PRIVATE_SOURCE',
+    },
+  ]);
+});
+it('uses actual sessions: owner reads safe zero/gap/date/source projections and owner-confirmed kilograms', async () => {
   const steps = await getStepsSummary(ownerHeaders, range);
   expect(steps.days).toEqual([
     { date: '2026-10-10', steps: 0, source: 'YAZIO' },
@@ -136,8 +203,8 @@ it('uses actual sessions: owner reads safe zero/gap/date/source projections and 
     {
       measuredAt: '2026-10-11',
       rawValue: '160.125',
-      unit: null,
-      unitStatus: 'UNKNOWN',
+      unit: 'kg',
+      unitStatus: 'OWNER_CONFIRMED',
       source: 'YAZIO',
     },
   ]);
@@ -251,8 +318,8 @@ it('retains null imported values and excludes ambiguous dates without guessing',
     {
       measuredAt: '2026-07-02',
       rawValue: null,
-      unit: null,
-      unitStatus: 'UNKNOWN',
+      unit: 'kg',
+      unitStatus: 'OWNER_CONFIRMED',
       source: 'YAZIO',
     },
   ]);
@@ -333,15 +400,15 @@ it('bounds local weight reads before decoding, retains both boundary dates and i
     {
       measuredAt: period.from,
       rawValue: '0',
-      unit: null,
-      unitStatus: 'UNKNOWN',
+      unit: 'kg',
+      unitStatus: 'OWNER_CONFIRMED',
       source: 'YAZIO',
     },
     {
       measuredAt: period.to,
       rawValue: null,
-      unit: null,
-      unitStatus: 'UNKNOWN',
+      unit: 'kg',
+      unitStatus: 'OWNER_CONFIRMED',
       source: 'YAZIO',
     },
   ]);

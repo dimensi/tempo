@@ -38,7 +38,11 @@ export default async function Page() {
   }
   return (
     <Stack gap="lg" style={{ minWidth: 0 }}>
-      <MeasurementsWithComments ownerId={ownerId} writable={writeAccess.ok} />
+      <MeasurementsWithComments
+        ownerId={ownerId}
+        writable={writeAccess.ok}
+        weightHistory={history}
+      />
       <WeightHistoryPanel history={history} />
     </Stack>
   );

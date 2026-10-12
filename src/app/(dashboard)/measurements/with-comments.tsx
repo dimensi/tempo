@@ -1,9 +1,11 @@
 'use client';
 import { MeasurementsPanel } from '@/features/measurements';
 import { CommentsPanel } from '@/features/comments';
+import type { WeightHistory } from '@/contracts/health';
 export function MeasurementsWithComments(props: {
   ownerId: string;
   writable: boolean;
+  weightHistory: WeightHistory;
 }) {
   return (
     <MeasurementsPanel

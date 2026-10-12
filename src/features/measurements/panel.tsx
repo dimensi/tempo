@@ -22,7 +22,9 @@ import {
   type MeasurementMetric,
 } from '@/contracts/measurements';
 import { measurementMessages as m } from './messages';
-import { measurementChange } from './history';
+import { measurementChange, weightTrendChart } from './history';
+import type { WeightHistory } from '@/contracts/health';
+import { formatDecimal } from '@/lib/number-display';
 function responseError(status: number) {
   return status === 401
     ? m.sessionExpired
@@ -35,10 +37,12 @@ function responseError(status: number) {
 export function MeasurementsPanel({
   ownerId,
   writable,
+  weightHistory,
   renderComments,
 }: {
   ownerId: string;
   writable: boolean;
+  weightHistory: WeightHistory;
   renderComments?: (measurementId: string) => ReactNode;
 }) {
   const [items, setItems] = useState<Measurement[]>([]);
@@ -146,10 +150,31 @@ export function MeasurementsPanel({
       setBusy(false);
     }
   }
-  const chart = [...items].reverse().flatMap((item) => {
-    const v = item.values.find((v) => v.metric === metric);
-    return v ? [{ date: item.measuredAt, value: Number(v.value) }] : [];
-  });
+  const chart =
+    metric === 'weight'
+      ? weightTrendChart({
+          ...weightHistory,
+          local: items
+            .filter(
+              (item) =>
+                item.measuredAt >= weightHistory.range.from &&
+                item.measuredAt <= weightHistory.range.to,
+            )
+            .flatMap((item) =>
+              item.values
+                .filter((value) => value.metric === 'weight')
+                .map((value) => ({
+                  measuredAt: item.measuredAt,
+                  value: value.value,
+                  unit: 'kg' as const,
+                  source: 'LOCAL' as const,
+                })),
+            ),
+        })
+      : [...items].reverse().flatMap((item) => {
+          const v = item.values.find((v) => v.metric === metric);
+          return v ? [{ date: item.measuredAt, value: Number(v.value) }] : [];
+        });
   return (
     <Stack>
       <Title order={1}>{m.title}</Title>
@@ -230,12 +255,23 @@ export function MeasurementsPanel({
       />
       {chart.length ? (
         <LineChart
+          data-testid="measurement-trend-chart"
           h={260}
           data={chart}
           dataKey="date"
-          series={[
-            { name: 'value', label: m.metrics[metric], color: 'blue.6' },
-          ]}
+          withLegend={metric === 'weight'}
+          connectNulls={false}
+          valueFormatter={(value) =>
+            `${formatDecimal(value)} ${m.units[metric === 'weight' ? 'kg' : 'cm']}`
+          }
+          series={
+            metric === 'weight'
+              ? [
+                  { name: 'local', label: m.localSource, color: 'blue.6' },
+                  { name: 'yazio', label: m.yazioSource, color: 'orange.6' },
+                ]
+              : [{ name: 'value', label: m.metrics[metric], color: 'blue.6' }]
+          }
         />
       ) : (
         <Text>{m.empty}</Text>

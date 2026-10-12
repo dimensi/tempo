@@ -29,7 +29,7 @@ async function login(request: APIRequestContext, role: 'owner' | 'trainer') {
   }
   expect(response.status()).toBe(200);
 }
-test('synthetic health history has safe sources, zero/gaps, unknown units and mobile geometry', async ({
+test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg and mobile geometry', async ({
   page,
 }, testInfo) => {
   // This fixture only opens the disposable database configured by Playwright.
@@ -64,6 +64,14 @@ test('synthetic health history has safe sources, zero/gaps, unknown units and mo
     owner.id,
     from,
     JSON.stringify([{ metric: 'weight', value: '72.125', unit: 'kg' }]),
+  );
+  db.prepare(
+    'INSERT OR REPLACE INTO measurements(id,owner_id,measured_at,values_json) VALUES(?,?,?,?)',
+  ).run(
+    'health-e2e-same-day',
+    owner.id,
+    today(),
+    JSON.stringify([{ metric: 'weight', value: '71.875', unit: 'kg' }]),
   );
   try {
     await login(page.request, 'owner');
@@ -110,12 +118,20 @@ test('synthetic health history has safe sources, zero/gaps, unknown units and mo
     const weights = page.getByRole('main').getByTestId('health-weight');
     await expect(weights).toContainText('Вручную');
     await expect(weights).toContainText('72,13');
+    await expect(weights).toContainText('71,88');
     await expect(weights).toContainText('160,13');
-    await expect(weights).toContainText('Единица неизвестна');
+    await expect(weights).not.toContainText('Единица неизвестна');
+    await expect(weights).toContainText('Владелец подтвердил');
     await expect(weights).toContainText('Нет данных');
     const imported = weights.getByRole('row').filter({ hasText: '160,13' });
     await expect(imported).toContainText('YAZIO');
-    await expect(imported).not.toContainText('кг');
+    await expect(imported).toContainText('кг');
+    const weightChart = page.getByTestId('measurement-trend-chart');
+    await expect(weightChart.locator('svg.recharts-surface')).toBeVisible();
+    await expect(weightChart).toContainText('Вручную');
+    await expect(weightChart).toContainText('YAZIO');
+    expect(await weightChart.locator('.recharts-line').count()).toBe(2);
+    await expect(weightChart.locator('.recharts-line-dot')).toHaveCount(3);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -185,6 +201,9 @@ test('synthetic health history has safe sources, zero/gaps, unknown units and mo
     ).run(owner.id, uuid, nullUuid);
     db.prepare('DELETE FROM measurements WHERE id = ?').run(
       'health-e2e-manual',
+    );
+    db.prepare('DELETE FROM measurements WHERE id = ?').run(
+      'health-e2e-same-day',
     );
     db.prepare('DELETE FROM trainer_access WHERE trainer_id = ?').run(
       trainer.id,
