@@ -11,7 +11,8 @@ import type { NutritionUpstream } from '@/server/yazio/adapter';
 if (
   process.env.DATABASE_URL !== 'file:./.data/e2e.sqlite' ||
   process.env.UPLOADS_DIR !== './.data/e2e-nutrition-uploads' ||
-  process.env.BETTER_AUTH_URL !== 'http://localhost:3135'
+  process.env.BETTER_AUTH_URL !==
+    `http://localhost:${process.env.NUTRITION_CONNECTION_E2E_PORT ?? '3135'}`
 )
   throw new Error('Only isolated synthetic E2E configuration is allowed');
 const database = openDatabase(process.env.DATABASE_URL);

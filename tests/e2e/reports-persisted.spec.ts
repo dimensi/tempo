@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { execFileSync } from 'node:child_process';
 import { syntheticDay } from '../unit/reports/fixtures';
+test.use({ timezoneId: 'Europe/Moscow' });
 const query = 'start=2026-10-10&end=2026-10-10&period=daily&format=pdf';
 test('anonymous bytes denied and oversized period rejected', async ({
   request,
@@ -22,6 +23,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
   browser,
 }) => {
   test.setTimeout(90000);
+  await page.clock.setFixedTime(new Date('2026-10-11T21:30:00Z'));
   await page.goto('/login');
   await page.getByLabel('Электронная почта').fill('owner@example.test');
   await page
@@ -65,15 +67,17 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
   });
   // Only disposable E2E storage; C's persisted snapshot format, no session mocks.
   const db = new Database('.data/e2e.sqlite');
+  const day = syntheticDay(date);
+  day.officialTotals = {
+    ...day.officialTotals,
+    fat: '3.4499999999999997',
+    carbs: '6.1499999999999995',
+  };
+  day.delta = { ...day.delta, fat: '3e-16', carbs: '-5e-16' };
   try {
     db.prepare(
       'INSERT INTO nutrition_days(owner_id,date,snapshot,fetched_at) VALUES(?,?,?,?)',
-    ).run(
-      ownerId,
-      date,
-      JSON.stringify(syntheticDay(date)),
-      '2026-10-11T00:00:00Z',
-    );
+    ).run(ownerId, date, JSON.stringify(day), '2026-10-11T00:00:00Z');
   } finally {
     db.close();
   }
@@ -108,6 +112,46 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await expect(
       page.getByRole('heading', { name: 'Отчёты', exact: true }),
     ).toBeVisible();
+    await expect(page.getByLabel('Начало')).toHaveValue('2026-10-12');
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page
+      .getByRole('option', { name: 'Произвольный период', exact: true })
+      .click();
+    await expect(page.getByLabel('Окончание')).toHaveValue('2026-10-12');
+    await page.getByLabel('Окончание').fill('2026-10-13');
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page.getByRole('option', { name: 'Неделя', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page
+      .getByRole('option', { name: 'Произвольный период', exact: true })
+      .click();
+    await expect(page.getByLabel('Окончание')).toHaveValue('2026-10-13');
+    await page.getByLabel('Окончание').fill('');
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page.getByRole('option', { name: 'День', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page
+      .getByRole('option', { name: 'Произвольный период', exact: true })
+      .click();
+    await expect(page.getByLabel('Окончание')).toHaveValue('');
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page.getByRole('option', { name: 'День', exact: true }).click();
+    await page.screenshot({
+      path: test.info().outputPath('reports-local-today.png'),
+    });
+    await page.getByLabel('Начало').fill(date);
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page.getByRole('option', { name: 'Неделя', exact: true }).click();
+    await expect(page.getByLabel('Начало')).toHaveValue(date);
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page.getByRole('option', { name: 'День', exact: true }).click();
+    await expect(page.getByLabel('Начало')).toHaveValue(date);
+    await page.getByLabel('Начало').fill('');
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page.getByRole('option', { name: 'Неделя', exact: true }).click();
+    await expect(page.getByLabel('Начало')).toHaveValue('');
+    await page.getByRole('combobox', { name: 'Период' }).click();
+    await page.getByRole('option', { name: 'День', exact: true }).click();
     await page.getByLabel('Начало').fill(date);
     await page.getByRole('button', { name: 'Предпросмотр HTML' }).click();
     const preview = page.frameLocator('iframe[title="Предпросмотр HTML"]');
@@ -115,6 +159,9 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       preview.getByText('Яйцо · запись 1', { exact: true }),
     ).toBeVisible();
     await expect(preview.locator('img')).toHaveCount(1);
+    await expect(preview.getByText('3,45', { exact: true })).toBeVisible();
+    await expect(preview.getByText('6,15', { exact: true })).toBeVisible();
+    await expect(preview.getByText('≈ 0', { exact: true })).toHaveCount(2);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -134,7 +181,12 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     const text = execFileSync('pdftotext', [path, '-'], { encoding: 'utf8' });
     expect(text).toContain('Яйцо');
     expect(text).toContain('Неизвестно');
-    expect(text).toContain('12.5212');
+    expect(text).toContain('12,52');
+    expect(text).toContain('3,45');
+    expect(text).toContain('6,15');
+    expect(text).toMatch(/≈\s*0/);
+    expect(text).not.toContain('3e-16');
+    expect(text).not.toContain('-5e-16');
     expect(
       execFileSync('pdfimages', ['-list', path], { encoding: 'utf8' }),
     ).toMatch(/image\s+450\s+225/);

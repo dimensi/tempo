@@ -45,8 +45,15 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
       Buffer.from(png.split(',')[1]!, 'base64'),
       Buffer.alloc(3 * 1024 * 1024),
     ]);
+    const day = syntheticDay(undefined, 45);
+    day.officialTotals = {
+      ...day.officialTotals,
+      fat: '3.4499999999999997',
+      carbs: '6.1499999999999995',
+    };
+    day.delta = { ...day.delta, fat: '3e-16', carbs: '-5e-16' };
     const adapter: ReportDataSource = {
-      getNutritionDays: async () => [syntheticDay(undefined, 45)],
+      getNutritionDays: async () => [day],
       listPhotos: async () => [metadata],
       readPhoto: async () => ({ bytes: photo, mime: 'image/png' }),
     };
@@ -82,7 +89,17 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
       expect(text).toContain('Яйцо · запись 45');
       expect(text).toContain('Неизвестно');
       expect(text).toContain('Известная часть');
-      expect(text).toContain('12.5212');
+      expect(text).toContain('12,52');
+      expect(text).toContain('3,45');
+      expect(text).toContain('6,15');
+      expect(text).toMatch(/≈\s*0/);
+      for (const raw of [
+        '3.4499999999999997',
+        '6.1499999999999995',
+        '3e-16',
+        '-5e-16',
+      ])
+        expect(text).not.toContain(raw);
       const pages = text
         .split('\f')
         .filter(

@@ -4,6 +4,8 @@ Owned implementation: `src/server/pdf`, reports UI/routes, v1 report request and
 
 Reports use authoritative `NutritionDay.totals`; the only derived metric is an exact decimal period sum. Missing dates and null nutrients remain unknown with separately labelled known totals. An empty dataset is 404, never an invented zero day. HTML/PDF share escaped markup and a local embedded Cyrillic font. No Chromium navigation to an internal endpoint: `page.setContent`, fresh context, no cookies, JavaScript disabled, all network blocked, data images/fonts only. Response is private/no-store with CSP and sandbox. Every request uses `reports:export` and owner scope, repeated before releasing output.
 
+Numerical text uses the shared `formatDecimal` presentation helper: ordinary values have at most two decimal places, very small/large values have bounded text, and nonzero deltas below display precision show `≈ 0`. Null remains unknown; source decimals and exact period calculations are unchanged. The form initializes both date fields once from the browser's local calendar after hydration, preserving edits and explicit clearing across period changes.
+
 ## Source C integration
 
 `reportDataSource(headers)` statically imports source C and composes its authorized public interface through `createNutritionReportSource`. There is no demo fallback or global test setter. The adapter preserves the agreed DTO without conversion or nutrient recalculation:

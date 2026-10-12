@@ -1,4 +1,5 @@
 import 'server-only';
+import { formatDecimal } from '@/lib/number-display';
 import type { NutritionTotals } from '@/contracts/nutrition';
 import { periodDates, type ReportRequest } from '@/contracts/reports';
 import { reportMessages as m } from '@/features/reports';
@@ -16,11 +17,16 @@ export function escapeHtml(value: string): string {
       ]!,
   );
 }
-function value(value: string | null) {
-  return value === null ? m.unknown : escapeHtml(value);
+function value(value: string | null, kind: 'value' | 'delta' = 'value') {
+  const display = formatDecimal(value, { kind });
+  return display === null ? m.unknown : escapeHtml(display);
 }
-function totals(values: NutritionTotals, known?: NutritionTotals) {
-  return `<dl class="totals">${(['calories', 'protein', 'fat', 'carbs'] as const).map((key) => `<div><dt>${m[key]}</dt><dd>${value(values[key])}${values[key] === null && known ? `<small>${m.partial}: ${value(known[key])}</small>` : ''}</dd></div>`).join('')}</dl>`;
+function totals(
+  values: NutritionTotals,
+  known?: NutritionTotals,
+  kind: 'value' | 'delta' = 'value',
+) {
+  return `<dl class="totals">${(['calories', 'protein', 'fat', 'carbs'] as const).map((key) => `<div><dt>${m[key]}</dt><dd>${value(values[key], kind)}${values[key] === null && known ? `<small>${m.partial}: ${value(known[key])}</small>` : ''}</dd></div>`).join('')}</dl>`;
 }
 export function renderReportHtml(
   request: ReportRequest,
@@ -36,7 +42,7 @@ export function renderReportHtml(
 ${dates
   .map((date) => {
     const day = dataset.days.find((candidate) => candidate.date === date);
-    return `<section class="day"><h2>${date}</h2>${day ? `<p class="muted">${m.fetched}: ${escapeHtml(day.fetchedAt)}</p><h3>${m.totals}</h3>${totals(day.totals, day.knownTotals)}<details open><summary>${m.sourceOfficial}</summary>${totals(day.officialTotals)}<p>${m.delta}</p>${totals(day.delta)}</details>` : `<p>${m.missing}</p>`}
+    return `<section class="day"><h2>${date}</h2>${day ? `<p class="muted">${m.fetched}: ${escapeHtml(day.fetchedAt)}</p><h3>${m.totals}</h3>${totals(day.totals, day.knownTotals)}<details open><summary>${m.sourceOfficial}</summary>${totals(day.officialTotals)}<p>${m.delta}</p>${totals(day.delta, undefined, 'delta')}</details>` : `<p>${m.missing}</p>`}
 ${(['breakfast', 'lunch', 'dinner', 'snack'] as const)
   .map((kind) => {
     const meal = day?.meals.find((candidate) => candidate.kind === kind);
@@ -44,7 +50,7 @@ ${(['breakfast', 'lunch', 'dinner', 'snack'] as const)
       (photo) => photo.date === date && photo.daytime === kind,
     );
     if (!meal && !photos.length) return '';
-    return `<section><h3>${m[kind]}</h3>${meal ? totals(meal.totals, meal.knownTotals) : ''}${meal?.entries.length ? meal.entries.map((entry) => `<article class="entry"><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.diaryDateTime)}</small><p>${m.quantity}: ${value(entry.amount)} ${escapeHtml(entry.baseUnit ?? '')}${entry.serving ? ` · ${escapeHtml(entry.serving)}` : ''}${entry.consumedPortions ? ` · ${escapeHtml(entry.consumedPortions)}` : ''}</p>${totals(entry.totals)}${entry.issues.length ? `<small>${m.issues}: ${entry.issues.map(escapeHtml).join(', ')}</small>` : ''}</article>`).join('') : `<p>${m.empty}</p>`}${photos.map((photo) => `<figure class="photo"><img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}"><figcaption>${m[kind]} · ${date}</figcaption></figure>`).join('')}</section>`;
+    return `<section><h3>${m[kind]}</h3>${meal ? totals(meal.totals, meal.knownTotals) : ''}${meal?.entries.length ? meal.entries.map((entry) => `<article class="entry"><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.diaryDateTime)}</small><p>${m.quantity}: ${value(entry.amount)} ${escapeHtml(entry.baseUnit ?? '')}${entry.serving ? ` · ${escapeHtml(entry.serving)}` : ''}${entry.consumedPortions ? ` · ${value(entry.consumedPortions)}` : ''}</p>${totals(entry.totals)}${entry.issues.length ? `<small>${m.issues}: ${entry.issues.map(escapeHtml).join(', ')}</small>` : ''}</article>`).join('') : `<p>${m.empty}</p>`}${photos.map((photo) => `<figure class="photo"><img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}"><figcaption>${m[kind]} · ${date}</figcaption></figure>`).join('')}</section>`;
   })
   .join('')}</section>`;
   })
