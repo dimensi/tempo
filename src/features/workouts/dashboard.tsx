@@ -89,8 +89,11 @@ function ExerciseTable({
   sync?: TransformMateSyncItem;
 }) {
   return (
-    <ScrollArea type="auto">
-      <Table miw={280}>
+    <ScrollArea type="auto" viewportProps={{ tabIndex: 0 }}>
+      <Table
+        miw={sync?.actual ? 680 : 440}
+        styles={{ th: { whiteSpace: 'nowrap' } }}
+      >
         <Table.Thead>
           <Table.Tr>
             <Table.Th>{m.exercise}</Table.Th>

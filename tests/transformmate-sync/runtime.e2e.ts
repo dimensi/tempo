@@ -851,6 +851,51 @@ test('saving creates once, idle updates once, and remote facts preserve initial 
   await expect(table).toContainText('12.5');
   await expect(table).toContainText('15');
   await table.scrollIntoViewIfNeeded();
+  const viewport = table.locator(
+    'xpath=ancestor::*[@data-scroll-area-viewport]',
+  );
+  const mobile = test.info().project.name === 'mobile';
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  if (mobile) {
+    expect(
+      await viewport.evaluate(
+        (element) => element.scrollWidth > element.clientWidth,
+      ),
+    ).toBe(true);
+    const shortHeaders = table
+      .getByRole('columnheader')
+      .filter({ hasText: /^(Упражнение|Подход|Повторения|Вес, кг)$/ });
+    await expect(shortHeaders).toHaveCount(4);
+    for (const header of await shortHeaders.all()) {
+      expect(
+        await header.evaluate(
+          (element) => getComputedStyle(element).whiteSpace,
+        ),
+      ).toBe('nowrap');
+    }
+    await viewport.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0);
+    await viewport.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0);
+    await page.screenshot({
+      path: test.info().outputPath('synthetic-workout-results.png'),
+      fullPage: false,
+    });
+    await viewport.evaluate((element) => {
+      element.scrollLeft = 0;
+    });
+  }
   await page.screenshot({
     path: test.info().outputPath('synthetic-workout.png'),
     fullPage: false,
