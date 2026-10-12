@@ -234,3 +234,17 @@ export function fileTransformMateTokenStore(
     },
   };
 }
+
+// Purpose-limited local metadata read: never construct a client or expose the
+// decrypted credential/profile payload. connectionId survives token refresh.
+export async function readTransformMateOfflineBinding(
+  file: string,
+  ownerId: string,
+  secret: string,
+) {
+  const state = await fileTransformMateTokenStore(file, ownerId, secret).load();
+  return {
+    configured: Boolean(state.token),
+    connectionId: state.token?.connectionId ?? null,
+  };
+}
