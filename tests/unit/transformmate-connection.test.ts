@@ -85,7 +85,6 @@ function upstream(id = 7) {
         ? auth()
         : new Response(JSON.stringify(me(id)), {
             status: 200,
-            bindingReads: 0,
             headers: { 'content-type': 'application/json' },
           }),
     ),
@@ -209,7 +208,6 @@ it('delayed connect cannot overwrite a disconnect tombstone', async () => {
   finish(
     new Response(JSON.stringify(me()), {
       status: 200,
-      bindingReads: 0,
       headers: { 'content-type': 'application/json' },
     }),
   );
