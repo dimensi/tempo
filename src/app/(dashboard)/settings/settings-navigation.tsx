@@ -41,7 +41,15 @@ export function SettingsNavigation({ children }: { children: ReactNode }) {
       element?.focus({ preventScroll: true });
       setActive(id);
     }
-    followHash();
+    // Hydration must not override focus the user already placed in SSR content.
+    const focused = document.activeElement;
+    if (
+      !focused ||
+      focused === document.body ||
+      focused === document.documentElement
+    ) {
+      followHash();
+    }
     update();
     window.addEventListener('scroll', update, { passive: true });
     window.addEventListener('resize', update);
