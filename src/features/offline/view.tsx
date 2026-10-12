@@ -372,7 +372,10 @@ function Workouts({ snapshot }: { snapshot: OfflineSnapshot }) {
               {fact.finished ?? m.noData}
             </Text>
             <Text>
-              {m.checked}: {fact.checkedAt ?? m.noData}
+              {m.checked}:{' '}
+              {fact.checkedAt
+                ? new Date(fact.checkedAt).toLocaleString('ru-RU')
+                : m.noData}
             </Text>
             {fact.exercises.map((exercise, index) => (
               <Stack key={index} gap={4}>
@@ -389,7 +392,7 @@ function Workouts({ snapshot }: { snapshot: OfflineSnapshot }) {
                         {metric.values.length
                           ? metric.values.join(' / ')
                           : m.noData}{' '}
-                        {metric.unit} · {metric.type}
+                        {metric.unit}
                       </Text>
                     ))}
                   </Stack>
