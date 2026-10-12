@@ -22,25 +22,19 @@ describe('authorized photo transport', () => {
     await operation;
     expect(updated).toHaveBeenCalledOnce();
   });
-  it('uses local scoped URLs and sends raw image bytes with the declared MIME type', async () => {
+  it('uses local scoped removal and preserves URLs for existing photos', async () => {
     const fetch = vi
       .fn()
       .mockResolvedValue({ ok: true, json: async () => ({}) });
     vi.stubGlobal('fetch', fetch);
     const updated = vi.fn();
     const actions = createPhotoActions('owner&scope', updated);
-    const file = new File(['synthetic'], 'photo.webp', { type: 'image/webp' });
-    await actions.upload('2026-01-01', 'lunch', file);
-    expect(fetch).toHaveBeenCalledWith(
-      '/api/nutrition/photos?ownerId=owner%26scope&date=2026-01-01&daytime=lunch',
-      { method: 'POST', headers: { 'Content-Type': 'image/webp' }, body: file },
-    );
     await actions.remove('photo/id');
     expect(fetch).toHaveBeenLastCalledWith(
       '/api/nutrition/photos/photo%2Fid?ownerId=owner%26scope',
       { method: 'DELETE' },
     );
-    expect(updated).toHaveBeenCalledTimes(2);
+    expect(updated).toHaveBeenCalledTimes(1);
     expect(
       diaryPhotos('owner&scope', [
         {

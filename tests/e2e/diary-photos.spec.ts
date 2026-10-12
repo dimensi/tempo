@@ -77,17 +77,18 @@ test('real diary photos and comments persist; trainer is read-only and revoked U
   ).toBeVisible();
   await expect(page.getByText('123,46 ккал').first()).toBeVisible();
   const lunch = page.getByRole('region', { name: 'Обед', exact: true });
-  const chooser = page.waitForEvent('filechooser');
-  const uploaded = page.waitForResponse(
-    (value) =>
-      value.url().includes('/api/nutrition/photos?') &&
-      value.request().method() === 'POST',
-  );
-  await lunch.getByRole('button', { name: 'Добавить фото' }).click();
-  await (
-    await chooser
-  ).setFiles({ name: 'synthetic.png', mimeType: 'image/png', buffer: image });
-  const upload = await uploaded;
+  await expect(
+    page.getByRole('button', { name: 'Добавить фото', exact: true }),
+  ).toHaveCount(0);
+  // Existing manual photos remain supported by the authorized API, even without a diary upload control.
+  const query = new URLSearchParams({ ownerId, date, daytime: 'lunch' });
+  const upload = await page.request.post('/api/nutrition/photos?' + query, {
+    headers: {
+      Origin: new URL(page.url()).origin,
+      'Content-Type': 'image/png',
+    },
+    data: image,
+  });
   expect(upload.status()).toBe(201);
   const photo = await upload.json();
   expect(Object.keys(photo).sort()).toEqual([
@@ -97,6 +98,7 @@ test('real diary photos and comments persist; trainer is read-only and revoked U
     'observedAt',
     'source',
   ]);
+  await page.reload();
   await expect(
     lunch.getByText('Добавлено вручную', { exact: true }),
   ).toBeVisible();
