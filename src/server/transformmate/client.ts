@@ -102,8 +102,8 @@ export function createTransformMateClient(options: {
           Authorization: `JWT ${idToken}`,
           Accept: 'application/json; version=1.3',
           'Accept-Language': 'ru',
-          // Suppress Node fetch's automatic User-Agent without naming this integration.
-          'User-Agent': '',
+          // Android-style app identity; do not include advertising identifiers.
+          'User-Agent': 'TransformMate/2.1.7 (Android 13) (2211133G)',
           ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         ...(data === undefined ? {} : { body: JSON.stringify(data) }),

@@ -80,13 +80,15 @@ Our backend requests now use:
 Authorization: JWT <Firebase ID token>
 Accept: application/json; version=1.3
 Accept-Language: ru
-User-Agent:                     # empty; suppresses Node fetch default
+User-Agent: TransformMate/2.1.7 (Android 13) (2211133G)
 Content-Type: application/json   # only requests with a JSON body
 ```
 
-No application name/version/device identity or advertising identifiers are sent.
-Node fetch inserts User-Agent: node when the header is omitted; an explicitly empty
-value suppresses that default. The wire header is present with an empty value.
+The configured preset uses the APK-style app/version/OS/model format with Xiaomi 13
+(model 2211133G) and Android 13. It is a selected preset, not a capture from the user's
+phone. No yazio-dashboard identity or idfa/adid advertising identifiers are sent.
+Model reference: [Xiaomi 13 official guide](https://alsgp0.fds.api.xiaomi.com/gl123/XIAOMI/Xiaomi%2013/%E9%87%8F%E4%BA%A7/_M3_%E5%85%A5%E9%97%A8%E6%8C%87%E5%8D%97_%E8%8B%B1%E6%B3%B0%E7%89%88_A_20221206_TH%20EN.pdf).
+Android 13 reference: [Xiaomi specifications](https://www.mi.com/pl/product/xiaomi-13/specs/).
 The negotiation headers were accepted by the live API;
 exercise 6 detail matched the previous response without explicit Accept/version headers.
 Exercise detail and training list also passed runtime validation through the updated client.

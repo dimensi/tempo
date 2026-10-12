@@ -26,7 +26,7 @@ function setup(...responses: Response[]) {
   };
 }
 describe('exercise detail and media', () => {
-  it('suppresses the automatic Node User-Agent on actual HTTP requests', async () => {
+  it('sends the Android preset without our client name on actual HTTP requests', async () => {
     let receivedAgent: string | undefined;
     const server = createServer((request, response) => {
       receivedAgent = request.headers['user-agent'];
@@ -43,7 +43,7 @@ describe('exercise detail and media', () => {
         tokenProvider: { getIdToken: async () => token },
       });
       await client.getMe();
-      expect(receivedAgent).toBe('');
+      expect(receivedAgent).toBe('TransformMate/2.1.7 (Android 13) (2211133G)');
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
@@ -63,7 +63,7 @@ describe('exercise detail and media', () => {
         Authorization: `JWT ${token}`,
         Accept: 'application/json; version=1.3',
         'Accept-Language': 'ru',
-        'User-Agent': '',
+        'User-Agent': 'TransformMate/2.1.7 (Android 13) (2211133G)',
       },
     });
     const headers = request.mock.calls[0]?.[1]?.headers;
