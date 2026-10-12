@@ -4,6 +4,7 @@ import { syntheticDay } from '../unit/reports/fixtures';
 vi.mock('server-only', () => ({}));
 import { generateReport } from '@/server/pdf/service';
 import type { ReportDataSource } from '@/server/pdf/source';
+import { formatDecimal } from '@/lib/number-display';
 
 it('displays natural-flow HTML and the real embedded photo with scripts/network blocked, without server pagination', async () => {
   const browser = await chromium.launch();
@@ -17,6 +18,8 @@ it('displays natural-flow HTML and the real embedded photo with scripts/network 
       return canvas.toDataURL();
     });
     const day = syntheticDay(undefined, 45);
+    day.meals[0]!.entries[0]!.name = 'СинтетическоеДлинноеНазвание'.repeat(40);
+    day.meals[0]!.entries[0]!.totals.calories = '999999999.99';
     const source: ReportDataSource = {
       getNutritionDays: async () => [day],
       listPhotos: async () => [
@@ -105,6 +108,42 @@ it('displays natural-flow HTML and the real embedded photo with scripts/network 
         .first()
         .evaluate((node) => getComputedStyle(node).color),
     ).toBe('rgb(35, 106, 168)');
+    for (const width of [320, 375, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+      ).toBeLessThanOrEqual(width);
+      expect(await page.locator('.entry-name').allTextContents()).toEqual(
+        day.meals[0]!.entries.map((entry) => entry.name),
+      );
+      expect(
+        await page
+          .locator('.entry')
+          .first()
+          .locator('[data-nutrient="calories"]')
+          .textContent(),
+      ).toBe(formatDecimal('999999999.99'));
+      const bounds = await page
+        .locator('.entry-name,.nutrient-value,.meal-heading,.daily-totals,img')
+        .evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const rect = node.getBoundingClientRect();
+            return [rect.left, rect.right, rect.width, rect.height];
+          }),
+        );
+      for (const [left, right, elementWidth, height] of bounds) {
+        expect(left).toBeGreaterThanOrEqual(0);
+        expect(right).toBeLessThanOrEqual(width);
+        expect(elementWidth).toBeGreaterThan(0);
+        expect(height).toBeGreaterThan(0);
+      }
+      expect(
+        await image.evaluate((node) => {
+          const rect = node.getBoundingClientRect();
+          return [rect.width, rect.height];
+        }),
+      ).toEqual([120, 120]);
+    }
   } finally {
     await browser.close();
   }
