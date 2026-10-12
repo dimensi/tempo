@@ -75,6 +75,8 @@ const { getAuth } = await import('@/server/auth');
 const { POST } = await import('@/app/api/yazio/connect/route');
 const { POST: disconnect } = await import('@/app/api/yazio/disconnect/route');
 const { POST: sync } = await import('@/app/api/yazio/sync/route');
+const { POST: refreshDay } =
+  await import('@/app/api/nutrition/days/[date]/refresh/route');
 const { POST: importToken } = await import('@/app/api/yazio/token/route');
 beforeAll(async () => {
   vi.stubEnv('BETTER_AUTH_URL', origin);
@@ -169,6 +171,90 @@ function request(headers: Headers, body: unknown = input) {
     body: JSON.stringify(body),
   });
 }
+it('selected-day refresh authorizes real owner and canonical origin, bounds the request and delegates exact date without history mode', async () => {
+  const date = '2024-02-29';
+  const context = { params: Promise.resolve({ date }) };
+  const make = (headers: Headers, body: unknown = { timezone: 'UTC' }) =>
+    new Request('http://0.0.0.0:3000/api/nutrition/days/' + date + '/refresh', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+  const response = await refreshDay(make(ownerHeaders), context);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toBe('no-store');
+  expect(synthetic.run).toHaveBeenCalledWith(
+    'connection-owner',
+    { from: date, to: date },
+    { mode: 'day-refresh', timezone: 'UTC' },
+  );
+  synthetic.run.mockClear();
+  expect(
+    (await refreshDay(make(new Headers({ origin })), context)).status,
+  ).toBe(401);
+  expect((await refreshDay(make(trainerHeaders), context)).status).toBe(403);
+  const wrong = new Headers(ownerHeaders);
+  wrong.set('origin', 'https://evil.example.test');
+  expect((await refreshDay(make(wrong), context)).status).toBe(403);
+  for (const body of [
+    { timezone: 'invalid' },
+    { timezone: 'UTC', from: '2020-01-01' },
+    { timezone: 'UTC', ownerId: 'foreign' },
+    { timezone: 'x'.repeat(3000) },
+  ])
+    expect((await refreshDay(make(ownerHeaders, body), context)).status).toBe(
+      400,
+    );
+  for (const invalid of ['2024-02-30', '2999-01-01'])
+    expect(
+      (
+        await refreshDay(make(ownerHeaders), {
+          params: Promise.resolve({ date: invalid }),
+        })
+      ).status,
+    ).toBe(400);
+  expect(synthetic.run).not.toHaveBeenCalled();
+  expect(synthetic.exchange).not.toHaveBeenCalled();
+  expect(synthetic.profile).not.toHaveBeenCalled();
+});
+it('day refresh rechecks owner permission after a delayed leased operation', async () => {
+  let release!: () => void;
+  synthetic.run.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () =>
+          resolve({
+            state: 'completed',
+            startedAt: null,
+            finishedAt: null,
+            completedDates: ['2024-02-29'],
+            failedDates: [],
+            photoFailedDates: [],
+          });
+      }),
+  );
+  const pending = refreshDay(
+    new Request(origin + '/api/nutrition/days/2024-02-29/refresh', {
+      method: 'POST',
+      headers: ownerHeaders,
+      body: JSON.stringify({ timezone: 'UTC' }),
+    }),
+    { params: Promise.resolve({ date: '2024-02-29' }) },
+  );
+  await vi.waitFor(() => expect(synthetic.run).toHaveBeenCalledTimes(1));
+  database.db
+    .update(user)
+    .set({ role: 'TRAINER' })
+    .where(eq(user.id, 'connection-owner'))
+    .run();
+  release();
+  expect((await pending).status).toBe(403);
+  database.db
+    .update(user)
+    .set({ role: 'OWNER' })
+    .where(eq(user.id, 'connection-owner'))
+    .run();
+});
 it('real OWNER session exchanges via SDK and awaits saving only a full token; response has only safe YAZIO account metadata', async () => {
   synthetic.exchange.mockResolvedValue({ ...token, ...input });
   let release!: () => void;

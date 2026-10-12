@@ -120,6 +120,64 @@ afterEach(() => {
 });
 
 describe('durable owner schedule', () => {
+  it('refreshes exactly the selected day with a durable lease without changing history, timezone or enablement', async () => {
+    const { service, deps, upstream } = setup();
+    service.enable('owner', input);
+    const delayed = deferred<Awaited<ReturnType<NutritionUpstream['items']>>>();
+    vi.mocked(upstream.items).mockImplementationOnce(() => delayed.promise);
+    const running = service.run('owner', period, {
+      mode: 'day-refresh',
+      timezone: 'America/New_York',
+    });
+    await vi.waitFor(() =>
+      expect(upstream.items).toHaveBeenCalledWith(period.from),
+    );
+    await expect(
+      createNutritionScheduler(deps).run('owner', period, {
+        mode: 'day-refresh',
+      }),
+    ).rejects.toThrow('Sync already running');
+    expect(service.status('owner')).toMatchObject({
+      initialFrom: input.initialFrom,
+      timezone: input.timezone,
+      enabled: true,
+      running: true,
+    });
+    delayed.resolve({ products: [], recipe_portions: [], simple_products: [] });
+    expect(await running).toMatchObject({
+      state: 'completed',
+      completedDates: [period.from],
+    });
+    expect(upstream.items).toHaveBeenCalledTimes(1);
+    expect(service.status('owner')).toMatchObject({
+      initialFrom: input.initialFrom,
+      timezone: input.timezone,
+      enabled: true,
+      running: false,
+    });
+    service.disable('owner');
+    await service.run('owner', period, {
+      mode: 'day-refresh',
+      timezone: 'UTC',
+    });
+    expect(service.status('owner')).toMatchObject({
+      initialFrom: input.initialFrom,
+      timezone: input.timezone,
+      enabled: false,
+    });
+  });
+  it('does not auto-enable or set history for a day-refresh-first legacy connection', async () => {
+    const { service } = setup();
+    await service.run('owner', period, {
+      mode: 'day-refresh',
+      timezone: 'Europe/Moscow',
+    });
+    expect(service.status('owner')).toMatchObject({
+      enabled: false,
+      initialFrom: null,
+      timezone: 'UTC',
+    });
+  });
   it('persists the latest explicit manual start after narrowing history and never overwrites it hourly', async () => {
     const { service, deps, upstream } = setup();
     await service.run(
