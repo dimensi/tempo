@@ -43,11 +43,13 @@ function fixture(today: string, mode: string) {
     { env: { ...process.env, DATABASE_URL: 'file:./.data/e2e.sqlite' } },
   );
 }
+test.afterEach(() => fixture(dateInTimezone(new Date(), timezone), 'restore'));
 test('real overview shows empty, partial and populated data with local dates and grant isolation', async ({
   page,
   browser,
 }, info) => {
   const today = dateInTimezone(new Date(), timezone);
+  fixture(today, 'backup');
   expect((await page.request.get('/api/overview?timezone=UTC')).status()).toBe(
     401,
   );
