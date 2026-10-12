@@ -853,6 +853,9 @@ describe('durable TransformMate sync', () => {
         ];
       await s.process();
       expect(s.client.updateTrainingOnce).not.toHaveBeenCalled();
+      expect(s.link().state.status).toBe(
+        kind === 'start' ? 'started' : 'conflict',
+      );
       expect(s.link().state.reason).toBe(
         kind === 'start' ? 'remote_started' : 'remote_fact',
       );
@@ -1073,6 +1076,77 @@ describe('durable TransformMate sync', () => {
     expect(sends).toBe(0);
     expect(s.link().state.updateAttempt!.phase).toBe('unknown');
     expect(s.link().state.published!.workout.title).toBe('Demo training');
+  });
+
+  it.each([false, true])(
+    'fresh verification distinguishes idle/started fact data started=%s',
+    async (started) => {
+      const s = setup();
+      await s.process();
+      const fact = s.detail.protocols[0]!.workout_exercises[0]!.metrics.find(
+        (m) => m.type === 'fact',
+      )!;
+      fact.sets[0]!.is_done = true;
+      if (started) {
+        s.detail.started = '2026-01-01T10:00:00Z';
+        s.detail.progress = 'in_progress';
+      }
+      await s.process();
+      expect(s.link().state.status).toBe(started ? 'started' : 'conflict');
+      expect(s.link().state.reason).toBe(
+        started ? 'remote_started' : 'remote_fact',
+      );
+      expect(s.link().state.actual!.exercises[0]!.sets[0]!.done).toBe(true);
+      expect(s.client.updateTrainingOnce).not.toHaveBeenCalled();
+    },
+  );
+  it.each([false, true])(
+    'verified unknown update distinguishes idle/started fact data started=%s',
+    async (started) => {
+      const s = setup();
+      await s.process();
+      const desired = structuredClone(s.plan);
+      desired.workouts[0]!.title = 'Desired';
+      s.setPlans([desired]);
+      s.repository.ensure('owner', desired);
+      s.client.updateTrainingOnce.mockImplementation(async (_id, body) => {
+        s.detail = remote(body);
+        s.detail.protocols[0]!.workout_exercises[0]!.metrics.find(
+          (m) => m.type === 'fact',
+        )!.sets[0]!.is_done = true;
+        if (started) {
+          s.detail.started = '2026-01-01T10:00:00Z';
+          s.detail.progress = 'in_progress';
+        }
+        return { body: { id: 101 } } as never;
+      });
+      await s.process();
+      expect(s.link().state.updateAttempt!.phase).toBe('verified');
+      expect(s.link().state.status).toBe(started ? 'started' : 'conflict');
+      expect(s.link().state.reason).toBe(
+        started ? 'remote_started' : 'remote_fact',
+      );
+      expect(s.link().state.actual!.exercises[0]!.sets[0]!.done).toBe(true);
+      expect(s.client.updateTrainingOnce).toHaveBeenCalledTimes(1);
+    },
+  );
+  it('started preflight keeps lifecycle precedence when fact data also exists', async () => {
+    const s = setup();
+    await s.process();
+    const desired = structuredClone(s.plan);
+    desired.workouts[0]!.title = 'Desired';
+    s.setPlans([desired]);
+    s.repository.ensure('owner', desired);
+    s.detail.started = '2026-01-01T10:00:00Z';
+    s.detail.progress = 'in_progress';
+    s.detail.protocols[0]!.workout_exercises[0]!.metrics.find(
+      (m) => m.type === 'fact',
+    )!.sets[0]!.is_done = true;
+    await s.process();
+    expect(s.link().state.status).toBe('started');
+    expect(s.link().state.reason).toBe('remote_started');
+    expect(s.link().state.actual!.exercises[0]!.sets[0]!.done).toBe(true);
+    expect(s.client.updateTrainingOnce).not.toHaveBeenCalled();
   });
   it('serializes owner work while releasing a failed queue', async () => {
     const calls: number[] = [];

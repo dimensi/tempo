@@ -153,7 +153,11 @@ export function syncEngine(options: SyncEngineOptions) {
             expected: null,
             actual,
             checkedAt: new Date().toISOString(),
-            status: active ? 'started' : needsNewer ? 'conflict' : 'synced',
+            status: started
+              ? 'started'
+              : fact || needsNewer
+                ? 'conflict'
+                : 'synced',
             reason: active
               ? started
                 ? 'remote_started'
@@ -212,15 +216,17 @@ export function syncEngine(options: SyncEngineOptions) {
         baseline: valid ? projection : link.state.baseline,
         expected: valid ? null : link.state.expected,
         published: valid ? published : link.state.published,
-        status: active
+        status: started
           ? 'started'
-          : !valid
+          : fact
             ? 'conflict'
-            : unsupported
-              ? 'unavailable'
-              : changed(link)
-                ? 'conflict'
-                : 'synced',
+            : !valid
+              ? 'conflict'
+              : unsupported
+                ? 'unavailable'
+                : changed(link)
+                  ? 'conflict'
+                  : 'synced',
         reason: active
           ? started
             ? 'remote_started'
@@ -335,15 +341,14 @@ export function syncEngine(options: SyncEngineOptions) {
         });
         return;
       }
-      if (
+      const started =
         body.started !== null ||
         body.finished !== null ||
-        body.progress !== 'idle' ||
-        hasRemoteFact(body)
-      ) {
+        body.progress !== 'idle';
+      if (started || hasRemoteFact(body)) {
         await save(link, {
-          status: 'started',
-          reason: hasRemoteFact(body) ? 'remote_fact' : 'remote_started',
+          status: started ? 'started' : 'conflict',
+          reason: started ? 'remote_started' : 'remote_fact',
           actual: actualProjection(body, link.state, true),
           checkedAt: new Date().toISOString(),
           updateAttempt: {
