@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { plannedWorkoutSchema } from '@/contracts/workouts';
 
 const remoteId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const transformMateCatalogItemSchema = z.object({
@@ -69,6 +70,10 @@ export const transformMateSyncItemSchema = z.object({
   planId: z.string(),
   workoutId: z.string(),
   remoteTrainingId: remoteId.nullable(),
+  planSnapshot: z.object({
+    planTitle: z.string().max(160),
+    workout: plannedWorkoutSchema,
+  }),
   status: transformMateSyncStatusSchema,
   reason: z
     .enum([
