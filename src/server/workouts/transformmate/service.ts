@@ -3,15 +3,22 @@ import { z } from 'zod';
 import type { WorkoutPlan } from '@/contracts/workouts';
 import type { TransformMateSyncData } from '@/contracts/transformmate';
 import { transformMateSyncItemSchema } from '@/contracts/transformmate';
+import {
+  transformMateNativeQuerySchema,
+  type TransformMateNativeQuery,
+  type TransformMateNativeRefresh,
+} from '@/contracts/transformmate-native';
 import { authorize } from '@/server/auth/guards';
 import { getDatabase } from '@/server/db';
 import {
-  isTransformMateConfigured,
+  getTransformMateBindingFence,
   getTransformMateConnectionFence,
 } from '@/server/transformmate/runtime';
 import { workoutRepository } from '@/server/workouts/repository';
 import { TransformMateStorageError } from '@/server/transformmate/token-store';
 import { syncRepository } from './repository';
+import { nativeRepository } from './native-repository';
+import { nativeService } from './native-service';
 import { serializeOwner, syncEngine } from './engine';
 
 export class SyncAccessError extends Error {
@@ -44,6 +51,7 @@ async function loadEngine(
       client: fence?.client ?? null,
       checkConnection: fence?.assertCurrent,
       connectionId: fence?.generation,
+      accountScope: fence?.accountScope,
     };
   } catch (error) {
     await contextValue.access('workouts:read');
@@ -54,6 +62,7 @@ async function loadEngine(
       client: null,
       checkConnection: undefined,
       connectionId: undefined,
+      accountScope: undefined,
     };
   }
 }
@@ -118,7 +127,9 @@ export async function syncSavedPlan(
 export async function listTransformMateSync(
   headers: Headers,
   ownerId: string,
+  input: TransformMateNativeQuery,
 ): Promise<TransformMateSyncData> {
+  const query = transformMateNativeQuerySchema.parse(input);
   const { access, repository } = context(headers, ownerId);
   await access('workouts:read');
   const items = repository.list(ownerId).map((link) =>
@@ -156,25 +167,89 @@ export async function listTransformMateSync(
     }),
   );
   await access('workouts:read');
-  let configured = false;
+  let binding: Awaited<ReturnType<typeof getTransformMateBindingFence>> | null =
+    null;
   try {
-    configured = await isTransformMateConfigured(ownerId);
+    binding = await getTransformMateBindingFence(ownerId);
   } catch (error) {
     if (!(error instanceof TransformMateStorageError)) throw error;
   }
   await access('workouts:read');
-  return { configured, items };
+  await binding?.assertCurrent();
+  await access('workouts:read');
+  const nativePage = binding?.accountScope
+    ? nativeRepository(getDatabase().db).list(
+        ownerId,
+        binding.accountScope,
+        query,
+        new Set(
+          repository
+            .list(ownerId)
+            .flatMap((link) =>
+              link.remoteTrainingId === null ? [] : [link.remoteTrainingId],
+            ),
+        ),
+      )
+    : { items: [], nextCursor: null };
+  return {
+    configured: binding?.configured ?? false,
+    items,
+    nativePage,
+    nativeRefresh: { status: 'idle', checkedAt: null, errorCode: null },
+  };
 }
 export async function refreshTransformMateSync(
   headers: Headers,
   ownerId: string,
+  input: TransformMateNativeQuery,
 ): Promise<TransformMateSyncData> {
+  const query = transformMateNativeQuerySchema.parse(input);
   return serializeOwner(ownerId, async () => {
     const contextValue = context(headers, ownerId);
     await contextValue.access('workouts:read');
     const engine = syncEngine(await loadEngine(contextValue, ownerId));
     for (const link of contextValue.repository.list(ownerId))
       await engine.process(link);
-    return listTransformMateSync(headers, ownerId);
+    await contextValue.access('workouts:read');
+    const connection = await getTransformMateConnectionFence(ownerId);
+    const binding = connection ?? (await getTransformMateBindingFence(ownerId));
+    await contextValue.access('workouts:read');
+    await binding.assertCurrent();
+    let nativeRefresh: TransformMateNativeRefresh = {
+      status: 'unavailable',
+      checkedAt: null,
+      errorCode: null,
+    };
+    let nativeNextCursor: string | null = null;
+    if (binding.accountScope) {
+      const native = nativeService({
+        ownerId,
+        accountScope: binding.accountScope,
+        client: connection?.client ?? null,
+        repository: nativeRepository(getDatabase().db),
+        access: () => contextValue.access('workouts:read'),
+        checkConnection: binding.assertCurrent,
+        linkedRemoteIds: () =>
+          new Set(
+            contextValue.repository
+              .list(ownerId)
+              .flatMap((link) =>
+                link.remoteTrainingId === null ? [] : [link.remoteTrainingId],
+              ),
+          ),
+      });
+      const nativeResult = await native.refresh(query);
+      nativeRefresh = nativeResult.refresh;
+      nativeNextCursor = nativeResult.nextCursor;
+    }
+    const result = await listTransformMateSync(headers, ownerId, query);
+    return {
+      ...result,
+      nativePage: {
+        ...result.nativePage,
+        nextCursor: nativeNextCursor ?? result.nativePage.nextCursor,
+      },
+      nativeRefresh,
+    };
   });
 }

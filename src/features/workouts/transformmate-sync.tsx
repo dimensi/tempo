@@ -98,7 +98,7 @@ export function useTransformMateSync(
                 }
               : parsed.nativePage,
           );
-          setNativeRefresh(parsed.nativeRefresh);
+          if (!cursor) setNativeRefresh(parsed.nativeRefresh);
           setConfigured(parsed.configured);
           setError(false);
           setDenied(false);
@@ -119,6 +119,7 @@ export function useTransformMateSync(
     const effectGeneration = ++generation.current;
     inflight.current?.abort();
     inflight.current = null;
+    lastAutomatic.current = 0;
     void Promise.resolve().then(async () => {
       if (generation.current !== effectGeneration) return;
       setNativePage({ items: [], nextCursor: null });
@@ -153,7 +154,7 @@ export function useTransformMateSync(
     refresh,
     denied,
     loadMore: () =>
-      nativePage.nextCursor && refresh('GET', nativePage.nextCursor),
+      nativePage.nextCursor && refresh('POST', nativePage.nextCursor),
   };
 }
 export function SyncSummary({

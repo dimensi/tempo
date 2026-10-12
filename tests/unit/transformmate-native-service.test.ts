@@ -40,8 +40,8 @@ describe('native readonly importer', () => {
     client.getTrainings.mockResolvedValue({
       body: [trainingSummaryFixture(), trainingSummaryFixture()],
     });
-    expect((await service.refresh(query)).status).toBe('fresh');
-    expect((await service.refresh(query)).status).toBe('cooldown');
+    expect((await service.refresh(query)).refresh.status).toBe('fresh');
+    expect((await service.refresh(query)).refresh.status).toBe('cooldown');
     expect(client.getTraining).toHaveBeenCalledTimes(1);
     expect(repository.save).toHaveBeenCalledTimes(1);
     expect(
@@ -72,14 +72,16 @@ describe('native readonly importer', () => {
     const { service, client, repository } = setup();
     client.getTraining.mockRejectedValue(new Error('Malformed detail'));
     expect(await service.refresh(query)).toMatchObject({
-      status: 'error',
-      errorCode: 'invalid_data',
+      refresh: { status: 'error', errorCode: 'invalid_data' },
+    });
+    expect(await service.refresh(query)).toMatchObject({
+      refresh: { status: 'error', errorCode: 'invalid_data' },
     });
     expect(repository.save).not.toHaveBeenCalled();
     expect(await service.list(query)).toEqual({ items: [], nextCursor: null });
     const empty = setup();
     empty.client.getTrainings.mockResolvedValue({ body: [] });
-    expect((await empty.service.refresh(query)).status).toBe('fresh');
+    expect((await empty.service.refresh(query)).refresh.status).toBe('fresh');
   });
   it('fences deferred responses after revocation and exposes no writes when disconnected', async () => {
     const { service, client, context, repository } = setup();
@@ -91,7 +93,7 @@ describe('native readonly importer', () => {
     expect(repository.save).not.toHaveBeenCalled();
     const disconnected = setup();
     disconnected.context.client = null;
-    expect((await disconnected.service.refresh(query)).status).toBe(
+    expect((await disconnected.service.refresh(query)).refresh.status).toBe(
       'unavailable',
     );
     expect(disconnected.client.getTrainings).not.toHaveBeenCalled();
@@ -115,5 +117,30 @@ describe('native readonly importer', () => {
     });
     await expect(service.refresh(query)).rejects.toThrow('Stale binding');
     expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it('rechecks access after the asynchronous connection fence', async () => {
+    const { service, context, repository } = setup();
+    context.checkConnection.mockImplementationOnce(async () => {
+      context.access.mockRejectedValue(new Error('Revoked'));
+    });
+    await expect(service.list(query)).rejects.toThrow('Revoked');
+    expect(repository.list).not.toHaveBeenCalled();
+  });
+
+  it('returns an upstream continuation when more than twenty details remain', async () => {
+    const { service, client } = setup();
+    client.getTrainings.mockResolvedValue({
+      body: Array.from({ length: 21 }, (_, index) => ({
+        ...trainingSummaryFixture(),
+        id: 100 - index,
+      })),
+    });
+    client.getTraining.mockImplementation(async (id: number) => ({
+      body: { ...trainingDetailFixture(), id },
+    }));
+    const result = await service.refresh(query);
+    expect(client.getTraining).toHaveBeenCalledTimes(20);
+    expect(result.nextCursor).toBe('2026-01-01:81');
   });
 });
