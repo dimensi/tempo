@@ -102,7 +102,8 @@ export function createTransformMateClient(options: {
           Authorization: `JWT ${idToken}`,
           Accept: 'application/json; version=1.3',
           'Accept-Language': 'ru',
-          'User-Agent': 'yazio-dashboard (TransformMate integration)',
+          // Suppress Node fetch's automatic User-Agent without naming this integration.
+          'User-Agent': '',
           ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         ...(data === undefined ? {} : { body: JSON.stringify(data) }),

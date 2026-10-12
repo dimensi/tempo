@@ -15,7 +15,7 @@ const json = (body: unknown, status = 200) =>
 const transportHeaders = {
   Accept: 'application/json; version=1.3',
   'Accept-Language': 'ru',
-  'User-Agent': 'yazio-dashboard (TransformMate integration)',
+  'User-Agent': '',
 };
 const provider = () => ({ getIdToken: vi.fn().mockResolvedValue(token) });
 

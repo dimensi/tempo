@@ -80,12 +80,14 @@ Our backend requests now use:
 Authorization: JWT <Firebase ID token>
 Accept: application/json; version=1.3
 Accept-Language: ru
-User-Agent: yazio-dashboard (TransformMate integration)
+User-Agent:                     # empty; suppresses Node fetch default
 Content-Type: application/json   # only requests with a JSON body
 ```
 
-This identifies our own integration rather than claiming an Android app/device version.
-No advertising identifiers are sent. These headers were accepted by the live API;
+No application name/version/device identity or advertising identifiers are sent.
+Node fetch inserts User-Agent: node when the header is omitted; an explicitly empty
+value suppresses that default. The wire header is present with an empty value.
+The negotiation headers were accepted by the live API;
 exercise 6 detail matched the previous response without explicit Accept/version headers.
 Exercise detail and training list also passed runtime validation through the updated client.
 
