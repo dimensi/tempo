@@ -88,7 +88,10 @@ test('meal visibility retains real zeros, photos and noncalorie nutrients while 
   const dinner = page.getByRole('region', { name: 'Ужин', exact: true });
   await expect(dinner.getByRole('img')).toHaveCount(1);
   await expect(
-    dinner.getByText('Фотографии приёма пищи', { exact: true }),
+    dinner.getByRole('button', {
+      name: 'Увеличить фото: Ужин — Фото YAZIO',
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
     dinner.getByText('Итого по записям', { exact: true }),

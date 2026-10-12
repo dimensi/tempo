@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
 
-test('synthetic diary: one computed total, honest comparisons, existing photos and mobile geometry', async ({
+test('synthetic diary: one computed total, calorie macro pie, compact food cards and header photos', async ({
   page,
 }) => {
   // Isolated browser component harness; security is covered by real login in diary.spec.
@@ -51,13 +51,17 @@ test('synthetic diary: one computed total, honest comparisons, existing photos a
     summary.getByText('Итого по записям', { exact: true }),
   ).toBeVisible();
   await expect(
-    summary.getByText('Итог по записям отличается от сводки YAZIO', {
+    summary.getByRole('button', {
+      name: 'Сравнить со сводкой YAZIO',
       exact: true,
     }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     summary.getByText('По сводке YAZIO', { exact: true }),
-  ).not.toBeVisible();
+  ).toHaveCount(0);
+  await expect(
+    summary.getByText('Не все значения известны.', { exact: false }),
+  ).toHaveCount(1);
   await expect(
     page.getByRole('button', { name: 'Добавить фото', exact: true }),
   ).toHaveCount(0);
@@ -65,19 +69,6 @@ test('synthetic diary: one computed total, honest comparisons, existing photos a
     path: test.info().outputPath('diary-default.png'),
     fullPage: true,
   });
-  await summary
-    .getByRole('button', { name: 'Сравнить со сводкой YAZIO', exact: true })
-    .click();
-  await expect(
-    summary.getByText('Известная часть', { exact: true }),
-  ).toBeVisible();
-  await expect(summary.locator('[title="3.4499999999999997"]')).toHaveText(
-    '3,45 г',
-  );
-  await expect(summary.locator('[title="6.1499999999999995"]')).toHaveText(
-    '6,15 г',
-  );
-  await expect(summary.locator('[title="3e-16"]')).toHaveText('≈ 0 г');
   await expect(
     page.getByText(
       'Масса не указана в данных YAZIO. По количеству порций её определить нельзя.',
@@ -146,7 +137,7 @@ test('synthetic diary: one computed total, honest comparisons, existing photos a
     fullPage: true,
   });
   await expect(
-    zeroSummary.getByLabel('Соотношение БЖУ по массе', { exact: true }),
+    zeroSummary.getByText('Доли калорий БЖУ', { exact: true }),
   ).toHaveCount(0);
   await page.goto('/diary-component-test?fixture=complete');
   await page.addStyleTag({
@@ -162,8 +153,107 @@ test('synthetic diary: one computed total, honest comparisons, existing photos a
   await expect(
     page
       .getByRole('region', { name: 'Итоги дня', exact: true })
-      .getByLabel('Соотношение БЖУ по массе', { exact: true }),
+      .getByText('Доли калорий БЖУ', { exact: true }),
   ).toBeVisible();
+  const completeSummary = page.getByRole('region', {
+    name: 'Итоги дня',
+    exact: true,
+  });
+  await expect(
+    completeSummary.getByText('Белки: 24,2%', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    completeSummary.getByText('Жиры: 27,3%', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    completeSummary.getByText('Углеводы: 48,5%', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('В этой записи', { exact: true })).toHaveCount(0);
+  const completeLunch = page.getByRole('region', { name: 'Обед', exact: true });
+  const imageBox = await completeLunch.locator('img').first().boundingBox();
+  const totalsBox = await completeLunch
+    .getByText('Итого по записям', { exact: true })
+    .boundingBox();
+  if (test.info().project.name === 'desktop')
+    expect(imageBox!.x + imageBox!.width).toBeLessThanOrEqual(totalsBox!.x);
+  else expect(imageBox!.y + imageBox!.height).toBeLessThan(totalsBox!.y);
+  expect(
+    await completeLunch
+      .locator('img')
+      .first()
+      .evaluate((image) => getComputedStyle(image).objectFit),
+  ).toBe('contain');
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  const thumbnail = completeLunch.getByRole('button', {
+    name: 'Увеличить фото: Обед — Добавлено вручную',
+    exact: true,
+  });
+  await thumbnail.click();
+  const viewer = page.getByRole('dialog', {
+    name: 'Фото приёма пищи',
+    exact: true,
+  });
+  await expect(viewer).toBeVisible();
+  await expect(viewer).toHaveCSS('opacity', '1');
+  await expect(viewer.locator('img')).toHaveAttribute(
+    'src',
+    '/synthetic-photo',
+  );
+  expect(
+    await viewer
+      .locator('img')
+      .evaluate((image) => getComputedStyle(image).objectFit),
+  ).toBe('contain');
+  expect((await viewer.locator('img').boundingBox())!.height).toBeGreaterThan(
+    imageBox!.height,
+  );
+  expect(
+    await viewer
+      .locator('img')
+      .evaluate((image) => getComputedStyle(image).touchAction),
+  ).not.toBe('none');
+  expect(
+    await page.locator('meta[name=viewport]').getAttribute('content'),
+  ).not.toMatch(/user-scalable=no|maximum-scale=1(?:\D|$)/);
+  if (test.info().project.name === 'mobile') {
+    const session = await page.context().newCDPSession(page);
+    const scale = await page.evaluate(() => visualViewport!.scale);
+    const box = (await viewer.locator('img').boundingBox())!;
+    await session.send('Input.synthesizePinchGesture', {
+      x: box.x + box.width / 2,
+      y: Math.min(box.y + box.height / 2, 500),
+      scaleFactor: 1.5,
+      gestureSourceType: 'touch',
+    });
+    await expect
+      .poll(() => page.evaluate(() => visualViewport!.scale))
+      .toBeGreaterThan(scale);
+    await session.send('Input.synthesizePinchGesture', {
+      x: box.x + box.width / 2,
+      y: Math.min(box.y + box.height / 2, 500),
+      scaleFactor: 1 / 1.5,
+      gestureSourceType: 'touch',
+    });
+    await session.detach();
+  }
+  await page.screenshot({
+    path: test.info().outputPath('diary-photo-viewer.png'),
+    fullPage: false,
+    animations: 'disabled',
+  });
+  await page.keyboard.press('Escape');
+  await expect(viewer).toHaveCount(0);
+  await expect(thumbnail).toBeFocused();
+  await thumbnail.click();
+  await viewer
+    .getByRole('button', { name: 'Закрыть фото', exact: true })
+    .click();
+  await expect(viewer).toHaveCount(0);
+  await expect(thumbnail).toBeFocused();
   await expect(page.getByText('Количество: 0', { exact: true })).toBeVisible();
   await expect(page.getByText('Масса: 0 г', { exact: true })).toBeVisible();
   await expect(page.locator('img[src="/wrong-photo"]')).toHaveCount(0);

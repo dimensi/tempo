@@ -39,35 +39,68 @@
 }
 
 .entry {
-  border-top: 1px solid var(--mantine-color-default-border);
-  padding-block: 14px;
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-default-hover);
+  padding: 16px;
 }
-
 .entry .nutrients {
   max-width: 560px;
 }
+.mealHeader {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+.mealHeader[data-has-photo] {
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+}
 .photos {
-  max-width: 640px;
+  min-width: 0;
 }
 .macroSummary {
+  --macro-protein: var(--mantine-color-blue-8);
+  --macro-fat: var(--mantine-color-grape-8);
+  --macro-carbs: var(--mantine-color-teal-9);
+  display: flex;
+  align-items: center;
+  gap: 12px;
   max-width: 640px;
 }
-.macroBar {
-  display: flex;
-  height: 6px;
-  overflow: hidden;
-  border-radius: 3px;
+.macroPie {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+  border-radius: 50%;
 }
-.macroBar [data-nutrient='protein'] {
-  background: var(--mantine-color-blue-8);
+.macroSwatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-inline-end: 6px;
+  border-radius: 50%;
 }
-.macroBar [data-nutrient='fat'] {
-  background: var(--mantine-color-grape-8);
+.macroSwatch[data-nutrient='protein'] {
+  background: var(--macro-protein);
 }
-.macroBar [data-nutrient='carbs'] {
-  background: var(--mantine-color-teal-8);
+.macroSwatch[data-nutrient='fat'] {
+  background: var(--macro-fat);
 }
-
+.macroSwatch[data-nutrient='carbs'] {
+  background: var(--macro-carbs);
+}
+[data-mantine-color-scheme='dark'] .macroSummary {
+  --macro-protein: var(--mantine-color-blue-3);
+  --macro-fat: var(--mantine-color-grape-3);
+  --macro-carbs: var(--mantine-color-teal-3);
+}
+@media (max-width: 767px) {
+  .mealHeader[data-has-photo] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .photos {
+    max-width: 360px;
+  }
+}
 [data-mantine-color-scheme='dark'] .nutrient {
   --nutrient-color: var(--mantine-color-orange-3);
 }
@@ -97,4 +130,18 @@
 }
 .meal > div {
   gap: 12px;
+}
+
+.photoOpen {
+  display: block;
+  width: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--mantine-radius-md);
+}
+.viewerImage {
+  width: 100%;
+  height: calc(100dvh - 88px);
+  object-fit: contain;
+  touch-action: auto;
 }

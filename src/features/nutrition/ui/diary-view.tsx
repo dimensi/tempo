@@ -1,21 +1,19 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import Decimal from 'decimal.js';
 import {
   Alert,
   Badge,
   Box,
   Button,
   Card,
-  Accordion,
   Group,
   Image,
   Modal,
-  SimpleGrid,
   Stack,
   Text,
   Title,
+  UnstyledButton,
 } from '@mantine/core';
 import {
   meals,
@@ -26,6 +24,7 @@ import {
 import { diaryMessages as m } from './messages';
 import { hasNutritionMealContent } from '@/lib/nutrition-meal-content';
 import classes from './diary-view.module.css';
+import { macroCalorieShares } from './macro-shares';
 import {
   displayValue,
   displayIssue,
@@ -55,14 +54,16 @@ function Totals({
   kind = 'value',
 }: {
   totals: NutritionTotals;
-  label: string;
+  label?: string;
   kind?: 'value' | 'delta';
 }) {
   return (
     <Stack gap="xs" className={classes.totals}>
-      <Text fw={600} size="sm">
-        {label}
-      </Text>
+      {label && (
+        <Text fw={600} size="sm">
+          {label}
+        </Text>
+      )}
       <div className={classes.nutrients}>
         {(Object.keys(m.nutrients) as (keyof NutritionTotals)[]).map((key) => (
           <Box key={key} className={classes.nutrient} data-nutrient={key}>
@@ -84,93 +85,57 @@ function Totals({
   );
 }
 
-function MacroBar({ totals }: { totals: NutritionTotals }) {
-  const keys = ['protein', 'fat', 'carbs'] as const;
-  if (keys.some((key) => totals[key] === null)) return null;
-  const values = keys.map((key) => new Decimal(totals[key]!));
-  if (values.some((value) => value.isNegative())) return null;
-  const sum = values.reduce(
-    (total, value) => total.plus(value),
-    new Decimal(0),
-  );
-  if (sum.isZero()) return null;
+function MacroPie({ totals }: { totals: NutritionTotals }) {
+  const shares = macroCalorieShares(totals);
+  if (!shares) return null;
+  const stops = shares.map(({ key, percent }, index) => {
+    const start = shares
+      .slice(0, index)
+      .reduce((sum, share) => sum + share.percent, 0);
+    const end = index === shares.length - 1 ? 100 : start + percent;
+    return `var(--macro-${key}) ${start}% ${end}%`;
+  });
   return (
-    <Stack gap={6} className={classes.macroSummary}>
-      <Text size="xs">{m.macroRatio}</Text>
-      <div className={classes.macroBar} role="img" aria-label={m.macroRatio}>
-        {keys.map((key, index) => (
-          <span
-            key={key}
-            data-nutrient={key}
-            style={{
-              width: `${values[index]!.div(sum).times(100).toNumber()}%`,
-            }}
-          />
-        ))}
-      </div>
-    </Stack>
+    <div className={classes.macroSummary}>
+      <div
+        className={classes.macroPie}
+        aria-hidden="true"
+        style={{ background: `conic-gradient(${stops.join(',')})` }}
+      />
+      <Stack gap={4}>
+        <Text size="sm">{m.macroRatio}</Text>
+        <Group gap="sm">
+          {shares.map(({ key, percent }) => (
+            <Text key={key} size="sm">
+              <span
+                className={classes.macroSwatch}
+                data-nutrient={key}
+                aria-hidden="true"
+              />
+              {m.nutrients[key]}:{' '}
+              {percent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%
+            </Text>
+          ))}
+        </Group>
+      </Stack>
+    </div>
   );
 }
-
 function Summary({
   totals,
-  knownTotals,
-  officialTotals,
-  delta,
   showSource = false,
 }: {
   totals: NutritionTotals;
-  knownTotals: NutritionTotals;
-  officialTotals: NutritionTotals;
-  delta: NutritionTotals;
   showSource?: boolean;
 }) {
-  const differences = noticeableDifferences(delta);
   return (
     <Stack gap="sm">
       <Totals totals={totals} label={m.totals} />
-      <MacroBar totals={totals} />
+      <MacroPie totals={totals} />
       {showSource && <Text size="sm">{m.sourceNote}</Text>}
-      {Object.values(totals).some((value) => value === null) && (
+      {showSource && Object.values(totals).some((value) => value === null) && (
         <Text size="sm">{m.partial}</Text>
       )}
-      {differences.length > 0 && (
-        <Alert
-          color="yellow"
-          role="alert"
-          p="sm"
-          title={m.mismatch}
-          styles={{
-            title: { color: 'var(--mantine-color-text)' },
-            message: { color: 'var(--mantine-color-text)' },
-          }}
-        >
-          {differences.map((key) => (
-            <Text key={key} size="sm">
-              {m.nutrients[key]}:{' '}
-              {displayValue(
-                delta[key],
-                key === 'calories' ? 'ккал' : 'г',
-                'delta',
-              )}
-            </Text>
-          ))}
-        </Alert>
-      )}
-      <Accordion variant="default">
-        <Accordion.Item value="comparison">
-          <Accordion.Control>{m.comparison}</Accordion.Control>
-          <Accordion.Panel>
-            <Stack gap="md">
-              <Text size="sm">{m.knownNote}</Text>
-              <Totals totals={knownTotals} label={m.known} />
-              <Totals totals={officialTotals} label={m.official} />
-              <Totals totals={delta} label={m.delta} kind="delta" />
-              <Text size="sm">{m.roundingNote}</Text>
-            </Stack>
-          </Accordion.Panel>
-        </Accordion.Item>
-      </Accordion>
     </Stack>
   );
 }
@@ -184,6 +149,10 @@ export function DiaryView({
   navigationSlot,
   photoActions,
 }: DiaryViewProps) {
+  const [viewing, setViewing] = useState<string | null>(null);
+  const viewingPhoto = photos.find(
+    (photo) => photo.id === viewing && photo.date === date,
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -253,11 +222,52 @@ export function DiaryView({
               <Title order={2} size="h3">
                 {m.meals[kind]}
               </Title>
-              {meal &&
-                (hasNutritionMealContent(meal) ||
-                  noticeableDifferences(meal.delta).length > 0) && (
-                  <Summary {...meal} />
+              <div
+                className={classes.mealHeader}
+                data-has-photo={mealPhotos.length > 0 || undefined}
+              >
+                {mealPhotos.length > 0 && (
+                  <Stack gap="sm" className={classes.photos}>
+                    {mealPhotos.map((photo) => (
+                      <Stack key={photo.id}>
+                        <UnstyledButton
+                          className={classes.photoOpen}
+                          aria-label={`${m.enlargePhoto}: ${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
+                          onClick={() => setViewing(photo.id)}
+                        >
+                          <Image
+                            src={photo.href}
+                            alt={`${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
+                            radius="md"
+                            mah={260}
+                            style={{ aspectRatio: '4 / 3' }}
+                            fit="contain"
+                          />
+                        </UnstyledButton>
+                        <Text size="sm">
+                          {photo.source === 'yazio' ? m.automatic : m.manual}
+                        </Text>
+                        {photo.source === 'manual' && photoActions && (
+                          <Button
+                            variant="light"
+                            color="red"
+                            mih={44}
+                            disabled={pending}
+                            onClick={() => setDeleting(photo.id)}
+                          >
+                            {m.remove}
+                          </Button>
+                        )}
+                      </Stack>
+                    ))}
+                  </Stack>
                 )}
+                {meal &&
+                  (hasNutritionMealContent(meal) ||
+                    noticeableDifferences(meal.delta).length > 0) && (
+                    <Summary {...meal} />
+                  )}
+              </div>
               {meal?.entries.map((entry) => (
                 <Box key={entry.id} className={classes.entry}>
                   <Stack gap="xs">
@@ -267,7 +277,6 @@ export function DiaryView({
                       </Text>
                       {entry.kind === 'ai' && <Badge>{m.ai}</Badge>}
                     </Group>
-                    <Totals totals={entry.totals} label={m.entryTotals} />
                     <Group gap="xs" className={classes.amounts}>
                       {entryAmounts(entry)
                         .filter(([, value]) => value !== m.unknown)
@@ -281,6 +290,7 @@ export function DiaryView({
                           </Text>
                         ))}
                     </Group>
+                    <Totals totals={entry.totals} />
                     {entry.issues.length > 0 && (
                       <Alert
                         color="yellow"
@@ -306,45 +316,30 @@ export function DiaryView({
                   </Stack>
                 </Box>
               ))}
-              {mealPhotos.length > 0 && <Text fw={600}>{m.photos}</Text>}
-              {mealPhotos.length > 0 && (
-                <SimpleGrid
-                  cols={{ base: 1, sm: 2 }}
-                  className={classes.photos}
-                >
-                  {mealPhotos.map((photo) => (
-                    <Stack key={photo.id}>
-                      <Image
-                        src={photo.href}
-                        alt={`${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
-                        radius="md"
-                        mah={260}
-                        style={{ aspectRatio: '4 / 3' }}
-                        fit="contain"
-                      />
-                      <Text size="sm">
-                        {photo.source === 'yazio' ? m.automatic : m.manual}
-                      </Text>
-                      {photo.source === 'manual' && photoActions && (
-                        <Button
-                          variant="light"
-                          color="red"
-                          mih={44}
-                          disabled={pending}
-                          onClick={() => setDeleting(photo.id)}
-                        >
-                          {m.remove}
-                        </Button>
-                      )}
-                    </Stack>
-                  ))}
-                </SimpleGrid>
-              )}
             </Stack>
           </Card>
         );
       })}
       {commentsSlot}
+      <Modal
+        fullScreen
+        removeScrollProps={{ allowPinchZoom: true }}
+        opened={Boolean(viewingPhoto)}
+        onClose={() => setViewing(null)}
+        title={m.photoViewer}
+        returnFocus
+        trapFocus
+        closeButtonProps={{ 'aria-label': m.closePhoto, size: 44 }}
+      >
+        {viewingPhoto && (
+          <Image
+            src={viewingPhoto.href}
+            alt={`${m.meals[viewingPhoto.daytime]} — ${viewingPhoto.source === 'yazio' ? m.automatic : m.manual}`}
+            className={classes.viewerImage}
+            fit="contain"
+          />
+        )}
+      </Modal>
       <Modal
         opened={deleting !== null}
         onClose={() => {
