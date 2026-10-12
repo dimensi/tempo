@@ -34,6 +34,9 @@ test('synthetic diary: one computed total, calorie macro pie, compact food cards
     content: await readFile('node_modules/@mantine/core/styles.css', 'utf8'),
   });
   await page.addStyleTag({
+    content: await readFile('node_modules/@mantine/charts/styles.css', 'utf8'),
+  });
+  await page.addStyleTag({
     content: bundle.outputFiles.find((file) => file.path.endsWith('.css'))!
       .text,
   });
@@ -107,6 +110,9 @@ test('synthetic diary: one computed total, calorie macro pie, compact food cards
     content: await readFile('node_modules/@mantine/core/styles.css', 'utf8'),
   });
   await page.addStyleTag({
+    content: await readFile('node_modules/@mantine/charts/styles.css', 'utf8'),
+  });
+  await page.addStyleTag({
     content: bundle.outputFiles.find((file) => file.path.endsWith('.css'))!
       .text,
   });
@@ -137,11 +143,20 @@ test('synthetic diary: one computed total, calorie macro pie, compact food cards
     fullPage: true,
   });
   await expect(
-    zeroSummary.getByText('Доли калорий БЖУ', { exact: true }),
+    zeroSummary.getByText('Доли энергии из БЖУ', { exact: true }),
   ).toHaveCount(0);
+  await expect(
+    zeroSummary.getByText('БЖУ равны нулю — доли энергии отсутствуют.', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(zeroSummary.locator('.mantine-PieChart-root')).toHaveCount(0);
   await page.goto('/diary-component-test?fixture=complete');
   await page.addStyleTag({
     content: await readFile('node_modules/@mantine/core/styles.css', 'utf8'),
+  });
+  await page.addStyleTag({
+    content: await readFile('node_modules/@mantine/charts/styles.css', 'utf8'),
   });
   await page.addStyleTag({
     content: bundle.outputFiles.find((file) => file.path.endsWith('.css'))!
@@ -153,20 +168,30 @@ test('synthetic diary: one computed total, calorie macro pie, compact food cards
   await expect(
     page
       .getByRole('region', { name: 'Итоги дня', exact: true })
-      .getByText('Доли калорий БЖУ', { exact: true }),
+      .getByText('Доли энергии из БЖУ', { exact: true }),
   ).toBeVisible();
   const completeSummary = page.getByRole('region', {
     name: 'Итоги дня',
     exact: true,
   });
+  // Fixture 10g protein / 5g fat / 20g carbs gives 40 / 45 / 80 kcal (total 165).
+  await expect(completeSummary.locator('.mantine-PieChart-root')).toBeVisible();
   await expect(
-    completeSummary.getByText('Белки: 24,2%', { exact: true }),
+    completeSummary.locator('[aria-label="Доли энергии из БЖУ"]'),
+  ).toBeVisible();
+  for (const label of ['Белки: 24,24%', 'Жиры: 27,27%', 'Углеводы: 48,48%']) {
+    await expect(
+      completeSummary.locator(`[aria-label="${label}"]`),
+    ).toBeVisible();
+  }
+  await expect(
+    completeSummary.getByText('Белки: 24,24%', { exact: true }),
   ).toBeVisible();
   await expect(
-    completeSummary.getByText('Жиры: 27,3%', { exact: true }),
+    completeSummary.getByText('Жиры: 27,27%', { exact: true }),
   ).toBeVisible();
   await expect(
-    completeSummary.getByText('Углеводы: 48,5%', { exact: true }),
+    completeSummary.getByText('Углеводы: 48,48%', { exact: true }),
   ).toBeVisible();
   await expect(page.getByText('В этой записи', { exact: true })).toHaveCount(0);
   const completeLunch = page.getByRole('region', { name: 'Обед', exact: true });
