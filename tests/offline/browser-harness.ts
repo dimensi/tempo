@@ -56,7 +56,7 @@ Object.assign(window, {
       finishMutation();
       return mutation;
     },
-    async seed() {
+    async seed(variant?: 'zero-entry' | 'empty' | 'photo-only' | 'totals') {
       const snapshot = offlineFixture(now);
       const id = 'I'.repeat(43);
       snapshot.photos.items = [
@@ -81,6 +81,32 @@ Object.assign(window, {
         ],
         { type: 'image/png' },
       );
+      if (variant) {
+        const day = snapshot.diary[0]!;
+        day.totals.calories = '123.456';
+        for (const meal of day.meals) {
+          for (const field of [
+            'totals',
+            'knownTotals',
+            'officialTotals',
+          ] as const)
+            meal[field] = {
+              calories: '0',
+              protein: null,
+              fat: '0.000',
+              carbs: '0',
+            };
+          if (variant !== 'zero-entry') meal.entries = [];
+        }
+        if (variant === 'totals')
+          day.meals.find(
+            (meal) => meal.kind === 'snack',
+          )!.officialTotals.protein = '3.5';
+        if (variant === 'photo-only')
+          snapshot.photos.items[0]!.daytime = 'lunch';
+        else snapshot.photos.items = [];
+      }
+      const storedPhotos = variant ? [] : [{ id, bytes }];
       lastFence = await storage.enable(
         snapshot.partition,
         snapshot.connectionGeneration,
@@ -94,10 +120,10 @@ Object.assign(window, {
           expiresAt: now + 600000,
           sessionExpiresAt: now + 1200000,
           snapshot,
-          missingPhotos: [],
-          photoBytes: bytes.size,
+          missingPhotos: variant === 'photo-only' ? [id] : [],
+          photoBytes: variant ? 0 : bytes.size,
         },
-        [{ id, bytes }],
+        storedPhotos,
         now,
       );
       return (await storage.read(now)).photos.length;

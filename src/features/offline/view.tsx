@@ -20,6 +20,7 @@ import { LineChart } from '@mantine/charts';
 import type { OfflineSnapshot } from '@/contracts/offline';
 import type { NutritionTotals } from '@/contracts/nutrition';
 import { healthRangeDates } from '@/contracts/health';
+import { hasNutritionMealContent } from '@/lib/nutrition-meal-content';
 import { formatDecimal } from '@/lib/number-display';
 import { concealOfflineContent } from '@/lib/offline-device';
 import { getOfflineController } from './controller';
@@ -75,74 +76,107 @@ function Nutrients({
     </Table.ScrollContainer>
   );
 }
-function Diary({ snapshot }: { snapshot: OfflineSnapshot }) {
+function Diary({
+  snapshot,
+  photos,
+}: {
+  snapshot: OfflineSnapshot;
+  photos: ReadonlyMap<string, Blob>;
+}) {
   return snapshot.diary.length === 0 ? (
     <Text>{m.empty}</Text>
   ) : (
     <Accordion multiple variant="separated">
-      {snapshot.diary.map((day) => (
-        <Accordion.Item value={day.date} key={day.date}>
-          <Accordion.Control>{day.date}</Accordion.Control>
-          <Accordion.Panel>
-            <Stack>
-              <Nutrients {...day} />
-              {day.meals.map((meal) => (
-                <Stack key={meal.kind} gap="sm">
-                  <Title order={3}>{m[meal.kind]}</Title>
-                  <Nutrients {...meal} />
-                  {meal.entries.length === 0 ? (
-                    <Text>{m.empty}</Text>
-                  ) : (
-                    meal.entries.map((entry) => (
-                      <Stack key={entry.key} gap={4} className={classes.entry}>
-                        <Text fw={600}>{entry.name}</Text>
-                        <Text>{entry.diaryDateTime}</Text>
-                        <Text>
-                          {m.amount}: {display(entry.amount)}{' '}
-                          {entry.baseUnit ?? ''}
-                        </Text>
-                        {entry.serving && (
+      {snapshot.diary.map((day) => {
+        const meals = day.meals.filter((meal) =>
+          hasNutritionMealContent(
+            meal,
+            snapshot.photos.items.some(
+              (photo) => photo.date === day.date && photo.daytime === meal.kind,
+            ),
+          ),
+        );
+        return (
+          <Accordion.Item value={day.date} key={day.date}>
+            <Accordion.Control>{day.date}</Accordion.Control>
+            <Accordion.Panel>
+              <Stack>
+                <Nutrients {...day} />
+                {meals.length === 0 ? (
+                  <Text>{m.empty}</Text>
+                ) : (
+                  meals.map((meal) => (
+                    <Stack key={meal.kind} gap="sm">
+                      <Title order={3}>{m[meal.kind]}</Title>
+                      <Nutrients {...meal} />
+                      {snapshot.photos.items
+                        .filter(
+                          (photo) =>
+                            photo.date === day.date &&
+                            photo.daytime === meal.kind,
+                        )
+                        .map((photo) => (
+                          <SavedPhoto
+                            key={photo.id}
+                            bytes={photos.get(photo.id)}
+                            label={`${day.date} · ${m[meal.kind]}`}
+                          />
+                        ))}
+                      {meal.entries.map((entry) => (
+                        <Stack
+                          key={entry.key}
+                          gap={4}
+                          className={classes.entry}
+                        >
+                          <Text fw={600}>{entry.name}</Text>
+                          <Text>{entry.diaryDateTime}</Text>
                           <Text>
-                            {m.portion}: {entry.serving} ·{' '}
-                            {display(entry.servingQuantity)}
+                            {m.amount}: {display(entry.amount)}{' '}
+                            {entry.baseUnit ?? ''}
                           </Text>
-                        )}
-                        {(entry.consumedPortions !== null ||
-                          entry.recipePortions !== null) && (
-                          <Text>
-                            {m.portions}: {display(entry.consumedPortions)} /{' '}
-                            {display(entry.recipePortions)}
-                          </Text>
-                        )}
-                        {(entry.massG !== null ||
-                          entry.volumeMl !== null ||
-                          entry.ingredientMassEstimateG !== null) && (
-                          <Text>
-                            {m.mass}: {display(entry.massG)} {m.grams} · Объём:{' '}
-                            {display(entry.volumeMl)} {m.ml} · Оценка
-                            ингредиентов:{' '}
-                            {display(entry.ingredientMassEstimateG)} {m.grams}
-                          </Text>
-                        )}
-                        <Group>
-                          {nutrientKeys.map((key) => (
-                            <Text key={key}>
-                              {m[key]}: {display(entry.totals[key])}
+                          {entry.serving && (
+                            <Text>
+                              {m.portion}: {entry.serving} ·{' '}
+                              {display(entry.servingQuantity)}
                             </Text>
-                          ))}
-                        </Group>
-                        {entry.issues.length > 0 && (
-                          <Text>{entry.issues.join('; ')}</Text>
-                        )}
-                      </Stack>
-                    ))
-                  )}
-                </Stack>
-              ))}
-            </Stack>
-          </Accordion.Panel>
-        </Accordion.Item>
-      ))}
+                          )}
+                          {(entry.consumedPortions !== null ||
+                            entry.recipePortions !== null) && (
+                            <Text>
+                              {m.portions}: {display(entry.consumedPortions)} /{' '}
+                              {display(entry.recipePortions)}
+                            </Text>
+                          )}
+                          {(entry.massG !== null ||
+                            entry.volumeMl !== null ||
+                            entry.ingredientMassEstimateG !== null) && (
+                            <Text>
+                              {m.mass}: {display(entry.massG)} {m.grams} ·
+                              Объём: {display(entry.volumeMl)} {m.ml} · Оценка
+                              ингредиентов:{' '}
+                              {display(entry.ingredientMassEstimateG)} {m.grams}
+                            </Text>
+                          )}
+                          <Group>
+                            {nutrientKeys.map((key) => (
+                              <Text key={key}>
+                                {m[key]}: {display(entry.totals[key])}
+                              </Text>
+                            ))}
+                          </Group>
+                          {entry.issues.length > 0 && (
+                            <Text>{entry.issues.join('; ')}</Text>
+                          )}
+                        </Stack>
+                      ))}
+                    </Stack>
+                  ))
+                )}
+              </Stack>
+            </Accordion.Panel>
+          </Accordion.Item>
+        );
+      })}
     </Accordion>
   );
 }
@@ -517,7 +551,7 @@ export function OfflineViewer() {
                 ))}
               </Tabs.List>
               <Tabs.Panel value="diary" pt="lg">
-                <Diary snapshot={bundle.snapshot} />
+                <Diary snapshot={bundle.snapshot} photos={photoMap} />
               </Tabs.Panel>
               <Tabs.Panel value="photos" pt="lg">
                 <Stack>

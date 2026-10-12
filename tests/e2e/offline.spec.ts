@@ -491,3 +491,79 @@ for (const unmount of [false, true]) {
     expect(await sibling.evaluate(call('stale()'))).toBe(true);
   });
 }
+
+for (const variant of [
+  'zero-entry',
+  'empty',
+  'photo-only',
+  'totals',
+] as const) {
+  test(`offline diary meal visibility keeps ${variant} with authoritative day totals`, async ({
+    page,
+    context,
+  }) => {
+    await inject(page);
+    await page.evaluate(call('prepareShell()'));
+    await page.evaluate(call(`seed('${variant}')`));
+    await context.setOffline(true);
+    try {
+      await page.goto('/offline/index.html');
+      await expect(
+        page.getByText('Без сети · сохранённые данные', { exact: true }),
+      ).toBeVisible();
+      await page
+        .getByRole('button', {
+          name: new RegExp(new Date().toISOString().slice(0, 10)),
+        })
+        .click();
+      const panel = page.getByRole('tabpanel', {
+        name: 'Дневник питания',
+        exact: true,
+      });
+      await expect(
+        panel.getByRole('cell', { name: '123,46', exact: true }),
+      ).toBeVisible();
+      const titles = panel.getByRole('heading', { level: 3 });
+      if (variant === 'empty') {
+        await expect(titles).toHaveCount(0);
+        await expect(
+          panel.getByText('За сохранённый период нет записей.', {
+            exact: true,
+          }),
+        ).toHaveCount(1);
+      } else {
+        await expect(titles).toHaveCount(1);
+        await expect(titles).toHaveText(
+          variant === 'zero-entry'
+            ? 'Завтрак'
+            : variant === 'photo-only'
+              ? 'Обед'
+              : 'Перекус',
+        );
+        await expect(
+          panel.getByText('За сохранённый период нет записей.', {
+            exact: true,
+          }),
+        ).toHaveCount(0);
+      }
+      if (variant === 'zero-entry')
+        await expect(
+          panel.getByText('Synthetic breakfast', { exact: true }),
+        ).toBeVisible();
+      if (variant === 'photo-only') {
+        await expect(
+          panel.getByText('Фотография не сохранена на этом устройстве.', {
+            exact: true,
+          }),
+        ).toBeVisible();
+        await expect(panel.locator('img')).toHaveCount(0);
+      }
+      if (variant === 'totals')
+        await expect(
+          panel.getByRole('cell', { name: '3,5', exact: true }),
+        ).toBeVisible();
+    } finally {
+      await context.setOffline(false);
+    }
+  });
+}
