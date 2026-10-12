@@ -1018,3 +1018,52 @@ it('holds an expired health lease until its pending read drains and rejects late
     database.db.select().from(nutritionSchedule).get()!.leaseId,
   ).toBeNull();
 });
+
+it('day refresh preserves history and food success when photo metadata and health weight fail independently', async () => {
+  const { service, upstream, repository } = setup();
+  service.enable('owner', input);
+  vi.mocked(upstream.images).mockRejectedValue(
+    new Error('Synthetic photo metadata failure'),
+  );
+  vi.mocked(upstream.healthSummary).mockImplementation(async (date) => ({
+    dailySteps: { source: 'yazio', date, steps: 0 },
+    unitContext: null,
+  }));
+  vi.mocked(upstream.weight).mockRejectedValue(
+    new Error('Synthetic health failure'),
+  );
+  const result = await service.run('owner', period, { mode: 'day-refresh' });
+  expect(result).toMatchObject({
+    state: 'partial',
+    completedDates: [period.from],
+    failedDates: [],
+    photoFailedDates: [period.from],
+    health: {
+      completedStepsDates: [period.from],
+      failedStepsDates: [],
+      completedWeightDates: [],
+      failedWeightDates: [period.from],
+      error: 'HEALTH_IMPORT_FAILED',
+    },
+  });
+  expect(repository.status('owner')).toMatchObject({
+    state: 'partial',
+    failedDates: [],
+    photoFailedDates: [period.from],
+  });
+  expect(service.status('owner')).toMatchObject({
+    enabled: true,
+    initialFrom: input.initialFrom,
+    timezone: input.timezone,
+    lastSuccess: new Date().toISOString(),
+    lastError: 'PHOTO_INCOMPLETE',
+    attempt: 1,
+    running: false,
+  });
+  expect(upstream.items).toHaveBeenCalledExactlyOnceWith(period.from);
+  expect(upstream.healthSummary).toHaveBeenCalledExactlyOnceWith(period.from);
+  expect(upstream.weight).toHaveBeenCalledExactlyOnceWith(period.from, null);
+  expect(
+    database.sqlite.prepare('SELECT date, steps FROM yazio_daily_steps').all(),
+  ).toEqual([{ date: period.from, steps: 0 }]);
+});
