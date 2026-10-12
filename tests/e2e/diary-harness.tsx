@@ -38,7 +38,9 @@ const completeDay = {
   })),
 };
 const fixture = new URLSearchParams(location.search).get('fixture');
-const empty = fixture === 'zero';
+const empty = ['zero', 'null-empty', 'zero-entry', 'nutrient-only'].includes(
+  fixture ?? '',
+);
 const previewDay = empty
   ? {
       ...day,
@@ -72,6 +74,52 @@ const previewDay = empty
           : meal,
       ),
     };
+const visibilityDay =
+  fixture === 'null-empty'
+    ? {
+        ...previewDay,
+        totals: { calories: null, protein: null, fat: null, carbs: null },
+        meals: previewDay.meals.map((meal) => ({
+          ...meal,
+          totals: { calories: null, protein: null, fat: null, carbs: null },
+        })),
+      }
+    : fixture === 'zero-entry'
+      ? {
+          ...previewDay,
+          meals: previewDay.meals.map((meal) => ({
+            ...meal,
+            entries:
+              meal.kind === 'lunch'
+                ? [
+                    {
+                      ...entry,
+                      name: 'Синтетическая нулевая запись',
+                      totals: zero,
+                      issues: [],
+                      amount: '0',
+                      massG: '0',
+                    },
+                  ]
+                : [],
+          })),
+        }
+      : fixture === 'nutrient-only'
+        ? {
+            ...previewDay,
+            totals: { ...zero, protein: '2' },
+            knownTotals: { ...zero, protein: '2' },
+            meals: previewDay.meals.map((meal) =>
+              meal.kind === 'breakfast'
+                ? {
+                    ...meal,
+                    totals: { ...zero, protein: '2' },
+                    knownTotals: { ...zero, protein: '2' },
+                  }
+                : meal,
+            ),
+          }
+        : previewDay;
 function Harness() {
   const [photos, setPhotos] = useState<DiaryPhoto[]>([
     {
@@ -111,8 +159,20 @@ function Harness() {
     <MantineProvider>
       <DiaryView
         date={day.date}
-        day={fixture === 'complete' ? completeDay : previewDay}
-        photos={empty ? [] : photos}
+        day={
+          fixture === 'absent' || fixture === 'photo-only'
+            ? null
+            : fixture === 'complete'
+              ? completeDay
+              : visibilityDay
+        }
+        photos={
+          fixture === 'photo-only'
+            ? photos.filter((photo) => photo.id === 'dinner-photo')
+            : fixture === 'absent' || empty
+              ? []
+              : photos
+        }
         source="demo"
         commentsSlot={<p>Слот комментариев</p>}
         photoActions={{

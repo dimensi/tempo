@@ -24,6 +24,7 @@ import {
   type SafeMealPhotoView,
 } from '@/contracts/nutrition';
 import { diaryMessages as m } from './messages';
+import { hasNutritionMealContent } from '@/lib/nutrition-meal-content';
 import classes from './diary-view.module.css';
 import {
   displayValue,
@@ -186,6 +187,17 @@ export function DiaryView({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const mealSections = meals
+    .map((kind) => ({
+      kind,
+      meal: day?.meals.find((meal) => meal.kind === kind),
+      mealPhotos: photos.filter(
+        (photo) => photo.date === date && photo.daytime === kind,
+      ),
+    }))
+    .filter(({ meal, mealPhotos }) =>
+      hasNutritionMealContent(meal, mealPhotos.length > 0),
+    );
   async function mutate(action: () => Promise<void>) {
     setPending(true);
     setError(false);
@@ -220,16 +232,13 @@ export function DiaryView({
           <Summary {...day} showSource />
         </Card>
       )}
+      {day && mealSections.length === 0 && <Alert>{m.emptyDay}</Alert>}
       {error && (
         <Alert color="red" role="alert">
           {m.error}
         </Alert>
       )}
-      {meals.map((kind) => {
-        const meal = day?.meals.find((meal) => meal.kind === kind);
-        const mealPhotos = photos.filter(
-          (photo) => photo.date === date && photo.daytime === kind,
-        );
+      {mealSections.map(({ kind, meal, mealPhotos }) => {
         return (
           <Card
             key={kind}
@@ -245,11 +254,10 @@ export function DiaryView({
                 {m.meals[kind]}
               </Title>
               {meal &&
-                (meal.entries.length > 0 ||
+                (hasNutritionMealContent(meal) ||
                   noticeableDifferences(meal.delta).length > 0) && (
                   <Summary {...meal} />
                 )}
-              {!meal?.entries.length && <Text>{m.noEntries}</Text>}
               {meal?.entries.map((entry) => (
                 <Box key={entry.id} className={classes.entry}>
                   <Stack gap="xs">
@@ -299,34 +307,39 @@ export function DiaryView({
                 </Box>
               ))}
               {mealPhotos.length > 0 && <Text fw={600}>{m.photos}</Text>}
-              <SimpleGrid cols={{ base: 1, sm: 2 }} className={classes.photos}>
-                {mealPhotos.map((photo) => (
-                  <Stack key={photo.id}>
-                    <Image
-                      src={photo.href}
-                      alt={`${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
-                      radius="md"
-                      mah={260}
-                      style={{ aspectRatio: '4 / 3' }}
-                      fit="contain"
-                    />
-                    <Text size="sm">
-                      {photo.source === 'yazio' ? m.automatic : m.manual}
-                    </Text>
-                    {photo.source === 'manual' && photoActions && (
-                      <Button
-                        variant="light"
-                        color="red"
-                        mih={44}
-                        disabled={pending}
-                        onClick={() => setDeleting(photo.id)}
-                      >
-                        {m.remove}
-                      </Button>
-                    )}
-                  </Stack>
-                ))}
-              </SimpleGrid>
+              {mealPhotos.length > 0 && (
+                <SimpleGrid
+                  cols={{ base: 1, sm: 2 }}
+                  className={classes.photos}
+                >
+                  {mealPhotos.map((photo) => (
+                    <Stack key={photo.id}>
+                      <Image
+                        src={photo.href}
+                        alt={`${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
+                        radius="md"
+                        mah={260}
+                        style={{ aspectRatio: '4 / 3' }}
+                        fit="contain"
+                      />
+                      <Text size="sm">
+                        {photo.source === 'yazio' ? m.automatic : m.manual}
+                      </Text>
+                      {photo.source === 'manual' && photoActions && (
+                        <Button
+                          variant="light"
+                          color="red"
+                          mih={44}
+                          disabled={pending}
+                          onClick={() => setDeleting(photo.id)}
+                        >
+                          {m.remove}
+                        </Button>
+                      )}
+                    </Stack>
+                  ))}
+                </SimpleGrid>
+              )}
             </Stack>
           </Card>
         );
