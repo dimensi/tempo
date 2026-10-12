@@ -6,6 +6,7 @@ import type { getDatabase } from '@/server/db';
 import { plannedWorkoutSchema, type WorkoutPlan } from '@/contracts/workouts';
 import { workoutTransformMateLinks as links } from '@/server/db/schema/transformmate';
 import { syncStateSchema, type SyncLink, type SyncState } from './state';
+import { projectionFingerprint } from './mapping';
 
 export function syncRepository(
   db: Pick<
@@ -57,7 +58,64 @@ export function syncRepository(
     },
     reconcile(link: SyncLink, plan: WorkoutPlan): SyncLink | null {
       if (plan.ownerId !== link.ownerId || plan.id !== link.planId) return null;
-      if (link.state.attempted || link.remoteTrainingId !== null) return link;
+      if (link.state.attempted || link.remoteTrainingId !== null) {
+        const published = link.state.published;
+        const current = plan.workouts.find((w) => w.id === link.workoutId);
+        if (
+          !published ||
+          !current ||
+          !link.state.baseline ||
+          link.remoteTrainingId === null ||
+          link.state.updateAttempt?.phase === 'unknown'
+        )
+          return link;
+        const workout = plannedWorkoutSchema.parse(current);
+        if (JSON.stringify(workout) === JSON.stringify(published.workout)) {
+          if (link.state.updateAttempt?.phase === 'pending')
+            return repository.cas(link, {
+              ...link.state,
+              status: 'synced',
+              reason: null,
+              published: { ...published, planTitle: plan.title },
+              updateAttempt: {
+                ...link.state.updateAttempt,
+                phase: 'conflict',
+                checkedAt: new Date().toISOString(),
+              },
+            });
+          if (published.planTitle !== plan.title)
+            return repository.cas(link, {
+              ...link.state,
+              published: { ...published, planTitle: plan.title },
+            });
+          return link;
+        }
+        const prior = link.state.updateAttempt;
+        if (
+          prior &&
+          JSON.stringify(prior.desired.workout) === JSON.stringify(workout)
+        )
+          return link;
+        return repository.cas(link, {
+          ...link.state,
+          status: 'pending',
+          reason: null,
+          updateAttempt: {
+            id: randomUUID(),
+            phase: 'pending',
+            previous: {
+              workout: published.workout,
+              planTitle: published.planTitle,
+            },
+            desired: { workout, planTitle: plan.title },
+            previousFingerprint: projectionFingerprint(link.state.baseline),
+            expectedFingerprint: null,
+            connectionId: null,
+            createdAt: new Date().toISOString(),
+            checkedAt: null,
+          },
+        });
+      }
       const current = plan.workouts.find((w) => w.id === link.workoutId);
       if (!current) return null;
       const workout = plannedWorkoutSchema.parse(current);

@@ -17,17 +17,25 @@ import {
   remoteExercises,
   remoteProjection,
   validateRemoteOrder,
+  hasRemoteFact,
+  projectionFingerprint,
+  updateProjection,
 } from './mapping';
 
 export interface SyncEngineOptions {
   repository: SyncRepository;
-  client: Pick<
-    TransformMateClient,
-    'getExercise' | 'createTraining' | 'listTrainings' | 'getTraining'
-  > | null;
+  client:
+    | (Pick<
+        TransformMateClient,
+        'getExercise' | 'createTraining' | 'listTrainings' | 'getTraining'
+      > &
+        Partial<Pick<TransformMateClient, 'updateTrainingOnce'>>)
+    | null;
   // Must throw on revocation. Called before and after each HTTP await and before local writes.
   access: (permission: 'workouts:read' | 'workouts:plan') => Promise<void>;
   plans: () => WorkoutPlan[];
+  checkConnection?: () => Promise<void>;
+  connectionId?: string;
 }
 const queues = new Map<string, Promise<unknown>>();
 export async function serializeOwner<T>(
@@ -44,7 +52,14 @@ export async function serializeOwner<T>(
   }
 }
 export function syncEngine(options: SyncEngineOptions) {
-  const { repository, client, access, plans } = options;
+  const { repository, client, plans } = options;
+  const access = async (permission: 'workouts:read' | 'workouts:plan') => {
+    await options.access(permission);
+    if (options.checkConnection) {
+      await options.checkConnection();
+      await options.access(permission);
+    }
+  };
   const currentPlan = (link: SyncLink) =>
     plans().find((p) => p.id === link.planId && p.ownerId === link.ownerId);
   const currentWorkout = (link: SyncLink): PlannedWorkout | undefined =>
@@ -54,7 +69,7 @@ export function syncEngine(options: SyncEngineOptions) {
     return (
       current &&
       JSON.stringify(plannedWorkoutSchema.parse(current)) !==
-        JSON.stringify(link.state.workout)
+        JSON.stringify(link.state.published?.workout ?? link.state.workout)
     );
   };
   async function save(
@@ -102,63 +117,138 @@ export function syncEngine(options: SyncEngineOptions) {
       const { body } = await http(() => client.getTraining(id));
       validateRemoteOrder(body);
       const projection = remoteProjection(body);
-      const matched =
-        projection === (link.state.baseline ?? link.state.expected);
+      const fingerprint = projectionFingerprint(projection);
       const owned =
         body.id === id &&
         body.is_mine &&
-        body.description === link.state.marker;
-      const started =
-        body.started !== null ||
-        body.finished !== null ||
-        body.progress !== 'idle';
-      const newlyVerified = link.state.baseline === null;
-      const valid =
-        owned &&
-        matched &&
-        (!newlyVerified ||
-          started ||
-          initialPlaceholders(body, link.state.workout));
-      // An ownership mismatch may refer to someone else's workout: do not cache its facts.
+        body.description === link.state.marker &&
+        (!link.state.published ||
+          body.author === link.state.published.authorId);
       if (!owned) {
         await save(link, { status: 'conflict', reason: 'remote_changed' });
         return;
       }
-      const actual = actualProjection(body, link.state, matched);
-      const status = started
-        ? 'started'
-        : !valid
-          ? 'conflict'
-          : changed(link)
-            ? 'conflict'
-            : 'synced';
-      const reason = started
-        ? 'remote_started'
-        : !valid
-          ? 'remote_changed'
-          : changed(link)
-            ? 'plan_changed'
-            : null;
+      const started =
+        body.started !== null ||
+        body.finished !== null ||
+        body.progress !== 'idle';
+      const fact = hasRemoteFact(body);
+      const active = started || fact;
+      const unsupported =
+        link.state.updateAttempt?.phase === 'conflict' &&
+        link.state.reason === 'unsupported';
+      const attempt = link.state.updateAttempt;
+      if (attempt?.phase === 'unknown') {
+        if (fingerprint === attempt.expectedFingerprint) {
+          const published = { ...attempt.desired, authorId: body.author };
+          const updated = { ...link.state, published };
+          const actual = actualProjection(body, updated, true);
+          const needsNewer =
+            currentWorkout(link) &&
+            JSON.stringify(plannedWorkoutSchema.parse(currentWorkout(link))) !==
+              JSON.stringify(published.workout);
+          await save(link, {
+            published,
+            baseline: projection,
+            expected: null,
+            actual,
+            checkedAt: new Date().toISOString(),
+            status: active ? 'started' : needsNewer ? 'conflict' : 'synced',
+            reason: active
+              ? started
+                ? 'remote_started'
+                : 'remote_fact'
+              : needsNewer
+                ? 'plan_changed'
+                : null,
+            updateAttempt: {
+              ...attempt,
+              phase: 'verified',
+              checkedAt: new Date().toISOString(),
+            },
+            occurrences: remoteExercises(body).map((e, i) => ({
+              remoteId: e.id,
+              key: published.workout.exercises[i]!.transformMate!.occurrenceKey,
+            })),
+          });
+          return;
+        }
+        const matched = fingerprint === attempt.previousFingerprint;
+        await save(link, {
+          status: matched ? 'unknown' : 'conflict',
+          reason: matched ? 'ambiguous_write' : 'remote_changed',
+          actual: actualProjection(body, link.state, matched),
+          checkedAt: new Date().toISOString(),
+          updateAttempt: matched
+            ? { ...attempt, checkedAt: new Date().toISOString() }
+            : {
+                ...attempt,
+                phase: 'conflict',
+                checkedAt: new Date().toISOString(),
+              },
+        });
+        return;
+      }
+      const matched =
+        projection === (link.state.baseline ?? link.state.expected);
+      const published = link.state.published ?? {
+        workout: link.state.workout,
+        planTitle: link.state.planTitle,
+        authorId: body.author,
+      };
+      const valid =
+        matched &&
+        (link.state.baseline !== null ||
+          active ||
+          initialPlaceholders(body, published.workout));
+      const actual = actualProjection(
+        body,
+        { ...link.state, published },
+        matched,
+      );
       await save(link, {
-        status,
-        reason,
         actual,
         checkedAt: new Date().toISOString(),
         baseline: valid ? projection : link.state.baseline,
+        expected: valid ? null : link.state.expected,
+        published: valid ? published : link.state.published,
+        status: active
+          ? 'started'
+          : !valid
+            ? 'conflict'
+            : unsupported
+              ? 'unavailable'
+              : changed(link)
+                ? 'conflict'
+                : 'synced',
+        reason: active
+          ? started
+            ? 'remote_started'
+            : 'remote_fact'
+          : !valid
+            ? 'remote_changed'
+            : unsupported
+              ? 'unsupported'
+              : changed(link)
+                ? 'plan_changed'
+                : null,
         occurrences: valid
           ? remoteExercises(body).map((e, i) => ({
               remoteId: e.id,
-              key: link.state.workout.exercises[i]!.transformMate!
-                .occurrenceKey,
+              key: published.workout.exercises[i]!.transformMate!.occurrenceKey,
             }))
           : link.state.occurrences,
       });
     } catch (error) {
-      // Keep facts and last successful checkedAt. Authorization exceptions are rethrown here.
       await access('workouts:read');
       await save(link, {
-        status: link.state.baseline === null ? 'unknown' : 'error',
+        status:
+          link.state.updateAttempt?.phase === 'unknown' ||
+          link.state.baseline === null
+            ? 'unknown'
+            : 'error',
         reason:
+          link.state.updateAttempt?.phase === 'unknown' ||
           link.state.baseline === null
             ? 'ambiguous_write'
             : error instanceof TransformMateApiError && error.status === 404
@@ -167,18 +257,184 @@ export function syncEngine(options: SyncEngineOptions) {
       });
     }
   }
+  async function update(link: SyncLink) {
+    if (
+      !client ||
+      !client.updateTrainingOnce ||
+      !link.state.published ||
+      !link.state.updateAttempt ||
+      link.remoteTrainingId === null
+    )
+      return;
+    const attempt = link.state.updateAttempt;
+    if (attempt.phase !== 'pending') return;
+    await access('workouts:plan');
+    if (!currentWorkout(link)) return;
+    const desired = attempt.desired.workout;
+    if (
+      !desired.exercises.every((e) => e.transformMate) ||
+      new Set(desired.exercises.map((e) => e.transformMate?.occurrenceKey))
+        .size !== desired.exercises.length
+    ) {
+      await save(link, {
+        status: 'unavailable',
+        reason: 'unsupported',
+        updateAttempt: {
+          ...attempt,
+          phase: 'conflict',
+          checkedAt: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+    let prepared: ReturnType<typeof updateProjection>;
+    try {
+      for (const exercise of desired.exercises) {
+        const { body } = await http(() =>
+          client.getExercise(exercise.transformMate!.exerciseId),
+        );
+        if (
+          body.id !== exercise.transformMate!.exerciseId ||
+          !canProject(
+            body,
+            exercise.sets.some((s) => s.weightKg !== null),
+          )
+        ) {
+          await save(link, {
+            status: 'unavailable',
+            reason: 'unsupported',
+            updateAttempt: {
+              ...attempt,
+              phase: 'conflict',
+              checkedAt: new Date().toISOString(),
+            },
+          });
+          return;
+        }
+      }
+      const { body } = await http(() =>
+        client.getTraining(link.remoteTrainingId!),
+      );
+      validateRemoteOrder(body);
+      if (
+        body.id !== link.remoteTrainingId ||
+        !body.is_mine ||
+        body.description !== link.state.marker ||
+        body.author !== link.state.published.authorId ||
+        projectionFingerprint(remoteProjection(body)) !==
+          attempt.previousFingerprint
+      ) {
+        await save(link, {
+          status: 'conflict',
+          reason: 'remote_changed',
+          updateAttempt: {
+            ...attempt,
+            phase: 'conflict',
+            checkedAt: new Date().toISOString(),
+          },
+        });
+        return;
+      }
+      if (
+        body.started !== null ||
+        body.finished !== null ||
+        body.progress !== 'idle' ||
+        hasRemoteFact(body)
+      ) {
+        await save(link, {
+          status: 'started',
+          reason: hasRemoteFact(body) ? 'remote_fact' : 'remote_started',
+          actual: actualProjection(body, link.state, true),
+          checkedAt: new Date().toISOString(),
+          updateAttempt: {
+            ...attempt,
+            phase: 'conflict',
+            checkedAt: new Date().toISOString(),
+          },
+        });
+        return;
+      }
+      prepared = updateProjection(body, attempt.previous.workout, desired);
+    } catch {
+      await access('workouts:plan');
+      await save(link, { status: 'error', reason: 'upstream_error' });
+      return;
+    }
+    await access('workouts:plan');
+    if (
+      !currentWorkout(link) ||
+      JSON.stringify(plannedWorkoutSchema.parse(currentWorkout(link))) !==
+        JSON.stringify(desired)
+    )
+      return;
+    const claimed = await save(link, {
+      status: 'unknown',
+      reason: 'ambiguous_write',
+      updateAttempt: {
+        ...attempt,
+        phase: 'unknown',
+        expectedFingerprint: projectionFingerprint(prepared.projection),
+        connectionId: options.connectionId ?? null,
+      },
+    });
+    if (!claimed) return;
+    link = claimed;
+    await access('workouts:plan');
+    if (
+      !currentWorkout(link) ||
+      JSON.stringify(plannedWorkoutSchema.parse(currentWorkout(link))) !==
+        JSON.stringify(desired)
+    )
+      return;
+    try {
+      await client.updateTrainingOnce(
+        link.remoteTrainingId!,
+        prepared.body,
+        async () => {
+          await access('workouts:plan');
+          const latest = repository
+            .list(link.ownerId)
+            .find((row) => row.id === link.id);
+          const current = currentWorkout(link);
+          if (
+            !latest ||
+            latest.revision !== link.revision ||
+            latest.state.updateAttempt?.id !== attempt.id ||
+            latest.state.updateAttempt.phase !== 'unknown' ||
+            !current ||
+            JSON.stringify(plannedWorkoutSchema.parse(current)) !==
+              JSON.stringify(desired)
+          )
+            throw new Error('Update intent changed');
+        },
+      );
+    } catch {
+      /* Never replay; the durable attempt is verified only through reads. */
+    }
+    await access('workouts:plan');
+    await verify(link);
+  }
   async function process(link: SyncLink) {
     await access('workouts:read');
-    if (!link.state.attempted && link.remoteTrainingId === null) {
+    if (
+      (!link.state.attempted && link.remoteTrainingId === null) ||
+      (link.state.published && link.state.updateAttempt?.phase !== 'unknown')
+    ) {
       await access('workouts:plan');
       const plan = currentPlan(link);
-      if (!plan) return;
-      const latest = repository.reconcile(link, plan);
-      if (!latest) return;
-      link = latest;
+      if (plan) {
+        const latest = repository.reconcile(link, plan);
+        if (!latest) return;
+        link = latest;
+      } else if (!link.state.attempted && link.remoteTrainingId === null)
+        return;
     }
     if (!client) {
       await save(link, { status: 'unavailable', reason: 'not_configured' });
+      return;
+    }
+    if (link.state.updateAttempt?.phase === 'pending' && currentWorkout(link)) {
+      await update(link);
       return;
     }
     if (link.state.attempted || link.remoteTrainingId !== null) {

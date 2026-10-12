@@ -16,8 +16,9 @@ vi.mock('@/server/auth', () => ({
 const database = openDatabase('file::memory:');
 vi.mock('@/server/db', () => ({ getDatabase: () => database }));
 vi.mock('@/server/transformmate/runtime', () => ({
-  getTransformMateClient: () => null,
-  isTransformMateConfigured: () => false,
+  getTransformMateClient: async () => null,
+  getTransformMateConnectionFence: async () => null,
+  isTransformMateConfigured: async () => false,
 }));
 const api = await import('@/server/workouts/transformmate/service');
 const workoutsApi = await import('@/server/workouts');

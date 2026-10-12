@@ -9,6 +9,7 @@ import {
   createProjection,
   expectedProjection,
   remoteProjection,
+  updateProjection,
 } from '@/server/workouts/transformmate/mapping';
 import type { WorkoutPlan } from '@/contracts/workouts';
 import {
@@ -133,8 +134,13 @@ function setup() {
   );
   const client = {
     getExercise: vi.fn(
-      async () =>
-        ({ body: transformMateExerciseDetailSchema.parse(catalog) }) as never,
+      async (exerciseId: number) =>
+        ({
+          body: transformMateExerciseDetailSchema.parse({
+            ...catalog,
+            id: exerciseId,
+          }),
+        }) as never,
     ),
     createTraining: vi.fn(async (body: CreateTrainingInput) => {
       detail = remote(createTrainingInputSchema.parse(body));
@@ -149,6 +155,10 @@ function setup() {
         }) as never,
     ),
     getTraining: vi.fn(async () => ({ body: detail }) as never),
+    updateTrainingOnce: vi.fn(async (_id: number, body: TrainingWriteBody) => {
+      detail = remote(body);
+      return { body: { id: 101 } } as never;
+    }),
   };
   const access = vi.fn(
     async (permission: 'workouts:read' | 'workouts:plan') => {
@@ -163,12 +173,22 @@ function setup() {
       plans: () => plans,
     });
   const process = () => engine().process(repository.list('owner')[0]!);
+  const processFenced = (checkConnection: () => Promise<void>) =>
+    syncEngine({
+      repository,
+      client,
+      access,
+      plans: () => plans,
+      connectionId: 'f2366199-c98f-491c-af18-e42b258a66f1',
+      checkConnection,
+    }).process(repository.list('owner')[0]!);
   return {
     repository,
     plan,
     client,
     access,
     process,
+    processFenced,
     engine,
     catalog,
     get detail() {
@@ -263,14 +283,17 @@ describe('durable TransformMate sync', () => {
     await s.process();
     expect(s.link().state.status).toBe('synced');
   });
-  it('changed local plans are conflicts and never modify a remote workout', async () => {
+  it('changed idle local plans update once while preserving the initial snapshot', async () => {
     const s = setup();
     await s.process();
     const changed = structuredClone(s.plan);
     changed.workouts[0]!.title = 'Changed';
     s.setPlans([changed]);
     await s.process();
-    expect(s.link().state.reason).toBe('plan_changed');
+    expect(s.link().state.status).toBe('synced');
+    expect(s.link().state.published!.workout.title).toBe('Changed');
+    expect(s.link().state.workout.title).toBe(s.plan.workouts[0]!.title);
+    expect(s.client.updateTrainingOnce).toHaveBeenCalledTimes(1);
     expect(s.client.createTraining).toHaveBeenCalledTimes(1);
   });
   it('remote edits are conflicts and ownership mismatch never caches foreign facts', async () => {
@@ -685,6 +708,364 @@ describe('durable TransformMate sync', () => {
     expect(s.link().state.workout.title).toBe('Latest workout');
     expect(s.link().state.reason).toBe('not_configured');
     expect(s.link().state.attempted).toBe(false);
+  });
+
+  it('updates idle date/title/comments/reps/weight once with immutable initial history', async () => {
+    const s = setup();
+    await s.process();
+    const initial = s.link().state.workout;
+    const latest = structuredClone(s.plan);
+    const workout = latest.workouts[0]!;
+    workout.title = 'Edited';
+    workout.date = '2026-01-02';
+    workout.exercises[0]!.comment = 'Edited comment';
+    workout.exercises[0]!.sets = [{ reps: 10, weightKg: 0 }];
+    s.setPlans([latest]);
+    s.repository.ensure('owner', latest);
+    expect(s.link().state.updateAttempt!.phase).toBe('pending');
+    await s.process();
+    await s.process();
+    expect(s.client.updateTrainingOnce).toHaveBeenCalledTimes(1);
+    expect(s.link().state.published!.workout).toEqual(workout);
+    expect(s.link().state.workout).toEqual(initial);
+    expect(s.link().state.updateAttempt!.phase).toBe('verified');
+    expect(s.link().state.actual!.title).toBe('Edited');
+  });
+  it('supports exercise reorder/add/remove and aligned set add/remove without duplicate trainings', async () => {
+    const s = setup();
+    await s.process();
+    const latest = structuredClone(s.plan);
+    const first = latest.workouts[0]!.exercises[0]!;
+    first.sets.push({ reps: 3, weightKg: null });
+    const second = structuredClone(first);
+    second.transformMate!.occurrenceKey =
+      '7b4df6d6-1c68-4565-95f0-0861bb71ce7f';
+    second.comment = 'Second';
+    second.sets = [{ reps: 5, weightKg: 7 }];
+    latest.workouts[0]!.exercises = [second, first];
+    s.setPlans([latest]);
+    s.repository.ensure('owner', latest);
+    await s.process();
+    expect(s.link().state.status).toBe('synced');
+    const firstBody = s.client.updateTrainingOnce.mock.calls[0]![1];
+    expect(firstBody.protocols[0]!.workout_exercises[0]!.id).toBeUndefined();
+    expect(firstBody.protocols[0]!.workout_exercises[1]!.id).toBe(401);
+    expect(
+      firstBody.protocols[0]!.workout_exercises[1]!.metrics.find(
+        (m) => m.type === 'fact',
+      )!.sets,
+    ).toHaveLength(2);
+    expect(
+      s.link().state.actual!.exercises.map((e) => e.occurrenceKey),
+    ).toEqual(
+      latest.workouts[0]!.exercises.map((e) => e.transformMate!.occurrenceKey),
+    );
+    const removed = structuredClone(latest);
+    removed.workouts[0]!.exercises = [removed.workouts[0]!.exercises[1]!];
+    removed.workouts[0]!.exercises[0]!.sets.splice(1);
+    s.setPlans([removed]);
+    s.repository.ensure('owner', removed);
+    await s.process();
+    expect(s.link().state.status).toBe('synced');
+    expect(s.client.createTraining).toHaveBeenCalledTimes(1);
+    expect(s.client.updateTrainingOnce).toHaveBeenCalledTimes(2);
+    const body = s.client.updateTrainingOnce.mock.calls[1]![1];
+    expect(body.protocols[0]!.workout_exercises).toHaveLength(1);
+    expect(
+      body.protocols[0]!.workout_exercises[0]!.metrics.find(
+        (m) => m.type === 'fact',
+      )!.sets,
+    ).toHaveLength(1);
+  });
+  it.each([true, false])(
+    'update timeout committed=%s is durably reconciled without repeated PATCH',
+    async (committed) => {
+      const s = setup();
+      await s.process();
+      const latest = structuredClone(s.plan);
+      latest.workouts[0]!.title = 'Desired';
+      s.setPlans([latest]);
+      s.repository.ensure('owner', latest);
+      s.client.updateTrainingOnce.mockImplementation(async (_id, body) => {
+        expect(s.link().state.updateAttempt!.phase).toBe('unknown');
+        expect(
+          s.link().state.updateAttempt!.expectedFingerprint,
+        ).not.toBeNull();
+        if (committed) s.detail = remote(body);
+        throw new Error('Timeout');
+      });
+      await s.process();
+      const snapshot = s.link().state.updateAttempt!;
+      expect(snapshot.phase).toBe(committed ? 'verified' : 'unknown');
+      const again = structuredClone(latest);
+      again.workouts[0]!.title = 'Newer local';
+      s.setPlans([again]);
+      s.repository.ensure('owner', again);
+      if (!committed) {
+        expect(s.link().state.updateAttempt!.id).toBe(snapshot.id);
+        await s.process();
+        await s.process();
+        expect(s.client.updateTrainingOnce).toHaveBeenCalledTimes(1);
+        expect(s.link().state.updateAttempt!.phase).toBe('unknown');
+        expect(s.link().state.published!.workout.title).toBe(
+          s.plan.workouts[0]!.title,
+        );
+      }
+    },
+  );
+  it.each(['start', 'done', 'zero', 'range', 'empty', 'technique'] as const)(
+    'rejects observed remote %s before idle PATCH',
+    async (kind) => {
+      const s = setup();
+      await s.process();
+      const latest = structuredClone(s.plan);
+      latest.workouts[0]!.title = 'Desired';
+      s.setPlans([latest]);
+      s.repository.ensure('owner', latest);
+      const fact = s.detail.protocols[0]!.workout_exercises[0]!.metrics.find(
+        (m) => m.type === 'fact',
+      )!;
+      if (kind === 'start') {
+        s.detail.started = '2026-01-01T10:00:00Z';
+        s.detail.progress = 'in_progress';
+      } else if (kind === 'done') fact.sets[0]!.is_done = true;
+      else if (kind === 'technique') fact.sets[0]!.techniques = [{ id: 1 }];
+      else
+        fact.sets[0]!.set_metrics = [
+          {
+            id: 1,
+            type: kind === 'range' ? 'range' : 'straight',
+            measure: { id: 3, key: 'weight', name: 'Weight', short_name: 'kg' },
+            metric_values: [
+              {
+                id: 2,
+                value: kind === 'zero' ? '0' : kind === 'empty' ? '' : '10–12',
+              },
+            ],
+          },
+        ];
+      await s.process();
+      expect(s.client.updateTrainingOnce).not.toHaveBeenCalled();
+      expect(s.link().state.reason).toBe(
+        kind === 'start' ? 'remote_started' : 'remote_fact',
+      );
+      expect(s.link().state.updateAttempt!.phase).toBe('conflict');
+      expect(s.link().state.actual).not.toBeNull();
+    },
+  );
+  it('an external idle plan edit refuses PATCH and keeps the established baseline', async () => {
+    const s = setup();
+    await s.process();
+    const baseline = s.link().state.baseline;
+    const latest = structuredClone(s.plan);
+    latest.workouts[0]!.title = 'Local';
+    s.setPlans([latest]);
+    s.repository.ensure('owner', latest);
+    s.detail.name = 'External';
+    await s.process();
+    expect(s.client.updateTrainingOnce).not.toHaveBeenCalled();
+    expect(s.link().state.reason).toBe('remote_changed');
+    expect(s.link().state.baseline).toBe(baseline);
+  });
+  it('pending mixed plans remain honestly local only and cannot PATCH partial exercises', async () => {
+    const s = setup();
+    await s.process();
+    const latest = structuredClone(s.plan);
+    delete latest.workouts[0]!.exercises[0]!.transformMate;
+    s.setPlans([latest]);
+    s.repository.ensure('owner', latest);
+    await s.process();
+    expect(s.link().state.reason).toBe('unsupported');
+    expect(s.client.updateTrainingOnce).not.toHaveBeenCalled();
+    expect(s.link().state.published!.workout).toEqual(s.plan.workouts[0]);
+  });
+  it('local update during preflight loses the stale CAS claim, then only latest intent can PATCH', async () => {
+    const s = setup();
+    await s.process();
+    const desired = structuredClone(s.plan);
+    desired.workouts[0]!.title = 'First';
+    s.setPlans([desired]);
+    s.repository.ensure('owner', desired);
+    let entered!: () => void;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const started = new Promise<void>((r) => {
+      entered = r;
+    });
+    s.client.getTraining.mockImplementationOnce(async () => {
+      entered();
+      await gate;
+      return { body: s.detail } as never;
+    });
+    const old = s.process();
+    await started;
+    const latest = structuredClone(desired);
+    latest.workouts[0]!.title = 'Latest';
+    s.setPlans([latest]);
+    s.repository.ensure('owner', latest);
+    release();
+    await old;
+    expect(s.client.updateTrainingOnce).not.toHaveBeenCalled();
+    await s.process();
+    expect(s.client.updateTrainingOnce).toHaveBeenCalledTimes(1);
+    expect(s.link().state.published!.workout.title).toBe('Latest');
+  });
+  it('concurrent update processors can claim only one durable PATCH', async () => {
+    const s = setup();
+    await s.process();
+    const latest = structuredClone(s.plan);
+    latest.workouts[0]!.title = 'Desired';
+    s.setPlans([latest]);
+    s.repository.ensure('owner', latest);
+    const stale = s.link();
+    await Promise.all([s.engine().process(stale), s.engine().process(stale)]);
+    expect(s.client.updateTrainingOnce).toHaveBeenCalledTimes(1);
+    expect(s.link().state.updateAttempt!.phase).toBe('verified');
+  });
+  it('connection replacement after durable claim denies the HTTP mutation', async () => {
+    const s = setup();
+    await s.process();
+    const latest = structuredClone(s.plan);
+    latest.workouts[0]!.title = 'Desired';
+    s.setPlans([latest]);
+    s.repository.ensure('owner', latest);
+    const fence = async () => {
+      if (s.link().state.updateAttempt?.phase === 'unknown')
+        throw new Error('Connection changed');
+    };
+    await expect(s.processFenced(fence)).rejects.toThrow('Connection changed');
+    expect(s.client.updateTrainingOnce).not.toHaveBeenCalled();
+    expect(s.link().state.updateAttempt!.phase).toBe('unknown');
+  });
+
+  it('structural builder preserves untouched fresh metadata and fresh fact IDs', async () => {
+    const s = setup();
+    await s.process();
+    const e = s.detail.protocols[0]!.workout_exercises[0]!;
+    e.target_indication = { id: 9, name: 'Synthetic target' };
+    e.videoreport_required = true;
+    e.warmup_metrics = { note: 'Synthetic warmup' };
+    e.id = 998;
+    const plan = e.metrics.find((m) => m.type === 'plan')!;
+    plan.sets[0]!.techniques = [{ id: 7 }];
+    plan.sets[0]!.id = 999;
+    const fact = e.metrics.find((m) => m.type === 'fact')!;
+    fact.id = 900;
+    fact.sets[0]!.id = 901;
+    const desired = structuredClone(s.plan.workouts[0]!);
+    desired.exercises[0]!.comment = 'Changed';
+    desired.exercises[0]!.sets[0]!.reps = 12;
+    const { body, projection } = updateProjection(
+      s.detail,
+      s.plan.workouts[0]!,
+      desired,
+    );
+    const updated = body.protocols[0]!.workout_exercises[0]!;
+    expect(updated.id).toBe(998);
+    expect(updated.target_indication).toBe(9);
+    expect(updated.videoreport_required).toBe(true);
+    expect(updated.metrics.find((m) => m.type === 'fact')!).toEqual({
+      id: 900,
+      type: 'fact',
+      sets: [{ id: 901, is_done: false, techniques: [], set_metrics: [] }],
+    });
+    expect(
+      updated.metrics.find((m) => m.type === 'plan')!.sets[0]!.techniques,
+    ).toEqual([7]);
+    expect(JSON.parse(projection).protocols[0].exercises[0]).toMatchObject({
+      target: e.target_indication,
+      video: true,
+      warmup: e.warmup_metrics,
+    });
+  });
+  it('catalog replacement removes the old empty occurrence and adds a validated new exercise', async () => {
+    const s = setup();
+    await s.process();
+    const desired = structuredClone(s.plan);
+    desired.workouts[0]!.exercises[0]!.transformMate!.exerciseId = 502;
+    s.setPlans([desired]);
+    s.repository.ensure('owner', desired);
+    await s.process();
+    expect(s.link().state.status).toBe('synced');
+    const body = s.client.updateTrainingOnce.mock.calls[0]![1];
+    expect(body.protocols[0]!.workout_exercises[0]!.id).toBeUndefined();
+    expect(body.protocols[0]!.workout_exercises[0]!.exercise).toBe(502);
+    expect(s.link().state.actual!.exercises[0]!.exerciseId).toBe(502);
+    expect(s.client.createTraining).toHaveBeenCalledTimes(1);
+  });
+  it('retains the explicitly accepted race proof: an unobserved concurrent fact can be erased by whole PATCH', async () => {
+    const s = setup();
+    await s.process();
+    const desired = structuredClone(s.plan);
+    desired.workouts[0]!.title = 'Desired';
+    s.setPlans([desired]);
+    s.repository.ensure('owner', desired);
+    let hadFact = false;
+    s.client.updateTrainingOnce.mockImplementation(async (_id, body) => {
+      const fact = s.detail.protocols[0]!.workout_exercises[0]!.metrics.find(
+        (m) => m.type === 'fact',
+      )!;
+      fact.sets[0]!.is_done = true;
+      fact.sets[0]!.set_metrics = [
+        {
+          id: 1,
+          type: 'straight',
+          measure: { id: 3, key: 'weight', name: 'Weight', short_name: 'kg' },
+          metric_values: [{ id: 2, value: '15' }],
+        },
+      ];
+      hadFact = true;
+      s.detail = remote(body);
+      return { body: { id: 101 } } as never;
+    });
+    await s.process();
+    expect(hadFact).toBe(true);
+    expect(s.link().state.updateAttempt!.phase).toBe('verified');
+    expect(s.link().state.actual!.exercises[0]!.sets[0]!.metrics).toEqual([]);
+    expect(s.client.updateTrainingOnce).toHaveBeenCalledTimes(1);
+  });
+
+  it('reverting a pending local edit fences/cancels its old claim without PATCH', async () => {
+    const s = setup();
+    await s.process();
+    const desired = structuredClone(s.plan);
+    desired.workouts[0]!.title = 'Pending';
+    s.setPlans([desired]);
+    s.repository.ensure('owner', desired);
+    const stale = s.link();
+    s.setPlans([s.plan]);
+    s.repository.ensure('owner', s.plan);
+    expect(s.link().revision).toBeGreaterThan(stale.revision);
+    expect(s.link().state.updateAttempt!.phase).toBe('conflict');
+    await s.engine().process(stale);
+    await s.process();
+    expect(s.client.updateTrainingOnce).not.toHaveBeenCalled();
+    expect(s.link().state.status).toBe('synced');
+  });
+  it('local changes during token acquisition deny the already claimed PATCH before sending', async () => {
+    const s = setup();
+    await s.process();
+    const desired = structuredClone(s.plan);
+    desired.workouts[0]!.title = 'Desired';
+    s.setPlans([desired]);
+    s.repository.ensure('owner', desired);
+    let sends = 0;
+    s.client.updateTrainingOnce.mockImplementation(
+      async (_id, body, beforeSend) => {
+        s.setPlans([s.plan]);
+        s.repository.ensure('owner', s.plan);
+        await beforeSend?.();
+        sends++;
+        s.detail = remote(body);
+        return { body: { id: 101 } } as never;
+      },
+    );
+    await s.process();
+    expect(sends).toBe(0);
+    expect(s.link().state.updateAttempt!.phase).toBe('unknown');
+    expect(s.link().state.published!.workout.title).toBe('Demo training');
   });
   it('serializes owner work while releasing a failed queue', async () => {
     const calls: number[] = [];
