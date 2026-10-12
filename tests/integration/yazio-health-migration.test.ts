@@ -32,7 +32,7 @@ function addOwner(db: ReturnType<typeof openDatabase>['db']) {
 const steps = { source: 'yazio' as const, date: '2026-10-12', steps: 0 };
 const observedAt = '2026-10-12T12:00:00Z';
 const period = { from: '2026-10-12', to: '2026-10-12' };
-test('fresh migration creates seven entries, health constraints and an idempotent schema', () => {
+test('fresh migration creates eight entries, health constraints and an idempotent schema', () => {
   const { db, sqlite } = openDatabase('file::memory:');
   try {
     migrate(db, { migrationsFolder: './drizzle' });
@@ -48,7 +48,7 @@ test('fresh migration creates seven entries, health constraints and an idempoten
       sqlite
         .prepare('SELECT count(*) AS count FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ count: 7 });
+    ).toEqual({ count: 8 });
     expect(repo.steps('synthetic-owner', period)).toMatchObject([{ steps: 0 }]);
     expect(
       sqlite
@@ -76,7 +76,7 @@ test('fresh migration creates seven entries, health constraints and an idempoten
   }
 });
 
-test('six-to-seven migration preserves local records and encrypted files across repeated upgrade', async () => {
+test('six-to-current migration preserves local records and encrypted files across repeated upgrade', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'yazio-health-upgrade-'));
   const historical = join(directory, 'historical');
   mkdirSync(join(historical, 'meta'), { recursive: true });
@@ -180,7 +180,7 @@ test('six-to-seven migration preserves local records and encrypted files across 
       sqlite
         .prepare('SELECT count(*) AS count FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ count: 7 });
+    ).toEqual({ count: 8 });
     expect(
       tables.map((table) => sqlite.prepare('SELECT * FROM ' + table).all()),
     ).toEqual(previous);
