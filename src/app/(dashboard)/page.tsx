@@ -1,12 +1,7 @@
-import { SectionPlaceholder } from '@/components/shared/section-placeholder';
-import { ru } from '@/config/messages';
+import { requireSession } from '@/server/auth/guards';
+import { Overview } from '@/features/overview';
 export const metadata = { title: 'Обзор' };
-export default function Page() {
-  const section = ru.sections[0]!;
-  return (
-    <SectionPlaceholder
-      title={section.title}
-      description={section.description}
-    />
-  );
+export default async function Page() {
+  await requireSession();
+  return <Overview />;
 }

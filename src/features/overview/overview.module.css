@@ -1,0 +1,16 @@
+.today {
+  padding: 24px;
+  background: var(--mantine-color-default-hover);
+  border-radius: var(--mantine-radius-md);
+}
+.calories {
+  font-size: 40px;
+  font-weight: 600;
+  margin-block: 20px;
+  overflow-wrap: anywhere;
+}
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
