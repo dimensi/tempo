@@ -1,10 +1,17 @@
 import 'server-only';
 import { formatDecimal } from '@/lib/number-display';
-import type { NutritionTotals } from '@/contracts/nutrition';
+import {
+  meals,
+  type NutritionEntry,
+  type NutritionTotals,
+} from '@/contracts/nutrition';
 import { periodDates, type ReportRequest } from '@/contracts/reports';
 import { reportMessages as m } from '@/features/reports';
 import type { ReportDataset } from '@/server/pdf/source';
+import type { ReportFonts } from '@/server/pdf/fonts';
 import { summarizeDays } from '@/server/pdf/summary';
+import { macroShares, mealShares } from '@/server/pdf/shares';
+import { reportStyles } from '@/server/pdf/styles';
 
 export const reportCsp =
   "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
@@ -17,42 +24,121 @@ export function escapeHtml(value: string): string {
       ]!,
   );
 }
-function value(value: string | null, kind: 'value' | 'delta' = 'value') {
-  const display = formatDecimal(value, { kind });
-  return display === null ? m.unknown : escapeHtml(display);
+const keys = ['calories', 'protein', 'fat', 'carbs'] as const;
+const names = {
+  calories: m.energy,
+  protein: m.proteinName,
+  fat: m.fatName,
+  carbs: m.carbsName,
+};
+const labels = {
+  calories: m.kcal,
+  protein: m.protein,
+  fat: m.fat,
+  carbs: m.carbs,
+};
+const unknownTotals: NutritionTotals = {
+  calories: null,
+  protein: null,
+  fat: null,
+  carbs: null,
+};
+const value = (raw: string | null) =>
+  escapeHtml(formatDecimal(raw) ?? m.unavailable);
+const percentage = (tenths: number) =>
+  `${Math.floor(tenths / 10)},${tenths % 10}%`;
+export function diaryDateLabel(date: string): string {
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+    .format(new Date(`${date}T12:00:00Z`))
+    .replace(/\s*г\.$/, '');
 }
-function totals(
-  values: NutritionTotals,
-  known?: NutritionTotals,
-  kind: 'value' | 'delta' = 'value',
-) {
-  return `<dl class="totals">${(['calories', 'protein', 'fat', 'carbs'] as const).map((key) => `<div><dt>${m[key]}</dt><dd>${value(values[key], kind)}${values[key] === null && known ? `<small>${m.partial}: ${value(known[key])}</small>` : ''}</dd></div>`).join('')}</dl>`;
+function totals(values: NutritionTotals, known?: NutritionTotals): string {
+  const shares = macroShares(values);
+  return `<section class="summary-block"><div class="section-title-row"><h2>${m.diaryTotals}</h2><span class="share-caption">${m.energyShare}</span></div>${macroChart(values)}<div class="daily-totals">${keys.map((key, index) => `<div class="summary-row" data-nutrient="${key}"><span>${names[key]}</span><strong class="summary-value number numeric">${value(values[key])}</strong><span class="summary-unit">${key === 'calories' ? m.kcal : m.grams}</span><span class="energy-share number numeric">${index === 0 || shares === null ? m.unavailable : percentage(shares.tenths[index - 1]!)}</span>${values[key] === null && known?.[key] !== null && known?.[key] !== undefined ? `<small class="partial">${m.partial}: ${value(known[key])} ${key === 'calories' ? m.kcal : m.grams}</small>` : ''}</div>`).join('')}</div><p class="small-note">${m.macroExplanation}${shares ? ` ${m.macroEnergy}: ${value(shares.energy)} ${m.kcal}.` : ''}</p></section>`;
 }
+function macroChart(values: NutritionTotals): string {
+  const shares = macroShares(values);
+  if (shares === null) return '';
+  const macroKeys = ['protein', 'fat', 'carbs'] as const;
+  return `<div class="bar macro-bar" role="img" aria-label="${m.macroRatio}: ${shares.tenths.map(percentage).join(' · ')}">${macroKeys.map((key, index) => `<span class="segment" data-nutrient="${key}" style="width:${shares.tenths[index]! / 10}%"></span>`).join('')}</div>`;
+}
+function entryMetadata(entry: NutritionEntry): string {
+  const parts = [entry.diaryDateTime.slice(11)];
+  parts.push(
+    entry.massG === null
+      ? m.massMissing
+      : `${formatDecimal(entry.massG)} ${m.grams}`,
+  );
+  if (entry.volumeMl !== null)
+    parts.push(`${formatDecimal(entry.volumeMl)} ${m.millilitres}`);
+  if (entry.baseUnit === 'package' || entry.serving === 'package')
+    parts.push(m.package);
+  if (entry.consumedPortions !== null)
+    parts.push(`${formatDecimal(entry.consumedPortions)} ${m.portions}`);
+  if (
+    entry.serving &&
+    /^[\p{L} -]+$/u.test(entry.serving) &&
+    entry.serving !== 'package'
+  )
+    parts.push(entry.serving);
+  return parts.map(escapeHtml).join(' · ');
+}
+function food(entry: NutritionEntry): string {
+  return `<article class="entry" data-entry-id="${escapeHtml(entry.id)}"><div class="entry-name">${escapeHtml(entry.name)}</div><p class="entry-meta">${entryMetadata(entry)}</p><div class="nutrients">${keys.map((key) => `<div class="nutrient" data-nutrient="${key}"><div class="nutrient-label">${labels[key]}</div><div class="nutrient-value number numeric">${value(entry.totals[key])}</div></div>`).join('')}</div>${entry.issues.length ? `<p class="entry-issues">${m.entryIssue}</p>` : ''}</article>`;
+}
+function introduction(title: string, subtitle: string): string {
+  return `<div class="intro"><h1>${title}</h1><p class="subtitle">${escapeHtml(subtitle)}</p></div>`;
+}
+function explanation(fetchedAt?: string): string {
+  return `<section class="summary-block"><div class="explanation"><strong>${m.howToRead}</strong><p>${m.displayExplanation}</p><p>${m.noGoals}</p></div>${fetchedAt ? `<p class="source-updated">${m.updated}: ${escapeHtml(new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(fetchedAt)))} UTC</p>` : ''}</section>`;
+}
+
 export function renderReportHtml(
   request: ReportRequest,
   dataset: ReportDataset,
-  font: Uint8Array,
+  fonts: ReportFonts,
 ): string {
   const dates = periodDates(request.start, request.end);
   const summary = summarizeDays(dataset.days, dates.length);
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${reportCsp}"><title>${m.title}</title><style>
-@font-face{font-family:Report;src:url(data:font/ttf;base64,${Buffer.from(font).toString('base64')}) format('truetype');font-weight:100 900;font-display:block}
-@page{size:A4;margin:14mm 12mm 16mm}*{box-sizing:border-box}body{font-family:Report,sans-serif;color:#17263a;font-size:10pt;line-height:1.45;margin:0;overflow-wrap:anywhere}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}p{orphans:3;widows:3}small{display:block;color:#536275;font-size:8pt}dl{margin:8px 0}.totals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.totals>div{border:1px solid #ccd4de;padding:8px;break-inside:avoid}dt{font-size:8pt;color:#536275}dd{margin:2px 0;font-size:11pt}.day+.day{break-before:page}.entry{border-bottom:1px solid #dde3ea;padding:8px 0;break-inside:avoid}.entry .totals{font-size:9pt}.muted{color:#536275}.photo{margin:12px 0;break-inside:avoid}.photo img{display:block;width:100%;height:65mm;object-fit:contain}.photo figcaption{font-size:8pt}.intro{border-bottom:2px solid #28736b;padding-bottom:8px}.summary{break-inside:avoid}.day{padding-top:8px} @media screen{body{max-width:800px;padding:20px;margin:auto;background:#fff}.day{margin-top:32px}}@media(max-width:480px){.totals{grid-template-columns:repeat(2,minmax(0,1fr))}} 
-</style></head><body><header class="intro"><h1>${m.title}</h1><p>${request.start} — ${request.end}</p><p class="muted">${m.authoritative}</p></header><section class="summary"><h2>${m.summary}</h2><p>${m.completeness}: ${summary.availableDays} / ${summary.expectedDays}</p>${totals(summary.totals, summary.knownTotals)}</section>
-${dates
-  .map((date) => {
-    const day = dataset.days.find((candidate) => candidate.date === date);
-    return `<section class="day"><h2>${date}</h2>${day ? `<p class="muted">${m.fetched}: ${escapeHtml(day.fetchedAt)}</p><h3>${m.totals}</h3>${totals(day.totals, day.knownTotals)}<details open><summary>${m.sourceOfficial}</summary>${totals(day.officialTotals)}<p>${m.delta}</p>${totals(day.delta, undefined, 'delta')}</details>` : `<p>${m.missing}</p>`}
-${(['breakfast', 'lunch', 'dinner', 'snack'] as const)
-  .map((kind) => {
-    const meal = day?.meals.find((candidate) => candidate.kind === kind);
-    const photos = dataset.photos.filter(
-      (photo) => photo.date === date && photo.daytime === kind,
-    );
-    if (!meal && !photos.length) return '';
-    return `<section><h3>${m[kind]}</h3>${meal ? totals(meal.totals, meal.knownTotals) : ''}${meal?.entries.length ? meal.entries.map((entry) => `<article class="entry"><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.diaryDateTime)}</small><p>${m.quantity}: ${value(entry.amount)} ${escapeHtml(entry.baseUnit ?? '')}${entry.serving ? ` · ${escapeHtml(entry.serving)}` : ''}${entry.consumedPortions ? ` · ${value(entry.consumedPortions)}` : ''}</p>${totals(entry.totals)}${entry.issues.length ? `<small>${m.issues}: ${entry.issues.map(escapeHtml).join(', ')}</small>` : ''}</article>`).join('') : `<p>${m.empty}</p>`}${photos.map((photo) => `<figure class="photo"><img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}"><figcaption>${m[kind]} · ${date}</figcaption></figure>`).join('')}</section>`;
-  })
-  .join('')}</section>`;
-  })
-  .join('')}</body></html>`;
+  const fontFaces = `<style>@font-face{font-family:'Report Sans';src:url(data:font/ttf;base64,${Buffer.from(fonts.sans).toString('base64')});font-weight:400}@font-face{font-family:'Report Sans';src:url(data:font/ttf;base64,${Buffer.from(fonts.bold).toString('base64')});font-weight:700}@font-face{font-family:'Report Serif';src:url(data:font/ttf;base64,${Buffer.from(fonts.serif).toString('base64')});font-weight:400}${reportStyles}</style>`;
+  const overview =
+    dates.length === 1
+      ? ''
+      : `<section class="day-source" data-overview="true" data-header="${escapeHtml(`${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)}`)}" data-footer="${m.summary}"><div class="day-summary">${introduction(m.periodTitle, `${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)} · ${m.completeness}: ${summary.availableDays} / ${summary.expectedDays}`)}${totals(summary.totals, summary.knownTotals)}${explanation()}</div></section>`;
+  const sections = dates
+    .map((date, index) => {
+      const day = dataset.days.find((candidate) => candidate.date === date);
+      const dayTotals = day?.totals ?? unknownTotals;
+      const distribution = day ? mealShares(day) : null;
+      const mealTable = day
+        ? `<section class="summary-block meal-distribution"><h2>${m.distribution}</h2>${distribution?.percentages ? `<div class="bar meal-bar" role="img" aria-label="${m.distribution}">${meals.map((kind, mealIndex) => `<span class="segment" data-meal="${kind}" style="width:${distribution.percentages![mealIndex] ?? 0}%"></span>`).join('')}</div><p class="small-note">${distribution.recordedOnly ? m.recordedCalorieShare : m.dayCalorieShare}</p>` : `<p class="small-note">${m.noCalorieDistribution}</p>`}<div class="meal-summary-table"><div class="meal-summary-row meal-summary-head"><span></span><span></span>${keys.map((key) => `<span class="number" data-nutrient="${key}">${labels[key]}</span>`).join('')}</div>${meals
+            .map((kind, mealIndex) => {
+              const meal = day.meals.find(
+                (candidate) => candidate.kind === kind,
+              )!;
+              const share = distribution?.percentages?.[mealIndex];
+              return `<div class="meal-summary-row" data-meal="${kind}"><span class="meal-summary-name"><span class="meal-marker"></span>${m[kind]}</span><span class="meal-share numeric">${share === null || share === undefined ? m.unavailable : `${share}%`}</span>${keys.map((key) => `<span class="number numeric" data-nutrient="${key}">${value(meal.totals[key])}</span>`).join('')}</div>`;
+            })
+            .join('')}</div></section>`
+        : '';
+      const details = meals
+        .map((kind) => {
+          const meal = day?.meals.find((candidate) => candidate.kind === kind);
+          const photo = dataset.photos.find(
+            (candidate) =>
+              candidate.date === date && candidate.daytime === kind,
+          );
+          if (!meal?.entries.length && !photo) return '';
+          return `<section class="meal-block" data-meal="${kind}" data-name="${m[kind]}"><div class="meal-heading"><h2>${m[kind]}</h2><span class="meal-calories numeric">${value(meal?.totals.calories ?? null)} ${m.kcal}</span></div><div class="meal-body${photo ? ' meal-body--with-photo' : ''}">${photo ? `<figure class="meal-photo"><img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}"></figure>` : ''}<div class="entries">${meal?.entries.length ? meal.entries.map(food).join('') : `<p class="empty">${m.empty}</p>`}</div></div></section>`;
+        })
+        .join('');
+      return `<section class="day-source" data-date="${date}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}"><div class="day-summary">${introduction(m.dayTitle, `${diaryDateLabel(date)}${dates.length > 1 ? ` · ${index + 1} / ${dates.length}` : ''}`)}${day ? (day.meals.every((meal) => meal.entries.length === 0) ? `<section class="summary-block empty">${m.empty}</section>` : '') : `<section class="summary-block empty">${m.missing}</section>`}${totals(dayTotals, day?.knownTotals)}${mealTable}${explanation(day?.fetchedAt)}</div><div class="day-details">${details}</div><section class="notes"><h2>${m.notesTitle}</h2><p>${m.notesText}</p></section></section>`;
+    })
+    .join('');
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${reportCsp}"><title>${m.diary}</title>${fontFaces}</head><body><main id="report-source" data-title="${m.detailsTitle}" data-subtitle="${m.detailsSubtitle}" data-continued="${m.continued}" data-brand="${m.diary}" data-details-footer="${m.detailsFooter}">${overview}${sections}</main></body></html>`;
 }

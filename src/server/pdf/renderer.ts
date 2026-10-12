@@ -1,14 +1,20 @@
 import 'server-only';
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { ReportError } from '@/server/pdf/errors';
+import { paginateReport } from '@/server/pdf/pagination';
 
 export async function prepareReportPage(page: Page, html: string) {
+  await page.setViewportSize({ width: 1200, height: 1600 });
   await page.context().route('**/*', (route) => route.abort());
   await page.setContent(html, { waitUntil: 'load', timeout: 15000 });
   await page.emulateMedia({ media: 'print' });
   await page.evaluate(async () => {
     await document.fonts.ready;
-    if (!document.fonts.check('12px Report', 'Дневник питания'))
+    if (
+      !document.fonts.check('12px "Report Sans"', 'Дневник питания') ||
+      !document.fonts.check('700 12px "Report Sans"', 'Дневник питания') ||
+      !document.fonts.check('12px "Report Serif"', 'Дневник питания')
+    )
       throw new Error('Font failed');
     for (const image of document.images) {
       await image.decode();
@@ -17,10 +23,40 @@ export async function prepareReportPage(page: Page, html: string) {
         image.naturalWidth * image.naturalHeight > 16_000_000
       )
         throw new Error('Invalid image');
+      const ratio = Math.min(
+        1,
+        1200 / Math.max(image.naturalWidth, image.naturalHeight),
+      );
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+      const context = canvas.getContext('2d')!;
+      const jpeg = image.src.startsWith('data:image/jpeg');
+      if (jpeg) {
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      image.src = canvas.toDataURL(jpeg ? 'image/jpeg' : 'image/png', 0.9);
+      image.width = canvas.width;
+      image.height = canvas.height;
+      const physicalScale = Math.min(60.3 / canvas.width, 85 / canvas.height);
+      image.style.width = `${canvas.width * physicalScale}mm`;
+      image.style.height = `${canvas.height * physicalScale}mm`;
+      await image.decode();
     }
   });
+  await paginateReport(page);
+  await page.evaluate(async () => {
+    for (const image of document.images) await image.decode();
+    if (document.documentElement.dataset.reportReady !== 'true')
+      throw new Error('Report not ready');
+  });
 }
-export async function renderPdf(html: string): Promise<Uint8Array> {
+export async function renderReport(
+  html: string,
+  format: 'html' | 'pdf',
+): Promise<string | Uint8Array> {
   let browser: Browser | undefined;
   let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -33,14 +69,14 @@ export async function renderPdf(html: string): Promise<Uint8Array> {
     const page = await context.newPage();
     const operation = async () => {
       await prepareReportPage(page, html);
+      if (format === 'html') return page.content();
       return page.pdf({
         format: 'A4',
         preferCSSPageSize: true,
         printBackground: true,
-        displayHeaderFooter: true,
-        headerTemplate: '<span></span>',
-        footerTemplate:
-          '<div style="font-size:8px;width:100%;text-align:center;color:#536275"><span class="pageNumber"></span> / <span class="totalPages"></span></div>',
+        displayHeaderFooter: false,
+        margin: { top: 0, right: 0, bottom: 0, left: 0 },
+        scale: 1,
       });
     };
     return await Promise.race([

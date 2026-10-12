@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { syntheticDay } from '../unit/reports/fixtures';
 vi.mock('server-only', () => ({}));
-import { generateReport, readReportFont } from '@/server/pdf/service';
+import { generateReport } from '@/server/pdf/service';
+import { readReportFonts } from '@/server/pdf/fonts';
 import { renderReportHtml } from '@/server/pdf/template';
 import { prepareReportPage } from '@/server/pdf/renderer';
 import type { ReportDataSource } from '@/server/pdf/source';
@@ -46,8 +47,8 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
       Buffer.alloc(3 * 1024 * 1024),
     ]);
     const day = syntheticDay(undefined, 45);
-    day.officialTotals = {
-      ...day.officialTotals,
+    day.meals[0]!.entries[0]!.totals = {
+      ...day.meals[0]!.entries[0]!.totals,
       fat: '3.4499999999999997',
       carbs: '6.1499999999999995',
     };
@@ -87,12 +88,12 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
         encoding: 'utf8',
       });
       expect(text).toContain('Яйцо · запись 45');
-      expect(text).toContain('Неизвестно');
+      expect(text).toContain('—');
       expect(text).toContain('Известная часть');
       expect(text).toContain('12,52');
       expect(text).toContain('3,45');
       expect(text).toContain('6,15');
-      expect(text).toMatch(/≈\s*0/);
+
       for (const raw of [
         '3.4499999999999997',
         '6.1499999999999995',
@@ -122,6 +123,7 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
         expect(Number(match[3])).toBeLessThanOrEqual(565);
         expect(Number(match[4])).toBeLessThanOrEqual(830);
         if (
+          Number(match[2]) < 780 &&
           !/^[\d/]+$/.test(
             match.input
               .slice(match.index + match[0].length)
@@ -129,7 +131,7 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
               .replace(/^>/, ''),
           )
         )
-          expect(Number(match[4])).toBeLessThanOrEqual(805);
+          expect(Number(match[4])).toBeLessThanOrEqual(774);
       }
       if (process.env.PDF_VERIFICATION_DIR && period === 'daily') {
         await writeFile(
@@ -147,9 +149,7 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
           join(process.env.PDF_VERIFICATION_DIR, 'synthetic-report'),
         ]);
         const photoPage =
-          pages.findIndex((content) =>
-            content.includes('Завтрак · 2026-10-10'),
-          ) + 1;
+          pages.findIndex((content) => content.includes('Яйцо · запись 1')) + 1;
         expect(photoPage).toBeGreaterThan(0);
         execFileSync('pdftoppm', [
           '-f',
@@ -166,7 +166,7 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
     const html = renderReportHtml(
       base,
       { days: [syntheticDay()], photos: [{ ...metadata, dataUri: png }] },
-      await readReportFont(),
+      await readReportFonts(),
     );
     const context = await browser.newContext({
       javaScriptEnabled: false,

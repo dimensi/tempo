@@ -2,7 +2,7 @@
 
 Owned implementation: `src/server/pdf`, reports UI/routes, v1 report request and report tests. No DB migrations, shared auth or Docker changes in this branch.
 
-Reports use authoritative `NutritionDay.totals`; the only derived metric is an exact decimal period sum. Missing dates and null nutrients remain unknown with separately labelled known totals. An empty dataset is 404, never an invented zero day. HTML/PDF share escaped markup and a local embedded Cyrillic font. No Chromium navigation to an internal endpoint: `page.setContent`, fresh context, no cookies, JavaScript disabled, all network blocked, data images/fonts only. Response is private/no-store with CSP and sandbox. Every request uses `reports:export` and owner scope, repeated before releasing output.
+Reports use authoritative `NutritionDay.totals`; derived metrics are an exact decimal period sum and explicitly labelled energy shares. Missing dates and null nutrients remain unknown with separately labelled known totals. An empty dataset is 404, never an invented zero day. HTML/PDF share escaped markup, measured pagination and three bundled Cyrillic fonts. No Chromium navigation to an internal endpoint: `page.setContent`, fresh context, no cookies, JavaScript disabled, all network blocked, data images/fonts only. Response is private/no-store with CSP and sandbox. Every request uses `reports:export` and owner scope, repeated before releasing output.
 
 Numerical text uses the shared `formatDecimal` presentation helper: ordinary values have at most two decimal places, very small/large values have bounded text, and nonzero deltas below display precision show `≈ 0`. Null remains unknown; source decimals and exact period calculations are unchanged. The form initializes both date fields once from the browser's local calendar after hydration, preserving edits and explicit clearing across period changes.
 
@@ -24,7 +24,13 @@ Source C must bound source reads before materializing days/photos; this service 
 
 ## Runtime requirements
 
-The coordinated runtime changes are integrated: Playwright is a production dependency and an external server package; the Docker image installs its locked Chromium revision and a Cyrillic font. Chromium must match the locked Playwright revision, not apt Chromium. The server checks `PDF_FONT_PATH`, default macOS Arial / Linux DejaVu Sans, max 2 MiB. Font bytes are embedded per request. If browser/font is unavailable PDF returns a sanitized 503; HTML still requires the font. No public report files or persistent browser process. Do not ship `/System/Library` fonts in Linux images.
+Playwright is a production dependency and an external server package. Chromium must match its locked revision. Both HTML and PDF require Chromium: the trusted server prepares identical pages after font loading, photo decoding/orientation, long-side downsampling to at most 1200 pixels and measured pagination. Built-in PDF headers are disabled; the template supplies A4 headers, footers and global page numbers. Rendering fails with sanitized 503 on missing fonts/browser, invalid selected images or unresolvable overflow.
+
+DejaVu 2.37 Sans regular/bold and Serif regular are bundled in `fonts/`, including the upstream license. No host font fallback or `PDF_FONT_PATH` is used. Font files and license are statically read for standalone tracing, each bounded to 2 MiB. No public report files or persistent browser process.
+
+The macro strip sits immediately below «Итоги дневника». Only the totals table shows percentages. Shares use calculated macro energy (4/9/4), separately from diary calories; largest remainders distribute tenths of a percent to exactly 100%. Missing, invalid or zero-energy macros hide the strip and show `—`. Source values remain unchanged.
+
+One photo is selected per owner/calendar date/meal: the single YAZIO photo takes priority; otherwise the newest manual photo is used, with a stable ID tie-break. Existing stored photos are unchanged. Multiple upstream photos for one meal are invalid. Photos are never cropped and appear only on the first meal fragment. Pagination measures loaded content, splits long meals between entries and splits an oversized title only when a single record cannot fit a full page. It never shrinks fonts or clips overflow.
 
 CI installs the locked Chromium before Vitest and includes Poppler (`poppler-utils` on Debian; `poppler` on Homebrew), because the report integration test generates PDFs and inspects extracted Cyrillic, embedding, A4 geometry, image dimensions, every pages nonblank content and text clipping. No silent skip for missing runtime/tools.
 
@@ -39,3 +45,5 @@ Max 31 days, 3000 entries, 60 raster photos, 8 MiB each (aligned with source C) 
 The report form keeps controls disabled until hydration, so cold navigation cannot discard dates entered before React attaches event handlers. The persisted E2E deliberately holds client scripts to verify this, then exercises the same preview and PDF assertions after release.
 
 Remaining integration limitation: source C must bound snapshot reads before JSON parsing; the report service validates the received data after those reads.
+
+`pdf-redesign.test.ts` verifies a three-page six-record synthetic example, no/four photos, long meals, an oversized title, large numbers, unknown/zero macros, real EXIF orientation and multiple dates. It checks real PDF text geometry and nonblank pages; `PDF_VERIFICATION_DIR` saves synthetic PDFs and selected page rasters for visual review.

@@ -68,8 +68,8 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
   // Only disposable E2E storage; C's persisted snapshot format, no session mocks.
   const db = new Database('.data/e2e.sqlite');
   const day = syntheticDay(date);
-  day.officialTotals = {
-    ...day.officialTotals,
+  day.meals[0]!.entries[0]!.totals = {
+    ...day.meals[0]!.entries[0]!.totals,
     fat: '3.4499999999999997',
     carbs: '6.1499999999999995',
   };
@@ -161,7 +161,6 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await expect(preview.locator('img')).toHaveCount(1);
     await expect(preview.getByText('3,45', { exact: true })).toBeVisible();
     await expect(preview.getByText('6,15', { exact: true })).toBeVisible();
-    await expect(preview.getByText('≈ 0', { exact: true })).toHaveCount(2);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -180,11 +179,10 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect(download.suggestedFilename()).toBe(`nutrition-${date}-${date}.pdf`);
     const text = execFileSync('pdftotext', [path, '-'], { encoding: 'utf8' });
     expect(text).toContain('Яйцо');
-    expect(text).toContain('Неизвестно');
+    expect(text).toContain('—');
     expect(text).toContain('12,52');
     expect(text).toContain('3,45');
     expect(text).toContain('6,15');
-    expect(text).toMatch(/≈\s*0/);
     expect(text).not.toContain('3e-16');
     expect(text).not.toContain('-5e-16');
     expect(

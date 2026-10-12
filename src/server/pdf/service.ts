@@ -1,5 +1,4 @@
 import 'server-only';
-import { open } from 'node:fs/promises';
 import {
   nutritionDaySchema,
   safeMealPhotoViewSchema,
@@ -13,7 +12,9 @@ import {
 import { ReportError } from '@/server/pdf/errors';
 import { type ReportDataSource, type ReportDataset } from '@/server/pdf/source';
 import { renderReportHtml } from '@/server/pdf/template';
-import { renderPdf } from '@/server/pdf/renderer';
+import { renderReport } from '@/server/pdf/renderer';
+import { readReportFonts } from '@/server/pdf/fonts';
+import { selectReportPhotos } from '@/server/pdf/photos';
 import { photoPixels } from '@/server/pdf/images';
 
 let active = false;
@@ -26,26 +27,6 @@ export async function withReportSlot<T>(
     return await operation();
   } finally {
     active = false;
-  }
-}
-export async function readReportFont(): Promise<Uint8Array> {
-  const path =
-    process.env.PDF_FONT_PATH ??
-    (process.platform === 'darwin'
-      ? '/System/Library/Fonts/Supplemental/Arial.ttf'
-      : '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf');
-  try {
-    // Operator-provided system font; never trace worktree files into standalone.
-    const file = await open(/* turbopackIgnore: true */ path, 'r');
-    try {
-      if ((await file.stat()).size > 2 * 1024 * 1024)
-        throw new Error('Font too large');
-      return await file.readFile();
-    } finally {
-      await file.close();
-    }
-  } catch {
-    throw new ReportError('RUNTIME', 503);
   }
 }
 function validateBudget(days: unknown[]) {
@@ -113,12 +94,15 @@ export async function loadReportDataset(
   let bytesTotal = 0;
   let pixelsTotal = 0;
   const ids = new Set<string>();
-  for (const raw of metadata) {
-    signal.throwIfAborted();
+  const validMetadata = metadata.map((raw) => {
     const photo = safeMealPhotoViewSchema.parse(raw);
     if (!dates.includes(photo.date) || ids.has(photo.id))
       throw new ReportError('INVALID', 422);
     ids.add(photo.id);
+    return photo;
+  });
+  for (const photo of selectReportPhotos(validMetadata)) {
+    signal.throwIfAborted();
     const file = await source.readPhoto(request.ownerId, photo.id, signal);
     bytesTotal += file.bytes.byteLength;
     if (
@@ -158,8 +142,15 @@ export async function generateReport(
   const request = reportRequestSchema.parse(input);
   const dataset = await loadReportDataset(source, request, signal);
   signal.throwIfAborted();
-  const html = renderReportHtml(request, dataset, await readReportFont());
+  const html = renderReportHtml(request, dataset, await readReportFonts());
   if (Buffer.byteLength(html) > reportLimits.htmlBytes)
     throw new ReportError('OVERSIZED', 413);
-  return request.format === 'html' ? html : await renderPdf(html);
+  const result = await renderReport(html, request.format);
+  signal.throwIfAborted();
+  if (
+    typeof result === 'string' &&
+    Buffer.byteLength(result) > reportLimits.htmlBytes
+  )
+    throw new ReportError('OVERSIZED', 413);
+  return result;
 }
