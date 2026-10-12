@@ -18,7 +18,15 @@ export function StepsPanel({
       <Stack>
         <Group justify="space-between">
           <Title order={2}>{m.steps}</Title>
-          <Badge size="lg" variant="outline">
+          <Badge
+            size="lg"
+            variant="outline"
+            style={{
+              fontSize: 16,
+              color: 'var(--mantine-color-text)',
+              borderColor: 'var(--mantine-color-text)',
+            }}
+          >
             YAZIO
           </Badge>
         </Group>
@@ -51,8 +59,13 @@ export function StepsPanel({
             connectNulls={false}
             curveType="linear"
             withDots
-            xAxisProps={{ tick: { fontSize: 16 } }}
-            yAxisProps={{ tick: { fontSize: 16 }, domain: [0, 'auto'] }}
+            xAxisProps={{
+              tick: { fontSize: 16, fill: 'var(--mantine-color-text)' },
+            }}
+            yAxisProps={{
+              tick: { fontSize: 16, fill: 'var(--mantine-color-text)' },
+              domain: [0, 'auto'],
+            }}
             valueFormatter={(value) => formatDecimal(value) ?? m.noData}
             style={{ minWidth: 0, fontSize: 16 }}
           />
@@ -61,7 +74,9 @@ export function StepsPanel({
         {!compact && (
           <Table.ScrollContainer minWidth={300}>
             <Table style={{ fontSize: 16 }}>
-              <Table.Caption>
+              <Table.Caption
+                style={{ fontSize: 16, color: 'var(--mantine-color-text)' }}
+              >
                 {m.steps}: {summary.range.from} — {summary.range.to}
               </Table.Caption>
               <Table.Thead>
