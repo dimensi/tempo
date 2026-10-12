@@ -12,30 +12,6 @@ function fixture() {
   const connection = openDatabase('file::memory:');
   connections.push(connection);
   migrate(connection.db, { migrationsFolder: './drizzle' });
-  // Disposable pre-migration fixture only. Root will replace this with the
-  // reviewed generated migration after schema freeze; no migration is generated here.
-  connection.sqlite.exec(`
-    CREATE TABLE yazio_weight_entries (
-      owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-      external_id TEXT NOT NULL,
-      provider_date TEXT NOT NULL CHECK(length(provider_date) BETWEEN 1 AND 128),
-      measured_date TEXT,
-      raw_value TEXT,
-      unit TEXT CHECK(unit IS NULL),
-      unit_context TEXT CHECK(unit_context IS NULL OR length(unit_context) <= 128),
-      upstream_source TEXT CHECK(upstream_source IS NULL OR length(upstream_source) <= 128),
-      gateway TEXT CHECK(gateway IS NULL OR length(gateway) <= 128),
-      observed_at TEXT NOT NULL,
-      PRIMARY KEY(owner_id, external_id)
-    );
-    CREATE TABLE yazio_daily_steps (
-      owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-      date TEXT NOT NULL,
-      steps INTEGER CHECK(steps IS NULL OR (typeof(steps) = 'integer' AND steps BETWEEN 0 AND 9007199254740991)),
-      observed_at TEXT NOT NULL,
-      PRIMARY KEY(owner_id, date)
-    );
-  `);
   connection.db
     .insert(user)
     .values([
