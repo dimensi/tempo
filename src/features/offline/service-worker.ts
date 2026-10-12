@@ -1,37 +1,23 @@
+/// <reference lib='webworker' />
+import { Serwist, type PrecacheEntry } from 'serwist';
 import { OfflineStorage } from '@/lib/offline-device';
-declare const __OFFLINE_ASSETS__: string[];
-declare const __OFFLINE_CACHE_NAME__: string;
-declare const __OFFLINE_SHELL__: string;
-interface WorkerEvent {
-  waitUntil(promise: Promise<unknown>): void;
-}
-interface FetchEvent extends WorkerEvent {
-  request: Request;
-  respondWith(response: Promise<Response>): void;
-}
-interface MessageEvent extends WorkerEvent {
-  data: { type?: string; previousEpoch?: string };
-}
-const worker = globalThis as unknown as {
-  addEventListener(
-    type: 'install' | 'activate',
-    listener: (event: WorkerEvent) => void,
-  ): void;
-  addEventListener(type: 'fetch', listener: (event: FetchEvent) => void): void;
-  addEventListener(
-    type: 'message',
-    listener: (event: MessageEvent) => void,
-  ): void;
-  skipWaiting(): Promise<void>;
-  clients: {
-    claim(): Promise<void>;
-    matchAll(options: {
-      includeUncontrolled: boolean;
-      type: string;
-    }): Promise<Array<{ postMessage(message: unknown): void }>>;
-  };
+declare const self: ServiceWorkerGlobalScope & {
+  __SW_MANIFEST: PrecacheEntry[];
 };
-const allowed = new Set(__OFFLINE_ASSETS__);
+const worker = self;
+const precache = new Serwist({
+  precacheEntries: self.__SW_MANIFEST,
+  precacheOptions: {
+    cacheName: 'yazio-offline-reader-v1',
+    fetchOptions: { credentials: 'omit', cache: 'reload' },
+    directoryIndex: null,
+    cleanURLs: false,
+    ignoreURLParametersMatching: [],
+  },
+});
+const allowed = new Set(
+  precache.getPrecachedUrls().map((url) => new URL(url).pathname),
+);
 const navigationPaths = new Set([
   '/',
   '/diary',
@@ -57,26 +43,15 @@ async function purge(previousEpoch?: string) {
 }
 worker.addEventListener('install', (event) => {
   event.waitUntil(
-    (async () => {
-      const cache = await caches.open(__OFFLINE_CACHE_NAME__);
-      await cache.addAll(
-        __OFFLINE_ASSETS__.map(
-          (url) => new Request(url, { cache: 'reload', credentials: 'omit' }),
-        ),
-      );
-      await worker.skipWaiting();
-    })(),
+    precache.handleInstall(event).then(() => worker.skipWaiting()),
   );
 });
 worker.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
+      await precache.handleActivate(event);
       for (const key of await caches.keys())
-        if (
-          key.startsWith('yazio-offline-shell-') &&
-          key !== __OFFLINE_CACHE_NAME__
-        )
-          await caches.delete(key);
+        if (key.startsWith('yazio-offline-shell-')) await caches.delete(key);
       await worker.clients.claim();
     })(),
   );
@@ -101,20 +76,13 @@ worker.addEventListener('fetch', (event) => {
   }
   if (request.method !== 'GET') return;
   if (!url.search && allowed.has(url.pathname)) {
-    event.respondWith(
-      caches
-        .open(__OFFLINE_CACHE_NAME__)
-        .then(
-          async (cache) => (await cache.match(url.pathname)) ?? fetch(request),
-        ),
-    );
+    precache.handleFetch(event);
     return;
   }
   if (request.mode === 'navigate' && navigationPaths.has(url.pathname)) {
     event.respondWith(
       fetch(request).catch(async () => {
-        const cache = await caches.open(__OFFLINE_CACHE_NAME__);
-        const shell = await cache.match(__OFFLINE_SHELL__);
+        const shell = await precache.matchPrecache('/offline/index.html');
         if (!shell) throw new Error('Offline shell unavailable');
         return shell;
       }),

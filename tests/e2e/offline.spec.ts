@@ -198,7 +198,9 @@ test('OWNER explicitly saves real API snapshot, offline read preserves zero and 
     const request = () =>
       page.request.post('/api/auth/sign-in/email', {
         headers: {
-          origin: `http://localhost:${process.env.E2E_PORT ?? '3100'}`,
+          origin:
+            process.env.E2E_ORIGIN ??
+            `http://localhost:${process.env.E2E_PORT ?? '3100'}`,
         },
         data: {
           email: `${role}@example.test`,
@@ -301,8 +303,7 @@ test('OWNER explicitly saves real API snapshot, offline read preserves zero and 
     expect(
       cache.every(
         (path) =>
-          path.startsWith('/offline/assets/') ||
-          /^\/offline\/shell-.*\.html$/.test(path),
+          path.startsWith('/offline/assets/') || path === '/offline/index.html',
       ),
     ).toBe(true);
     // Local retention is separate from live authorization: a downloaded copy
@@ -538,7 +539,9 @@ for (const unmount of [false, true]) {
     const signIn = () =>
       page.request.post('/api/auth/sign-in/email', {
         headers: {
-          origin: `http://localhost:${process.env.E2E_PORT ?? '3100'}`,
+          origin:
+            process.env.E2E_ORIGIN ??
+            `http://localhost:${process.env.E2E_PORT ?? '3100'}`,
         },
         data: {
           email: 'owner@example.test',
