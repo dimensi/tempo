@@ -103,7 +103,7 @@ it('requires a real owner-scoped grant for local-only list, refresh and saving l
     api.listTransformMateSync(headers, 'other-owner'),
   ).rejects.toMatchObject({ status: 403 });
 });
-it('retains original link snapshots through local edits and deletion; list does no upstream read', async () => {
+it('retains latest unattempted link snapshots after local edits and deletion; list does no upstream read', async () => {
   state.session = { user: { id: 'owner', role: 'OWNER' } };
   const plan = repository.createPlan('owner', input);
   await api.syncSavedPlan(headers, 'owner', plan);
@@ -116,8 +116,8 @@ it('retains original link snapshots through local edits and deletion; list does 
   repository.deletePlan('owner', plan.id, updated.revision);
   const data = await api.refreshTransformMateSync(headers, 'owner');
   const link = data.items.find((item) => item.planId === plan.id)!;
-  expect(link.planSnapshot.planTitle).toBe('Original plan');
-  expect(link.planSnapshot.workout.title).toBe('Demo training');
+  expect(link.planSnapshot.planTitle).toBe('Updated');
+  expect(link.planSnapshot.workout.title).toBe('Changed workout');
   expect(
     syncRepository(database.db)
       .list('owner')
@@ -132,4 +132,55 @@ it('does not change durable intents for caller-supplied stale or missing plans',
   await api.syncSavedPlan(headers, 'owner', { ...plan, id: 'missing' });
   expect(syncRepository(database.db).list('owner')).toEqual(before);
   expect(before.find((l) => l.planId === plan.id)?.state.attempted).toBe(false);
+});
+
+it('plan transactions reconcile pending intents but preserve every attempted snapshot', () => {
+  const plan = repository.createPlan('owner', input);
+  const links = syncRepository(database.db);
+  const initial = links.list('owner').find((l) => l.planId === plan.id)!;
+  const latest = repository.updatePlan('owner', plan.id, 1, {
+    ...input,
+    title: 'Latest before attempt',
+    workouts: [
+      {
+        ...input.workouts[0]!,
+        title: 'Latest workout',
+        exercises: [
+          {
+            ...input.workouts[0]!.exercises[0]!,
+            comment: 'Latest comment',
+            sets: [{ reps: 11, weightKg: 14 }],
+          },
+        ],
+      },
+    ],
+  });
+  const pending = links.list('owner').find((l) => l.planId === plan.id)!;
+  expect(pending.revision).toBe(initial.revision + 1);
+  expect(pending.state.planTitle).toBe('Latest before attempt');
+  expect(pending.state.workout.exercises[0]!.sets[0]!.reps).toBe(11);
+  expect(pending.state.marker).toBe(initial.state.marker);
+  expect(
+    links.cas(initial, {
+      ...initial.state,
+      attempted: true,
+      status: 'unknown',
+    }),
+  ).toBeNull();
+  const attempted = links.cas(pending, {
+    ...pending.state,
+    attempted: true,
+    status: 'unknown',
+    reason: 'ambiguous_write',
+  })!;
+  repository.updatePlan('owner', latest.id, latest.revision, {
+    ...input,
+    title: 'After attempt',
+  });
+  const after = links.list('owner').find((l) => l.planId === plan.id)!;
+  expect(after).toEqual(attempted);
+  repository.deletePlan('owner', latest.id, latest.revision + 1);
+  expect(
+    links.list('owner').find((l) => l.planId === plan.id)!.state.planTitle,
+  ).toBe('Latest before attempt');
 });

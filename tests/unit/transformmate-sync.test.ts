@@ -155,8 +155,13 @@ function setup() {
       void permission;
     },
   );
-  const engine = () =>
-    syncEngine({ repository, client, access, plans: () => plans });
+  const engine = (selectedClient: typeof client | null = client) =>
+    syncEngine({
+      repository,
+      client: selectedClient,
+      access,
+      plans: () => plans,
+    });
   const process = () => engine().process(repository.list('owner')[0]!);
   return {
     repository,
@@ -546,6 +551,140 @@ describe('durable TransformMate sync', () => {
       }),
     ).toThrow();
     expect(s.link().revision).toBe(1);
+  });
+
+  it('publishes the latest edited pending snapshot once after configuration becomes available', async () => {
+    const s = setup();
+    const original = s.link();
+    await s.engine(null).process(original);
+    const latest = structuredClone(s.plan);
+    latest.title = 'Latest plan';
+    latest.workouts[0]!.title = 'Latest training';
+    const first = latest.workouts[0]!.exercises[0]!;
+    first.name = 'Latest exercise';
+    first.comment = 'Latest comment';
+    first.sets = [
+      { reps: 11, weightKg: 14 },
+      { reps: 6, weightKg: null },
+    ];
+    const second = structuredClone(first);
+    second.name = 'Second exercise';
+    second.comment = 'Second comment';
+    second.transformMate!.occurrenceKey =
+      '7b4df6d6-1c68-4565-95f0-0861bb71ce7f';
+    second.sets = [{ reps: 3, weightKg: 0 }];
+    latest.workouts[0]!.exercises = [second, first];
+    s.setPlans([latest]);
+    s.repository.ensure('owner', latest);
+    await s.engine(null).process(s.link());
+    expect(s.link().state.workout).toEqual(latest.workouts[0]);
+    expect(s.link().state.planTitle).toBe(latest.title);
+    expect(s.link().state.marker).toBe(original.state.marker);
+    await s.process();
+    await s.process();
+    expect(s.client.createTraining).toHaveBeenCalledTimes(1);
+    const body = createTrainingInputSchema.parse(
+      s.client.createTraining.mock.calls[0]![0],
+    );
+    expect(body).toEqual(
+      createProjection(latest.workouts[0]!, original.state.marker),
+    );
+    expect(s.link().state.status).toBe('synced');
+  });
+  it('a concurrent plan edit fences an old preflight claim and only the latest plan posts', async () => {
+    const s = setup();
+    const stale = s.link();
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    s.client.getExercise.mockImplementationOnce(async () => {
+      entered();
+      await gate;
+      return {
+        body: transformMateExerciseDetailSchema.parse(s.catalog),
+      } as never;
+    });
+    const oldProcess = s.engine().process(stale);
+    await started;
+    const latest = structuredClone(s.plan);
+    latest.workouts[0]!.title = 'Latest after preflight';
+    latest.workouts[0]!.exercises[0]!.sets = [{ reps: 15, weightKg: 20 }];
+    s.setPlans([latest]);
+    s.repository.ensure('owner', latest);
+    release();
+    await oldProcess;
+    expect(s.client.createTraining).not.toHaveBeenCalled();
+    expect(s.link().state.attempted).toBe(false);
+    await s.process();
+    expect(s.client.createTraining).toHaveBeenCalledTimes(1);
+    expect(s.link().state.workout).toEqual(latest.workouts[0]);
+    expect(s.link().state.status).toBe('synced');
+  });
+  it('concurrent engines cannot create old and new trainings after pending reconciliation', async () => {
+    const s = setup();
+    const stale = s.link();
+    const latest = structuredClone(s.plan);
+    latest.workouts[0]!.title = 'Latest';
+    s.setPlans([latest]);
+    await Promise.all([s.engine().process(stale), s.engine().process(stale)]);
+    expect(s.client.createTraining).toHaveBeenCalledTimes(1);
+    expect(s.link().state.workout).toEqual(latest.workouts[0]);
+    expect(s.link().state.status).toBe('synced');
+  });
+  it('unknown attempted snapshots stay immutable across edits without another POST', async () => {
+    const s = setup();
+    s.client.createTraining.mockRejectedValue(new Error('Timeout'));
+    s.client.listTrainings.mockResolvedValue({ body: [] } as never);
+    await s.process();
+    const original = s.link();
+    const latest = structuredClone(s.plan);
+    latest.title = 'Edited plan';
+    latest.workouts[0]!.title = 'Edited after ambiguous attempt';
+    s.setPlans([latest]);
+    s.repository.ensure('owner', latest);
+    expect(s.link()).toEqual(original);
+    await s.process();
+    expect(s.link().state.workout).toEqual(original.state.workout);
+    expect(s.link().state.planTitle).toBe(original.state.planTitle);
+    expect(s.link().state.expected).toBe(original.state.expected);
+    expect(s.link().state.status).toBe('unknown');
+    expect(s.client.createTraining).toHaveBeenCalledTimes(1);
+  });
+  it('mixed pending plans can become supported before their first attempt', async () => {
+    const s = setup();
+    const mixed = structuredClone(s.plan);
+    const manual = structuredClone(mixed.workouts[0]!.exercises[0]!);
+    delete manual.transformMate;
+    mixed.workouts[0]!.exercises.push(manual);
+    s.setPlans([mixed]);
+    s.repository.ensure('owner', mixed);
+    expect(s.link().state.reason).toBe('unsupported');
+    const latest = structuredClone(s.plan);
+    latest.title = 'Supported';
+    s.setPlans([latest]);
+    s.repository.ensure('owner', latest);
+    expect(s.link().state.status).toBe('pending');
+    expect(s.link().state.reason).toBeNull();
+    await s.process();
+    expect(s.client.createTraining).toHaveBeenCalledTimes(1);
+    expect(s.link().state.status).toBe('synced');
+  });
+  it('engine reconciliation updates never-attempted snapshots before missing-client status', async () => {
+    const s = setup();
+    const latest = structuredClone(s.plan);
+    latest.title = 'Latest';
+    latest.workouts[0]!.title = 'Latest workout';
+    s.setPlans([latest]);
+    await s.engine(null).process(s.link());
+    expect(s.link().state.planTitle).toBe('Latest');
+    expect(s.link().state.workout.title).toBe('Latest workout');
+    expect(s.link().state.reason).toBe('not_configured');
+    expect(s.link().state.attempted).toBe(false);
   });
   it('serializes owner work while releasing a failed queue', async () => {
     const calls: number[] = [];

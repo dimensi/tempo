@@ -3,7 +3,7 @@ import { and, eq, asc } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { getDatabase } from '@/server/db';
-import type { WorkoutPlan } from '@/contracts/workouts';
+import { plannedWorkoutSchema, type WorkoutPlan } from '@/contracts/workouts';
 import { workoutTransformMateLinks as links } from '@/server/db/schema/transformmate';
 import { syncStateSchema, type SyncLink, type SyncState } from './state';
 
@@ -45,7 +45,7 @@ export function syncRepository(
     validateLink(link);
     return link;
   };
-  return {
+  const repository = {
     list(ownerId: string) {
       return db
         .select()
@@ -55,8 +55,52 @@ export function syncRepository(
         .all()
         .map(dto);
     },
+    reconcile(link: SyncLink, plan: WorkoutPlan): SyncLink | null {
+      if (plan.ownerId !== link.ownerId || plan.id !== link.planId) return null;
+      if (link.state.attempted || link.remoteTrainingId !== null) return link;
+      const current = plan.workouts.find((w) => w.id === link.workoutId);
+      if (!current) return null;
+      const workout = plannedWorkoutSchema.parse(current);
+      if (
+        JSON.stringify(workout) === JSON.stringify(link.state.workout) &&
+        plan.title === link.state.planTitle
+      )
+        return link;
+      const supported =
+        workout.exercises.every((e) => e.transformMate) &&
+        new Set(workout.exercises.map((e) => e.transformMate?.occurrenceKey))
+          .size === workout.exercises.length;
+      return repository.cas(link, {
+        ...link.state,
+        workout,
+        planTitle: plan.title,
+        status: supported ? 'pending' : 'unavailable',
+        reason: supported ? null : 'unsupported',
+        expected: null,
+        baseline: null,
+        occurrences: [],
+        actual: null,
+        checkedAt: null,
+      });
+    },
     ensure(ownerId: string, plan: WorkoutPlan) {
+      if (plan.ownerId !== ownerId) throw new Error('Invalid plan owner');
       for (const workout of plan.workouts) {
+        const existing = db
+          .select()
+          .from(links)
+          .where(
+            and(
+              eq(links.ownerId, ownerId),
+              eq(links.planId, plan.id),
+              eq(links.workoutId, workout.id),
+            ),
+          )
+          .get();
+        if (existing) {
+          repository.reconcile(dto(existing), plan);
+          continue;
+        }
         if (!workout.exercises.some((e) => e.transformMate)) continue;
         const id = randomUUID();
         const now = new Date().toISOString();
@@ -126,5 +170,6 @@ export function syncRepository(
       return row ? dto(row) : null;
     },
   };
+  return repository;
 }
 export type SyncRepository = ReturnType<typeof syncRepository>;

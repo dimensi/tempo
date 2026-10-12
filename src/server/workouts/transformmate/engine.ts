@@ -1,5 +1,9 @@
 import 'server-only';
-import type { WorkoutPlan, PlannedWorkout } from '@/contracts/workouts';
+import {
+  plannedWorkoutSchema,
+  type WorkoutPlan,
+  type PlannedWorkout,
+} from '@/contracts/workouts';
 import { TransformMateApiError } from '@/server/transformmate/errors';
 import type { TransformMateClient } from '@/server/transformmate/client';
 import type { SyncRepository } from './repository';
@@ -41,14 +45,16 @@ export async function serializeOwner<T>(
 }
 export function syncEngine(options: SyncEngineOptions) {
   const { repository, client, access, plans } = options;
+  const currentPlan = (link: SyncLink) =>
+    plans().find((p) => p.id === link.planId && p.ownerId === link.ownerId);
   const currentWorkout = (link: SyncLink): PlannedWorkout | undefined =>
-    plans()
-      .find((p) => p.id === link.planId)
-      ?.workouts.find((w) => w.id === link.workoutId);
+    currentPlan(link)?.workouts.find((w) => w.id === link.workoutId);
   const changed = (link: SyncLink) => {
     const current = currentWorkout(link);
     return (
-      current && JSON.stringify(current) !== JSON.stringify(link.state.workout)
+      current &&
+      JSON.stringify(plannedWorkoutSchema.parse(current)) !==
+        JSON.stringify(link.state.workout)
     );
   };
   async function save(
@@ -163,6 +169,14 @@ export function syncEngine(options: SyncEngineOptions) {
   }
   async function process(link: SyncLink) {
     await access('workouts:read');
+    if (!link.state.attempted && link.remoteTrainingId === null) {
+      await access('workouts:plan');
+      const plan = currentPlan(link);
+      if (!plan) return;
+      const latest = repository.reconcile(link, plan);
+      if (!latest) return;
+      link = latest;
+    }
     if (!client) {
       await save(link, { status: 'unavailable', reason: 'not_configured' });
       return;
