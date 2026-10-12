@@ -46,8 +46,22 @@ it('caps validity by 24h and session expiry and refuses oversized photo caches',
       metadata,
       {
         ...bundle,
+        expiresAt: bundle.savedAt + offlineDeviceLimits.lifetimeMs,
+        sessionExpiresAt:
+          bundle.savedAt + offlineDeviceLimits.lifetimeMs + 1000,
+        photoBytes: offlineDeviceLimits.photoBytes,
+      },
+      1500,
+    ),
+  ).toBe(true);
+  expect(
+    canReadBundle(
+      metadata,
+      {
+        ...bundle,
         expiresAt: bundle.savedAt + offlineDeviceLimits.lifetimeMs + 1,
-        sessionExpiresAt: Infinity,
+        sessionExpiresAt:
+          bundle.savedAt + offlineDeviceLimits.lifetimeMs + 1000,
       },
       1500,
     ),
