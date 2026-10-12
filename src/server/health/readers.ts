@@ -60,15 +60,11 @@ export async function getStepsSummary(headers: Headers, input: unknown) {
 export async function getWeightHistory(headers: Headers, input: unknown) {
   const { ownerId, range } = await selectScope(headers, input);
   const imported = yazioHealthRepository().weights(ownerId, range);
-  const measurements = measurementRepository().list(ownerId);
+  const measurements = measurementRepository().listPeriod(ownerId, range);
   await check(headers, ownerId);
   return weightHistorySchema.parse({
     range,
     local: measurements
-      .filter(
-        (record) =>
-          record.measuredAt >= range.from && record.measuredAt <= range.to,
-      )
       .flatMap((record) =>
         record.values
           .filter((value) => value.metric === 'weight' && value.unit === 'kg')

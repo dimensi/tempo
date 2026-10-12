@@ -8,6 +8,7 @@ const database = openDatabase('file::memory:');
 vi.mock('@/server/db', () => ({ getDatabase: () => database }));
 import { getAuth } from '@/server/auth';
 import * as persistence from '@/server/yazio/health-repository';
+import * as measurementPersistence from '@/server/measurements/repository';
 import { getStepsSummary, getWeightHistory } from '@/server/health';
 import { GET as stepsGET } from '@/app/api/health/steps/route';
 import { GET as weightGET } from '@/app/api/health/weight/route';
@@ -264,6 +265,109 @@ it('retains null imported values and excludes ambiguous dates without guessing',
       { date: '2026-07-02', steps: null, source: 'YAZIO' },
       { date: '2026-07-03', steps: null, source: null },
     ],
+  });
+});
+it('bounds local weight reads before decoding, retains both boundary dates and imported null/zero', async () => {
+  const period = { from: '2026-06-10', to: '2026-06-12' };
+  const insert = database.sqlite.prepare(
+    'INSERT INTO measurements(id,owner_id,measured_at,values_json,note) VALUES(?,?,?,?,?)',
+  );
+  const mixed = [
+    { metric: 'weight', value: '70.125', unit: 'kg' },
+    { metric: 'waist', value: '80', unit: 'cm' },
+  ];
+  insert.run(
+    'period-from',
+    'owner',
+    period.from,
+    JSON.stringify(mixed),
+    'PRIVATE',
+  );
+  insert.run(
+    'period-to',
+    'owner',
+    period.to,
+    JSON.stringify([{ metric: 'weight', value: '71.25', unit: 'kg' }]),
+    'PRIVATE',
+  );
+  insert.run('period-before', 'owner', '2026-06-09', 'not-json', null);
+  insert.run('period-after', 'owner', '2026-06-13', 'not-json', null);
+  insert.run('period-foreign', 'trainer', '2026-06-11', 'not-json', null);
+  persistence.yazioHealthRepository().upsert(
+    'owner',
+    {
+      weights: [
+        {
+          source: 'yazio',
+          externalId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+          providerDate: period.from,
+          measuredDate: period.from,
+          rawValue: '0',
+          unit: null,
+          unitContext: 'kg',
+          upstreamSource: null,
+          gateway: null,
+        },
+        {
+          source: 'yazio',
+          externalId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+          providerDate: period.to,
+          measuredDate: period.to,
+          rawValue: null,
+          unit: null,
+          unitContext: 'kg',
+          upstreamSource: null,
+          gateway: null,
+        },
+      ],
+      dailySteps: [],
+    },
+    '2026-10-12T12:00:00Z',
+  );
+  const history = await getWeightHistory(ownerHeaders, period);
+  expect(history.local).toEqual([
+    { measuredAt: period.from, value: '70.125', unit: 'kg', source: 'LOCAL' },
+    { measuredAt: period.to, value: '71.25', unit: 'kg', source: 'LOCAL' },
+  ]);
+  expect(history.imported).toEqual([
+    {
+      measuredAt: period.from,
+      rawValue: '0',
+      unit: null,
+      unitStatus: 'UNKNOWN',
+      source: 'YAZIO',
+    },
+    {
+      measuredAt: period.to,
+      rawValue: null,
+      unit: null,
+      unitStatus: 'UNKNOWN',
+      source: 'YAZIO',
+    },
+  ]);
+  expect(JSON.stringify(history)).not.toMatch(
+    /PRIVATE|waist|period-|owner|not-json/,
+  );
+});
+it('rechecks actual trainer access after the bounded local weight read', async () => {
+  grant();
+  const factory = measurementPersistence.measurementRepository;
+  vi.spyOn(measurementPersistence, 'measurementRepository').mockImplementation(
+    () => {
+      const repository = factory();
+      return {
+        ...repository,
+        listPeriod: (...args) => {
+          expect(args).toEqual(['owner', range]);
+          const rows = repository.listPeriod(...args);
+          database.db.delete(trainerAccess).run();
+          return rows;
+        },
+      };
+    },
+  );
+  await expect(getWeightHistory(trainerHeaders, range)).rejects.toMatchObject({
+    status: 403,
   });
 });
 it('API accepts dates only, rejects duplicate/invalid/unbounded input and disables caching', async () => {
