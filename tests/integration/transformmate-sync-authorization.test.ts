@@ -312,3 +312,70 @@ it('rechecks authorization before falling back from a failed storage read', asyn
   });
   expect(save).not.toHaveBeenCalled();
 });
+
+for (const revoked of ['session', 'grant'] as const) {
+  it(`rejects ${revoked} revocation during the final connection fence before SQL save or intent`, async () => {
+    state.session = { user: { id: 'trainer', role: 'TRAINER' } };
+    database.db
+      .insert(trainerAccess)
+      .values({ trainerId: 'trainer', ownerId: 'owner', createdAt: new Date() })
+      .run();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const assertCurrent = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(async () => {
+        entered();
+        await gate;
+      });
+    state.fence.mockResolvedValue({
+      client: null,
+      generation: 'synthetic-connection',
+      assertCurrent,
+    });
+    const beforePlans = repository.list('owner');
+    const beforeLinks = syncRepository(database.db).list('owner');
+    const save = vi.fn(() => repository.createPlan('owner', input));
+    const operation = api.saveAndSyncWorkoutPlan(headers, 'owner', save);
+    await ready;
+    if (revoked === 'session') state.session = null;
+    else database.db.delete(trainerAccess).run();
+    release();
+    await expect(operation).rejects.toMatchObject({
+      status: revoked === 'session' ? 401 : 403,
+    });
+    expect(save).not.toHaveBeenCalled();
+    expect(repository.list('owner')).toEqual(beforePlans);
+    expect(syncRepository(database.db).list('owner')).toEqual(beforeLinks);
+    database.db.delete(trainerAccess).run();
+  });
+}
+
+it('keeps a disconnected snapshot local instead of acquiring an unfenced newly connected client', async () => {
+  state.session = { user: { id: 'owner', role: 'OWNER' } };
+  const createTraining = vi.fn();
+  state.client.mockResolvedValue({ createTraining });
+  state.fence.mockImplementationOnce(async () => {
+    // Connection appears after the runtime captured a coherent disconnected snapshot.
+    state.configured.mockResolvedValue(true);
+    return null;
+  });
+  const plan = await api.saveAndSyncWorkoutPlan(headers, 'owner', () =>
+    repository.createPlan('owner', input),
+  );
+  const link = syncRepository(database.db)
+    .list('owner')
+    .find((item) => item.planId === plan.id)!;
+  expect(state.client).not.toHaveBeenCalled();
+  expect(createTraining).not.toHaveBeenCalled();
+  expect(link.state.attempted).toBe(false);
+  expect(link.remoteTrainingId).toBeNull();
+  expect(link.state.actual).toBeNull();
+});

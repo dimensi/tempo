@@ -21,7 +21,9 @@ connection. Its bounded credential input is never echoed in errors or logs. Fail
 validation/upstream requests preserve the existing file. Pending unattempted links
 may exist before first connection. Attempted links, remote IDs and durable history
 require an existing verified account binding; another account cannot inherit them.
-A disconnected tombstone retains that binding and Firebase identity. An old
+Final binding checks and connection persistence share the owner workout queue, so a concurrent
+first publication cannot be attached to another account. Candidate validation happens outside
+that queue. A disconnected tombstone retains that binding and Firebase identity. An old
 unbound attempted link cannot be silently attributed to the new account.
 
 Logout keeps the connection. Disconnect writes an authenticated encrypted tombstone,
@@ -35,7 +37,7 @@ persistence cannot leave a cached successful token.
 The runtime API is asynchronous and owner scoped:
 `getTransformMateClient(ownerId)`, `isTransformMateConfigured(ownerId)` and
 `getTransformMateConnectionFence(ownerId)`. A fence provides `assertCurrent()` and
-a stable `generation` connection UUID. This UUID remains stable during token rotation
+the corresponding client and a stable `generation` connection UUID. This UUID remains stable during token rotation
 and changes on reconnect. Persisted workout authorization must use the verified
 account binding when safely recovering a same-account reconnect; the UUID alone is
 only an operation fence.

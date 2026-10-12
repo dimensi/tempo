@@ -1,19 +1,18 @@
 # TransformMate workout integration
 
-**Acceptance gap:** automatic publication currently covers first creation only. Editing an already
-published, even unstarted and otherwise unchanged remote workout stays local with a conflict.
-This is not complete save-to-sync behavior or full bidirectional sync. A guarded update requires
-verified upstream atomic conditional-write support; GET/compare/PATCH alone cannot close the race.
-The minimal proof uses a separately authorized disposable training: stale writes must reject after
-an external edit/start, and planned/actual data must remain unchanged on rejection. Only after that
-proof can the baseline, fresh ownership/idle/fact checks, atomic precondition and post-write
-verification be connected to save. No such real write probe is authorized overnight.
+Saving persists the local plan and automatically publishes eligible catalog workouts. Published
+workouts can be updated while the latest observed remote training is unstarted, unfinished,
+idle and has no factual values or done flags. Started/completed workouts and observed external
+conflicts remain read-only. The upstream API has no verified atomic conditional-write primitive:
+a concurrent external change after the last GET and before the full PATCH can still be overwritten.
+The user accepted this residual race and avoids editing both applications simultaneously. This
+is a practical guarded update, not an atomic exclusion guarantee.
 
 The workout editor keeps manual plans and sessions and adds catalog exercises with a local
 occurrence UUID and optional exercise comment. Dates, array order, repetitions and nullable kg
 remain explicit. Every linked exercise must support the verified weight/reps straight metrics.
 Mixed manual/catalog workouts remain local with a visible unsupported status; there is no partial
-publication. The save button persists the local plan and automatically publishes eligible new
+publication. The save button persists the local plan and automatically publishes eligible new or safely editable published
 workouts, without a separate confirmation. Copying a plan shifts calendar dates, generates new
 workout/occurrence IDs and copies planned sets/comments only. Recurring plans and uploaded videos
 are outside this change.
@@ -40,7 +39,9 @@ second POST. Verification reads the list for exactly one marker match, then owne
 expected ordered plan projection. A known returned remote ID is persisted before reading detail.
 Zero matches do not prove absence; multiple matches remain conflicting. Failed reads preserve the
 previous actual results and successful check timestamp. A restart resumes durable pending intents;
-an already attempted record only verifies. Ownership/grants are checked around network operations.
+an already attempted create only verifies. Ownership/grants are checked around network operations.
+A coherent runtime client/fence snapshot protects every engine operation. Plan permission is
+rechecked after asynchronous connection checks immediately before synchronous SQL persistence.
 
 The supported runtime remains one Next.js process with SQLite WAL. In-process owner serialization
 and persisted CAS prevent competing local requests from claiming the same intent. No network
@@ -48,11 +49,31 @@ request runs in a database transaction.
 
 ## Remote edits and actual results
 
-The verified upstream write API sends a full training DTO and has no confirmed atomic compare and
-swap precondition. Consequently this integration **never PATCHes or DELETEs an existing remote
-training**. Editing the local plan saves it locally and shows a conflict when the published plan
-differs. Starting/completing a training or external changes are read without overwriting them.
-The UI explains this limit and offers copying to new dates for a new publication.
+The verified write API sends a full training DTO. A single guarded PATCH supports changing date,
+plan/workout title, comments, weights/repetitions, exercise order, adding/removing/replacing catalog
+exercises, and adding/removing planned sets. Straight weight/repetition metrics are required for
+all exercises; manual/catalog mixes and unsupported techniques remain local with an explicit
+status. The integration never deletes remote workouts. Removing a local workout preserves its
+remote training and local linked history.
+
+Each update retains immutable original history and a separate last verified published snapshot.
+Local save and a bounded pending update intent commit together. Preflight reads current detail,
+checks owner/account/description marker and the previous semantic fingerprint, validates lifecycle
+and every fact metric, and builds the whole DTO from fresh remote metadata and empty fact
+placeholders. Exercise occurrences are mapped by local UUID and current remote semantics;
+fact IDs are not assumed stable. Permission, connection epoch and local revision are checked again
+before sending. Unknown is persisted before one PATCH; 401, timeout or malformed response never
+trigger an automatic write replay. A read verifies the desired projection afterwards. On restart,
+an unknown intent only reads: the previous projection remains unknown, a different projection
+conflicts, and a matching desired projection confirms publication. No blind rollback or retry is
+performed. Later local edits do not replace an unresolved unknown intent.
+
+The last observed started/completed state blocks writes even if its planned projection matches.
+An idle training with factual values also blocks writes and displays a conflict. Results remain
+visible alongside the last published plan; editing the local plan cannot relabel performed facts.
+Observed external edits cause a conflict rather than an overwrite. These checks cannot close the
+last GET→PATCH race described above, and successful post-verification cannot prove no concurrent
+fact was lost during that window.
 
 Actual sets come exclusively from current `metrics[type=fact]`, with explicit order, done flag,
 metric type and original string values. Historical `best_result`/`last_results` are not actuals.
@@ -91,38 +112,33 @@ Only the requested video is streamed; catalog video downloading does not occur.
 Observed links have `expires`/`sign` query fields. Their duration is provider-controlled and is not
 assumed stable or hardcoded. Fresh detail on each media request avoids reusing an expired URL.
 Provider auth/expiry/transport failures show a safe error; closing/reopening the player requests
-fresh detail. API-token refresh is managed by the existing FirebaseSession singleton; refreshed
-credentials stay in process memory, without a new persistent credential store.
+fresh detail. API-token refresh is managed by the owner-scoped FirebaseSession runtime; refresh-token rotation
+is persisted to the encrypted store before the new token is cached. Disconnect/reconnect fences
+reject late media responses and credential writes.
 
 ## Production dependency and validation
 
-Compose passes the two existing server-only variables `TRANSFORMMATE_FIREBASE_API_KEY` and
-`TRANSFORMMATE_FIREBASE_REFRESH_TOKEN`, defaulting to empty. They are never NEXT_PUBLIC variables.
-When missing, manual functionality and local plan saving work and sync reports unavailable.
-The production read-only configuration check found both variables absent. No credential transfer
-or installation was performed. Activation requires a separate approved secure operator handoff to
-`/opt/compose/yazio-dashboard/runtime.env`; retain its private permissions and existing stack,
-volumes, YAZIO credentials/scheduler and server-local routing. Deployment stays in the main
-coordinator's single rollout queue. Mock tests do not establish live synchronization.
+The OWNER enters their own Firebase API key and refresh token at `/settings#transformmate` over
+HTTPS. The form clears secrets after submission, exposes only safe verified profile/status data,
+and offers check/reconnect and a confirmed local disconnect. TRAINER cannot manage credentials.
+See [encrypted connection and account binding](transformmate-secure-connection.md) for storage,
+rotation, tombstones and owner authorization. No agent reads or transfers the user's credentials.
 
-### User-only credential setup
-
-The owner performs this later; the agent does not read, copy or send the values on their behalf.
-Open a trusted SSH terminal on `home-server`, enter `/opt/compose/yazio-dashboard`, set `umask 077`
-and edit `runtime.env` with a terminal editor. Add the existing values under the exact names
-`TRANSFORMMATE_FIREBASE_API_KEY` and `TRANSFORMMATE_FIREBASE_REFRESH_TOKEN`. Keep all existing
-configuration, especially Better Auth/YAZIO, intact. Do not paste credentials into chat, shell
-commands/history, logs, commits or screenshots. After saving, run `chmod 600 runtime.env`, close
-the editor and report only that configuration is ready. The main coordinator then controls the
-reviewed release's single rollout; the owner checks a genuinely intended new workout through UI.
-This step does not resolve the published-edit acceptance gap and does not authorize extra real
-write/delete probes.
+Compose configures only `TRANSFORMMATE_TOKEN_FILE=/app/data/transformmate-token.json` in the
+existing database volume. The application has no environment-credential fallback. Before the
+OWNER connects, catalog/sync report unavailable and manual/local saving continues to work. The
+standalone research CLI still uses its explicitly separate probe environment settings. Preserve
+the encrypted file, tombstone, existing auth secret/owner ID, DB and uploads together when backing
+up/restoring. No additional key, volume, scheduler or network is introduced. Deployment stays in
+the main coordinator's single rollout queue. Synthetic tests do not establish live provider sync;
+a genuinely intended user's workout is the live acceptance scenario after their own connection.
 
 Dedicated tests use real Better Auth cookies, owner/trainer grants and a migrated disposable local
 SQLite database. A strictly test-only preload intercepts fixed provider hosts to a loopback
 synthetic upstream and rejects production or real connection values. It is never activated in
 the app or Docker runtime. Tests cover automatic create, idempotency, committed/uncommitted lost
-responses, external/started conflicts, ID changes, separate facts, orphan history, manual records,
+responses, external/started/factual conflicts, the complete idle-edit matrix, ambiguous PATCH recovery,
+account binding, encrypted rotation/disconnect races, ID changes, separate facts, orphan history, manual records,
 revocation, private Range and real synthetic MP4 playback/seek/speed/fullscreen on desktop/mobile.
 File-backed restart and transaction-abort tests prove durable recovery and all-or-nothing local
 plan/intent persistence. Fresh and existing migrations preserve prior workout JSON/history.

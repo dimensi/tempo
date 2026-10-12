@@ -52,6 +52,7 @@
 }
 
 .content :global([id='connection']),
+.content :global([id='transformmate']),
 .content :global([id='sync']),
 .content :global([id='trainers']) {
   scroll-margin-top: 110px;
@@ -82,6 +83,7 @@
   }
 
   .content :global([id='connection']),
+  .content :global([id='transformmate']),
   .content :global([id='sync']),
   .content :global([id='trainers']) {
     scroll-margin-top: 144px;

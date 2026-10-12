@@ -6,7 +6,6 @@ import { transformMateSyncItemSchema } from '@/contracts/transformmate';
 import { authorize } from '@/server/auth/guards';
 import { getDatabase } from '@/server/db';
 import {
-  getTransformMateClient,
   isTransformMateConfigured,
   getTransformMateConnectionFence,
 } from '@/server/transformmate/runtime';
@@ -39,12 +38,10 @@ async function loadEngine(
   try {
     const fence = await getTransformMateConnectionFence(ownerId);
     await contextValue.access('workouts:read');
-    const client = await getTransformMateClient(ownerId);
-    await contextValue.access('workouts:read');
     await fence?.assertCurrent();
     return {
       ...contextValue,
-      client,
+      client: fence?.client ?? null,
       checkConnection: fence?.assertCurrent,
       connectionId: fence?.generation,
     };
@@ -99,6 +96,7 @@ export async function saveAndSyncWorkoutPlan(
     const contextValue = await loadEngine(base, ownerId);
     await contextValue.access('workouts:plan');
     await contextValue.checkConnection?.();
+    await contextValue.access('workouts:plan');
     const plan = save();
     await publishSavedPlan(contextValue, ownerId, plan);
     return plan;
