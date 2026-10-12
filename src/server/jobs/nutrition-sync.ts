@@ -63,6 +63,7 @@ export async function syncNutritionPeriod(
     finishedAt: null,
     completedDates: [],
     failedDates: [],
+    photoFailedDates: [],
   };
   try {
     repository.saveStatus(ownerId, status);
@@ -104,38 +105,61 @@ export async function syncNutritionPeriod(
           products,
           recipes,
         });
-        const photos: PhotoRow[] = await boundedMap(
+        let photoFailed = false;
+        const photos = await boundedMap(
           meals.filter((meal) => urls[meal]),
           2,
-          async (daytime) => {
+          async (daytime): Promise<PhotoRow | null> => {
             const sourceUrl = urls[daytime]!;
-            const { bytes, mime } = await images.fetch(sourceUrl);
-            const stored = await images.store(bytes, mime);
-            return {
-              id: `${ownerId}:${date}:${daytime}:yazio`,
-              ownerId,
-              date,
-              daytime,
-              source: 'yazio',
-              sourceUrl,
-              observedAt: fetchedAt,
-              mime,
-              ...stored,
-            };
+            const id = `${ownerId}:${date}:${daytime}:yazio`;
+            try {
+              const { bytes, mime } = await images.fetch(sourceUrl);
+              const stored = await images.store(bytes, mime);
+              return {
+                id,
+                ownerId,
+                date,
+                daytime,
+                source: 'yazio' as const,
+                sourceUrl,
+                observedAt: fetchedAt,
+                mime,
+                ...stored,
+              };
+            } catch {
+              photoFailed = true;
+              const existing = repository.photo(ownerId, id);
+              return existing?.source === 'yazio' ? existing : null;
+            }
           },
         );
-        repository.replaceDay(ownerId, day, photos);
-        status.completedDates.push(date);
+        // A photo transfer failure must not hide successfully fetched food.
+        // Retain the old nonempty snapshot when the new day is empty and the
+        // media update is incomplete; never erase valid data on that failure.
+        const empty = day.meals.every((meal) => !meal.entries.length);
+        const preserveSnapshot =
+          photoFailed && empty && Boolean(repository.day(ownerId, date));
+        if (!preserveSnapshot) {
+          repository.replaceDay(
+            ownerId,
+            day,
+            photos.filter((photo): photo is PhotoRow => photo !== null),
+          );
+        }
+        if (photoFailed) status.photoFailedDates.push(date);
+        if (preserveSnapshot) status.failedDates.push(date);
+        else status.completedDates.push(date);
       } catch {
         status.failedDates.push(date);
       }
       repository.saveStatus(ownerId, status);
     }
-    status.state = status.failedDates.length
-      ? status.completedDates.length
-        ? 'partial'
-        : 'failed'
-      : 'completed';
+    status.state =
+      status.failedDates.length || status.photoFailedDates.length
+        ? status.completedDates.length
+          ? 'partial'
+          : 'failed'
+        : 'completed';
     status.finishedAt = new Date().toISOString();
     repository.saveStatus(ownerId, status);
     return status;

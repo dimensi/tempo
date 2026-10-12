@@ -6,6 +6,7 @@ import { request } from 'node:https';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { readServerEnv } from '@/server/env';
+import { fetchImageRanges } from './image-ranges';
 
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 export function validateImage(bytes: Uint8Array, mime: string) {
@@ -65,7 +66,7 @@ export async function fetchCdnImage(value: string) {
   const addresses = await lookup(url.hostname, { all: true });
   if (!addresses.length || addresses.some((a) => !isPublicAddress(a.address)))
     throw new Error('Invalid image address');
-  // Pin the validated DNS answer; HTTPS still validates the original CDN hostname.
+  // Pin validated DNS answers; HTTPS still validates the original CDN hostname.
   const address = addresses[0]!;
   return new Promise<{ bytes: Buffer; mime: string }>(
     (resolveImage, reject) => {
@@ -73,8 +74,10 @@ export async function fetchCdnImage(value: string) {
         url,
         {
           signal: AbortSignal.timeout(15000),
-          lookup: (_host, _options, callback) =>
-            callback(null, address.address, address.family),
+          lookup: (_host, options, callback) => {
+            if (options.all) callback(null, addresses);
+            else callback(null, address.address, address.family);
+          },
           headers: { Accept: 'image/jpeg,image/png,image/webp' },
         },
         (response) => {
@@ -113,7 +116,18 @@ export async function fetchCdnImage(value: string) {
       req.on('error', reject);
       req.end();
     },
-  );
+  ).catch(async (error: unknown) => {
+    // Validation and HTTP failures never trigger another access path.
+    if (
+      !(error instanceof Error) ||
+      !['ABORT_ERR', 'ECONNRESET', 'ETIMEDOUT'].includes(
+        String((error as NodeJS.ErrnoException).code),
+      )
+    )
+      throw error;
+    const image = await fetchImageRanges(url, addresses);
+    return { bytes: validateImage(image.bytes, image.mime), mime: image.mime };
+  });
 }
 export async function storeImage(bytes: Uint8Array, mime: string) {
   const validated = validateImage(bytes, mime);

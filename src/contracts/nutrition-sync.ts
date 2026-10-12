@@ -56,6 +56,7 @@ export const syncStatusSchema = z.object({
   finishedAt: z.string().nullable(),
   completedDates: z.array(diaryDateSchema),
   failedDates: z.array(diaryDateSchema),
+  photoFailedDates: z.array(diaryDateSchema),
 });
 export type SyncStatus = z.infer<typeof syncStatusSchema>;
 export const yazioCredentialsSchema = z

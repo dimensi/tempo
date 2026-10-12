@@ -112,13 +112,39 @@ test('real owner/trainer sessions read durable sync snapshots and private photos
   expect(upload.status()).toBe(201);
   const manual = safeMealPhotoViewSchema.parse(await upload.json());
   expect(manual.source).toBe('manual');
+  let current = before;
   for (const scenario of ['error', 'image-error'] as const) {
-    expect(fixture(scenario).status.state).toBe('failed');
+    const expected =
+      scenario === 'error'
+        ? {
+            state: 'failed',
+            completedDates: [],
+            failedDates: [date],
+            photoFailedDates: [],
+          }
+        : {
+            state: 'partial',
+            completedDates: [date],
+            failedDates: [],
+            photoFailedDates: [date],
+          };
+    expect(fixture(scenario).status).toMatchObject(expected);
     await page.reload();
     expect(
-      (await (await page.request.get('/api/yazio/status')).json()).sync.state,
-    ).toBe('failed');
-    expect(await (await page.request.get(dayUrl)).json()).toEqual(before);
+      (await (await page.request.get('/api/yazio/status')).json()).sync,
+    ).toMatchObject(expected);
+    const updated = nutritionDaySchema.parse(
+      await (await page.request.get(dayUrl)).json(),
+    );
+    if (scenario === 'error') expect(updated).toEqual(before);
+    else {
+      expect(updated.meals[1]!.totals.calories).toBe('20');
+      expect(updated.meals[1]!.entries[0]!.amount).toBe('20');
+      expect(Date.parse(updated.fetchedAt)).toBeGreaterThanOrEqual(
+        Date.parse(before.fetchedAt),
+      );
+      current = updated;
+    }
     expect(
       (
         (await (
@@ -128,6 +154,9 @@ test('real owner/trainer sessions read durable sync snapshots and private photos
         .map((p) => p.id)
         .sort(),
     ).toEqual([initialPhotos[0]!.id, manual.id].sort());
+    expect(
+      await (await page.request.get(photoUrl(initialPhotos[0]!.id))).body(),
+    ).toEqual(png);
     expect(await (await page.request.get(photoUrl(manual.id))).body()).toEqual(
       png,
     );
@@ -138,7 +167,7 @@ test('real owner/trainer sessions read durable sync snapshots and private photos
     await login(trainer, 'trainer');
     expect((await trainer.request.get(dayUrl)).status()).toBe(403);
     fixture('grant');
-    expect(await (await trainer.request.get(dayUrl)).json()).toEqual(before);
+    expect(await (await trainer.request.get(dayUrl)).json()).toEqual(current);
     expect((await trainer.request.get(photosUrl)).status()).toBe(200);
     expect(
       await (await trainer.request.get(photoUrl(manual.id))).body(),

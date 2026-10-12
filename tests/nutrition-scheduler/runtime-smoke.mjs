@@ -156,6 +156,7 @@ try {
         finishedAt: null,
         completedDates: [],
         failedDates: [],
+        photoFailedDates: [],
       }),
     );
   const restartedAt = Date.now();
