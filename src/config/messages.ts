@@ -1,6 +1,6 @@
 // Replace the dictionary resolver when adding another locale.
 export const ru = {
-  appName: 'Питание и движение',
+  appName: 'Темпо',
   login: 'Войти',
   logout: 'Выйти',
   email: 'Электронная почта',

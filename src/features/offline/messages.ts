@@ -1,7 +1,8 @@
+import { ru } from '@/config/messages';
 import { offlineDeviceMessages } from '@/lib/offline-device';
 export const offlineMessages = {
   ...offlineDeviceMessages,
-  appName: 'Питание и движение',
+  appName: ru.appName,
   settings: 'Настройки',
   loadingPhoto: 'Открываем фотографию…',
   computed: 'Рассчитано',

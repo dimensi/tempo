@@ -5,8 +5,9 @@ import '@mantine/notifications/styles.css';
 import '@/styles/global.css';
 import { ColorSchemeScript, mantineHtmlProps } from '@mantine/core';
 import { Providers } from '@/components/shared/providers';
+import { ru } from '@/config/messages';
 export const metadata = {
-  title: { default: 'Питание и движение', template: '%s · Питание и движение' },
+  title: { default: ru.appName, template: `%s · ${ru.appName}` },
   description: 'Личное пространство питания и тренировок',
   icons: {
     icon: [
