@@ -213,6 +213,7 @@ it('returns a coherent client/fence pair when a disconnected owner connects', as
   expect(connection?.client).toBe(await getTransformMateClient('owner'));
   await connection!.client.getMe();
   await connection!.assertCurrent();
+  connection!.assertBindingCurrent();
 });
 
 it('keeps a stable opaque account scope across token rotation and disconnect', async () => {
@@ -236,6 +237,7 @@ it('keeps a stable opaque account scope across token rotation and disconnect', a
     accountScope: connectedBinding.accountScope,
   });
   await disconnected.assertCurrent();
+  disconnected.assertBindingCurrent();
 });
 
 it('fences cached account history when the encrypted binding changes', async () => {
@@ -244,4 +246,5 @@ it('fences cached account history when the encrypted binding changes', async () 
   await store.load();
   await store.disconnect();
   await expect(binding.assertCurrent()).rejects.toThrow('connection changed');
+  expect(() => binding.assertBindingCurrent()).toThrow('connection changed');
 });

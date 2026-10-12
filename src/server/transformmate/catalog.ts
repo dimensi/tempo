@@ -53,6 +53,7 @@ export async function listExercises(
   const result = await cachedCatalog(scope);
   await fence.assertCurrent();
   await requireCatalogAccess(headers, ownerId);
+  fence.assertBindingCurrent();
   return result
     .filter((e) => catalogMatches(scope, e.id, e.name, q))
     .slice(0, 50)
@@ -76,6 +77,7 @@ export async function getExercise(
   const result = await fence.client.getExercise(id);
   await fence.assertCurrent();
   await requireCatalogAccess(headers, ownerId);
+  fence.assertBindingCurrent();
   if (result.body.id !== id) throw new CatalogError(502);
   rememberExerciseAliases(
     {

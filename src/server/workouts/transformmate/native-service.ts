@@ -19,6 +19,7 @@ interface NativeContext {
   repository: NativeRepository;
   access(): Promise<void>;
   checkConnection(): Promise<void>;
+  checkBinding(): void;
   linkedRemoteIds(): ReadonlySet<number>;
 }
 type NativeRefreshResult = {
@@ -37,6 +38,7 @@ export function nativeService(context: NativeContext) {
   const list = async (input: unknown) => {
     const query = transformMateNativeQuerySchema.parse(input);
     await guard();
+    context.checkBinding();
     return context.repository.list(
       context.ownerId,
       context.accountScope,
@@ -48,6 +50,7 @@ export function nativeService(context: NativeContext) {
     const query = transformMateNativeQuerySchema.parse(input);
     const cursor = parseNativeCursor(query.cursor);
     await guard();
+    context.checkBinding();
     if (!context.client)
       return {
         refresh: { status: 'unavailable', checkedAt: null, errorCode: null },
@@ -65,6 +68,7 @@ export function nativeService(context: NativeContext) {
     if (existing) {
       const result = await existing;
       await guard();
+      context.checkBinding();
       return result;
     }
     const client = context.client;
@@ -106,6 +110,7 @@ export function nativeService(context: NativeContext) {
             if (!isNativeTraining(detail, context.linkedRemoteIds())) continue;
             const snapshot = nativeProjection(detail);
             await guard();
+            context.checkBinding();
             if (
               !context.repository.save(
                 context.ownerId,
@@ -138,6 +143,7 @@ export function nativeService(context: NativeContext) {
     try {
       const result = await work;
       await guard();
+      context.checkBinding();
       return result;
     } finally {
       pending.delete(key);

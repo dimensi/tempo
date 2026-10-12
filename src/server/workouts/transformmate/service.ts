@@ -177,6 +177,7 @@ export async function listTransformMateSync(
   await access('workouts:read');
   await binding?.assertCurrent();
   await access('workouts:read');
+  binding?.assertBindingCurrent();
   const nativePage = binding?.accountScope
     ? nativeRepository(getDatabase().db).list(
         ownerId,
@@ -229,6 +230,7 @@ export async function refreshTransformMateSync(
         repository: nativeRepository(getDatabase().db),
         access: () => contextValue.access('workouts:read'),
         checkConnection: binding.assertCurrent,
+        checkBinding: binding.assertBindingCurrent,
         linkedRemoteIds: () =>
           new Set(
             contextValue.repository

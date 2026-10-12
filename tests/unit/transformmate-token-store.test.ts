@@ -93,6 +93,26 @@ describe('TransformMate encrypted connection', () => {
     );
     expect((await store.load()).token).toBeNull();
   });
+  it.each(['disconnect', 'reconnect'] as const)(
+    'invalidates the synchronous binding revision on %s',
+    async (action) => {
+      const { path, store } = await setup();
+      await store.load();
+      const value = token();
+      await store.save(value);
+      const fence = fileTransformMateTokenStore(path, 'owner', secret);
+      await fence.load();
+      const revision = fence.bindingRevision();
+      fence.assertBindingRevision(revision);
+
+      if (action === 'disconnect') await store.disconnect();
+      else await store.save({ ...value, connectionId: randomUUID() });
+
+      expect(() => fence.assertBindingRevision(revision)).toThrow(
+        TransformMateStaleConnectionError,
+      );
+    },
+  );
   it('serializes competing connects and rotations with generation CAS', async () => {
     const { path, store } = await setup();
     await store.load();

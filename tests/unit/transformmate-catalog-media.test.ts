@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   listExercises: vi.fn(),
   getExercise: vi.fn(),
   assertCurrent: vi.fn(),
+  assertBindingCurrent: vi.fn(),
 }));
 vi.mock('@/server/auth/guards', () => ({ authorize: mocks.authorize }));
 vi.mock('@/server/transformmate/runtime', () => ({
@@ -12,6 +13,7 @@ vi.mock('@/server/transformmate/runtime', () => ({
     client: mocks,
     generation: 'synthetic-connection',
     assertCurrent: mocks.assertCurrent,
+    assertBindingCurrent: mocks.assertBindingCurrent,
   }),
 }));
 import {
@@ -41,6 +43,7 @@ beforeEach(() => {
   mocks.authorize.mockResolvedValue({ ok: true });
   mocks.getExercise.mockResolvedValue({ body: detail() });
   mocks.assertCurrent.mockResolvedValue(undefined);
+  mocks.assertBindingCurrent.mockImplementation(() => undefined);
 });
 describe('private catalog', () => {
   it('only projects bounded public fields and confirmed metrics', async () => {
@@ -85,6 +88,49 @@ describe('private catalog', () => {
       'owner',
     );
   });
+  it.each(['disconnect', 'reconnect'] as const)(
+    'does not release a cached catalog after %s during final authorization',
+    async () => {
+      let stale = false;
+      mocks.listExercises.mockResolvedValue({ body: [] });
+      mocks.authorize
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: true })
+        .mockImplementationOnce(async () => {
+          stale = true;
+          return { ok: true };
+        });
+      mocks.assertBindingCurrent.mockImplementation(() => {
+        if (stale) throw new Error('TransformMate connection changed');
+      });
+
+      await expect(listExercises(new Headers(), 'owner', '')).rejects.toThrow(
+        'TransformMate connection changed',
+      );
+      expect(mocks.assertBindingCurrent).toHaveBeenCalledOnce();
+    },
+  );
+  it.each(['disconnect', 'reconnect'] as const)(
+    'does not release exercise detail after %s during final authorization',
+    async () => {
+      let stale = false;
+      mocks.authorize
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: true })
+        .mockImplementationOnce(async () => {
+          stale = true;
+          return { ok: true };
+        });
+      mocks.assertBindingCurrent.mockImplementation(() => {
+        if (stale) throw new Error('TransformMate connection changed');
+      });
+
+      await expect(exerciseInfo(new Headers(), 'owner', 501)).rejects.toThrow(
+        'TransformMate connection changed',
+      );
+      expect(mocks.assertBindingCurrent).toHaveBeenCalledOnce();
+    },
+  );
 });
 describe('media proxy', () => {
   it.each([

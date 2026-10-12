@@ -159,7 +159,9 @@ export async function getTransformMateConnectionFence(ownerId: string) {
   const entry = clients.get(ownerId);
   if (!entry || entry.client !== client)
     throw new TransformMateStaleConnectionError();
+  const bindingRevision = entry.store.bindingRevision();
   await entry.store.assertCurrent();
+  entry.store.assertBindingRevision(bindingRevision);
   if (clients.get(ownerId) !== entry)
     throw new TransformMateStaleConnectionError();
   return {
@@ -167,16 +169,21 @@ export async function getTransformMateConnectionFence(ownerId: string) {
     generation: entry.token.connectionId,
     accountScope: accountScope(ownerId, entry.token),
     assertCurrent: () => entry.store.assertCurrent(),
+    assertBindingCurrent: () =>
+      entry.store.assertBindingRevision(bindingRevision),
   };
 }
 
 /** Binding-only fence also exposes cached history while disconnected. */
 export async function getTransformMateBindingFence(ownerId: string) {
   const store = configuredTransformMateStore(ownerId);
+  const bindingRevision = store.bindingRevision();
   const state = await store.load();
+  store.assertBindingRevision(bindingRevision);
   return {
     configured: Boolean(state.token),
     accountScope: state.binding ? accountScope(ownerId, state.binding) : null,
     assertCurrent: () => store.assertLoadedCurrent(),
+    assertBindingCurrent: () => store.assertBindingRevision(bindingRevision),
   };
 }
