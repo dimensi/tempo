@@ -14,6 +14,7 @@ export function MacroEnergyPie({
   unavailable,
   zero,
   withLegend = false,
+  compact = false,
 }: {
   totals: NutritionTotals;
   labels: Record<'protein' | 'fat' | 'carbs', string>;
@@ -21,6 +22,7 @@ export function MacroEnergyPie({
   unavailable: string;
   zero: string;
   withLegend?: boolean;
+  compact?: boolean;
 }) {
   const shares = macroEnergyShares(totals);
   const hasEnergy = shares?.some((share) => share.percent > 0);
@@ -31,10 +33,14 @@ export function MacroEnergyPie({
       </Text>
     );
   return (
-    <Group gap="md" wrap="wrap" className={palette.palette}>
-      <Stack gap="xs" align="center" className={classes.chart}>
+    <Group gap={compact ? 'xs' : 'md'} wrap="wrap" className={palette.palette}>
+      <Stack
+        gap={compact ? 4 : 'xs'}
+        align="center"
+        className={`${classes.chart} ${compact ? classes.compactChart : ''}`}
+      >
         <PieChart
-          size={180}
+          size={compact ? 120 : 180}
           data={shares!.map(({ key, percent }) => ({
             name: labels[key],
             value: percent,
