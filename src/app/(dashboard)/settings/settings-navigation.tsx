@@ -2,11 +2,13 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { ru } from '@/config/messages';
+import { transformMateConnectionMessages } from '@/contracts/transformmate-connection';
 import classes from './settings.module.css';
 
 const sections = [
   { id: 'connection', label: ru.yazioSettings },
   { id: 'sync', label: ru.settings.syncTitle },
+  { id: 'transformmate', label: transformMateConnectionMessages.title },
   { id: 'trainers', label: ru.trainerSettings },
 ];
 

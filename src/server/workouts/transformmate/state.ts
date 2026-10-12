@@ -7,6 +7,11 @@ import {
   transformMateSyncItemSchema,
 } from '@/contracts/transformmate';
 
+const domainSnapshot = z.object({
+  workout: plannedWorkoutSchema,
+  planTitle: z.string().max(160),
+});
+const fingerprint = z.string().regex(/^[0-9a-f]{64}$/);
 export const syncStateSchema = z.object({
   version: z.literal(1),
   workout: plannedWorkoutSchema,
@@ -38,6 +43,24 @@ export const syncStateSchema = z.object({
     .max(100),
   checkedAt: z.iso.datetime().nullable(),
   actual: transformMateActualSchema.nullable(),
+  published: domainSnapshot
+    .extend({
+      authorId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    })
+    .optional(),
+  updateAttempt: z
+    .object({
+      id: z.uuid(),
+      phase: z.enum(['pending', 'unknown', 'verified', 'conflict']),
+      previous: domainSnapshot,
+      desired: domainSnapshot,
+      previousFingerprint: fingerprint,
+      expectedFingerprint: fingerprint.nullable(),
+      connectionId: z.uuid().nullable(),
+      createdAt: z.iso.datetime(),
+      checkedAt: z.iso.datetime().nullable(),
+    })
+    .optional(),
 });
 export type SyncState = z.infer<typeof syncStateSchema>;
 export interface SyncLink {

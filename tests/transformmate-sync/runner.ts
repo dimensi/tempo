@@ -1,6 +1,6 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { startUpstream } from './upstream';
 
 for (const file of [
@@ -26,10 +26,11 @@ const env: NodeJS.ProcessEnv = {
   DEMO_MODE: 'false',
   YAZIO_TOKEN_FILE: '',
   ENABLE_NUTRITION_SCHEDULER: 'false',
-  TRANSFORMMATE_FIREBASE_API_KEY: 'synthetic-api-key',
-  TRANSFORMMATE_FIREBASE_REFRESH_TOKEN: 'synthetic-refresh-token',
+  TRANSFORMMATE_TOKEN_FILE: './.data/e2e-transformmate-token.json',
   NEXT_TELEMETRY_DISABLED: '1',
 };
+// Reset this checkout's synthetic store only; production stores are never read.
+rmSync('./.data/e2e-transformmate-token.json', { force: true });
 const server = await startUpstream();
 execFileSync('pnpm', ['exec', 'tsx', 'scripts/prepare-e2e.ts'], {
   env,

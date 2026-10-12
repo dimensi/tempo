@@ -11,6 +11,7 @@ export const permissions = [
   'comments:write',
   'reports:export',
   'yazio:manage',
+  'transformmate:manage',
   'trainers:manage',
 ] as const;
 export type Permission = (typeof permissions)[number];

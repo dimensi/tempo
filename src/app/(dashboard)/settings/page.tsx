@@ -2,10 +2,12 @@ import { headers } from 'next/headers';
 import { Stack, Text, Title } from '@mantine/core';
 import { requireSession } from '@/server/auth/guards';
 import { getYazioStatus } from '@/server/yazio/settings';
+import { getTransformMateStatus } from '@/server/transformmate/connection';
 import { listTrainers } from '@/server/access/trainers';
 import { TrainerSettings } from '@/features/trainer';
 import { ru } from '@/config/messages';
 import { YazioSettingsForm } from './yazio/settings-form';
+import { TransformMateSettingsForm } from './transformmate/settings-form';
 import { SettingsNavigation } from './settings-navigation';
 
 export const metadata = { title: 'Настройки' };
@@ -19,8 +21,9 @@ export default async function Page() {
       </Stack>
     );
   const requestHeaders = await headers();
-  const [status, trainers] = await Promise.all([
+  const [status, transformMateStatus, trainers] = await Promise.all([
     getYazioStatus(requestHeaders),
+    getTransformMateStatus(requestHeaders),
     listTrainers(requestHeaders, session.user.id),
   ]);
   return (
@@ -32,6 +35,7 @@ export default async function Page() {
       <SettingsNavigation>
         <Stack gap={48}>
           <YazioSettingsForm initial={status} embedded />
+          <TransformMateSettingsForm initial={transformMateStatus} embedded />
           <section id="trainers" tabIndex={-1} aria-label={ru.trainerSettings}>
             <TrainerSettings
               ownerId={session.user.id}

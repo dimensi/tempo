@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  Accordion,
   Alert,
   Badge,
   Button,
@@ -88,8 +89,11 @@ function ExerciseTable({
   sync?: TransformMateSyncItem;
 }) {
   return (
-    <ScrollArea type="auto">
-      <Table miw={280}>
+    <ScrollArea type="auto" viewportProps={{ tabIndex: 0 }}>
+      <Table
+        miw={sync?.actual ? 680 : 440}
+        styles={{ th: { whiteSpace: 'nowrap' } }}
+      >
         <Table.Thead>
           <Table.Tr>
             <Table.Th>{m.exercise}</Table.Th>
@@ -412,14 +416,47 @@ function ScopedWorkoutsDashboard({
                     <Title order={2}>{item.actual?.title}</Title>
                     <Text>{item.actual?.date}</Text>
                     <Text fw={600}>
-                      {m.snapshot}: {item.planSnapshot.planTitle}
+                      {item.publishedSnapshot
+                        ? m.publishedSnapshot
+                        : m.snapshot}
+                      :{' '}
+                      {(item.publishedSnapshot ?? item.planSnapshot).planTitle}
                     </Text>
                     <Text>
-                      {item.planSnapshot.workout.title} ·{' '}
-                      {item.planSnapshot.workout.date}
+                      {
+                        (item.publishedSnapshot ?? item.planSnapshot).workout
+                          .title
+                      }{' '}
+                      ·{' '}
+                      {
+                        (item.publishedSnapshot ?? item.planSnapshot).workout
+                          .date
+                      }
                     </Text>
+                    {item.publishedSnapshot && (
+                      <Accordion>
+                        <Accordion.Item value="original">
+                          <Accordion.Control>{m.snapshot}</Accordion.Control>
+                          <Accordion.Panel>
+                            <Stack>
+                              <Text>
+                                {item.planSnapshot.planTitle} ·{' '}
+                                {item.planSnapshot.workout.title} ·{' '}
+                                {item.planSnapshot.workout.date}
+                              </Text>
+                              <ExerciseTable
+                                exercises={item.planSnapshot.workout.exercises}
+                              />
+                            </Stack>
+                          </Accordion.Panel>
+                        </Accordion.Item>
+                      </Accordion>
+                    )}
                     <ExerciseTable
-                      exercises={item.planSnapshot.workout.exercises}
+                      exercises={
+                        (item.publishedSnapshot ?? item.planSnapshot).workout
+                          .exercises
+                      }
                       sync={item}
                     />
                     <WorkoutSync item={item} />

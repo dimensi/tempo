@@ -148,6 +148,18 @@ export function WorkoutSync({ item }: { item?: TransformMateSyncItem }) {
             : reasons[item.reason]}
         </Text>
       )}
+      {item.updateAttempt && (
+        <Text size="sm" role="status">
+          {
+            {
+              pending: m.updatePending,
+              unknown: m.updateUnknown,
+              verified: m.updateVerified,
+              conflict: m.updateConflict,
+            }[item.updateAttempt.phase]
+          }
+        </Text>
+      )}
       <Text size="xs" c="var(--mantine-color-text)">
         {m.checked}:{' '}
         {item.checkedAt

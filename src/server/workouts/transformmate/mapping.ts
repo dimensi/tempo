@@ -1,4 +1,6 @@
 import 'server-only';
+import { createHash } from 'node:crypto';
+import { trainingWriteSnapshot } from '@/server/transformmate/write-snapshot';
 import type { PlannedWorkout } from '@/contracts/workouts';
 import {
   transformMateActualSchema,
@@ -213,7 +215,8 @@ export function actualProjection(
     finished: training.finished,
     exercises: remoteExercises(training).map((e, i) => ({
       occurrenceKey: matched
-        ? (state.workout.exercises[i]?.transformMate?.occurrenceKey ?? null)
+        ? ((state.published?.workout ?? state.workout).exercises[i]
+            ?.transformMate?.occurrenceKey ?? null)
         : null,
       exerciseId: e.exercise.id,
       name: e.exercise.name,
@@ -234,4 +237,173 @@ export function actualProjection(
         })),
     })),
   });
+}
+
+export function projectionFingerprint(projection: string) {
+  if (Buffer.byteLength(projection, 'utf8') > 2 * 1024 * 1024)
+    throw new Error('Invalid projection');
+  return createHash('sha256').update(projection).digest('hex');
+}
+export function hasRemoteFact(training: TransformMateTrainingDetail) {
+  return training.protocols.some((p) =>
+    p.workout_exercises.some((e) =>
+      e.metrics.some(
+        (m) =>
+          m.type === 'fact' &&
+          m.sets.some(
+            (s) =>
+              ('is_done' in s && s.is_done) ||
+              s.set_metrics.length > 0 ||
+              s.techniques.length > 0,
+          ),
+      ),
+    ),
+  );
+}
+/** Verified ordered correspondence binds local occurrences, never remote fact IDs. */
+export function updateProjection(
+  training: TransformMateTrainingDetail,
+  previous: PlannedWorkout,
+  desired: PlannedWorkout,
+) {
+  validateRemoteOrder(training);
+  if (training.protocols.length !== 1)
+    throw new Error('Unsupported projection');
+  const remote = remoteExercises(training);
+  if (remote.length !== previous.exercises.length)
+    throw new Error('Unsupported projection');
+  const fresh = trainingWriteSnapshot({
+    ...training,
+    protocols: [
+      {
+        ...training.protocols[0]!,
+        workout_exercises: remote.map((e) => ({
+          ...e,
+          metrics: e.metrics.map((m) =>
+            m.type === 'plan'
+              ? { ...m, sets: [...m.sets].sort((a, b) => a.order - b.order) }
+              : { ...m, sets: [...m.sets].sort((a, b) => a.order - b.order) },
+          ),
+        })),
+      },
+    ],
+  });
+  const byKey = new Map(
+    previous.exercises.map((e, i) => {
+      if (
+        !e.transformMate ||
+        remote[i]!.exercise.id !== e.transformMate.exerciseId
+      )
+        throw new Error('Unsupported projection');
+      if (
+        remote[i]!.metrics.filter((m) => m.type === 'plan').length !== 1 ||
+        remote[i]!.metrics.filter((m) => m.type === 'fact').length !== 1
+      )
+        throw new Error('Unsupported projection');
+      return [
+        e.transformMate.occurrenceKey,
+        { wire: remote[i]!, body: fresh.protocols[0]!.workout_exercises[i]! },
+      ];
+    }),
+  );
+  if (
+    byKey.size !== previous.exercises.length ||
+    new Set(desired.exercises.map((e) => e.transformMate?.occurrenceKey))
+      .size !== desired.exercises.length
+  )
+    throw new Error('Unsupported projection');
+  const templates: ((typeof remote)[number] | undefined)[] = [];
+  fresh.name = desired.title;
+  fresh.date = desired.date;
+  fresh.protocols[0]!.workout_exercises = desired.exercises.map((e, i) => {
+    if (!e.transformMate) throw new Error('Unsupported projection');
+    const candidate = byKey.get(e.transformMate.occurrenceKey);
+    const matched =
+      candidate?.wire.exercise.id === e.transformMate.exerciseId
+        ? candidate
+        : undefined;
+    templates[i] = matched?.wire;
+    const projected = createProjection(
+      { ...desired, exercises: [e] },
+      training.description,
+    ).protocols[0]!.workout_exercises[0]!;
+    if (!matched) return projected;
+    const existing = matched.body;
+    const oldPlan = existing.metrics.find((m) => m.type === 'plan')!;
+    const oldFact = existing.metrics.find((m) => m.type === 'fact')!;
+    const newPlan = projected.metrics.find((m) => m.type === 'plan')!;
+    existing.comment = e.comment ?? '';
+    existing.exercise_metrics = projected.exercise_metrics;
+    oldPlan.sets = newPlan.sets.map((next, index) => {
+      const prior = oldPlan.sets[index];
+      if (!prior) return next;
+      return {
+        ...prior,
+        set_metrics: next.set_metrics.map((metric) => {
+          const old = prior.set_metrics.find(
+            (m) => m.measure === metric.measure,
+          );
+          return {
+            ...metric,
+            ...(old?.id ? { id: old.id } : {}),
+            metric_values: metric.metric_values.map((v, vi) => ({
+              ...v,
+              ...(old?.metric_values[vi]?.id
+                ? { id: old.metric_values[vi]!.id }
+                : {}),
+            })),
+          };
+        }),
+      };
+    });
+    oldFact.sets = newPlan.sets.map(
+      (_, index) =>
+        oldFact.sets[index] ?? {
+          is_done: false,
+          techniques: [],
+          set_metrics: [],
+        },
+    );
+    return existing;
+  });
+  // Build the expected semantic projection while retaining response metadata labels/references.
+  const projection = JSON.stringify({
+    name: fresh.name,
+    description: fresh.description,
+    date: fresh.date,
+    protocols: [
+      {
+        order: 1,
+        exercises: fresh.protocols[0]!.workout_exercises.map((e, i) => ({
+          order: i + 1,
+          exercise: e.exercise,
+          comment: e.comment,
+          target: templates[i]?.target_indication ?? null,
+          video: e.videoreport_required ?? false,
+          warmup: templates[i]?.warmup_metrics ?? {},
+          planGroups: 1,
+          measures: [...e.exercise_metrics].sort((a, b) => a - b),
+          sets: e.metrics
+            .find((m) => m.type === 'plan')!
+            .sets.map((set, si) => ({
+              order: si + 1,
+              techniques:
+                templates[i]?.metrics
+                  .find((m) => m.type === 'plan')
+                  ?.sets.slice()
+                  .sort((a, b) => a.order - b.order)[si]?.techniques ??
+                set.techniques ??
+                [],
+              metrics: set.set_metrics.map((m) => ({
+                measure: m.measure,
+                type: m.type ?? 'straight',
+                values: m.metric_values.map((v) => v.value),
+              })),
+            })),
+        })),
+      },
+    ],
+  });
+  projectionFingerprint(projection);
+  return { body: fresh, projection };
 }

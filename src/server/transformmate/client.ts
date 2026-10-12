@@ -61,14 +61,17 @@ export function createTransformMateClient(options: {
     path: string,
     method = 'GET',
     data?: unknown,
+    allowAuthReplay = true,
+    beforeSend?: () => Promise<void>,
   ): Promise<RawResponse> {
     let idToken = await getToken();
     for (let attempt = 0; attempt < 2; attempt++) {
       if (!idToken.trim() || /\s/.test(idToken))
         throw new Error('Invalid Firebase ID token');
       redactor.add(idToken);
+      await beforeSend?.();
       const raw = await request(path, idToken, method, data);
-      if (raw.status === 401 && attempt === 0) {
+      if (raw.status === 401 && attempt === 0 && allowAuthReplay) {
         idToken = await getToken(true);
         continue;
       }
@@ -174,8 +177,10 @@ export function createTransformMateClient(options: {
     schema: z.ZodType<T>,
     method = 'GET',
     data?: unknown,
+    allowAuthReplay = true,
+    beforeSend?: () => Promise<void>,
   ): Promise<RawResponse<T>> {
-    const response = await get(path, method, data);
+    const response = await get(path, method, data, allowAuthReplay, beforeSend);
     const parsed = schema.safeParse(response.body);
     if (!response.isJson || !parsed.success) {
       // Do not expose payload values or validation issues in errors.
@@ -273,13 +278,36 @@ export function createTransformMateClient(options: {
         throw new Error('Invalid TransformMate exercise ID');
       return validated(`exercises/${id}/`, transformMateExerciseDetailSchema);
     },
-    createTraining: (input: CreateTrainingInput) =>
+    createTraining: (
+      input: CreateTrainingInput,
+      beforeSend?: () => Promise<void>,
+    ) =>
       validated(
         'workouts/trainings/',
         mutationResponseSchema,
         'POST',
         parseWriteInput(createTrainingInputSchema, input),
+        false,
+        beforeSend,
       ),
+    /** Caller owns durable intent and fresh guard. Never replay this PATCH, including on 401. */
+    updateTrainingOnce: async (
+      id: number,
+      body: TrainingWriteBody,
+      beforeSend?: () => Promise<void>,
+    ) => {
+      const result = await validated(
+        detailPath(id),
+        mutationResponseSchema,
+        'PATCH',
+        parseWriteInput(createTrainingInputSchema, body),
+        false,
+        beforeSend,
+      );
+      if (result.body.id !== id)
+        throw new TransformMateResponseError(detailPath(id), result.status);
+      return result;
+    },
     updateTraining: (id: number, patch: UpdateTrainingInput) => {
       const input = parseWriteInput(updateTrainingInputSchema, patch);
       return mutate(id, (body) => Object.assign(body, input));

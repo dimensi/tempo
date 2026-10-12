@@ -6,10 +6,11 @@ import { transformMateSyncItemSchema } from '@/contracts/transformmate';
 import { authorize } from '@/server/auth/guards';
 import { getDatabase } from '@/server/db';
 import {
-  getTransformMateClient,
   isTransformMateConfigured,
+  getTransformMateConnectionFence,
 } from '@/server/transformmate/runtime';
 import { workoutRepository } from '@/server/workouts/repository';
+import { TransformMateStorageError } from '@/server/transformmate/token-store';
 import { syncRepository } from './repository';
 import { serializeOwner, syncEngine } from './engine';
 
@@ -29,8 +30,35 @@ function context(headers: Headers, ownerId: string) {
   const plans = () => workoutRepository(db).list(ownerId).plans;
   return { access, repository, plans };
 }
-async function publishSavedPlan(
+async function loadEngine(
   contextValue: ReturnType<typeof context>,
+  ownerId: string,
+) {
+  await contextValue.access('workouts:read');
+  try {
+    const fence = await getTransformMateConnectionFence(ownerId);
+    await contextValue.access('workouts:read');
+    await fence?.assertCurrent();
+    return {
+      ...contextValue,
+      client: fence?.client ?? null,
+      checkConnection: fence?.assertCurrent,
+      connectionId: fence?.generation,
+    };
+  } catch (error) {
+    await contextValue.access('workouts:read');
+    if (!(error instanceof TransformMateStorageError)) throw error;
+    // A broken connection must not prevent a permitted local save. Stale epochs still reject.
+    return {
+      ...contextValue,
+      client: null,
+      checkConnection: undefined,
+      connectionId: undefined,
+    };
+  }
+}
+async function publishSavedPlan(
+  contextValue: Awaited<ReturnType<typeof loadEngine>>,
   ownerId: string,
   plan: WorkoutPlan,
 ) {
@@ -44,11 +72,11 @@ async function publishSavedPlan(
         p.revision === plan.revision,
     );
   if (!current) return;
+  await contextValue.access('workouts:plan');
+  await contextValue.checkConnection?.();
+  await contextValue.access('workouts:plan');
   contextValue.repository.ensure(ownerId, current);
-  const engine = syncEngine({
-    ...contextValue,
-    client: getTransformMateClient(),
-  });
+  const engine = syncEngine(contextValue);
   for (const link of contextValue.repository
     .list(ownerId)
     .filter((l) => l.planId === plan.id))
@@ -63,7 +91,11 @@ export async function saveAndSyncWorkoutPlan(
   save: () => WorkoutPlan,
 ): Promise<WorkoutPlan> {
   return serializeOwner(ownerId, async () => {
-    const contextValue = context(headers, ownerId);
+    const base = context(headers, ownerId);
+    await base.access('workouts:plan');
+    const contextValue = await loadEngine(base, ownerId);
+    await contextValue.access('workouts:plan');
+    await contextValue.checkConnection?.();
     await contextValue.access('workouts:plan');
     const plan = save();
     await publishSavedPlan(contextValue, ownerId, plan);
@@ -77,8 +109,9 @@ export async function syncSavedPlan(
   plan: WorkoutPlan,
 ): Promise<void> {
   await serializeOwner(ownerId, async () => {
-    const contextValue = context(headers, ownerId);
-    await contextValue.access('workouts:plan');
+    const base = context(headers, ownerId);
+    await base.access('workouts:plan');
+    const contextValue = await loadEngine(base, ownerId);
     await publishSavedPlan(contextValue, ownerId, plan);
   });
 }
@@ -98,6 +131,24 @@ export async function listTransformMateSync(
         planTitle: link.state.planTitle,
         workout: link.state.workout,
       },
+      ...(link.state.published
+        ? {
+            publishedSnapshot: {
+              planTitle: link.state.published.planTitle,
+              workout: link.state.published.workout,
+            },
+          }
+        : {}),
+      ...(link.state.updateAttempt
+        ? {
+            updateAttempt: {
+              id: link.state.updateAttempt.id,
+              phase: link.state.updateAttempt.phase,
+              createdAt: link.state.updateAttempt.createdAt,
+              checkedAt: link.state.updateAttempt.checkedAt,
+            },
+          }
+        : {}),
       status: link.state.status,
       reason: link.state.reason,
       checkedAt: link.state.checkedAt,
@@ -105,7 +156,14 @@ export async function listTransformMateSync(
     }),
   );
   await access('workouts:read');
-  return { configured: isTransformMateConfigured(), items };
+  let configured = false;
+  try {
+    configured = await isTransformMateConfigured(ownerId);
+  } catch (error) {
+    if (!(error instanceof TransformMateStorageError)) throw error;
+  }
+  await access('workouts:read');
+  return { configured, items };
 }
 export async function refreshTransformMateSync(
   headers: Headers,
@@ -114,10 +172,7 @@ export async function refreshTransformMateSync(
   return serializeOwner(ownerId, async () => {
     const contextValue = context(headers, ownerId);
     await contextValue.access('workouts:read');
-    const engine = syncEngine({
-      ...contextValue,
-      client: getTransformMateClient(),
-    });
+    const engine = syncEngine(await loadEngine(contextValue, ownerId));
     for (const link of contextValue.repository.list(ownerId))
       await engine.process(link);
     return listTransformMateSync(headers, ownerId);

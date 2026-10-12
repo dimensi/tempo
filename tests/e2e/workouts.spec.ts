@@ -19,6 +19,8 @@ async function login(page: Page, role: 'owner' | 'trainer' = 'owner') {
         result.headers()['retry-after'] ??
         10,
     );
+    // A legitimate server-directed wait must not consume the CRUD assertion budget.
+    test.setTimeout(test.info().timeout + (seconds + 1) * 1000);
     await page.waitForTimeout((seconds + 1) * 1000);
     response = page.waitForResponse((value) =>
       value.url().endsWith('/api/auth/sign-in/email'),
@@ -38,6 +40,8 @@ async function ownerId(page: Page) {
     );
     const seconds = Number.isFinite(value) && value >= 0 ? value : 10;
     console.info('Workout session lookup: one retry after HTTP 429');
+    // A legitimate server-directed wait must not consume the CRUD assertion budget.
+    test.setTimeout(test.info().timeout + (seconds + 1) * 1000);
     await page.waitForTimeout((seconds + 1) * 1000);
     result = await page.request.get('/api/auth/get-session');
   }

@@ -18,6 +18,14 @@ The home override removes the host port and joins existing external network `web
 
 The approved active path is `/app/data/yazio-token.json`, private to node in the database volume, outside public/uploads; activation was performed separately by the coordinator. Atomic connection files use mode 0600. Preserve the same existing `BETTER_AUTH_SECRET` and owner ID across restart/restore. Legacy plaintext files are rejected; an explicitly approved migration or reconnection is required. Secret rotation also requires an explicit migration/reconnect. The UI explains disabled fields while the operator setting is absent. Confirmed disconnect removes the stored token pair using an encrypted tombstone and retains diary/photos.
 
+TransformMate uses the same existing database volume at `TRANSFORMMATE_TOKEN_FILE=/app/data/transformmate-token.json`.
+Only this path is configured by the operator; the OWNER enters their own Firebase credentials over
+HTTPS at `/settings#transformmate`. Runtime provider credentials are not read from environment.
+The separately encrypted TransformMate file uses the existing auth secret with a distinct provider
+purpose and owner binding. Include this optional ciphertext file, including a disconnect tombstone,
+in the matching private backup with mode 0600; preserve the auth secret and owner ID. Never decrypt,
+log or transfer its contents. See [connection details](architecture/transformmate-secure-connection.md).
+
 ## Runtime and owner bootstrap
 
 The image runs as non-root node and applies versioned migrations before serving. It includes standalone Next.js, bundled operator CLI, SQLite, the vendored SDK, Chromium matched to locked Playwright, and DejaVu font. `/api/health` reads the DB. PDF product reports are merged in main alongside browser/font readiness. Verify availability against the actual deployed release.
@@ -50,7 +58,7 @@ docker compose -p nutrition -f compose.yaml -f compose.home.yaml --env-file runt
 
 Export the backup from the volume to protected off-host storage. Verify `PRAGMA integrity_check` and expected records. SQLite online backup does not include the encrypted connection file. If configured, copy that file with mode 0600 into the protected backup set alongside DB/uploads, preserve the existing auth secret in the protected configuration backup, and retain owner identity. Encrypted file and key/configuration must be restored together. Never export decrypted tokens. See the [database guide](architecture/database.md).
 
-An online DB backup and separate live upload/token copies are not a cross-resource atomic snapshot. For a matching backup set, quiesce all writers and wait for in-flight sync/photo/connection work, take the online DB backup and archive uploads plus the optional encrypted connection file/configuration before reopening writes. Stopping the app for the backup window is the simplest procedure; the bundled backup CLI can run in a one-off container against the same stopped stack volumes. Record revision, image digest and backup time. Validate referenced photos and rehearse restore on disposable volumes.
+An online DB backup and separate live upload/token copies are not a cross-resource atomic snapshot. For a matching backup set, quiesce all writers and wait for in-flight sync/photo/connection work, take the online DB backup and archive uploads plus both optional encrypted YAZIO/TransformMate connection files and configuration before reopening writes. Stopping the app for the backup window is the simplest procedure; the bundled backup CLI can run in a one-off container against the same stopped stack volumes. Record revision, image digest and backup time. Validate referenced photos and rehearse restore on disposable volumes.
 
 For rollback, stop the app, preserve the current DB/uploads, and choose the saved release image. If the schema is incompatible, restore that release's matching verified DB/upload backup while stopped, preserve ownership and configuration, then restart and validate health/authentication/photos. Remove obsolete WAL/SHM files only while the database is closed. Older images do not reverse migrations. Retain volumes and release images; never use `down -v` on the production project.
 

@@ -234,8 +234,20 @@ describe.each(operations)('$name', (operation) => {
         : { body: { id: 101 } },
     );
   });
-  it('refreshes and repeats the identical write only once on 401', async () => {
+  it('uses the operation-specific 401 policy without replaying creation', async () => {
     const { client, request, provider } = setup(401);
+    if (operation.name === 'createTraining') {
+      await expect(operation.run(client)).rejects.toMatchObject({
+        status: 401,
+      });
+      expect(
+        request.mock.calls.filter((call) => call[1]?.method === 'POST'),
+      ).toHaveLength(1);
+      expect(
+        provider.getIdToken.mock.calls.some((call) => call[0]?.forceRefresh),
+      ).toBe(false);
+      return;
+    }
     await operation.run(client);
     const writes = request.mock.calls.filter(
       (call) => call[1]?.method !== 'GET',
@@ -249,15 +261,15 @@ describe.each(operations)('$name', (operation) => {
       provider.getIdToken.mock.calls.filter((call) => call[0]?.forceRefresh),
     ).toHaveLength(1);
   });
-  it('stops after a second 401', async () => {
+  it('does not exceed the operation-specific 401 attempt limit', async () => {
     const { client, request, provider } = setup(401, true);
     await expect(operation.run(client)).rejects.toMatchObject({ status: 401 });
     expect(
       request.mock.calls.filter((call) => call[1]?.method !== 'GET'),
-    ).toHaveLength(2);
+    ).toHaveLength(operation.name === 'createTraining' ? 1 : 2);
     expect(
       provider.getIdToken.mock.calls.filter((call) => call[0]?.forceRefresh),
-    ).toHaveLength(1);
+    ).toHaveLength(operation.name === 'createTraining' ? 0 : 1);
   });
   it.each([400, 403, 500])(
     'does not retry HTTP %s and redacts error credentials',

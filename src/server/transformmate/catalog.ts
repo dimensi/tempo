@@ -34,8 +34,9 @@ export async function listExercises(
 ) {
   await requireCatalogAccess(headers, ownerId);
   const q = z.string().max(200).parse(query).trim().toLocaleLowerCase('ru');
-  const client = getTransformMateClient();
+  const client = await getTransformMateClient(ownerId);
   if (!client) throw new CatalogError(503);
+  await requireCatalogAccess(headers, ownerId);
   const result = await client.listExercises();
   await requireCatalogAccess(headers, ownerId);
   return result.body
@@ -55,8 +56,9 @@ export async function getExercise(
   id: number,
 ) {
   await requireCatalogAccess(headers, ownerId);
-  const client = getTransformMateClient();
+  const client = await getTransformMateClient(ownerId);
   if (!client) throw new CatalogError(503);
+  await requireCatalogAccess(headers, ownerId);
   const result = await client.getExercise(id);
   await requireCatalogAccess(headers, ownerId);
   if (result.body.id !== id) throw new CatalogError(502);
