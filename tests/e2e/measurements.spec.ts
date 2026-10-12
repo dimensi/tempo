@@ -135,10 +135,7 @@ test('owner creates, edits and deletes a manual measurement on mobile and deskto
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/login');
-  await page
-    .getByRole('main')
-    .getByLabel('Электронная почта')
-    .fill('owner@example.test');
+  await page.getByLabel('Электронная почта').fill('owner@example.test');
   await page
     .getByRole('textbox', { name: 'Пароль', exact: true })
     .fill('Test-only-password-12345');
