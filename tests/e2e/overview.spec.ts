@@ -1,3 +1,4 @@
+import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import {
@@ -48,15 +49,14 @@ test('real overview shows empty, partial and populated data with local dates and
   page,
   browser,
 }, info) => {
+  test.setTimeout(180000);
   const today = dateInTimezone(new Date(), timezone);
   fixture(today, 'backup');
   expect((await page.request.get('/api/overview?timezone=UTC')).status()).toBe(
     401,
   );
   await login(page);
-  const session = await (
-    await page.request.get('/api/auth/get-session')
-  ).json();
+  const session = await getSessionWith429Retry(page.request);
   const ownerId = session.user.id;
   const headers = { origin: new URL(page.url()).origin };
   await page.route('**/api/overview?*', (route) =>
