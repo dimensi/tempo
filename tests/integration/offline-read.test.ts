@@ -13,6 +13,8 @@ vi.mock('@/server/db', () => ({ getDatabase: () => database }));
 import { getAuth } from '@/server/auth';
 import * as images from '@/server/nutrition/images';
 import * as repository from '@/server/offline/repository';
+import * as guards from '@/server/auth/guards';
+import { fileTransformMateTokenStore } from '@/server/transformmate/token-store';
 import { GET as identityGET } from '@/app/api/offline/identity/route';
 import { GET as snapshotGET } from '@/app/api/offline/snapshot/route';
 import { GET as photoGET } from '@/app/api/offline/photos/[opaque]/route';
@@ -357,6 +359,93 @@ it('snapshot post-read session revocation and connection changes fail closed', a
     },
   });
   expect((await snapshotGET(request(ownerHeaders))).status).toBe(409);
+});
+it('disconnect/reconnect during final authorization cannot release stale TM generation for identity/snapshot/photo', async () => {
+  const file = join(directory, 'missing-tm.json');
+  const secret = 'offline-only-synthetic-secret-at-least-32-characters';
+  const store = fileTransformMateTokenStore(file, ownerId, secret);
+  await store.load();
+  const token = {
+    connectionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    apiKey: 'synthetic',
+    refreshToken: 'synthetic',
+    userId: 'synthetic',
+    projectId: 'synthetic',
+    account: { id: 1, name: null, email: null },
+    checkedAt: '2026-10-12T12:00:00Z',
+  };
+  const original = guards.authorize;
+  for (const action of ['disconnect', 'reconnect'] as const)
+    for (const mode of ['identity', 'snapshot', 'photo'] as const) {
+      await store.save({
+        ...token,
+        connectionId:
+          mode === 'identity'
+            ? 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+            : mode === 'snapshot'
+              ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+              : 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      });
+      const snapshot = await (await snapshotGET(request(ownerHeaders))).json();
+      const photo = snapshot.photos.items[0];
+      let count = 0;
+      vi.spyOn(guards, 'authorize').mockImplementation(async (...args) => {
+        const access = await original(...args);
+        if (++count === (mode === 'identity' ? 6 : 12)) {
+          if (action === 'disconnect') await store.disconnect();
+          else
+            await store.save({
+              ...token,
+              connectionId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+            });
+        }
+        return access;
+      });
+      vi.spyOn(images, 'readImage').mockResolvedValue(
+        Buffer.from('synthetic-private-bytes'),
+      );
+      const response =
+        mode === 'identity'
+          ? await identityGET(request(ownerHeaders, 'identity'))
+          : mode === 'snapshot'
+            ? await snapshotGET(request(ownerHeaders))
+            : await photoGET(
+                new Request('http://localhost' + photo.downloadUrl, {
+                  headers: ownerHeaders,
+                }),
+                { params: Promise.resolve({ opaque: photo.id }) },
+              );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        error: 'OFFLINE_CONNECTION_CHANGED',
+      });
+      vi.restoreAllMocks();
+    }
+});
+it('session expiry shortened during final authorization caps TTL even when a later check renews it', async () => {
+  const original = guards.authorize;
+  const expiry = Date.now() + 60000;
+  let count = 0;
+  vi.spyOn(guards, 'authorize').mockImplementation(async (...args) => {
+    const access = await original(...args);
+    if (++count === 10 && access.ok) {
+      database.sqlite
+        .prepare('UPDATE session SET expires_at = ? WHERE id = ?')
+        .run(expiry, access.session.session.id);
+      const current = await getAuth().api.getSession({
+        headers: args[0],
+        query: { disableRefresh: true },
+      });
+      expect(current).not.toBeNull();
+      return { ...access, session: current! };
+    }
+    return access;
+  });
+  const response = await snapshotGET(request(ownerHeaders));
+  expect(response.status).toBe(200);
+  const value = await response.json();
+  expect(Date.parse(value.sessionExpiresAt)).toBe(expiry);
+  expect(Date.parse(value.expiresAt)).toBe(expiry);
 });
 it('identity caps offline expiry at the actual session expiry after normal auth refresh', async () => {
   const expiry = Date.now() + 60000;

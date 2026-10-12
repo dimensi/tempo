@@ -5,7 +5,10 @@ import { z } from 'zod';
 import { getAuth } from '@/server/auth';
 import { authorize } from '@/server/auth/guards';
 import { readServerEnv } from '@/server/env';
-import { readTransformMateOfflineBinding } from '@/server/transformmate/token-store';
+import {
+  readTransformMateOfflineBinding,
+  transformMateOfflineBindingRevision,
+} from '@/server/transformmate/token-store';
 import { readImage } from '@/server/nutrition/images';
 import {
   offlineIdentitySchema,
@@ -35,6 +38,7 @@ function checkSession(
     throw new OfflineError(403, 'OFFLINE_ACCESS_DENIED');
 }
 async function guard(headers: Headers, expected: Session) {
+  let latest = expected;
   for (const permission of [
     'nutrition:read',
     'measurements:read',
@@ -44,13 +48,26 @@ async function guard(headers: Headers, expected: Session) {
     if (!access.ok)
       throw new OfflineError(access.status, 'OFFLINE_ACCESS_DENIED');
     checkSession(access.session, expected);
+    latest = {
+      ...access.session,
+      session: {
+        ...access.session.session,
+        expiresAt: new Date(
+          Math.min(
+            new Date(latest.session.expiresAt).getTime(),
+            new Date(access.session.session.expiresAt).getTime(),
+          ),
+        ),
+      },
+    };
+    checkSession(latest, expected);
   }
+  return latest;
 }
 async function owner(headers: Headers) {
   const session = await getAuth().api.getSession({ headers });
   checkSession(session);
-  await guard(headers, session);
-  return session;
+  return guard(headers, session);
 }
 function hash(secret: string, purpose: string, values: unknown[]) {
   return createHmac('sha256', secret)
@@ -74,7 +91,7 @@ async function identityContext(headers: Headers, session: Session) {
     session.user.id,
     secret,
   );
-  await guard(headers, session);
+  session = await guard(headers, session);
   const repo = offlineRepository();
   const epoch = repo.generation(session.user.id);
   const now = Date.now();
@@ -96,7 +113,31 @@ async function identityContext(headers: Headers, session: Session) {
       Math.min(now + offlineLimits.lifetimeMs, sessionExpires),
     ).toISOString(),
   });
-  return { identity, repo, secret, epoch };
+  const context = {
+    identity,
+    repo,
+    secret,
+    epoch,
+    path,
+    tmRevision: tm.revision,
+    session,
+  };
+  assertRelease(context);
+  return context;
+}
+function assertRelease(context: {
+  repo: ReturnType<typeof offlineRepository>;
+  epoch: number;
+  path: string;
+  tmRevision: number;
+  session: Session;
+}) {
+  checkSession(context.session);
+  if (
+    context.repo.generation(context.session.user.id) !== context.epoch ||
+    transformMateOfflineBindingRevision(context.path) !== context.tmRevision
+  )
+    throw new OfflineError(409, 'OFFLINE_CONNECTION_CHANGED');
 }
 function strictQuery(url: URL, names: string[]) {
   for (const key of url.searchParams.keys())
@@ -108,7 +149,9 @@ function strictQuery(url: URL, names: string[]) {
 export async function offlineIdentity(headers: Headers, url: URL) {
   strictQuery(url, []);
   const session = await owner(headers);
-  return (await identityContext(headers, session)).identity;
+  const context = await identityContext(headers, session);
+  assertRelease(context);
+  return context.identity;
 }
 export async function offlineSnapshot(headers: Headers, url: URL) {
   strictQuery(url, ['from', 'to']);
@@ -116,11 +159,12 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
     Object.fromEntries(url.searchParams),
   );
   if (!period.success) throw new OfflineError(400, 'OFFLINE_INVALID_REQUEST');
-  const session = await owner(headers);
+  let session = await owner(headers);
   const context = await identityContext(headers, session);
+  session = context.session;
   const { from, to } = period.data;
   const rows = context.repo.read(session.user.id, from, to);
-  await guard(headers, session);
+  session = await guard(headers, session);
   const after = await identityContext(headers, session);
   if (
     after.identity.connectionGeneration !==
@@ -249,8 +293,7 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
   )
     throw new OfflineError(413, 'OFFLINE_LIMIT_EXCEEDED');
   // No awaits after final fence and synchronous projection.
-  if (context.repo.generation(session.user.id) !== context.epoch)
-    throw new OfflineError(409, 'OFFLINE_CONNECTION_CHANGED');
+  assertRelease(after);
   return data;
 }
 export async function offlinePhoto(headers: Headers, url: URL, opaque: string) {
@@ -259,8 +302,9 @@ export async function offlinePhoto(headers: Headers, url: URL, opaque: string) {
     throw new OfflineError(400, 'OFFLINE_INVALID_REQUEST');
   const date = z.iso.date().safeParse(url.searchParams.get('date'));
   if (!date.success) throw new OfflineError(400, 'OFFLINE_INVALID_REQUEST');
-  const session = await owner(headers);
+  let session = await owner(headers);
   const context = await identityContext(headers, session);
+  session = context.session;
   const find = () =>
     context.repo
       .photoCandidates(session.user.id, date.data)
@@ -275,7 +319,7 @@ export async function offlinePhoto(headers: Headers, url: URL, opaque: string) {
   const photo = find();
   if (!photo) throw new OfflineError(404, 'OFFLINE_UNAVAILABLE');
   const bytes = await readImage(photo.storageKey);
-  await guard(headers, session);
+  session = await guard(headers, session);
   const after = await identityContext(headers, session);
   if (
     after.identity.connectionGeneration !==
@@ -285,5 +329,6 @@ export async function offlinePhoto(headers: Headers, url: URL, opaque: string) {
     throw new OfflineError(409, 'OFFLINE_CONNECTION_CHANGED');
   if (bytes.byteLength > 10 * 1024 * 1024)
     throw new OfflineError(413, 'OFFLINE_LIMIT_EXCEEDED');
+  assertRelease(after);
   return { bytes, contentType: photo.mime };
 }

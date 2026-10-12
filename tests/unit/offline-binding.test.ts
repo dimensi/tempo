@@ -15,7 +15,7 @@ test('local binding stays stable across refresh, changes on reconnect, and clear
   try {
     expect(
       await readTransformMateOfflineBinding(file, 'owner', secret),
-    ).toEqual({ configured: false, connectionId: null });
+    ).toMatchObject({ configured: false, connectionId: null, revision: 0 });
     const store = fileTransformMateTokenStore(file, 'owner', secret);
     await store.load();
     const token = {
@@ -37,11 +37,19 @@ test('local binding stays stable across refresh, changes on reconnect, and clear
     expect(
       await readTransformMateOfflineBinding(file, 'owner', secret),
     ).toEqual(first);
-    expect(Object.keys(first).sort()).toEqual(['configured', 'connectionId']);
+    expect(Object.keys(first).sort()).toEqual([
+      'configured',
+      'connectionId',
+      'revision',
+    ]);
     await store.disconnect();
     expect(
       await readTransformMateOfflineBinding(file, 'owner', secret),
-    ).toEqual({ configured: false, connectionId: null });
+    ).toMatchObject({
+      configured: false,
+      connectionId: null,
+      revision: first.revision + 1,
+    });
     await store.save({ ...token, connectionId: randomUUID() });
     expect(
       await readTransformMateOfflineBinding(file, 'owner', secret),
