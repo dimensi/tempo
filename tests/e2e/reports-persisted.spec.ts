@@ -56,6 +56,12 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
   ).json();
   const ownerId = ownerSession.user.id as string;
   const origin = new URL(page.url()).origin;
+  const requestedFormats: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === '/api/reports')
+      requestedFormats.push(url.searchParams.get('format')!);
+  });
   const date =
     test.info().project.name === 'desktop' ? '2026-02-03' : '2026-02-04';
   const scopedQuery = new URLSearchParams({
@@ -113,6 +119,14 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       page.getByRole('heading', { name: 'Отчёты', exact: true }),
     ).toBeVisible();
     await expect(page.getByLabel('Начало')).toHaveValue('2026-10-12');
+    await page.getByLabel('Начало').fill('10000-01-01');
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Проверьте даты' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Отчёты', exact: true }),
+    ).toBeVisible();
+    await page.getByLabel('Начало').fill('2026-10-12');
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page
       .getByRole('option', { name: 'Произвольный период', exact: true })
@@ -185,7 +199,9 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'День', exact: true }).click();
     await page.getByLabel('Начало').fill(date);
-    await page.getByRole('button', { name: 'Предпросмотр HTML' }).click();
+    await expect(
+      page.getByRole('button', { name: 'Предпросмотр HTML' }),
+    ).toHaveCount(0);
     const preview = page.frameLocator('iframe[title="Предпросмотр HTML"]');
     await expect(
       preview.getByText('Яйцо · запись 1', { exact: true }),
@@ -198,11 +214,73 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
+    await page.screenshot({
+      path: test.info().outputPath('reports-autoload-preview.png'),
+      fullPage: true,
+    });
+    const previewRequests: string[] = [];
+    let releaseStale!: () => void;
+    const staleReady = new Promise<void>((resolve) => {
+      releaseStale = resolve;
+    });
+    await page.route('**/api/reports?**', async (route) => {
+      const url = new URL(route.request().url());
+      previewRequests.push(
+        url.searchParams.get('format')! + ':' + url.searchParams.get('start'),
+      );
+      if (url.searchParams.get('start') === '2026-02-05') await staleReady;
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: `<html><body>Synthetic preview ${url.searchParams.get('start')}</body></html>`,
+      });
+    });
+    try {
+      await page.getByLabel('Начало').fill('2026-02-05');
+      await expect
+        .poll(() => previewRequests.includes('html:2026-02-05'))
+        .toBe(true);
+      await expect(
+        preview.getByText('Яйцо · запись 1', { exact: true }),
+      ).toBeVisible();
+      await page.getByLabel('Начало').fill('2026-02-06');
+      await page.getByLabel('Начало').fill('2026-02-07');
+      await page.getByLabel('Начало').fill('2026-02-08');
+      await expect(
+        preview.getByText('Synthetic preview 2026-02-08'),
+      ).toBeVisible();
+      releaseStale();
+      await expect(
+        preview.getByText('Synthetic preview 2026-02-08'),
+      ).toBeVisible();
+      expect(previewRequests).toEqual(['html:2026-02-05', 'html:2026-02-08']);
+      await page
+        .getByRole('button', {
+          name: 'понедельник, 2 февраля 2026 г.',
+          exact: true,
+        })
+        .click();
+      await expect(page.getByLabel('Начало')).toHaveValue('2026-02-02');
+      await expect(
+        preview.getByText('Synthetic preview 2026-02-02'),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Сегодня', exact: true }).click();
+      await expect(page.getByLabel('Начало')).toHaveValue('2026-10-12');
+    } finally {
+      releaseStale();
+      await page.unroute('**/api/reports?**');
+    }
+    await page.getByLabel('Начало').fill(date);
+    await expect(
+      preview.getByText('Яйцо · запись 1', { exact: true }),
+    ).toBeVisible();
+
     expect(
       (
         await page.request.get(`/api/reports?ownerId=another-owner&${query}`)
       ).status(),
     ).toBe(403);
+    expect(requestedFormats.every((format) => format === 'html')).toBe(true);
     const pendingDownload = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Скачать PDF' }).click();
     const download = await pendingDownload;
@@ -222,6 +300,14 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     });
     const crop = embeddedImages.match(/image\s+(\d+)\s+(\d+)/)!;
     expect(Math.abs(Number(crop[1]) - Number(crop[2]))).toBeLessThanOrEqual(1);
+    const htmlRequestsAfterDownload = requestedFormats.filter(
+      (format) => format === 'html',
+    ).length;
+    // Cover the debounce window: completion must not spawn a redundant preview.
+    await page.waitForTimeout(500);
+    expect(requestedFormats.filter((format) => format === 'html')).toHaveLength(
+      htmlRequestsAfterDownload,
+    );
     const signIn = () =>
       context.request.post(`${origin}/api/auth/sign-in/email`, {
         headers: { origin },
@@ -271,7 +357,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       await trainerPage.goto(`${origin}/reports`, { waitUntil: 'commit' });
       await expect(trainerPage.getByLabel('Начало')).toBeDisabled();
       await expect(
-        trainerPage.getByRole('button', { name: 'Предпросмотр HTML' }),
+        trainerPage.getByRole('button', { name: 'Скачать PDF' }),
       ).toBeDisabled();
     } finally {
       releaseScripts();
@@ -281,9 +367,6 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       0,
     );
     await trainerPage.getByLabel('Начало').fill(date);
-    await trainerPage
-      .getByRole('button', { name: 'Предпросмотр HTML' })
-      .click();
     await expect(
       trainerPage
         .frameLocator('iframe')

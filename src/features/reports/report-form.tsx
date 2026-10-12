@@ -10,6 +10,8 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
+import { DateNavigation } from '@/components/shared/date-navigation';
+import { browserToday } from '@/components/shared/date-navigation-dates';
 import { reportRequestSchema } from '@/contracts/reports';
 import { reportMessages as m } from './messages';
 import { weeklyRange } from './weekly-range';
@@ -26,12 +28,25 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
   const [end, setEnd] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [html, setHtml] = useState('');
+  const [downloading, setDownloading] = useState(false);
+  const [previewRange, setPreviewRange] = useState('');
+  const [preview, setPreview] = useState<{
+    ownerId: string;
+    html: string;
+  } | null>(null);
+  const html = preview?.ownerId === ownerId ? preview.html : '';
+  const successfulPreviewKey = useRef('');
   const pending = useRef<AbortController | null>(null);
-  useEffect(() => () => pending.current?.abort(), []);
+  const downloadPending = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      pending.current?.abort();
+      downloadPending.current?.abort();
+    },
+    [],
+  );
   if (ready && (start === null || end === null)) {
-    const today = new Date();
-    const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const localToday = browserToday();
     if (start === null) setStart(localToday);
     if (end === null) setEnd(localToday);
   }
@@ -43,51 +58,111 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
       : period === 'weekly'
         ? (week?.end ?? '')
         : (end ?? '');
-  async function generate(format: 'html' | 'pdf') {
-    setError('');
-    setHtml('');
+  useEffect(() => {
+    const controller = new AbortController();
+    pending.current = controller;
+    // Coalesce date edits before entering the measured Chromium pipeline.
+    const timer = setTimeout(async () => {
+      if (!ready || ownerId === null || downloading) return;
+      const parsed = reportRequestSchema.safeParse({
+        ownerId,
+        period,
+        start: selectedStart,
+        end: finish,
+        format: 'html',
+      });
+      if (!parsed.success) {
+        setBusy(false);
+        setError(m.invalid);
+        return;
+      }
+      const query = new URLSearchParams({
+        ownerId,
+        period: parsed.data.period,
+        start: parsed.data.start,
+        end: parsed.data.end,
+        format: 'html',
+      });
+      // Returning from Download does not regenerate an already visible range.
+      if (successfulPreviewKey.current === query.toString()) {
+        setBusy(false);
+        return;
+      }
+      setError('');
+      setBusy(true);
+      try {
+        const response = await fetch(`/api/reports?${query}`, {
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+        if (!response.ok) {
+          const failure = await response.json();
+          if (!controller.signal.aborted) setError(failure.error ?? m.failed);
+          return;
+        }
+        const nextHtml = await response.text();
+        if (!controller.signal.aborted) {
+          successfulPreviewKey.current = query.toString();
+          setPreview({ ownerId, html: nextHtml });
+          setPreviewRange(`${parsed.data.start} — ${parsed.data.end}`);
+        }
+      } catch {
+        if (!controller.signal.aborted) setError(m.failed);
+      } finally {
+        if (!controller.signal.aborted) setBusy(false);
+      }
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [ready, ownerId, period, selectedStart, finish, downloading]);
+  async function download() {
     const parsed = reportRequestSchema.safeParse({
       ownerId: ownerId ?? '',
       period,
       start: selectedStart,
       end: finish,
-      format,
+      format: 'pdf',
     });
     if (!parsed.success) {
       setError(m.invalid);
       return;
     }
-    pending.current = new AbortController();
-    setBusy(true);
+    pending.current?.abort();
+    const controller = new AbortController();
+    downloadPending.current = controller;
+    setDownloading(true);
+    setBusy(false);
+    setError('');
     try {
-      const query = {
+      const query = new URLSearchParams({
         ownerId: parsed.data.ownerId,
         period: parsed.data.period,
         start: parsed.data.start,
         end: parsed.data.end,
-        format: parsed.data.format,
-      };
-      const response = await fetch(
-        `/api/reports?${new URLSearchParams(query)}`,
-        { signal: pending.current.signal, cache: 'no-store' },
-      );
+        format: 'pdf',
+      });
+      const response = await fetch(`/api/reports?${query}`, {
+        signal: controller.signal,
+        cache: 'no-store',
+      });
       if (!response.ok) {
         setError((await response.json()).error ?? m.failed);
         return;
       }
-      if (format === 'html') setHtml(await response.text());
-      else {
-        const url = URL.createObjectURL(await response.blob());
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `nutrition-${selectedStart}-${finish}.pdf`;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      }
+      const blob = await response.blob();
+      if (controller.signal.aborted) return;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `nutrition-${parsed.data.start}-${parsed.data.end}.pdf`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {
-      setError(m.failed);
+      if (!controller.signal.aborted) setError(m.failed);
     } finally {
-      setBusy(false);
+      if (!controller.signal.aborted) setDownloading(false);
     }
   }
   return (
@@ -107,7 +182,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         allowDeselect={false}
         onChange={(value) => {
           setPeriod(value ?? 'daily');
-          setHtml('');
+          setError('');
         }}
         data={[
           { value: 'daily', label: m.daily },
@@ -115,6 +190,18 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
           { value: 'custom', label: m.custom },
         ]}
       />
+      {week && (
+        <DateNavigation
+          key={selectedStart}
+          date={selectedStart}
+          labels={m}
+          onSelect={(value) => {
+            setStart(value);
+            setError('');
+          }}
+          disabled={!ready || ownerId === null}
+        />
+      )}
       <TextInput
         styles={inputStyles}
         disabled={!ready}
@@ -128,7 +215,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         value={selectedStart}
         onChange={(event) => {
           setStart(event.currentTarget.value);
-          setHtml('');
+          setError('');
         }}
         required
       />
@@ -141,7 +228,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
           value={end ?? ''}
           onChange={(event) => {
             setEnd(event.currentTarget.value);
-            setHtml('');
+            setError('');
           }}
           required
         />
@@ -153,24 +240,29 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
       )}
       <Group>
         <Button
+          styles={{ root: { fontSize: 16 } }}
           mih={44}
-          disabled={!ready || busy || ownerId === null}
-          onClick={() => void generate('html')}
-        >
-          {m.preview}
-        </Button>
-        <Button
-          mih={44}
-          loading={busy}
-          disabled={!ready || ownerId === null}
-          onClick={() => void generate('pdf')}
+          loading={downloading}
+          disabled={!ready || ownerId === null || busy}
+          onClick={() => void download()}
         >
           {m.download}
         </Button>
+        {busy && (
+          <Text role="status" c="dimmed">
+            {m.loadingPreview}
+          </Text>
+        )}
       </Group>
       {html && (
+        <Text size="sm" c="dimmed">
+          {m.preview}: {previewRange}
+        </Text>
+      )}
+      {ownerId !== null && (
         <iframe
           title={m.preview}
+          aria-busy={busy}
           sandbox=""
           srcDoc={html}
           style={{ width: '100%', height: 700, border: '1px solid #ccd4de' }}

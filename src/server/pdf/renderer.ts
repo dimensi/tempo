@@ -58,11 +58,15 @@ export async function prepareReportPage(page: Page, html: string) {
 export async function renderReport(
   html: string,
   format: 'html' | 'pdf',
+  signal?: AbortSignal,
 ): Promise<string | Uint8Array> {
   let browser: Browser | undefined;
+  let onAbort: (() => void) | undefined;
   let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
+    signal?.throwIfAborted();
     browser = await chromium.launch({ headless: true, timeout: 15000 });
+    signal?.throwIfAborted();
     const context = await browser.newContext({
       javaScriptEnabled: false,
       serviceWorkers: 'block',
@@ -84,6 +88,11 @@ export async function renderReport(
     return await Promise.race([
       operation(),
       new Promise<never>((_, reject) => {
+        onAbort = () => reject(signal?.reason ?? new Error('Aborted'));
+        signal?.addEventListener('abort', onAbort, { once: true });
+        if (signal?.aborted) onAbort();
+      }),
+      new Promise<never>((_, reject) => {
         deadline = setTimeout(
           () => reject(new ReportError('RUNTIME', 503)),
           25000,
@@ -91,8 +100,10 @@ export async function renderReport(
       }),
     ]);
   } catch {
+    signal?.throwIfAborted();
     throw new ReportError('RUNTIME', 503);
   } finally {
+    if (onAbort) signal?.removeEventListener('abort', onAbort);
     if (deadline) clearTimeout(deadline);
     await browser?.close();
   }

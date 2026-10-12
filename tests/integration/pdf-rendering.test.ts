@@ -6,10 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { syntheticDay } from '../unit/reports/fixtures';
 vi.mock('server-only', () => ({}));
-import { generateReport } from '@/server/pdf/service';
+import { generateReport, withReportSlot } from '@/server/pdf/service';
 import { readReportFonts } from '@/server/pdf/fonts';
 import { renderReportHtml } from '@/server/pdf/template';
-import { prepareReportPage } from '@/server/pdf/renderer';
+import { prepareReportPage, renderReport } from '@/server/pdf/renderer';
 import type { ReportDataSource } from '@/server/pdf/source';
 import type { ReportRequest } from '@/contracts/reports';
 const directory = await mkdtemp(join(tmpdir(), 'yazio-pdf-tests-'));
@@ -200,3 +200,49 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, squa
     await browser.close();
   }
 }, 90000);
+
+it('cancels real Chromium preparation and releases the report slot before the next request', async () => {
+  const controller = new AbortController();
+  const launch = chromium.launch.bind(chromium);
+  let launched: Awaited<ReturnType<typeof launch>> | undefined;
+  const monitor = vi
+    .spyOn(chromium, 'launch')
+    .mockImplementation(async (options) => {
+      const browser = await launch(options);
+      launched = browser;
+      const newContext = browser.newContext.bind(browser);
+      vi.spyOn(browser, 'newContext').mockImplementation(async (options) => {
+        const context = await newContext(options);
+        context.on('page', (page) =>
+          page.once('domcontentloaded', () => controller.abort()),
+        );
+        return context;
+      });
+      return browser;
+    });
+  try {
+    const request: ReportRequest = {
+      contractVersion: 1,
+      ownerId: 'synthetic-owner',
+      start: '2026-10-10',
+      end: '2026-10-10',
+      period: 'daily',
+      format: 'html',
+    };
+    const html = renderReportHtml(
+      request,
+      { days: [syntheticDay(undefined, 300)], photos: [] },
+      await readReportFonts(),
+    );
+    await expect(
+      withReportSlot(() => renderReport(html, 'html', controller.signal)),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(launched?.isConnected()).toBe(false);
+    await expect(
+      withReportSlot(async () => 'next request admitted'),
+    ).resolves.toBe('next request admitted');
+  } finally {
+    monitor.mockRestore();
+    await launched?.close();
+  }
+}, 30000);
