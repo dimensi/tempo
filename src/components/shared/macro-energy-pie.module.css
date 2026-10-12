@@ -2,6 +2,9 @@
   min-width: 0;
   max-width: 100%;
 }
+.compactChart {
+  width: 120px;
+}
 .swatch {
   display: inline-block;
   width: 10px;

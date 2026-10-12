@@ -94,7 +94,7 @@ function Summary({
   showSource?: boolean;
 }) {
   return (
-    <Stack gap="sm">
+    <Stack gap="xs">
       <Totals totals={totals} label={m.totals} />
       <MacroEnergyPie
         totals={totals}
@@ -103,6 +103,7 @@ function Summary({
         unavailable={m.macroUnavailable}
         zero={m.zeroEnergy}
         withLegend
+        compact
       />
       {showSource && <Text size="sm">{m.sourceNote}</Text>}
       {showSource && Object.values(totals).some((value) => value === null) && (

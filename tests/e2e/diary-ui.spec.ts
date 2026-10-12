@@ -176,6 +176,11 @@ test('synthetic diary: one computed total, calorie macro pie, compact food cards
   });
   // Fixture 10g protein / 5g fat / 20g carbs gives 40 / 45 / 80 kcal (total 165).
   await expect(completeSummary.locator('.mantine-PieChart-root')).toBeVisible();
+  const chartBox = await completeSummary
+    .locator('.mantine-PieChart-root')
+    .boundingBox();
+  expect(chartBox!.width).toBe(120);
+  expect(chartBox!.height).toBe(120);
   await expect(
     completeSummary.locator('[aria-label="Доли энергии из БЖУ"]'),
   ).toBeVisible();

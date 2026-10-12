@@ -47,6 +47,11 @@ test('nutrition chart shares, missing and zero states fit the common content lay
   const nutrition = page.getByRole('region', { name: 'Питание сегодня' });
   await expect(nutrition).toContainText('1\u202f357,1');
   await expect(nutrition.locator('.mantine-PieChart-root')).toBeVisible();
+  const chartBox = await nutrition
+    .locator('.mantine-PieChart-root')
+    .boundingBox();
+  expect(chartBox!.width).toBe(180);
+  expect(chartBox!.height).toBe(180);
   await expect(nutrition).toContainText('23,09% энергии');
   expect(
     await page.evaluate(
