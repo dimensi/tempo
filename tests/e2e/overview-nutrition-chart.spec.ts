@@ -9,7 +9,27 @@ test('nutrition chart shares, missing and zero states fit the common content lay
   await page
     .getByRole('textbox', { name: 'Пароль', exact: true })
     .fill('Test-only-password-12345');
+  let response = page.waitForResponse((value) =>
+    value.url().endsWith('/api/auth/sign-in/email'),
+  );
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  const result = await response;
+  if (result.status() === 429) {
+    const seconds = Number(
+      result.headers()['retry-after'] ??
+        result.headers()['x-retry-after'] ??
+        10,
+    );
+    expect(Number.isFinite(seconds)).toBe(true);
+    expect(seconds).toBeGreaterThanOrEqual(0);
+    expect(seconds).toBeLessThanOrEqual(30);
+    await page.waitForTimeout((seconds + 1) * 1000);
+    response = page.waitForResponse((value) =>
+      value.url().endsWith('/api/auth/sign-in/email'),
+    );
+    await page.getByRole('button', { name: 'Войти', exact: true }).click();
+    expect((await response).ok()).toBe(true);
+  } else expect(result.ok()).toBe(true);
   await expect(page).toHaveURL('/');
   let totals = {
     calories: '1357.1',

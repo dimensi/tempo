@@ -9,12 +9,16 @@ export function macroEnergyShares(totals: NutritionTotals | null) {
   const energies = macroKeys.map((key) =>
     new EnergyDecimal(totals[key]!).mul(key === 'fat' ? 9 : 4),
   );
+  if (energies.some((value) => !value.isFinite() || value.lt(0))) return null;
   const total = energies.reduce(
     (sum, value) => sum.plus(value),
     new EnergyDecimal(0),
   );
   return energies.map((energy, index) => ({
     key: macroKeys[index]!,
-    percent: total.isZero() ? 0 : energy.div(total).mul(100).toNumber(),
+    percent:
+      total.isZero() || energy.isZero()
+        ? 0
+        : energy.div(total).mul(100).toNumber(),
   }));
 }

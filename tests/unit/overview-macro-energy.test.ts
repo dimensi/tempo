@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { macroEnergyShares } from '@/features/overview/macro-energy';
+import { macroEnergyShares } from '@/lib/macro-energy';
 const totals = { calories: '123', protein: '9', fat: '4', carbs: '9' };
 test('energy shares use 4/9/4 independently of declared calories', () => {
   expect(macroEnergyShares(totals)?.map((share) => share.percent)).toEqual([
