@@ -42,7 +42,8 @@ export async function createInvitation(headers: Headers, raw: unknown) {
 // This public entry is authorized by a one-use invitation capability, never by a submitted role.
 export async function acceptInvitation(raw: unknown) {
   const parsed = acceptInviteInput.safeParse(raw);
-  if (!parsed.success) throw new CollaborationError(400);
+  if (!parsed.success)
+    throw new CollaborationError(400, 'INVITE_INVALID_INPUT');
   const input = parsed.data;
   const db = getDatabase().db;
   const hash = digest(input.token);
@@ -58,7 +59,7 @@ export async function acceptInvitation(raw: unknown) {
       ),
     )
     .get();
-  if (!invitation) throw new CollaborationError(400);
+  if (!invitation) throw new CollaborationError(400, 'INVITE_UNAVAILABLE');
   const password = await hashPassword(input.password);
   const id = randomUUID();
   db.transaction((tx) => {
@@ -75,7 +76,7 @@ export async function acceptInvitation(raw: unknown) {
       )
       .returning()
       .get();
-    if (!claimed) throw new CollaborationError(400);
+    if (!claimed) throw new CollaborationError(400, 'INVITE_UNAVAILABLE');
     if (
       tx
         .select({ id: user.id })
@@ -83,7 +84,7 @@ export async function acceptInvitation(raw: unknown) {
         .where(eq(user.email, claimed.email))
         .get()
     )
-      throw new CollaborationError(409);
+      throw new CollaborationError(409, 'INVITE_ACCOUNT_EXISTS');
     const timestamp = new Date(acceptedAt);
     tx.insert(user)
       .values({

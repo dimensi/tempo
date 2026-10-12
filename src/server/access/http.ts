@@ -1,7 +1,11 @@
 import 'server-only';
+import type { AcceptInviteError } from '@/contracts/trainers';
 import { hasTrustedOrigin } from '@/server/auth/origin';
 export class CollaborationError extends Error {
-  constructor(public status: number) {
+  constructor(
+    public status: number,
+    public code?: AcceptInviteError,
+  ) {
     super('Collaboration request rejected');
   }
 }
@@ -13,10 +17,17 @@ export async function respond(action: () => Promise<unknown>) {
   } catch (error) {
     if (error instanceof CollaborationError)
       return Response.json(
-        { error: error.status === 401 ? 'unauthorized' : 'request_rejected' },
-        { status: error.status },
+        {
+          error:
+            error.code ??
+            (error.status === 401 ? 'unauthorized' : 'request_rejected'),
+        },
+        { status: error.status, headers: { 'Cache-Control': 'no-store' } },
       );
-    return Response.json({ error: 'request_failed' }, { status: 500 });
+    return Response.json(
+      { error: 'request_failed' },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } },
+    );
   }
 }
 export async function jsonBody(request: Request): Promise<unknown> {

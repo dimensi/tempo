@@ -1,4 +1,5 @@
 import 'server-only';
+import { passwordLimits } from '@/contracts/password';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { getDatabase } from '../db';
@@ -17,7 +18,8 @@ function createAuth() {
     emailAndPassword: {
       enabled: true,
       disableSignUp: true,
-      minPasswordLength: 12,
+      minPasswordLength: passwordLimits.min,
+      maxPasswordLength: passwordLimits.max,
     },
     user: {
       additionalFields: {

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { newPasswordSchema } from '../src/contracts/password';
 import { randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import { z } from 'zod';
@@ -10,7 +11,7 @@ const input = z
     email: z.email(),
     name: z.string().min(1),
     role: z.enum(['OWNER', 'TRAINER']),
-    password: z.string().min(12).max(128),
+    password: newPasswordSchema,
   })
   .parse({
     email: process.env.CREATE_USER_EMAIL,
