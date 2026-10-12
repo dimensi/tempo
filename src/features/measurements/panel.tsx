@@ -23,6 +23,15 @@ import {
 } from '@/contracts/measurements';
 import { measurementMessages as m } from './messages';
 import { measurementChange } from './history';
+function responseError(status: number) {
+  return status === 401
+    ? m.sessionExpired
+    : status === 403
+      ? m.forbidden
+      : status === 400
+        ? m.validation
+        : m.error;
+}
 export function MeasurementsPanel({
   ownerId,
   writable,
@@ -34,7 +43,7 @@ export function MeasurementsPanel({
 }) {
   const [items, setItems] = useState<Measurement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string>();
   const [deleting, setDeleting] = useState<string>();
@@ -56,7 +65,7 @@ export function MeasurementsPanel({
         if (active) setItems(data);
       })
       .catch(() => {
-        if (active) setError(true);
+        if (active) setError(m.loadError);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -83,11 +92,11 @@ export function MeasurementsPanel({
         })),
     });
     if (!parsed.success) {
-      setError(true);
+      setError(m.validation);
       return;
     }
     setBusy(true);
-    setError(false);
+    setError(undefined);
     try {
       const r = await fetch(
         editing
@@ -99,7 +108,10 @@ export function MeasurementsPanel({
           body: JSON.stringify(parsed.data),
         },
       );
-      if (!r.ok) throw new Error();
+      if (!r.ok) {
+        setError(responseError(r.status));
+        return;
+      }
       const item = (await r.json()) as Measurement;
       setItems((old) =>
         [...old.filter((x) => x.id !== item.id), item].sort((a, b) =>
@@ -108,24 +120,28 @@ export function MeasurementsPanel({
       );
       reset();
     } catch {
-      setError(true);
+      setError(m.error);
     } finally {
       setBusy(false);
     }
   }
   async function remove(id: string) {
     setBusy(true);
+    setError(undefined);
     try {
       const r = await fetch(
         `/api/measurements/${id}?ownerId=${encodeURIComponent(ownerId)}`,
         { method: 'DELETE' },
       );
-      if (!r.ok) throw new Error();
+      if (!r.ok) {
+        setError(responseError(r.status));
+        return;
+      }
       setItems((old) => old.filter((x) => x.id !== id));
       setDeleting(undefined);
       if (editing === id) reset();
     } catch {
-      setError(true);
+      setError(m.error);
     } finally {
       setBusy(false);
     }
@@ -139,9 +155,10 @@ export function MeasurementsPanel({
       <Title order={1}>{m.title}</Title>
       {error && (
         <Alert color="red" role="alert">
-          {m.error}
+          {error}
         </Alert>
       )}
+      {!writable && <Text>{m.readOnly}</Text>}
       {loading && <Text>{m.loading}</Text>}
       {writable && (
         <Paper withBorder p="md">

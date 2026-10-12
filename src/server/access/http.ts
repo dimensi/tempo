@@ -1,5 +1,5 @@
 import 'server-only';
-import { readServerEnv } from '@/server/env';
+import { hasTrustedOrigin } from '@/server/auth/origin';
 export class CollaborationError extends Error {
   constructor(public status: number) {
     super('Collaboration request rejected');
@@ -21,8 +21,7 @@ export async function respond(action: () => Promise<unknown>) {
 }
 export async function jsonBody(request: Request): Promise<unknown> {
   const origin = request.headers.get('origin');
-  if (origin && origin !== new URL(readServerEnv().BETTER_AUTH_URL).origin)
-    throw new CollaborationError(403);
+  if (origin && !hasTrustedOrigin(request)) throw new CollaborationError(403);
   if (!request.headers.get('content-type')?.startsWith('application/json'))
     throw new CollaborationError(415);
   try {

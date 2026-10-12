@@ -70,6 +70,7 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
     const measurementResponse = await page.request.post(
       `/api/measurements?ownerId=${ownerId}`,
       {
+        headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
         data: {
           measuredAt: '2026-10-02',
           values: [{ metric: 'weight', value: '80.125', unit: 'kg' }],
@@ -148,6 +149,9 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
     ).toBeVisible();
     await page.request.delete(
       `/api/measurements/${measurement.id}?ownerId=${ownerId}`,
+      {
+        headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+      },
     );
     snapshot.totals.calories = '1e400';
     snapshot.knownTotals.calories = '1e400';

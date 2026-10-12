@@ -152,6 +152,7 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
   const measurementResponse = await page.request.post(
     `/api/measurements?ownerId=${ownerId}`,
     {
+      headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
       data: {
         measuredAt: '2026-10-11',
         values: [{ metric: 'weight', value: '70.125', unit: 'kg' }],
@@ -321,6 +322,11 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
     (
       await page.request.delete(
         `/api/measurements/${measurement.id}?ownerId=${ownerId}`,
+        {
+          headers: {
+            origin: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+          },
+        },
       )
     ).status(),
   ).toBe(204);

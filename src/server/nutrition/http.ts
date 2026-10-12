@@ -1,14 +1,12 @@
 import 'server-only';
 import { z } from 'zod';
-import { readServerEnv } from '@/server/env';
+import { hasTrustedOrigin } from '@/server/auth/origin';
 import { NutritionAccessError } from './access';
 import { NutritionSyncBusyError } from '@/server/jobs/nutrition-sync';
 import { nutritionSyncMessages as messages } from '@/contracts/nutrition-sync';
 
 export function sameOrigin(request: Request) {
-  const origin = request.headers.get('origin');
-  if (origin !== new URL(readServerEnv().BETTER_AUTH_URL).origin)
-    throw new NutritionAccessError(403);
+  if (!hasTrustedOrigin(request)) throw new NutritionAccessError(403);
 }
 export async function readBody(request: Request, limit: number) {
   if (!request.body) throw new Error('Missing body');

@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { getDatabase } from '@/server/db';
 import { trainerAccess } from '@/server/db/schema';
 import { authorize } from '@/server/auth/guards';
+import { hasTrustedOrigin } from '@/server/auth/origin';
 import { measurementInputSchema } from '@/contracts/measurements';
 import { measurementRepository } from './repository';
 export class MeasurementError extends Error {
@@ -98,7 +99,5 @@ export async function measurementOwner(
 }
 
 export function checkMeasurementOrigin(request: Request) {
-  const origin = request.headers.get('origin');
-  if (origin && origin !== new URL(request.url).origin)
-    throw new MeasurementError(403);
+  if (!hasTrustedOrigin(request)) throw new MeasurementError(403);
 }
