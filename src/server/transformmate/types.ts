@@ -1,3 +1,7 @@
+import type {
+  transformMateExerciseDetailSchema,
+  transformMateExerciseVideoSchema,
+} from '@/server/transformmate/exercise-schema';
 import type { z } from 'zod';
 import type {
   transformMateTrainingSummarySchema,
@@ -48,3 +52,10 @@ export type TransformMateProtocol =
 export type TransformMateMetricsGroup =
   TransformMatePlanMetrics | TransformMateFactMetrics;
 export type TransformMateSet = TransformMatePlanSet | TransformMateFactSet;
+
+export type TransformMateExerciseDetail = z.infer<
+  typeof transformMateExerciseDetailSchema
+>;
+export type TransformMateExerciseVideo = z.infer<
+  typeof transformMateExerciseVideoSchema
+>;

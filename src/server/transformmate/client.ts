@@ -9,6 +9,7 @@ import {
   transformMateTrainingsSchema,
   transformMateTrainingDetailSchema,
 } from '@/server/transformmate/schemas';
+import { transformMateExerciseDetailSchema } from '@/server/transformmate/exercise-schema';
 import { trainingWriteSnapshot } from '@/server/transformmate/write-snapshot';
 import {
   addExerciseInputSchema,
@@ -99,6 +100,9 @@ export function createTransformMateClient(options: {
         method,
         headers: {
           Authorization: `JWT ${idToken}`,
+          Accept: 'application/json; version=1.3',
+          'Accept-Language': 'ru',
+          'User-Agent': 'yazio-dashboard (TransformMate integration)',
           ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         ...(data === undefined ? {} : { body: JSON.stringify(data) }),
@@ -230,6 +234,11 @@ export function createTransformMateClient(options: {
     listTrainings: () =>
       validated('workouts/trainings/', transformMateTrainingsSchema),
     getTraining,
+    getExercise: (id: number) => {
+      if (!Number.isSafeInteger(id) || id <= 0)
+        throw new Error('Invalid TransformMate exercise ID');
+      return validated(`exercises/${id}/`, transformMateExerciseDetailSchema);
+    },
     createTraining: (input: CreateTrainingInput) =>
       validated(
         'workouts/trainings/',
