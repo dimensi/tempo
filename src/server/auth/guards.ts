@@ -23,6 +23,7 @@ export async function authorize(
   if (
     !ownerId &&
     permission !== 'yazio:manage' &&
+    permission !== 'transformmate:manage' &&
     permission !== 'trainers:manage'
   )
     return { ok: false as const, status: 403 };

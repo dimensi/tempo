@@ -9,6 +9,9 @@ const schema = z.object({
   DEMO_MODE: z.enum(['true', 'false']).default('false'),
   ENABLE_NUTRITION_SCHEDULER: z.enum(['true', 'false']).default('false'),
   YAZIO_TOKEN_FILE: z.string().optional(),
+  TRANSFORMMATE_TOKEN_FILE: z
+    .string()
+    .default('./.data/private/transformmate-token.json'),
   UPLOADS_DIR: z.string().default('./.data/uploads'),
 });
 export function readServerEnv(input: NodeJS.ProcessEnv = process.env) {

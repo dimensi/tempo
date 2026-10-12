@@ -74,6 +74,20 @@ export const transformMateSyncItemSchema = z.object({
     planTitle: z.string().max(160),
     workout: plannedWorkoutSchema,
   }),
+  publishedSnapshot: z
+    .object({
+      planTitle: z.string().max(160),
+      workout: plannedWorkoutSchema,
+    })
+    .optional(),
+  updateAttempt: z
+    .object({
+      id: z.uuid(),
+      phase: z.enum(['pending', 'unknown', 'verified', 'conflict']),
+      createdAt: z.iso.datetime(),
+      checkedAt: z.iso.datetime().nullable(),
+    })
+    .optional(),
   status: transformMateSyncStatusSchema,
   reason: z
     .enum([
@@ -82,6 +96,7 @@ export const transformMateSyncItemSchema = z.object({
       'remote_changed',
       'plan_changed',
       'remote_started',
+      'remote_fact',
       'ambiguous_write',
       'upstream_error',
       'missing_remote',
