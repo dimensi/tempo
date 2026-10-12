@@ -1,3 +1,4 @@
+import { getSessionWith429Retry } from '../e2e/auth-session';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import Database from 'better-sqlite3';
@@ -85,8 +86,7 @@ async function login(page: Page, role = 'owner') {
     response = await signIn();
   }
   expect(response.ok()).toBe(true);
-  const session = await page.request.get('/api/auth/get-session');
-  return (await session.json()).user.id as string;
+  return (await getSessionWith429Retry(page.request)).user.id;
 }
 function grant(ownerId: string, trainerId: string, enabled: boolean) {
   const db = new Database('.data/e2e.sqlite');

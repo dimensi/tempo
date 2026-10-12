@@ -1,3 +1,4 @@
+import { getSessionWith429Retry } from './auth-session';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { test, expect, type Page, type Locator } from '@playwright/test';
@@ -19,8 +20,7 @@ async function login(page: Page, email: string) {
     result = await signin();
   }
   expect(result.ok()).toBe(true);
-  return (await (await page.request.get('/api/auth/get-session')).json()).user
-    .id as string;
+  return (await getSessionWith429Retry(page.request)).user.id;
 }
 async function send(panel: Locator, body: string) {
   await panel.getByLabel('Комментарий').fill(body);

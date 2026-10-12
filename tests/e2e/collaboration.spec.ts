@@ -1,3 +1,4 @@
+import { getSessionWith429Retry } from './auth-session';
 import { test, expect } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { meals, nutritionDaySchema } from '@/contracts/nutrition';
@@ -53,9 +54,7 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
     expect((await response).ok()).toBe(true);
   } else expect(signedIn.ok()).toBe(true);
   await expect(page).toHaveURL('/');
-  const session = await (
-    await page.request.get('/api/auth/get-session')
-  ).json();
+  const session = await getSessionWith429Retry(page.request);
   const ownerId = session.user.id;
   expect(
     (await page.request.get('/api/trainers?ownerId=foreign')).status(),
@@ -130,9 +129,7 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
     signed = await signIn();
   }
   expect(signed.ok()).toBe(true);
-  const trainerSession = await (
-    await context.request.get('/api/auth/get-session')
-  ).json();
+  const trainerSession = await getSessionWith429Retry(context.request);
   expect(trainerSession.user.role).toBe('TRAINER');
   const trainerId = trainerSession.user.id;
   expect(

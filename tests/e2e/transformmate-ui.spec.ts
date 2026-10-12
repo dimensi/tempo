@@ -1,3 +1,4 @@
+import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
 
 async function login(page: Page) {
@@ -176,8 +177,7 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
     },
   );
   await login(page);
-  const owner = (await (await page.request.get('/api/auth/get-session')).json())
-    .user.id;
+  const owner = (await getSessionWith429Retry(page.request)).user.id;
   await page.goto('/workouts');
   await page.getByRole('button', { name: 'Выбрать дату' }).click();
   await page.getByRole('textbox', { name: 'Год', exact: true }).fill('2026');
@@ -380,4 +380,39 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
     fullPage: true,
   });
   expect(pageErrors).toEqual([]);
+});
+
+test('real authenticated session throttle is retried once after its server interval', async ({
+  page,
+}) => {
+  test.skip(
+    test.info().project.name !== 'desktop',
+    'APIRequestContext quota and session validation are viewport-independent; desktop covers the genuine API throttle once.',
+  );
+  await login(page);
+  let throttled = false;
+  for (let request = 0; request < 40; request++) {
+    const response = await page.request.get('/api/auth/get-session');
+    if (response.status() === 429) {
+      throttled = true;
+      await response.dispose();
+      break;
+    }
+    expect(response.status()).toBe(200);
+    expect((await response.json()).user.role).toBe('OWNER');
+    await response.dispose();
+  }
+  expect(throttled, 'The genuine fixture API quota must produce HTTP 429').toBe(
+    true,
+  );
+  const statuses: number[] = [];
+  const session = await getSessionWith429Retry(page.request, {
+    onStatus: (status) => statuses.push(status),
+  });
+  expect(statuses).toEqual([429, 200]);
+  expect(session.user).toMatchObject({
+    role: 'OWNER',
+    email: 'owner@example.test',
+  });
+  expect(session.user.id.length).toBeGreaterThan(0);
 });

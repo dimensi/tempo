@@ -1,3 +1,4 @@
+import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { nutritionDaySchema } from '@/contracts/nutrition';
@@ -33,8 +34,7 @@ async function login(page: Page, role: 'owner' | 'trainer') {
     expect((await response).ok()).toBe(true);
   } else expect(result.ok()).toBe(true);
   await expect(page).toHaveURL('/', { timeout: 15000 });
-  return (await (await page.request.get('/api/auth/get-session')).json()).user
-    .id as string;
+  return (await getSessionWith429Retry(page.request)).user.id;
 }
 
 test('real diary photos and comments persist; trainer is read-only and revoked URLs are denied', async ({

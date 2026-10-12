@@ -1,3 +1,4 @@
+import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import type { WorkoutsData } from '@/contracts/workouts';
@@ -31,22 +32,7 @@ async function login(page: Page, role: 'owner' | 'trainer' = 'owner') {
   await expect(page).toHaveURL('/');
 }
 async function ownerId(page: Page) {
-  let result = await page.request.get('/api/auth/get-session');
-  if (result.status() === 429) {
-    const value = Number(
-      result.headers()['x-retry-after'] ??
-        result.headers()['retry-after'] ??
-        10,
-    );
-    const seconds = Number.isFinite(value) && value >= 0 ? value : 10;
-    console.info('Workout session lookup: one retry after HTTP 429');
-    // A legitimate server-directed wait must not consume the CRUD assertion budget.
-    test.setTimeout(test.info().timeout + (seconds + 1) * 1000);
-    await page.waitForTimeout((seconds + 1) * 1000);
-    result = await page.request.get('/api/auth/get-session');
-  }
-  expect(result.ok()).toBe(true);
-  return (await result.json()).user.id as string;
+  return (await getSessionWith429Retry(page.request)).user.id;
 }
 async function workouts(page: Page, id: string): Promise<WorkoutsData> {
   const response = await page.request.get(`/api/workouts?ownerId=${id}`);

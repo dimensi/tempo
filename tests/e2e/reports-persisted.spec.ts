@@ -435,9 +435,9 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       result = await signIn();
     }
     expect(result.ok()).toBe(true);
-    const trainerSession = await (
-      await context.request.get(`${origin}/api/auth/get-session`)
-    ).json();
+    const trainerSession = await getSessionWith429Retry(context.request, {
+      url: `${origin}/api/auth/get-session`,
+    });
     trainerId = trainerSession.user.id;
     const scopedUrl = `${origin}/api/reports?${scopedQuery}`;
     expect((await context.request.get(scopedUrl)).status()).toBe(403);
