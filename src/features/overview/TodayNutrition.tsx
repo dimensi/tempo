@@ -1,15 +1,14 @@
-import { PieChart } from '@mantine/charts';
+import { MacroEnergyPie } from '@/components/shared/macro-energy-pie';
 import { Group, Stack, Text } from '@mantine/core';
 import type { NutritionTotals } from '@/contracts/nutrition';
 import { formatDecimal } from '@/lib/number-display';
 import palette from '@/config/nutrient-colors.module.css';
-import { macroEnergyShares, macroKeys } from './macro-energy';
+import { macroEnergyShares, macroKeys } from '@/lib/macro-energy';
 import { overviewMessages as m } from './messages';
 import classes from './overview.module.css';
 
 export function TodayNutrition({ totals }: { totals: NutritionTotals | null }) {
   const shares = macroEnergyShares(totals);
-  const hasEnergy = shares?.some((share) => share.percent > 0);
   return (
     <div className={`${classes.nutrition} ${palette.palette}`}>
       <div>
@@ -54,33 +53,13 @@ export function TodayNutrition({ totals }: { totals: NutritionTotals | null }) {
       </div>
       {totals && (
         <Stack gap="xs" align="center" className={classes.chart}>
-          {hasEnergy ? (
-            <PieChart
-              size={180}
-              data={shares!.map(({ key, percent }) => ({
-                name: m[key],
-                value: percent,
-                color: `var(--nutrient-${key})`,
-              }))}
-              withTooltip
-              valueFormatter={(value) => `${formatDecimal(value)}%`}
-              accessibilityLayer
-              aria-label={m.macroChart}
-              cellProps={(cell) => ({
-                'aria-label': `${cell.name}: ${formatDecimal(cell.value)}%`,
-              })}
-              pieProps={{ isAnimationActive: false }}
-            />
-          ) : (
-            <Text size="sm" c="dimmed">
-              {shares ? m.zeroEnergy : m.macroUnavailable}
-            </Text>
-          )}
-          {hasEnergy && (
-            <Text size="sm" c="dimmed" ta="center">
-              {m.macroChart}
-            </Text>
-          )}
+          <MacroEnergyPie
+            totals={totals}
+            labels={m}
+            title={m.macroChart}
+            unavailable={m.macroUnavailable}
+            zero={m.zeroEnergy}
+          />
         </Stack>
       )}
     </div>

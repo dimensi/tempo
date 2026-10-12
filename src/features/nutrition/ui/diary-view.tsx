@@ -24,7 +24,7 @@ import {
 import { diaryMessages as m } from './messages';
 import { hasNutritionMealContent } from '@/lib/nutrition-meal-content';
 import classes from './diary-view.module.css';
-import { macroCalorieShares } from './macro-shares';
+import { MacroEnergyPie } from '@/components/shared/macro-energy-pie';
 import { PhotoViewerImage } from './photo-viewer-image';
 import {
   displayValue,
@@ -86,42 +86,6 @@ function Totals({
   );
 }
 
-function MacroPie({ totals }: { totals: NutritionTotals }) {
-  const shares = macroCalorieShares(totals);
-  if (!shares) return null;
-  const stops = shares.map(({ key, percent }, index) => {
-    const start = shares
-      .slice(0, index)
-      .reduce((sum, share) => sum + share.percent, 0);
-    const end = index === shares.length - 1 ? 100 : start + percent;
-    return `var(--macro-${key}) ${start}% ${end}%`;
-  });
-  return (
-    <div className={classes.macroSummary}>
-      <div
-        className={classes.macroPie}
-        aria-hidden="true"
-        style={{ background: `conic-gradient(${stops.join(',')})` }}
-      />
-      <Stack gap={4}>
-        <Text size="sm">{m.macroRatio}</Text>
-        <Group gap="sm">
-          {shares.map(({ key, percent }) => (
-            <Text key={key} size="sm">
-              <span
-                className={classes.macroSwatch}
-                data-nutrient={key}
-                aria-hidden="true"
-              />
-              {m.nutrients[key]}:{' '}
-              {percent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%
-            </Text>
-          ))}
-        </Group>
-      </Stack>
-    </div>
-  );
-}
 function Summary({
   totals,
   showSource = false,
@@ -132,7 +96,14 @@ function Summary({
   return (
     <Stack gap="sm">
       <Totals totals={totals} label={m.totals} />
-      <MacroPie totals={totals} />
+      <MacroEnergyPie
+        totals={totals}
+        labels={m.nutrients}
+        title={m.macroRatio}
+        unavailable={m.macroUnavailable}
+        zero={m.zeroEnergy}
+        withLegend
+      />
       {showSource && <Text size="sm">{m.sourceNote}</Text>}
       {showSource && Object.values(totals).some((value) => value === null) && (
         <Text size="sm">{m.partial}</Text>

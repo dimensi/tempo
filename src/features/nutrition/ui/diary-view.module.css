@@ -56,37 +56,6 @@
 .photos {
   min-width: 0;
 }
-.macroSummary {
-  --macro-protein: var(--nutrient-protein);
-  --macro-fat: var(--nutrient-fat);
-  --macro-carbs: var(--nutrient-carbs);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: 640px;
-}
-.macroPie {
-  width: 72px;
-  height: 72px;
-  flex: 0 0 72px;
-  border-radius: 50%;
-}
-.macroSwatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin-inline-end: 6px;
-  border-radius: 50%;
-}
-.macroSwatch[data-nutrient='protein'] {
-  background: var(--macro-protein);
-}
-.macroSwatch[data-nutrient='fat'] {
-  background: var(--macro-fat);
-}
-.macroSwatch[data-nutrient='carbs'] {
-  background: var(--macro-carbs);
-}
 @media (max-width: 767px) {
   .mealHeader[data-has-photo] {
     grid-template-columns: minmax(0, 1fr);
