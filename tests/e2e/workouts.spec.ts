@@ -29,7 +29,19 @@ async function login(page: Page, role: 'owner' | 'trainer' = 'owner') {
   await expect(page).toHaveURL('/');
 }
 async function ownerId(page: Page) {
-  const result = await page.request.get('/api/auth/get-session');
+  let result = await page.request.get('/api/auth/get-session');
+  if (result.status() === 429) {
+    const value = Number(
+      result.headers()['x-retry-after'] ??
+        result.headers()['retry-after'] ??
+        10,
+    );
+    const seconds = Number.isFinite(value) && value >= 0 ? value : 10;
+    console.info('Workout session lookup: one retry after HTTP 429');
+    await page.waitForTimeout((seconds + 1) * 1000);
+    result = await page.request.get('/api/auth/get-session');
+  }
+  expect(result.ok()).toBe(true);
   return (await result.json()).user.id as string;
 }
 async function workouts(page: Page, id: string): Promise<WorkoutsData> {
