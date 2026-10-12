@@ -851,10 +851,16 @@ test('saving creates once, idle updates once, and remote facts preserve initial 
   await expect(table).toContainText('12.5');
   await expect(table).toContainText('15');
   await table.scrollIntoViewIfNeeded();
-  const viewport = table.locator(
-    'xpath=ancestor::*[@data-scroll-area-viewport]',
-  );
+  const viewport = page
+    .getByTestId(`plan-${plan.id}`)
+    .locator('.mantine-ScrollArea-viewport');
   const mobile = test.info().project.name === 'mobile';
+  await expect(viewport).toHaveAttribute('tabindex', '0');
+  const viewportBounds = await viewport.boundingBox();
+  expect(viewportBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(viewportBounds!.x + viewportBounds!.width).toBeLessThanOrEqual(
+    page.viewportSize()!.width,
+  );
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -878,6 +884,11 @@ test('saving creates once, idle updates once, and remote facts preserve initial 
       ).toBe('nowrap');
     }
     await viewport.focus();
+    await expect(viewport).toBeFocused();
+    await viewport.evaluate((element) => {
+      element.scrollLeft = 0;
+    });
+    expect(await viewport.evaluate((element) => element.scrollLeft)).toBe(0);
     await page.keyboard.press('ArrowRight');
     await expect
       .poll(() => viewport.evaluate((element) => element.scrollLeft))
@@ -886,8 +897,14 @@ test('saving creates once, idle updates once, and remote facts preserve initial 
       element.scrollLeft = element.scrollWidth;
     });
     await expect
-      .poll(() => viewport.evaluate((element) => element.scrollLeft))
-      .toBeGreaterThan(0);
+      .poll(() =>
+        viewport.evaluate((element) =>
+          Math.abs(
+            element.scrollLeft - (element.scrollWidth - element.clientWidth),
+          ),
+        ),
+      )
+      .toBeLessThanOrEqual(1);
     await page.screenshot({
       path: test.info().outputPath('synthetic-workout-results.png'),
       fullPage: false,
