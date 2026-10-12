@@ -1,0 +1,187 @@
+import { afterEach, expect, test, vi } from 'vitest';
+vi.mock('server-only', () => ({}));
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { openDatabase } from '@/server/db/connection';
+import { user } from '@/server/db/schema';
+import { yazioHealthRepository } from '@/server/yazio/health-repository';
+import { normalizeYazioWeight } from '@/server/yazio/health-normalize';
+
+const connections: ReturnType<typeof openDatabase>[] = [];
+afterEach(() => connections.splice(0).forEach(({ sqlite }) => sqlite.close()));
+function fixture() {
+  const connection = openDatabase('file::memory:');
+  connections.push(connection);
+  migrate(connection.db, { migrationsFolder: './drizzle' });
+  // Disposable pre-migration fixture only. Root will replace this with the
+  // reviewed generated migration after schema freeze; no migration is generated here.
+  connection.sqlite.exec(`
+    CREATE TABLE yazio_weight_entries (
+      owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+      external_id TEXT NOT NULL,
+      provider_date TEXT NOT NULL CHECK(length(provider_date) BETWEEN 1 AND 128),
+      measured_date TEXT,
+      raw_value TEXT,
+      unit TEXT CHECK(unit IS NULL),
+      unit_context TEXT CHECK(unit_context IS NULL OR length(unit_context) <= 128),
+      upstream_source TEXT CHECK(upstream_source IS NULL OR length(upstream_source) <= 128),
+      gateway TEXT CHECK(gateway IS NULL OR length(gateway) <= 128),
+      observed_at TEXT NOT NULL,
+      PRIMARY KEY(owner_id, external_id)
+    );
+    CREATE TABLE yazio_daily_steps (
+      owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      steps INTEGER CHECK(steps IS NULL OR (typeof(steps) = 'integer' AND steps BETWEEN 0 AND 9007199254740991)),
+      observed_at TEXT NOT NULL,
+      PRIMARY KEY(owner_id, date)
+    );
+  `);
+  connection.db
+    .insert(user)
+    .values([
+      {
+        id: 'owner',
+        role: 'OWNER',
+        name: 'Synthetic owner',
+        email: 'owner@example.test',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'other',
+        role: 'TRAINER',
+        name: 'Synthetic other',
+        email: 'other@example.test',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ])
+    .run();
+  return { ...connection, repo: yazioHealthRepository(connection.db) };
+}
+const period = { from: '2026-10-01', to: '2026-10-12' };
+const observed = '2026-10-12T12:00:00Z';
+const weight = normalizeYazioWeight(
+  {
+    id: 'a1111111-1111-4111-8111-111111111111',
+    date: '2026-10-01',
+    value: 70.125,
+    external_id: null,
+    source: 'synthetic',
+    gateway: null,
+  },
+  'kg',
+)!;
+test('upserts deduplicate UUIDs, replace provider date, preserve null/zero, and scope by owner', () => {
+  const { repo } = fixture();
+  repo.upsert(
+    'owner',
+    {
+      weights: [weight, weight],
+      dailySteps: [{ source: 'yazio', date: '2026-10-01', steps: 0 }],
+    },
+    observed,
+  );
+  repo.upsert('other', { weights: [weight], dailySteps: [] }, observed);
+  expect(repo.weights('owner', period)).toHaveLength(1);
+  expect(repo.steps('owner', period)[0]?.steps).toBe(0);
+  repo.upsert(
+    'owner',
+    {
+      weights: [
+        {
+          ...weight,
+          providerDate: '2026-10-02',
+          measuredDate: '2026-10-02',
+          rawValue: '71',
+        },
+      ],
+      dailySteps: [{ source: 'yazio', date: '2026-10-01', steps: null }],
+    },
+    observed,
+  );
+  expect(repo.weights('owner', period)).toMatchObject([
+    {
+      measuredDate: '2026-10-02',
+      rawValue: '71',
+      unit: null,
+      unitContext: 'kg',
+    },
+  ]);
+  expect(repo.weights('other', period)[0]?.rawValue).toBe('70.125');
+  expect(repo.weights('missing', period)).toEqual([]);
+  expect(repo.steps('owner', period)[0]?.steps).toBeNull();
+  repo.upsert('owner', { weights: [], dailySteps: [] }, observed);
+  expect(repo.weights('owner', period)).toHaveLength(1);
+});
+test('invalid batches and failed transactions preserve previous rows', () => {
+  const { repo, sqlite } = fixture();
+  repo.upsert('owner', { weights: [weight], dailySteps: [] }, observed);
+  expect(() =>
+    repo.upsert(
+      'owner',
+      {
+        weights: [{ ...weight, rawValue: '99' }],
+        dailySteps: [{ source: 'yazio', date: '2026-10-01', steps: -1 }],
+      },
+      observed,
+    ),
+  ).toThrow();
+  expect(repo.weights('owner', period)[0]?.rawValue).toBe('70.125');
+  sqlite.exec(
+    "CREATE TRIGGER synthetic_failure BEFORE INSERT ON yazio_daily_steps BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END;",
+  );
+  expect(() =>
+    repo.upsert(
+      'owner',
+      {
+        weights: [{ ...weight, rawValue: '99' }],
+        dailySteps: [{ source: 'yazio', date: '2026-10-01', steps: 1 }],
+      },
+      observed,
+    ),
+  ).toThrow();
+  expect(repo.weights('owner', period)[0]?.rawValue).toBe('70.125');
+});
+test('read periods are valid, ordered, bounded and unknown dates do not enter dated history', () => {
+  const { repo } = fixture();
+  repo.upsert(
+    'owner',
+    {
+      weights: [
+        { ...weight, measuredDate: null, providerDate: '2026-10-01T12:00:00Z' },
+      ],
+      dailySteps: [],
+    },
+    observed,
+  );
+  expect(repo.weights('owner', period)).toEqual([]);
+  for (const invalid of [
+    { from: '2026-02-30', to: '2026-10-01' },
+    { from: '2026-10-12', to: '2026-10-01' },
+    { from: '2025-01-01', to: '2026-10-01' },
+  ]) {
+    expect(() => repo.weights('owner', invalid)).toThrow();
+    expect(() => repo.steps('owner', invalid)).toThrow();
+  }
+});
+test('owner deletion cascades and database rejects unsafe step counts and claimed units', () => {
+  const { repo, sqlite } = fixture();
+  repo.upsert(
+    'owner',
+    {
+      weights: [weight],
+      dailySteps: [{ source: 'yazio', date: '2026-10-01', steps: 1 }],
+    },
+    observed,
+  );
+  expect(() =>
+    sqlite.prepare('UPDATE yazio_daily_steps SET steps = -1').run(),
+  ).toThrow();
+  expect(() =>
+    sqlite.prepare("UPDATE yazio_weight_entries SET unit = 'kg'").run(),
+  ).toThrow();
+  sqlite.prepare('DELETE FROM user WHERE id = ?').run('owner');
+  expect(repo.weights('owner', period)).toEqual([]);
+  expect(repo.steps('owner', period)).toEqual([]);
+});
