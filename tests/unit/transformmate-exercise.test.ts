@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import { createTransformMateClient } from '@/server/transformmate/client';
 import { transformMateExerciseDetailSchema } from '@/server/transformmate/exercise-schema';
@@ -24,6 +26,30 @@ function setup(...responses: Response[]) {
   };
 }
 describe('exercise detail and media', () => {
+  it('sends the Android preset without our client name on actual HTTP requests', async () => {
+    let receivedAgent: string | undefined;
+    const server = createServer((request, response) => {
+      receivedAgent = request.headers['user-agent'];
+      response.setHeader('content-type', 'application/json');
+      response.end('{}');
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    try {
+      const address = server.address() as AddressInfo;
+      const client = createTransformMateClient({
+        baseUrl: `http://127.0.0.1:${address.port}/ipt/api/v1`,
+        tokenProvider: { getIdToken: async () => token },
+      });
+      await client.getMe();
+      expect(receivedAgent).toBe('TransformMate/2.1.7 (Android 13) (2211133G)');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
   it('returns typed detail, preserving video URLs/qualities and unknown fields', async () => {
     const body = { ...exerciseDetailFixture(), future: { value: 1 } };
     const { client, request } = setup(json(body));
@@ -37,7 +63,7 @@ describe('exercise detail and media', () => {
         Authorization: `JWT ${token}`,
         Accept: 'application/json; version=1.3',
         'Accept-Language': 'ru',
-        'User-Agent': 'yazio-dashboard (TransformMate integration)',
+        'User-Agent': 'TransformMate/2.1.7 (Android 13) (2211133G)',
       },
     });
     const headers = request.mock.calls[0]?.[1]?.headers;
