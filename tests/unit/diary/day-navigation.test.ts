@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { weekDates } from '@/features/nutrition/ui/day-navigation-dates';
+import { weekDates } from '@/components/shared/date-navigation-dates';
 
 describe('calendar week navigation', () => {
   it('keeps Monday to Sunday across the year boundary', () => {
