@@ -1,23 +1,30 @@
-import { configuredStore, yazioOwner } from '@/server/yazio/settings';
-import { nutritionUpstream } from '@/server/yazio/adapter';
-import { syncNutritionPeriod } from '@/server/jobs/nutrition-sync';
-import { nutritionRepository } from '@/server/nutrition/repository';
+import { yazioOwner, refreshYazioAccount } from '@/server/yazio/settings';
+import { runNutritionSync } from '@/server/jobs/nutrition-scheduler';
 import { json, respond, sameOrigin, readBody } from '@/server/nutrition/http';
-import { resolveSyncPeriod } from '@/contracts/nutrition-sync';
+import {
+  resolveSyncPeriod,
+  syncRequestSchema,
+} from '@/contracts/nutrition-sync';
 export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const ownerId = await yazioOwner(request.headers);
-    const period = resolveSyncPeriod(
+    const input = syncRequestSchema.parse(
       JSON.parse((await readBody(request, 2048)).toString()),
     );
-    return json(
-      await syncNutritionPeriod(
-        ownerId,
-        period,
-        await nutritionUpstream(configuredStore(ownerId)),
-        nutritionRepository(),
-      ),
-    );
+    const period = resolveSyncPeriod(input);
+    const sync = await runNutritionSync(ownerId, period, {
+      mode: 'manual',
+      timezone: input.timezone ?? 'UTC',
+    });
+    if (
+      sync.state === 'completed' ||
+      (sync.state === 'partial' &&
+        sync.failedDates.length === 0 &&
+        sync.completedDates.length > 0)
+    )
+      await refreshYazioAccount(request.headers);
+    await yazioOwner(request.headers);
+    return json(sync);
   });
 }

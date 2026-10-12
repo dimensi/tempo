@@ -12,6 +12,7 @@ import type { NutritionUpstream } from '@/server/yazio/adapter';
 import type { YazioTokenStore } from '@/server/yazio/client';
 import {
   createNutritionScheduler,
+  type NutritionSchedulerDependencies,
   nutritionLocalDate,
   stopNutritionScheduler,
   startNutritionScheduler,
@@ -59,7 +60,7 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-function setup() {
+function setup(images?: NutritionSchedulerDependencies['images']) {
   const upstream = source();
   const store: YazioTokenStore = {
     load: vi.fn(async () => token),
@@ -74,6 +75,7 @@ function setup() {
     store: vi.fn(() => store),
     source: vi.fn(async () => upstream),
     repository,
+    images,
   };
   const service = createNutritionScheduler(deps);
   return { upstream, store, repository, deps, service };
@@ -111,6 +113,217 @@ afterEach(() => {
 });
 
 describe('durable owner schedule', () => {
+  it('persists the latest explicit manual start after narrowing history and never overwrites it hourly', async () => {
+    const { service, deps, upstream } = setup();
+    await service.run(
+      'owner',
+      { from: '2026-09-01', to: '2026-09-01' },
+      { mode: 'manual', timezone: input.timezone },
+    );
+    await service.run(
+      'owner',
+      { from: '2026-10-12', to: '2026-10-12' },
+      { mode: 'manual', timezone: input.timezone },
+    );
+    const reloaded = createNutritionScheduler(deps);
+    expect(reloaded.status('owner').initialFrom).toBe('2026-10-12');
+    vi.mocked(upstream.items).mockClear();
+    await vi.advanceTimersByTimeAsync(3600000);
+    await reloaded.tick();
+    expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
+      '2026-10-12',
+    ]);
+    expect(reloaded.status('owner').initialFrom).toBe('2026-10-12');
+  });
+  it('records successful food updates separately from photo warnings with bounded retries', async () => {
+    const images = {
+      fetch: vi.fn(async () => ({
+        bytes: Buffer.from([255, 216, 255, 0]),
+        mime: 'image/jpeg',
+      })),
+      store: vi.fn(async () => ({
+        storageKey: 'a'.repeat(64),
+        contentHash: 'a'.repeat(64),
+      })),
+    };
+    images.fetch.mockRejectedValue(
+      new Error('RAW PHOTO FAILURE MUST NOT LEAK'),
+    );
+    const { service, upstream, repository } = setup(images);
+    vi.mocked(upstream.items).mockImplementation(async (date) => ({
+      products: [],
+      recipe_portions: [],
+      simple_products: [
+        {
+          id: `food:${date}`,
+          date: `${date} 12:00:00`,
+          daytime: 'lunch',
+          name: 'Synthetic food',
+          nutrients: { 'energy.energy': 10 },
+          is_ai_generated: false,
+        },
+      ],
+    }));
+    vi.mocked(upstream.images).mockResolvedValue({
+      lunch: 'https://images.yazio-cdn.com/synthetic.jpg',
+    });
+    service.enable('owner', {
+      timezone: input.timezone,
+      initialFrom: '2026-10-12',
+    });
+    await vi.advanceTimersByTimeAsync(3600000);
+    for (const [attempt, delay] of [
+      [1, 60000],
+      [2, 300000],
+      [3, 900000],
+      [3, 3600000],
+    ] as const) {
+      const now = Date.now();
+      await service.tick();
+      expect(repository.status('owner')).toMatchObject({
+        state: 'partial',
+        completedDates: ['2026-10-12'],
+        failedDates: [],
+        photoFailedDates: ['2026-10-12'],
+      });
+      expect(
+        repository.day('owner', '2026-10-12')!.meals[1]!.entries,
+      ).toHaveLength(1);
+      expect(service.status('owner')).toMatchObject({
+        attempt,
+        lastError: 'PHOTO_INCOMPLETE',
+        lastSuccess: new Date(now).toISOString(),
+        nextRunAt: new Date(now + delay).toISOString(),
+      });
+      await vi.advanceTimersByTimeAsync(delay);
+    }
+    images.fetch.mockResolvedValue({
+      bytes: Buffer.from([255, 216, 255, 0]),
+      mime: 'image/jpeg',
+    });
+    await service.tick();
+    expect(repository.status('owner')).toMatchObject({
+      state: 'completed',
+      failedDates: [],
+      photoFailedDates: [],
+    });
+    expect(service.status('owner')).toMatchObject({
+      attempt: 0,
+      lastError: null,
+      lastSuccess: new Date().toISOString(),
+      nextRunAt: new Date(Date.now() + 3600000).toISOString(),
+    });
+  });
+  it('prioritizes food failure over photo warning and retains the previous successful food timestamp', async () => {
+    const images = {
+      fetch: vi.fn(async () => {
+        throw new Error('Synthetic photo failure');
+      }),
+      store: vi.fn(async () => ({
+        storageKey: 'a'.repeat(64),
+        contentHash: 'a'.repeat(64),
+      })),
+    };
+    const { service, upstream } = setup(images);
+    vi.mocked(upstream.items).mockImplementation(async (date) => ({
+      products: [],
+      recipe_portions: [],
+      simple_products: [
+        {
+          id: `food:${date}`,
+          date: `${date} 12:00:00`,
+          daytime: 'lunch',
+          name: 'Synthetic food',
+          nutrients: { 'energy.energy': 10 },
+          is_ai_generated: false,
+        },
+      ],
+    }));
+    vi.mocked(upstream.images).mockResolvedValue({
+      lunch: 'https://images.yazio-cdn.com/synthetic.jpg',
+    });
+    await service.run('owner', period, { mode: 'manual' });
+    const previous = service.status('owner').lastSuccess;
+    expect(previous).toBe(new Date().toISOString());
+    await vi.advanceTimersByTimeAsync(1000);
+    vi.mocked(upstream.items).mockImplementation(async (date) => {
+      if (date === '2026-10-12') throw new Error('Synthetic food failure');
+      return {
+        products: [],
+        recipe_portions: [],
+        simple_products: [
+          {
+            id: `food:${date}`,
+            date: `${date} 12:00:00`,
+            daytime: 'lunch',
+            name: 'Synthetic food',
+            nutrients: { 'energy.energy': 10 },
+            is_ai_generated: false,
+          },
+        ],
+      };
+    });
+    const result = await service.run(
+      'owner',
+      { from: '2026-10-11', to: '2026-10-12' },
+      { mode: 'manual' },
+    );
+    expect(result).toMatchObject({
+      state: 'partial',
+      failedDates: ['2026-10-12'],
+      photoFailedDates: ['2026-10-11'],
+    });
+    expect(service.status('owner')).toMatchObject({
+      lastError: 'SYNC_FAILED',
+      lastSuccess: previous,
+    });
+  });
+  it('rejects photo fallback after disconnect without recording food success or a late media warning', async () => {
+    const pending = deferred<{ bytes: Buffer; mime: string }>();
+    const images = {
+      fetch: vi.fn(async () => pending.promise),
+      store: vi.fn(async () => ({
+        storageKey: 'a'.repeat(64),
+        contentHash: 'a'.repeat(64),
+      })),
+    };
+    const { service, upstream, repository } = setup(images);
+    vi.mocked(upstream.items).mockResolvedValue({
+      products: [],
+      recipe_portions: [],
+      simple_products: [
+        {
+          id: 'food',
+          date: '2026-10-11 12:00:00',
+          daytime: 'lunch',
+          name: 'Synthetic food',
+          nutrients: { 'energy.energy': 10 },
+          is_ai_generated: false,
+        },
+      ],
+    });
+    vi.mocked(upstream.images).mockResolvedValue({
+      lunch: 'https://images.yazio-cdn.com/synthetic.jpg',
+    });
+    const replace = vi.spyOn(repository, 'replaceDay');
+    const running = service.run('owner', period, { mode: 'manual' });
+    const rejected = expect(running).rejects.toMatchObject({
+      code: 'LEASE_LOST',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(images.fetch).toHaveBeenCalledOnce();
+    service.disable('owner');
+    pending.reject(new Error('Synthetic interrupted image transfer'));
+    await rejected;
+    expect(replace).not.toHaveBeenCalled();
+    expect(images.store).not.toHaveBeenCalled();
+    expect(service.status('owner')).toMatchObject({
+      enabled: false,
+      lastSuccess: null,
+      lastError: null,
+      nextRunAt: null,
+    });
+  });
   it.each([
     ['2026-10-12', ['2026-10-12']],
     ['2026-10-10', ['2026-10-10', '2026-10-11', '2026-10-12']],
@@ -252,7 +465,9 @@ describe('durable owner schedule', () => {
         source: async () => newSource,
       });
       await restarted.tick();
-      expect(newSource.items).toHaveBeenCalledTimes(7);
+      expect(
+        vi.mocked(newSource.items).mock.calls.map(([date]) => date),
+      ).toEqual(['2026-10-11', '2026-10-12']);
       const completed = restarted.status('owner');
       expect(completed).toMatchObject({
         running: false,
@@ -271,7 +486,9 @@ describe('durable owner schedule', () => {
         'completed',
       );
       await restarted.tick();
-      expect(newSource.items).toHaveBeenCalledTimes(7);
+      expect(
+        vi.mocked(newSource.items).mock.calls.map(([date]) => date),
+      ).toEqual(['2026-10-11', '2026-10-12']);
     } finally {
       pending.resolve({
         products: [],

@@ -2,7 +2,7 @@
 
 Owned branch: `feat/trainer-collaboration`. Runtime uses the foundation DB and `trainerAccess`; no second grants table, auth/core changes or migrations.
 
-- OWNER UI: `/settings/trainers`; accept UI: `/invite#TOKEN` (fragment keeps token out of HTTP/access logs and referrers).
+- OWNER UI: `/settings#trainers`; accept UI: `/invite#TOKEN` (fragment keeps token out of HTTP/access logs and referrers).
 - `GET /api/trainers?ownerId=...`: safe trainer list. `POST/DELETE /api/trainers`: `{ ownerId, trainerId }` grant/revoke.
 - `POST /api/trainers/invitations`: `{ ownerId, email }` → `{ token, expiresAt }`, no-store. 24-hour one-use token, only SHA-256 stored.
 - `POST /api/trainers/invitations/accept`: `{ token, name, password }`, strict input (role rejected). Invitation capability is the authorization for this deliberately anonymous entry. Creates TRAINER user, Better Auth credential account and grant in one short transaction, hashing before transaction. Existing email rejects without consuming token. No automatic login or email sending.

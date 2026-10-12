@@ -11,6 +11,8 @@ export const ru = {
   yazioSettings: 'Подключение YAZIO',
   loginError: 'Не удалось войти. Проверьте почту и пароль.',
   settings: {
+    navigation: 'Разделы настроек',
+    syncTitle: 'Синхронизация',
     description:
       'Подключение дневника питания и управление доступом к вашим данным.',
     yazioDescription: 'Подключите аккаунт YAZIO и загрузите дневник питания.',

@@ -1,14 +1,26 @@
 import 'server-only';
+import { loadConnectedDiary } from './backfill';
+import {
+  disableNutritionSchedule,
+  getNutritionSchedule,
+} from '@/server/jobs/nutrition-scheduler';
 import { authorize } from '@/server/auth/guards';
 import { readServerEnv } from '@/server/env';
 import { NutritionAccessError } from '@/server/nutrition/access';
 import { nutritionRepository } from '@/server/nutrition/repository';
+import {
+  readYazioAccount,
+  cacheYazioAccount,
+  clearYazioAccount,
+  getYazioAccount,
+} from './account';
 import { fileTokenStore } from './token-store';
 import { tokenSchema } from './client';
 import { resolve, sep } from 'node:path';
 import {
   yazioTokenImportSchema,
   yazioConfirmationSchema,
+  resolveConnectionSchedule,
 } from '@/contracts/nutrition-sync';
 
 export async function yazioOwner(headers: Headers) {
@@ -41,18 +53,58 @@ export async function getYazioStatus(headers: Headers) {
     pathConfigured && Boolean(await configuredStore(ownerId).load());
   return {
     configured,
+    account: configured ? getYazioAccount(ownerId) : null,
     tokenFileConfigured: pathConfigured,
     sync: nutritionRepository().status(ownerId),
+    schedule: getNutritionSchedule(ownerId),
   };
+}
+export async function refreshYazioAccount(headers: Headers) {
+  const ownerId = await yazioOwner(headers);
+  const current = getYazioAccount(ownerId);
+  if (
+    current?.name ||
+    current?.avatar ||
+    !getNutritionSchedule(ownerId).enabled
+  )
+    return;
+  try {
+    const store = configuredStore(ownerId);
+    const token = await store.load();
+    if (!token) return;
+    // The completed leased sync already handled authentication/refresh; this SDK read cannot refresh.
+    const account = await readYazioAccount(token);
+    await store.assertCurrent?.();
+    if ((await yazioOwner(headers)) !== ownerId)
+      throw new NutritionAccessError(403);
+    if (
+      getNutritionSchedule(ownerId).enabled &&
+      (account.email || account.name || account.avatar)
+    )
+      cacheYazioAccount(ownerId, account);
+  } catch (error) {
+    if (error instanceof NutritionAccessError) throw error;
+    // Optional profile lookup never turns a completed diary load into a failure.
+  }
 }
 export async function saveExistingToken(headers: Headers, input: unknown) {
   const ownerId = await yazioOwner(headers);
-  const token = tokenSchema.parse(yazioTokenImportSchema.parse(input).token);
+  const parsed = yazioTokenImportSchema.parse(input);
+  const schedule = resolveConnectionSchedule(parsed);
+  const token = tokenSchema.parse(parsed.token);
   const store = configuredStore(ownerId);
   await store.load();
   if ((await yazioOwner(headers)) !== ownerId)
     throw new NutritionAccessError(403);
+  const account = await readYazioAccount(token);
+  if ((await yazioOwner(headers)) !== ownerId)
+    throw new NutritionAccessError(403);
   await store.save(token);
+  cacheYazioAccount(ownerId, account);
+  const result = await loadConnectedDiary(ownerId, schedule, account);
+  if ((await yazioOwner(headers)) !== ownerId)
+    throw new NutritionAccessError(403);
+  return result;
 }
 export async function disconnectYazio(headers: Headers, input: unknown) {
   const ownerId = await yazioOwner(headers);
@@ -61,6 +113,8 @@ export async function disconnectYazio(headers: Headers, input: unknown) {
   await store.load();
   if ((await yazioOwner(headers)) !== ownerId)
     throw new NutritionAccessError(403);
+  disableNutritionSchedule(ownerId);
+  clearYazioAccount(ownerId);
   await store.disconnect();
   return { configured: false as const };
 }

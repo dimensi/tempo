@@ -59,17 +59,46 @@ export const syncStatusSchema = z.object({
   photoFailedDates: z.array(diaryDateSchema),
 });
 export type SyncStatus = z.infer<typeof syncStatusSchema>;
+export function syncResultKind(sync: SyncStatus) {
+  const foodLoaded =
+    (sync.state === 'completed' || sync.state === 'partial') &&
+    sync.completedDates.length > 0 &&
+    sync.failedDates.length === 0;
+  if (!foodLoaded) return 'incomplete';
+  if (sync.photoFailedDates.length > 0) return 'photos-pending';
+  return sync.state === 'completed' ? 'loaded' : 'incomplete';
+}
+export const yazioAccountSchema = z.object({
+  email: z.email().nullable(),
+  name: z.string().max(201).nullable(),
+  avatar: z.url().nullable(),
+});
+export type YazioAccount = z.infer<typeof yazioAccountSchema>;
 export const yazioCredentialsSchema = z
   .object({
     email: z.email().max(254),
     password: z.string().min(1).max(1024),
-    confirmed: z.literal(true),
+    timezone: timezoneSchema,
+    initialFrom: diaryDateSchema,
   })
   .strict();
 export type YazioCredentialsInput = z.infer<typeof yazioCredentialsSchema>;
 export const yazioTokenImportSchema = z
-  .object({ token: z.unknown(), confirmed: z.literal(true) })
+  .object({
+    token: z.unknown(),
+    timezone: timezoneSchema,
+    initialFrom: diaryDateSchema,
+  })
   .strict();
+export function resolveConnectionSchedule(
+  input: { timezone: string; initialFrom: string },
+  now = new Date(),
+) {
+  const timezone = timezoneSchema.parse(input.timezone);
+  const initialFrom = diaryDateSchema.parse(input.initialFrom);
+  resolveSyncPeriod({ mode: 'period', from: initialFrom, timezone }, now);
+  return { timezone, initialFrom };
+}
 export const yazioConfirmationSchema = z
   .object({ confirmed: z.literal(true) })
   .strict();
@@ -84,8 +113,11 @@ export const nutritionSyncMessages = {
   connect: 'Подключить и загрузить дневник',
   passwordVisibility: 'Показать или скрыть пароль YAZIO',
   connectionHelp:
-    'Введите email и пароль YAZIO. Пароль не сохраняется. Загрузим дневник с выбранной даты по сегодня.',
-  connectionConsent: 'Разрешаю подключение и зашифрованное хранение токенов',
+    'Подключение хранится зашифрованным. Пароль не сохраняется. Загрузим дневник с выбранной даты по сегодня.',
+  account: 'Аккаунт YAZIO',
+  syncTitle: 'Синхронизация дневника',
+  accountFallback: 'YAZIO подключён',
+  accountHelp: 'Подключение хранится зашифрованным. Пароль не сохраняется.',
   disconnect: 'Отключить YAZIO',
   disconnectTitle: 'Отключить подключение YAZIO?',
   disconnectHelp:
@@ -99,19 +131,41 @@ export const nutritionSyncMessages = {
   tokenHelp:
     'Необязательный импорт существующего JSON: token_type, access_token, refresh_token, expires_in, expires_at. Используйте значения из существующего токена; не заполняйте сроки вручную.',
   connectionLoaded: 'YAZIO подключён. Дневник загружен.',
+  connectionPhotoWarning:
+    'YAZIO подключён. Еда загружена; часть фотографий пока недоступна.',
+  syncPhotoWarning: 'Еда обновлена; часть фотографий пока недоступна.',
+  photoWarning: 'Некоторые фотографии пока недоступны.',
+  foodStatus: 'Загрузка еды',
   connectionSyncFailed:
-    'YAZIO подключён, но дневник не удалось загрузить. Нажмите «Обновить дневник», чтобы повторить.',
+    'YAZIO подключён. Не удалось полностью загрузить дневник. Нажмите «Обновить сейчас», чтобы повторить.',
   syncLoaded: 'Дневник обновлён.',
   syncFailed:
     'Не удалось полностью обновить дневник. Подключение сохранено. Попробуйте ещё раз.',
   today: 'По сегодня',
-  toCustom: 'Указать другую дату окончания',
   from: 'Загрузить данные начиная с…',
   to: 'Конец периода',
   period: 'Синхронизировать период',
-  recent: 'Обновить дневник',
+  recent: 'Обновить сейчас',
   failure: 'Не удалось выполнить запрос',
   success: 'Запрос выполнен',
+  hourly:
+    'Каждый час обновляем последние 7 дней, включая сегодня, но не раньше выбранной даты. Историю можно загрузить кнопкой.',
+  schedulerInactive:
+    'Автоматическое обновление пока не включено на сервере. Можно обновить сейчас.',
+  scheduleDisabled: 'Автоматическое обновление отключено.',
+  lastSuccess: 'Последнее успешное обновление',
+  nextRun: 'Следующее обновление',
+  noRuns: 'Ещё не было',
+  pendingRun: 'Пока не назначено',
+  scheduledLoading: 'Загрузка дневника выполняется на сервере.',
+  scheduleErrors: {
+    NOT_CONFIGURED: 'Подключение недоступно. Переподключите YAZIO.',
+    SYNC_FAILED:
+      'Не удалось полностью загрузить дневник. Сервер повторит попытку.',
+    PHOTO_INCOMPLETE:
+      'Еда загружена, но не все фотографии доступны. Сервер повторит загрузку фото.',
+    LEASE_LOST: 'Загрузка была прервана. Сервер повторит попытку.',
+  },
   states: {
     idle: 'Ожидает загрузки',
     running: 'Загрузка',
