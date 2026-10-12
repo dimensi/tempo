@@ -150,3 +150,13 @@ it.each(['listExercisePage', 'listMuscleGroups'] as const)(
     expect(JSON.stringify(error)).not.toContain('demo-token');
   },
 );
+
+it('does not expose query values in response validation errors', async () => {
+  const { client } = setup(json({ wrong: true }));
+  const error = await client
+    .listExercisePage({ search: 'demo-token' })
+    .catch((value: unknown) => value);
+  expect(error).toMatchObject({ endpoint: 'exercises/temporary_exercises/' });
+  expect(JSON.stringify(error)).not.toContain('demo-token');
+  expect(String(error)).not.toContain('demo-token');
+});
