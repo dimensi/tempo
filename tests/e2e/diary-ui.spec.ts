@@ -219,25 +219,71 @@ test('synthetic diary: one computed total, calorie macro pie, compact food cards
   expect(
     await page.locator('meta[name=viewport]').getAttribute('content'),
   ).not.toMatch(/user-scalable=no|maximum-scale=1(?:\D|$)/);
+  const originalImageBox = (await viewer.locator('img').boundingBox())!;
+  await viewer
+    .getByRole('button', { name: 'Увеличить изображение', exact: true })
+    .click();
+  await expect
+    .poll(async () => (await viewer.locator('img').boundingBox())!.width)
+    .toBeGreaterThan(originalImageBox.width);
+  await viewer
+    .getByRole('button', { name: 'Исходный размер', exact: true })
+    .click();
+  await expect
+    .poll(async () => (await viewer.locator('img').boundingBox())!.width)
+    .toBeCloseTo(originalImageBox.width, 0);
+  for (let i = 0; i < 4; i++) {
+    await viewer
+      .getByRole('button', { name: 'Увеличить изображение', exact: true })
+      .click();
+  }
+  await expect(
+    viewer.getByRole('button', { name: 'Увеличить изображение', exact: true }),
+  ).toBeDisabled();
+  await expect
+    .poll(async () => (await viewer.locator('img').boundingBox())!.width)
+    .toBeCloseTo(originalImageBox.width * 4, 0);
+  await viewer
+    .getByRole('button', { name: 'Исходный размер', exact: true })
+    .click();
   if (test.info().project.name === 'mobile') {
     const session = await page.context().newCDPSession(page);
-    const scale = await page.evaluate(() => visualViewport!.scale);
-    const box = (await viewer.locator('img').boundingBox())!;
-    await session.send('Input.synthesizePinchGesture', {
-      x: box.x + box.width / 2,
-      y: Math.min(box.y + box.height / 2, 500),
-      scaleFactor: 1.5,
-      gestureSourceType: 'touch',
+    const x = originalImageBox.x + originalImageBox.width / 2;
+    const y = Math.min(originalImageBox.y + originalImageBox.height / 2, 500);
+    const touchPoints = (gap: number) => [
+      { x: x - gap, y, id: 1 },
+      { x: x + gap, y, id: 2 },
+    ];
+    await session.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: touchPoints(40),
+    });
+    for (const gap of [50, 60, 70, 80]) {
+      await session.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: touchPoints(gap),
+      });
+    }
+    await expect
+      .poll(async () => (await viewer.locator('img').boundingBox())!.width)
+      .toBeGreaterThan(originalImageBox.width * 1.8);
+    await page.screenshot({
+      path: test.info().outputPath('diary-photo-pinch.png'),
+      animations: 'disabled',
+    });
+    for (const gap of [70, 60, 50, 40]) {
+      await session.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: touchPoints(gap),
+      });
+    }
+    await session.send('Input.dispatchTouchEvent', {
+      type: 'touchEnd',
+      touchPoints: [],
     });
     await expect
-      .poll(() => page.evaluate(() => visualViewport!.scale))
-      .toBeGreaterThan(scale);
-    await session.send('Input.synthesizePinchGesture', {
-      x: box.x + box.width / 2,
-      y: Math.min(box.y + box.height / 2, 500),
-      scaleFactor: 1 / 1.5,
-      gestureSourceType: 'touch',
-    });
+      .poll(async () => (await viewer.locator('img').boundingBox())!.width)
+      .toBeCloseTo(originalImageBox.width, 0);
     await session.detach();
   }
   await page.screenshot({
