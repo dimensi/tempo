@@ -130,9 +130,16 @@ async function loadTransformMateClient(
   return client;
 }
 export async function getTransformMateConnectionFence(ownerId: string) {
-  if (!(await getTransformMateClient(ownerId))) return null;
-  const entry = clients.get(ownerId)!;
+  const client = await getTransformMateClient(ownerId);
+  if (!client) return null;
+  const entry = clients.get(ownerId);
+  if (!entry || entry.client !== client)
+    throw new TransformMateStaleConnectionError();
+  await entry.store.assertCurrent();
+  if (clients.get(ownerId) !== entry)
+    throw new TransformMateStaleConnectionError();
   return {
+    client: entry.client,
     generation: entry.token.connectionId,
     assertCurrent: () => entry.store.assertCurrent(),
   };

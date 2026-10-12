@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { authorize } from '@/server/auth/guards';
 import { getDatabase } from '@/server/db';
+import { serializeOwner } from '@/server/workouts/transformmate/engine';
 import { workoutTransformMateLinks } from '@/server/db/schema/transformmate';
 import {
   transformMateCredentialsSchema,
@@ -110,47 +111,50 @@ export async function connectTransformMate(headers: Headers, input: unknown) {
   if (!info || !info.userId || !info.projectId)
     throw new Error('Invalid TransformMate session');
   await recheck(headers, ownerId);
-  const hasLinks = getDatabase()
-    .db.select({
-      remoteTrainingId: workoutTransformMateLinks.remoteTrainingId,
-      state: workoutTransformMateLinks.state,
-    })
-    .from(workoutTransformMateLinks)
-    .where(eq(workoutTransformMateLinks.ownerId, ownerId))
-    .all()
-    .some((link) => {
-      if (link.remoteTrainingId !== null) return true;
-      try {
-        return JSON.parse(link.state).attempted !== false;
-      } catch {
-        return true;
-      }
-    });
-  // Existing links carry no provider account ID. Never attach them to an unproven identity.
-  if (
-    hasLinks &&
-    (!previous.binding ||
-      previous.binding.account.id !== account.id ||
-      previous.binding.userId !== info.userId ||
-      previous.binding.projectId !== info.projectId)
-  )
-    throw new TransformMateAccountBindingError();
-  const token = {
-    ...credentials,
-    refreshToken: session.getRefreshToken(),
-    userId: info.userId,
-    projectId: info.projectId,
-    account,
-    checkedAt: new Date().toISOString(),
-    connectionId: randomUUID(),
-  };
-  await recheck(headers, ownerId);
-  await store.save(token);
-  invalidateTransformMateClient(ownerId);
-  await recheck(headers, ownerId);
-  const snapshot = status(await store.load());
-  await recheck(headers, ownerId);
-  return snapshot;
+  return serializeOwner(ownerId, async () => {
+    await recheck(headers, ownerId);
+    const hasLinks = getDatabase()
+      .db.select({
+        remoteTrainingId: workoutTransformMateLinks.remoteTrainingId,
+        state: workoutTransformMateLinks.state,
+      })
+      .from(workoutTransformMateLinks)
+      .where(eq(workoutTransformMateLinks.ownerId, ownerId))
+      .all()
+      .some((link) => {
+        if (link.remoteTrainingId !== null) return true;
+        try {
+          return JSON.parse(link.state).attempted !== false;
+        } catch {
+          return true;
+        }
+      });
+    // Existing links carry no provider account ID. Never attach them to an unproven identity.
+    if (
+      hasLinks &&
+      (!previous.binding ||
+        previous.binding.account.id !== account.id ||
+        previous.binding.userId !== info.userId ||
+        previous.binding.projectId !== info.projectId)
+    )
+      throw new TransformMateAccountBindingError();
+    const token = {
+      ...credentials,
+      refreshToken: session.getRefreshToken(),
+      userId: info.userId,
+      projectId: info.projectId,
+      account,
+      checkedAt: new Date().toISOString(),
+      connectionId: randomUUID(),
+    };
+    await recheck(headers, ownerId);
+    await store.save(token);
+    invalidateTransformMateClient(ownerId);
+    await recheck(headers, ownerId);
+    const snapshot = status(await store.load());
+    await recheck(headers, ownerId);
+    return snapshot;
+  });
 }
 export async function checkTransformMate(headers: Headers, input: unknown) {
   const ownerId = await transformMateOwner(headers);

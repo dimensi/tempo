@@ -196,3 +196,20 @@ it('deduplicates concurrent cold clients and their first refresh rotation', asyn
     (await configuredTransformMateStore('owner').load()).token?.refreshToken,
   ).toBe('synthetic-rotation');
 });
+
+it('returns a coherent client/fence pair when a disconnected owner connects', async () => {
+  expect(await getTransformMateConnectionFence('owner')).toBeNull();
+  await connected();
+  const token = (await configuredTransformMateStore('owner').load()).token!;
+  const request = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+    if (String(input).includes('securetoken.googleapis.com'))
+      return refreshed();
+    return new Response(JSON.stringify({ id: 7 }), { status: 200 });
+  });
+  vi.stubGlobal('fetch', request);
+  const connection = await getTransformMateConnectionFence('owner');
+  expect(connection?.generation).toBe(token.connectionId);
+  expect(connection?.client).toBe(await getTransformMateClient('owner'));
+  await connection!.client.getMe();
+  await connection!.assertCurrent();
+});

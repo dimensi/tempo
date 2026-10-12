@@ -7,6 +7,7 @@ vi.mock('server-only', () => ({}));
 const state = vi.hoisted(() => ({
   path: '',
   status: 200,
+  bindingReads: 0,
   links: [] as { remoteTrainingId: number | null; state: string }[],
 }));
 vi.mock('@/server/auth/guards', () => ({
@@ -27,7 +28,14 @@ vi.mock('@/server/db', () => ({
   getDatabase: () => ({
     db: {
       select: () => ({
-        from: () => ({ where: () => ({ all: () => state.links }) }),
+        from: () => ({
+          where: () => ({
+            all: () => {
+              state.bindingReads++;
+              return state.links;
+            },
+          }),
+        }),
       }),
     },
   }),
@@ -42,6 +50,7 @@ import {
   configuredTransformMateStore,
   invalidateTransformMateClient,
 } from '@/server/transformmate/runtime';
+import { serializeOwner } from '@/server/workouts/transformmate/engine';
 import * as tokenStores from '@/server/transformmate/token-store';
 import { POST } from '@/app/api/transformmate/connect/route';
 import { readTransformMateJson } from '@/server/transformmate/http';
@@ -76,6 +85,7 @@ function upstream(id = 7) {
         ? auth()
         : new Response(JSON.stringify(me(id)), {
             status: 200,
+            bindingReads: 0,
             headers: { 'content-type': 'application/json' },
           }),
     ),
@@ -199,6 +209,7 @@ it('delayed connect cannot overwrite a disconnect tombstone', async () => {
   finish(
     new Response(JSON.stringify(me()), {
       status: 200,
+      bindingReads: 0,
       headers: { 'content-type': 'application/json' },
     }),
   );
@@ -317,4 +328,97 @@ it('rechecks authorization after failed check final error status load', async ()
   await expect(checkTransformMate(headers, {})).rejects.toMatchObject({
     status: 403,
   });
+});
+
+it('serializes account switch against an in-flight first create, independently of token CAS', async () => {
+  await connectTransformMate(headers, credentials);
+  const before = await readFile(state.path, 'utf8');
+  state.bindingReads = 0;
+  let startCreate!: () => void;
+  const started = new Promise<void>((resolve) => {
+    startCreate = resolve;
+  });
+  let finishCreate!: () => void;
+  const creating = new Promise<void>((resolve) => {
+    finishCreate = resolve;
+  });
+  const firstCreate = serializeOwner('owner', async () => {
+    startCreate();
+    await creating;
+    state.links = [
+      { remoteTrainingId: null, state: JSON.stringify({ attempted: true }) },
+    ];
+  });
+  await started;
+  let validated!: () => void;
+  const candidate = new Promise<void>((resolve) => {
+    validated = resolve;
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      if (String(input).includes('securetoken.googleapis.com')) return auth();
+      validated();
+      return new Response(JSON.stringify(me(8)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }),
+  );
+  const connection = connectTransformMate(headers, credentials);
+  const rejected = expect(connection).rejects.toThrow('binding');
+  await candidate;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  // Candidate validation is complete, but the binding check cannot race ahead of the create.
+  expect(state.bindingReads).toBe(0);
+  expect(await readFile(state.path, 'utf8')).toBe(before);
+  finishCreate();
+  await firstCreate;
+  await rejected;
+  expect(state.bindingReads).toBe(1);
+  expect(await readFile(state.path, 'utf8')).toBe(before);
+  expect(
+    (await configuredTransformMateStore('owner').load()).token?.account.id,
+  ).toBe(7);
+});
+
+it('retains original token generation while waiting for the owner queue', async () => {
+  await connectTransformMate(headers, credentials);
+  let finish!: () => void;
+  let started!: () => void;
+  const began = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const wait = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const blocker = serializeOwner('owner', async () => {
+    started();
+    await wait;
+  });
+  await began;
+  let validated!: () => void;
+  const candidate = new Promise<void>((resolve) => {
+    validated = resolve;
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      if (String(input).includes('securetoken.googleapis.com')) return auth();
+      validated();
+      return new Response(JSON.stringify(me()), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }),
+  );
+  const connecting = connectTransformMate(headers, credentials);
+  const rejected = expect(connecting).rejects.toThrow('changed');
+  await candidate;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await disconnectTransformMate(headers, {});
+  finish();
+  await blocker;
+  await rejected;
+  expect((await configuredTransformMateStore('owner').load()).token).toBeNull();
 });
