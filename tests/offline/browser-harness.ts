@@ -140,6 +140,65 @@ Object.assign(window, {
       await storage.commit(bundle, cached.photos, now, 'UTC');
       return (await storage.read(now, 'UTC')).photos.length;
     },
+    async upgradeOnline() {
+      const snapshot = offlineFixture(now);
+      const {
+        contractVersion,
+        weightPolicyVersion,
+        partition,
+        connectionGeneration,
+        role,
+        serverNow,
+        expiresAt,
+        sessionExpiresAt,
+      } = snapshot;
+      const identity = {
+        contractVersion,
+        weightPolicyVersion,
+        partition,
+        connectionGeneration,
+        role,
+        serverNow,
+        expiresAt,
+        sessionExpiresAt,
+      };
+      const before = await storage.metadata();
+      const requests: string[] = [];
+      const controller = new OfflineController(
+        storage,
+        (async (url: string) => {
+          requests.push(url);
+          return new Response(
+            JSON.stringify(
+              url === '/api/offline/identity' ? identity : snapshot,
+            ),
+          );
+        }) as typeof fetch,
+        () => now,
+        async () => {},
+        () => 'UTC',
+      );
+      const nativePublishes: number[] = [];
+      controller.subscribe(() => {
+        const bundle = controller.getSnapshot().bundle;
+        if (bundle)
+          nativePublishes.push(bundle.snapshot.nativeTrainings.length);
+      });
+      await controller.activate(true, true);
+      const state = controller.getSnapshot();
+      const metadata = await storage.metadata();
+      const result = {
+        enabled: state.enabled,
+        status: state.status,
+        native: state.bundle?.snapshot.nativeTrainings.length,
+        photos: state.photos.length,
+        generationAdvanced: metadata.generation > before.generation,
+        nativePublishes,
+        requests,
+      };
+      controller.invalidate();
+      return result;
+    },
     async alterNative(mode: 'old-format' | 'pre-native' | 'boundary') {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open('yazio-offline-read-v1', 1);

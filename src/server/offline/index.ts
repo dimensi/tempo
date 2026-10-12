@@ -114,13 +114,13 @@ async function identityContext(headers: Headers, session: Session) {
     contractVersion: 1,
     weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
     partition: hash(secret, 'offline-owner/v1', [session.user.id]),
+    // Schema-only upgrades must not look like an account change to existing opt-in devices.
     connectionGeneration: hash(secret, 'offline-connection/v1', [
       session.user.id,
       session.session.id,
       epoch,
       tm.configured,
       tm.connectionId,
-      nativeBinding.accountScope,
     ]),
     role: 'OWNER',
     serverNow: new Date(now).toISOString(),

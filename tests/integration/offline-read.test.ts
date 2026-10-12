@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -643,6 +644,57 @@ it('native snapshot final disconnect and revoked permission after binding await 
     const denied = await snapshotGET(request(ownerHeaders));
     expect(denied.status).toBe(403);
     expect(await denied.json()).toEqual({ error: 'OFFLINE_ACCESS_DENIED' });
+  } finally {
+    database.sqlite.prepare('DELETE FROM workout_transformmate_native').run();
+  }
+});
+
+it('native schema upgrade retains the pre-native authenticated generation hash format', async () => {
+  const { store } = await seedNativeHistory();
+  try {
+    const session = (await getAuth().api.getSession({
+      headers: ownerHeaders,
+    }))!;
+    const epoch = repository.offlineRepository().generation(ownerId);
+    const response = await identityGET(request(ownerHeaders, 'identity'));
+    expect(response.status).toBe(200);
+    const value = await response.json();
+    const legacy = createHmac(
+      'sha256',
+      'offline-only-synthetic-secret-at-least-32-characters',
+    )
+      .update(
+        JSON.stringify([
+          'offline-connection/v1',
+          ownerId,
+          session.session.id,
+          epoch,
+          true,
+          'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        ]),
+      )
+      .digest('base64url');
+    expect(value.connectionGeneration).toBe(legacy);
+    await store.disconnect();
+    const disconnected = await (
+      await identityGET(request(ownerHeaders, 'identity'))
+    ).json();
+    const legacyDisconnected = createHmac(
+      'sha256',
+      'offline-only-synthetic-secret-at-least-32-characters',
+    )
+      .update(
+        JSON.stringify([
+          'offline-connection/v1',
+          ownerId,
+          session.session.id,
+          epoch,
+          false,
+          null,
+        ]),
+      )
+      .digest('base64url');
+    expect(disconnected.connectionGeneration).toBe(legacyDisconnected);
   } finally {
     database.sqlite.prepare('DELETE FROM workout_transformmate_native').run();
   }

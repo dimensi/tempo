@@ -114,6 +114,38 @@ test('pre-native cached snapshot and blobs clear while opt-in survives', async (
   });
   expect(await page.evaluate(call('stale()'))).toBe(true);
 });
+test('online controller schema upgrade preserves prior generation opt-in and refills only after identity verification', async ({
+  page,
+}) => {
+  await inject(page);
+  await page.evaluate(call('seed()'));
+  await page.evaluate(call("alterNative('pre-native')"));
+  expect(await page.evaluate(call('rawCounts()'))).toEqual({
+    bundle: 1,
+    photos: 1,
+  });
+  const result = await page.evaluate<{ requests: string[] }>(
+    call('upgradeOnline()'),
+  );
+  expect(result).toMatchObject({
+    enabled: true,
+    status: 'ready',
+    native: 1,
+    photos: 0,
+    generationAdvanced: true,
+    nativePublishes: [1],
+  });
+  expect(result.requests).toEqual([
+    '/api/offline/identity',
+    expect.stringMatching(/^\/api\/offline\/snapshot\?from=/),
+    '/api/offline/identity',
+  ]);
+  expect(await page.evaluate(call('rawCounts()'))).toEqual({
+    bundle: 1,
+    photos: 0,
+  });
+  expect(await page.evaluate(call('stale()'))).toBe(true);
+});
 test('two tabs hide private DOM and durably block storage before physical cleanup', async ({
   page,
   context,
