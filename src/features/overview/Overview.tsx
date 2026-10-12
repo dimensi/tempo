@@ -20,6 +20,7 @@ import { formatDecimal, toChartNumber } from '@/lib/number-display';
 import { overviewMessages as m } from './messages';
 import { localCalendar, nextMidnightDelay } from './calendar';
 import classes from './overview.module.css';
+import { TodayNutrition } from './TodayNutrition';
 const number = (value: string | null) => formatDecimal(value) ?? m.empty;
 const date = (value: string) =>
   new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long' }).format(
@@ -141,35 +142,7 @@ export function Overview() {
                 {m.diary}
               </Anchor>
             </Group>
-            <Text className={classes.calories}>
-              {number(current.nutrition.today?.calories ?? null)}
-              {current.nutrition.today?.calories !== null &&
-                current.nutrition.today && (
-                  <Text span size="lg" c="dimmed">
-                    {' '}
-                    {m.kcal}
-                  </Text>
-                )}
-            </Text>
-            {current.nutrition.today ? (
-              <Group gap={32}>
-                {(['protein', 'fat', 'carbs'] as const).map((key) => (
-                  <Stack key={key} gap={4}>
-                    <Text size="sm" c="dimmed">
-                      {m[key]}
-                    </Text>
-                    <Text fw={600}>
-                      {number(current.nutrition.today![key])}
-                      {current.nutrition.today![key] !== null
-                        ? ` ${m.grams}`
-                        : ''}
-                    </Text>
-                  </Stack>
-                ))}
-              </Group>
-            ) : (
-              <Text c="dimmed">{m.todayEmpty}</Text>
-            )}
+            <TodayNutrition totals={current.nutrition.today} />
           </section>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={40}>
             <section aria-labelledby="workouts-heading">
