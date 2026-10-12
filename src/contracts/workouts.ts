@@ -49,6 +49,23 @@ export const workoutPlanInputSchema = z
       });
     const ids = new Set<string>();
     value.workouts.forEach((workout, index) => {
+      const occurrences = new Set<string>();
+      workout.exercises.forEach((exercise, exerciseIndex) => {
+        const key = exercise.transformMate?.occurrenceKey;
+        if (key && occurrences.has(key))
+          ctx.addIssue({
+            code: 'custom',
+            path: [
+              'workouts',
+              index,
+              'exercises',
+              exerciseIndex,
+              'transformMate',
+            ],
+            message: 'duplicate exercise occurrence',
+          });
+        if (key) occurrences.add(key);
+      });
       if (workout.date < value.startsOn || workout.date > value.endsOn)
         ctx.addIssue({
           code: 'custom',

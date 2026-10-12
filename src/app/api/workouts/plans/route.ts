@@ -8,6 +8,7 @@ export async function POST(request: Request) {
       request.headers,
       new URL(request.url).searchParams.get('ownerId') ?? '',
       body,
+      request.headers.get('idempotency-key') ?? undefined,
     );
   });
 }

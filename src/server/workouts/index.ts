@@ -37,10 +37,12 @@ export async function createWorkoutPlan(
   headers: Headers,
   ownerId: string,
   input: unknown,
+  requestId?: string,
 ) {
   return (await access(headers, ownerId, 'workouts:plan')).createPlan(
     ownerId,
     workoutPlanInputSchema.parse(input),
+    requestId === undefined ? undefined : z.uuid().parse(requestId),
   );
 }
 export async function updateWorkoutPlan(

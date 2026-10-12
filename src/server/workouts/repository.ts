@@ -63,13 +63,28 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
           .map(sessionDto),
       };
     },
-    createPlan(ownerId: string, data: WorkoutPlanInput) {
+    createPlan(ownerId: string, data: WorkoutPlanInput, requestId?: string) {
+      if (requestId) {
+        const existing = db
+          .select()
+          .from(workoutPlans)
+          .where(eq(workoutPlans.id, requestId))
+          .get();
+        if (existing) {
+          if (
+            existing.ownerId !== ownerId ||
+            JSON.stringify(existing.data) !== JSON.stringify(data)
+          )
+            throw new WorkoutError(409);
+          return planDto(existing);
+        }
+      }
       const now = new Date().toISOString();
       return planDto(
         db
           .insert(workoutPlans)
           .values({
-            id: randomUUID(),
+            id: requestId ?? randomUUID(),
             ownerId,
             data,
             createdAt: now,
