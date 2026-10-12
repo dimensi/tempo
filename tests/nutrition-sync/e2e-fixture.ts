@@ -6,7 +6,7 @@ import { user, trainerAccess } from '@/server/db/schema';
 import { nutritionRepository } from '@/server/nutrition/repository';
 import { syncNutritionPeriod } from '@/server/jobs/nutrition-sync';
 import { storeImage } from '@/server/nutrition/images';
-import type { NutritionUpstream } from '@/server/yazio/adapter';
+import type { NutritionDayUpstream } from '@/server/yazio/adapter';
 
 if (
   process.env.DATABASE_URL !== 'file:./.data/e2e.sqlite' ||
@@ -64,7 +64,7 @@ try {
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aKxkAAAAASUVORK5CYII=',
       'base64',
     );
-    const upstream: NutritionUpstream = {
+    const upstream: NutritionDayUpstream = {
       async items(day) {
         if (scenario === 'error') throw new Error('Synthetic upstream failure');
         return {

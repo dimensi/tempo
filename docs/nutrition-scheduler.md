@@ -79,3 +79,11 @@ The initial-history-bound patch passed full `pnpm check` (168 tests, including 2
 ```
 
 CI must still pass on the final published integration head before merge. Consumer hooks/UI integration is a separate acceptance step before enabling deployment. These synthetic checks do not establish live account synchronization or production scheduler activation.
+
+## Read-only health imports
+
+The same manual/hourly owner lease now imports daily steps and last-weight reads after completing nutrition. Each run constructs one adapter with a bounded, per-date raw daily-summary promise cache; independent food and health projections share the SDK response, including transport failures. Health validation failures cannot invalidate valid meals. No additional timer, credentials, provider writes, or trainer permissions are introduced.
+
+The returned `health` outcome lists completed and failed steps/weight request dates with sanitized `HEALTH_IMPORT_FAILED` when applicable. A successful null last-weight read completes its request date without creating or deleting records. Repeated last-weight UUIDs are deduplicated before one owner-bound health transaction. Unknown steps remain null, explicit zero remains zero, and raw weights retain unknown units and ambiguous provider dates. These are last-entry observations, not a complete weight-history import.
+
+Food/photo status, last successful food timestamp and retry policy are completed before health work and remain independent of health failures. Every health await and the synchronous persistence boundary use the current owner UUID/epoch/expiry fence. Disconnect, reconnect, revoked ownership or expiry rejects late writes; pending reads drain before the existing lease is released.
