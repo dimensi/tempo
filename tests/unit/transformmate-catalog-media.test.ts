@@ -4,10 +4,15 @@ const mocks = vi.hoisted(() => ({
   authorize: vi.fn(),
   listExercises: vi.fn(),
   getExercise: vi.fn(),
+  assertCurrent: vi.fn(),
 }));
 vi.mock('@/server/auth/guards', () => ({ authorize: mocks.authorize }));
 vi.mock('@/server/transformmate/runtime', () => ({
   getTransformMateClient: () => mocks,
+  getTransformMateConnectionFence: async () => ({
+    generation: 'synthetic-connection',
+    assertCurrent: mocks.assertCurrent,
+  }),
 }));
 import {
   listExercises,
@@ -33,6 +38,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.authorize.mockResolvedValue({ ok: true });
   mocks.getExercise.mockResolvedValue({ body: detail() });
+  mocks.assertCurrent.mockResolvedValue(undefined);
 });
 describe('private catalog', () => {
   it('only projects bounded public fields and confirmed metrics', async () => {
@@ -64,13 +70,14 @@ describe('private catalog', () => {
   it('requires access before and after network work', async () => {
     mocks.authorize
       .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({ ok: false, status: 403 });
     mocks.listExercises.mockResolvedValue({ body: [] });
     await expect(
       listExercises(new Headers(), 'owner', ''),
     ).rejects.toMatchObject({ status: 403 });
     expect(mocks.authorize).toHaveBeenNthCalledWith(
-      2,
+      3,
       expect.any(Headers),
       'workouts:read',
       'owner',
@@ -139,6 +146,7 @@ describe('media proxy', () => {
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({ ok: false, status: 403 });
     const upstream = vi
       .fn()
@@ -190,6 +198,26 @@ describe('media proxy', () => {
       ).status,
     ).toBe(416);
     expect(upstream).not.toHaveBeenCalled();
+  });
+  it('cancels fetched media if the connection changes before response', async () => {
+    const cancel = vi.fn();
+    const body = new ReadableStream({ cancel });
+    const upstream = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(body, { headers: { 'Content-Type': 'video/mp4' } }),
+      );
+    mocks.assertCurrent
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('Connection changed'));
+    const response = await streamExerciseVideo(
+      new Request('https://app.test/video?ownerId=owner'),
+      '501',
+      upstream,
+    );
+    expect(response.status).toBe(502);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(await response.text()).toBe('');
   });
 });
 

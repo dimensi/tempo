@@ -7,6 +7,7 @@ import {
 } from '@/server/transformmate/catalog';
 
 import { selectMediaUrl } from '@/server/transformmate/catalog-schema';
+import { getTransformMateConnectionFence } from '@/server/transformmate/runtime';
 export { selectMediaUrl } from '@/server/transformmate/catalog-schema';
 export async function streamExerciseVideo(
   request: Request,
@@ -26,10 +27,13 @@ export async function streamExerciseVideo(
       !/^bytes=(?:[0-9]{1,16}-[0-9]{0,16}|-[0-9]{1,16})$/.test(range)
     )
       throw new CatalogError(416);
+    const connection = await getTransformMateConnectionFence(ownerId);
+    if (!connection) throw new CatalogError(503);
     const detail = await getExercise(request.headers, ownerId, exerciseId(id));
     const url = selectMediaUrl(detail);
     if (!url) throw new CatalogError(404);
     let upstream: Response;
+    await connection.assertCurrent();
     try {
       upstream = await requestFetch(url, {
         method: request.method === 'HEAD' ? 'HEAD' : 'GET',
@@ -43,6 +47,7 @@ export async function streamExerciseVideo(
     }
     try {
       await requireCatalogAccess(request.headers, ownerId);
+      await connection.assertCurrent();
     } catch (error) {
       await upstream.body?.cancel();
       throw error;
