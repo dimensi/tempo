@@ -211,20 +211,22 @@ export function PlanForm({
                   value={workout.exercises}
                   onChange={(exercises) => update({ exercises })}
                 />
-                <Button
-                  mih={44}
-                  color="red"
-                  variant="subtle"
-                  disabled={value.workouts.length === 1}
-                  onClick={() =>
-                    setValue({
-                      ...value,
-                      workouts: value.workouts.filter((_, i) => i !== index),
-                    })
-                  }
-                >
-                  {m.removeWorkout} {index + 1}
-                </Button>
+                {!workoutId && (
+                  <Button
+                    mih={44}
+                    color="red"
+                    variant="subtle"
+                    disabled={value.workouts.length === 1}
+                    onClick={() =>
+                      setValue({
+                        ...value,
+                        workouts: value.workouts.filter((_, i) => i !== index),
+                      })
+                    }
+                  >
+                    {m.removeWorkout} {index + 1}
+                  </Button>
+                )}
               </Stack>
             </Paper>
           );

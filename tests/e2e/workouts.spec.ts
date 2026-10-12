@@ -115,9 +115,13 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
   const session = (await workouts(page, id)).sessions.find(
     (value) => value.planId === plan.id,
   )!;
+  await expect(card).toContainText('10 × 35 кг');
   await card
     .getByRole('button', { name: 'Изменить тренировку', exact: true })
     .click();
+  await expect(
+    dialog.getByRole('button', { name: /Удалить тренировку/ }),
+  ).toHaveCount(0);
   await dialog
     .getByRole('textbox', { name: 'Название тренировки 1', exact: true })
     .fill(`${title} изменён`);

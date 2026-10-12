@@ -204,7 +204,7 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
   await dialog
     .getByRole('button', { name: 'Добавить упражнение', exact: true })
     .click();
-  const picker = page.getByRole('dialog').last();
+  const picker = page.getByRole('dialog', { name: 'Добавить упражнение' });
   await picker.getByLabel('Поиск упражнений TransformMate').fill('присед');
   await expect(
     picker.getByRole('button', { name: 'Не поддержано' }),
@@ -240,6 +240,18 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
   await expect(
     dialog.getByRole('button', { name: 'Скрыть видео' }),
   ).toHaveCount(0);
+  await dialog
+    .getByRole('button', { name: 'Выбрать из каталога', exact: true })
+    .click();
+  await picker
+    .getByRole('button', { name: 'Ввести упражнение вручную', exact: true })
+    .click();
+  const manualName = dialog.getByRole('textbox', {
+    name: 'Упражнение 1',
+    exact: true,
+  });
+  await expect(manualName).toBeEditable();
+  await manualName.fill('Ручное упражнение');
   await dialog
     .getByRole('button', { name: 'Выбрать из каталога', exact: true })
     .click();
