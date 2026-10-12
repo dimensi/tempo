@@ -29,19 +29,49 @@ export async function streamExerciseVideo(
       throw new CatalogError(416);
     const connection = await getTransformMateConnectionFence(ownerId);
     if (!connection) throw new CatalogError(503);
-    const detail = await getExercise(request.headers, ownerId, exerciseId(id));
-    const url = selectMediaUrl(detail);
+    let detail = await getExercise(request.headers, ownerId, exerciseId(id));
+    let url = selectMediaUrl(detail);
+    let refreshedMetadata = false;
+    if (!url) {
+      refreshedMetadata = true;
+      detail = await getExercise(
+        request.headers,
+        ownerId,
+        exerciseId(id),
+        true,
+      );
+      url = selectMediaUrl(detail);
+    }
     if (!url) throw new CatalogError(404);
     let upstream: Response;
     await connection.assertCurrent();
-    try {
-      upstream = await requestFetch(url, {
+    const fetchMedia = (target: URL) =>
+      requestFetch(target, {
         method: request.method === 'HEAD' ? 'HEAD' : 'GET',
         headers: range ? { Range: range } : {},
         redirect: 'error',
         cache: 'no-store',
         signal: AbortSignal.any([request.signal, AbortSignal.timeout(30000)]),
       });
+    try {
+      upstream = await fetchMedia(url);
+      if (
+        !refreshedMetadata &&
+        [401, 403, 404, 410].includes(upstream.status)
+      ) {
+        await upstream.body?.cancel();
+        await requireCatalogAccess(request.headers, ownerId);
+        await connection.assertCurrent();
+        detail = await getExercise(
+          request.headers,
+          ownerId,
+          exerciseId(id),
+          true,
+        );
+        const refreshed = selectMediaUrl(detail);
+        if (!refreshed) throw new CatalogError(404);
+        upstream = await fetchMedia(refreshed);
+      }
     } catch {
       throw new CatalogError(502);
     }

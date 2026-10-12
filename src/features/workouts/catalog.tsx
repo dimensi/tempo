@@ -1,52 +1,133 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { Alert, Button, Loader, Stack, Text, TextInput } from '@mantine/core';
-import { z } from 'zod';
+import { useEffect, useRef, useState } from 'react';
 import {
-  transformMateCatalogItemSchema,
-  transformMateExerciseInfoSchema,
+  Alert,
+  Combobox,
+  Loader,
+  Badge,
+  Button,
+  Group,
+  Select,
+  MultiSelect,
+  Text,
+  Image,
+  Stack,
+  TextInput,
+  useCombobox,
+} from '@mantine/core';
+import {
+  transformMateCatalogResultSchema,
+  transformMateMuscleDictionarySchema,
+  type TransformMateCatalogMetadata,
+  type TransformMateMuscleDictionary,
   type TransformMateCatalogItem,
-  type TransformMateExerciseInfo,
 } from '@/contracts/transformmate';
 import type { WorkoutExercise } from '@/contracts/workouts';
 import { workoutMessages as m } from './messages';
-import { TeachingVideo } from './teaching-video';
+import { ExerciseDetails } from './exercise-details';
+
 export function Catalog({
   ownerId,
   exercise,
   onSelect,
-  searchable = true,
+  onManual,
+  showDetails = true,
+  label = m.exercise,
+  required = true,
 }: {
   ownerId: string;
   exercise: WorkoutExercise;
   onSelect: (item: TransformMateCatalogItem) => void;
-  searchable?: boolean;
+  onManual?: (name: string) => void;
+  showDetails?: boolean;
+  label?: string;
+  required?: boolean;
 }) {
-  const [query, setQuery] = useState('');
+  const field = useRef<HTMLDivElement>(null);
+  const combobox = useCombobox({
+    onDropdownClose: () => combobox.resetSelectedOption(),
+  });
+  const [inspecting, setInspecting] = useState<number | null>(null);
+  const [query, setQuery] = useState(exercise.name);
+  const [searching, setSearching] = useState(false);
   const [items, setItems] = useState<TransformMateCatalogItem[]>([]);
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
     'idle',
   );
-  const [info, setInfo] = useState<TransformMateExerciseInfo | null>(null);
-  const [detailError, setDetailError] = useState(false);
-  const [video, setVideo] = useState(false);
-  const selected = exercise.transformMate?.exerciseId;
+  const [dictionary, setDictionary] =
+    useState<TransformMateMuscleDictionary | null>(null);
+  const [commonGroup, setCommonGroup] = useState<string | null>(null);
+  const [groups, setGroups] = useState<string[]>([]);
+  const [offset, setOffset] = useState(0);
+  const [metadata, setMetadata] = useState<TransformMateCatalogMetadata | null>(
+    null,
+  );
   useEffect(() => {
+    if (!searching || dictionary) return;
+    const controller = new AbortController();
+    void fetch(
+      `/api/workouts/transformmate/muscle-groups?ownerId=${encodeURIComponent(ownerId)}`,
+      { signal: controller.signal, cache: 'no-store' },
+    )
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        return transformMateMuscleDictionarySchema.parse(
+          (await response.json()).data,
+        );
+      })
+      .then((data) => {
+        if (!controller.signal.aborted) setDictionary(data);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [ownerId, searching, dictionary]);
+  useEffect(() => {
+    if (!searching) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      if (!query.trim()) return;
-      void fetch(
-        `/api/workouts/transformmate/exercises?ownerId=${encodeURIComponent(ownerId)}&q=${encodeURIComponent(query)}`,
-        { signal: controller.signal, cache: 'no-store' },
-      )
+      const params = new URLSearchParams({
+        ownerId,
+        q: query,
+        offset: String(offset),
+        limit: '20',
+      });
+      if (commonGroup) params.set('commonMuscleGroup', commonGroup);
+      groups.forEach((group) => params.append('muscleGroup', group));
+      const url = `/api/workouts/transformmate/exercises?${params}`;
+      void fetch(url, { signal: controller.signal, cache: 'no-store' })
         .then(async (response) => {
           if (!response.ok) throw new Error();
           const result = await response.json();
-          const data = z
-            .array(transformMateCatalogItemSchema)
-            .parse(result.data.items);
+          const data = transformMateCatalogResultSchema.parse(result);
           if (!controller.signal.aborted) {
-            setItems(data);
+            setItems(data.data);
+            setMetadata(data.catalog);
+            // One bounded enrichment request for this result page; the server limits concurrency to two.
+            const visible = data.data
+              .filter((item) => item.detailCoverage === 'unknown')
+              .slice(0, 6);
+            if (visible.length) {
+              visible.forEach((item) =>
+                params.append('visible', String(item.id)),
+              );
+              void fetch(`/api/workouts/transformmate/exercises?${params}`, {
+                signal: controller.signal,
+                cache: 'no-store',
+              })
+                .then(async (response) => {
+                  if (!response.ok) throw new Error();
+                  return transformMateCatalogResultSchema.parse(
+                    await response.json(),
+                  );
+                })
+                .then((enriched) => {
+                  if (!controller.signal.aborted) {
+                    setItems(enriched.data);
+                    setMetadata(enriched.catalog);
+                  }
+                })
+                .catch(() => {});
+            }
             setState('ready');
           }
         })
@@ -61,90 +142,267 @@ export function Catalog({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [query, ownerId]);
-  useEffect(() => {
-    const controller = new AbortController();
-    if (selected)
-      void fetch(
-        `/api/workouts/transformmate/exercises/${selected}?ownerId=${encodeURIComponent(ownerId)}`,
-        { signal: controller.signal, cache: 'no-store' },
-      )
-        .then(async (response) => {
-          if (!response.ok) throw new Error();
-          const result = await response.json();
-          const data = transformMateExerciseInfoSchema.parse(result.data);
-          if (data.id !== selected) throw new Error();
-          if (!controller.signal.aborted) setInfo(data);
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) setDetailError(true);
-        });
-    return () => controller.abort();
-  }, [selected, ownerId]);
+  }, [query, ownerId, searching, commonGroup, groups, offset]);
   return (
-    <Stack gap="xs">
-      <Text size="sm" c="var(--mantine-color-text)">
-        {selected ? m.linked : searchable ? m.catalogPrompt : m.manual}
-      </Text>
-      {searchable && (
-        <TextInput
-          label={m.catalog}
-          value={query}
-          onChange={(event) => {
-            setQuery(event.currentTarget.value);
-            setItems([]);
-            setState(event.currentTarget.value.trim() ? 'loading' : 'idle');
-          }}
-        />
+    <Stack ref={field} gap="xs">
+      {searching && dictionary && dictionary.groups.length > 0 && (
+        <Stack gap="xs">
+          <Group grow align="start">
+            <Select
+              searchable
+              label={m.muscleCommon}
+              value={commonGroup}
+              clearable
+              data={[
+                ...new Set(
+                  dictionary.groups.map((group) => group.commonGroup.name),
+                ),
+              ]}
+              onChange={(value) => {
+                setCommonGroup(value);
+                setGroups([]);
+                setOffset(0);
+              }}
+            />
+            <MultiSelect
+              searchable
+              label={m.muscleGroups}
+              value={groups}
+              data={[
+                ...new Set(
+                  dictionary.groups
+                    .filter(
+                      (group) =>
+                        !commonGroup || group.commonGroup.name === commonGroup,
+                    )
+                    .map((group) => group.name),
+                ),
+              ]}
+              onChange={(value) => {
+                setGroups(value);
+                setOffset(0);
+              }}
+            />
+          </Group>
+          {(commonGroup || groups.length > 0) && (
+            <Button
+              variant="subtle"
+              mih={44}
+              onClick={() => {
+                setCommonGroup(null);
+                setGroups([]);
+                setOffset(0);
+              }}
+            >
+              {m.resetFilters}
+            </Button>
+          )}
+        </Stack>
       )}
-      {state === 'loading' && <Loader size="sm" aria-label={m.loading} />}
-      {state === 'error' && (
+      {searching && metadata && (
+        <>
+          {metadata?.unknownMembershipCount ||
+          metadata?.coverage === 'partial' ? (
+            <Text size="xs" c="dimmed">
+              {m.catalogPartial}
+            </Text>
+          ) : null}
+          {metadata?.stale && (
+            <Text size="xs" c="dimmed">
+              {m.catalogStale}
+            </Text>
+          )}
+          {metadata?.hasMore && (
+            <Button
+              variant="subtle"
+              mih={44}
+              onClick={() => {
+                setOffset(offset + 20);
+                combobox.openDropdown();
+              }}
+            >
+              {m.catalogMore}
+            </Button>
+          )}
+        </>
+      )}
+      <Combobox
+        store={combobox}
+        onOptionSubmit={(option) => {
+          if (option === 'manual') onManual?.(query.trim());
+          else {
+            const item = items.find(
+              (candidate) => String(candidate.id) === option,
+            );
+            if (!item) return;
+            if (!item.canPlan || item.name.length > 160) {
+              setInspecting(item.id);
+              setSearching(false);
+              combobox.closeDropdown();
+              return;
+            }
+            setInspecting(null);
+            onSelect(item);
+            setQuery(item.name);
+          }
+          setSearching(false);
+          setItems([]);
+          combobox.closeDropdown();
+        }}
+      >
+        <Combobox.Target>
+          <TextInput
+            role="combobox"
+            label={label}
+            required={required}
+            placeholder={m.searchHint}
+            value={query}
+            maxLength={200}
+            rightSection={
+              state === 'loading' && searching ? (
+                <Loader size={16} />
+              ) : (
+                <Combobox.Chevron />
+              )
+            }
+            onClick={() => {
+              setSearching(true);
+              combobox.openDropdown();
+            }}
+            onFocus={() => {
+              setSearching(true);
+              combobox.openDropdown();
+            }}
+            onBlur={(event) => {
+              combobox.closeDropdown();
+              if (!field.current?.contains(event.relatedTarget)) {
+                setQuery(exercise.name);
+                setSearching(false);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setQuery(exercise.name);
+                setSearching(false);
+                combobox.closeDropdown();
+              }
+            }}
+            onChange={(event) => {
+              const text = event.currentTarget.value;
+              setQuery(text);
+              setOffset(0);
+              setSearching(true);
+              setItems([]);
+              setState(text.trim() ? 'loading' : 'idle');
+              combobox.openDropdown();
+              combobox.updateSelectedOptionIndex();
+            }}
+          />
+        </Combobox.Target>
+        <Combobox.Dropdown>
+          <Combobox.Options style={{ maxHeight: 320, overflowY: 'auto' }}>
+            {state === 'error' && searching && (
+              <Combobox.Empty>{m.catalogError}</Combobox.Empty>
+            )}
+            {state === 'ready' && searching && !items.length && (
+              <Combobox.Empty>{m.catalogEmpty}</Combobox.Empty>
+            )}
+            {!query.trim() && !items.length && state === 'idle' && (
+              <Combobox.Empty>{m.catalogPrompt}</Combobox.Empty>
+            )}
+            {searching &&
+              items.map((item) => (
+                <Combobox.Option
+                  key={item.id}
+                  aria-label={item.name}
+                  aria-description={
+                    !item.canPlan || item.name.length > 160
+                      ? m.catalogReadOnly
+                      : undefined
+                  }
+                  value={String(item.id)}
+
+                  style={{ minHeight: 44, whiteSpace: 'normal' }}
+                >
+                  <Group wrap="nowrap" gap="sm">
+                    {(item.preview.coverage === 'available' ||
+                      (item.preview.coverage === 'unknown' &&
+                        item.detailCoverage === 'available')) && (
+                      <Image
+                        src={
+                          item.preview.path ??
+                          `/api/workouts/transformmate/exercises/${item.id}/preview?ownerId=${encodeURIComponent(ownerId)}`
+                        }
+                        alt=""
+                        loading="lazy"
+                        w={44}
+                        h={44}
+                        radius="sm"
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    )}
+                    <Stack gap={2} style={{ minWidth: 0 }}>
+                      <Text size="sm">{item.name}</Text>
+                      {item.snippet && (
+                        <Text size="xs" c="dimmed" lineClamp={2}>
+                          {item.snippet}
+                        </Text>
+                      )}
+                      <Group gap={4}>
+                        {item.muscleGroups.map((group) => (
+                          <Badge
+                            key={group.id}
+                            size="xs"
+                            color="gray"
+                            variant="light"
+                          >
+                            {group.name}
+                          </Badge>
+                        ))}
+                      </Group>
+                      {(!item.canPlan || item.name.length > 160) && (
+                        <Text size="xs">{m.catalogReadOnly}</Text>
+                      )}
+                      {item.canPlan &&
+                        item.publicationCapability.state === 'unsupported' && (
+                          <Text size="xs" c="dimmed">
+                            {m.publicationUnsupported}
+                          </Text>
+                        )}
+                    </Stack>
+                  </Group>
+                </Combobox.Option>
+              ))}
+            {onManual &&
+              query.trim() &&
+              query.trim().length <= 160 &&
+              searching && (
+                <Combobox.Option value="manual" style={{ minHeight: 44 }}>
+                  {m.manualChoice}: {query.trim()}
+                </Combobox.Option>
+              )}
+          </Combobox.Options>
+        </Combobox.Dropdown>
+      </Combobox>
+      {state === 'error' && searching && (
         <Alert color="red" role="alert">
           {m.catalogError}
         </Alert>
       )}
-      {state === 'ready' && items.length === 0 && (
-        <Text role="status">{m.catalogEmpty}</Text>
+      {inspecting && (
+        <ExerciseDetails
+          key={`${ownerId}-${inspecting}`}
+          ownerId={ownerId}
+          exerciseId={inspecting}
+        />
       )}
-      {items.map((item) => (
-        <Button
-          key={item.id}
-          mih={44}
-          variant="light"
-          disabled={!item.canPlan || item.name.length > 160}
-          onClick={() => {
-            onSelect(item);
-            setQuery('');
-          }}
-          style={{ height: 'auto', whiteSpace: 'normal' }}
-        >
-          {item.name}
-          {!item.canPlan && ` — ${m.unsupported}`}
-        </Button>
-      ))}
-      {detailError && (
-        <Alert role="alert" color="red">
-          {m.catalogError}
-        </Alert>
-      )}
-      {info && !info.canPlan && <Alert>{m.unsupported}</Alert>}
-      {info?.description && (
-        <Text
-          size="sm"
-          style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
-        >
-          {info.description}
-        </Text>
-      )}
-      {info?.hasVideo && (
-        <Button variant="subtle" mih={44} onClick={() => setVideo(!video)}>
-          {video ? m.hideVideo : m.video}
-        </Button>
-      )}
-      {video && selected && (
-        <TeachingVideo
-          key={`${ownerId}-${selected}`}
-          src={`/api/workouts/transformmate/exercises/${selected}/video?ownerId=${encodeURIComponent(ownerId)}`}
+      {showDetails && exercise.transformMate && !inspecting && (
+        <ExerciseDetails
+          key={`${ownerId}-${exercise.transformMate.exerciseId}`}
+          ownerId={ownerId}
+          exerciseId={exercise.transformMate.exerciseId}
         />
       )}
     </Stack>

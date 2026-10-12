@@ -56,11 +56,16 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
     .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(title);
   await page
-    .getByRole('textbox', { name: 'Упражнение', exact: true })
+    .getByRole('combobox', { name: 'Упражнение', exact: true })
     .fill('Приседание');
+  await page
+    .getByRole('option', { name: 'Добавить вручную: Приседание', exact: true })
+    .click();
   await page.getByLabel('Вес, кг', { exact: true }).fill('40');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page).toHaveURL(/\/workouts\?date=/);
+  await expect(page).toHaveURL(
+    /\/workouts\/plans\/[^/]+\/workouts\/[^?]+\?date=/,
+  );
   const plan = (await workouts(page, id)).plans.find((value) =>
     value.workouts.some((workout) => workout.title === title),
   )!;
@@ -101,9 +106,13 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
   const session = (await workouts(page, id)).sessions.find(
     (value) => value.planId === plan.id,
   )!;
+  await expect(page).toHaveURL(/\/workouts\/sessions\//);
+  await page.goto(
+    `/workouts/plans/${plan.id}/workouts/${plan.workouts[0]!.id}?date=${plan.workouts[0]!.date}`,
+  );
   await expect(card).toContainText('10 × 35 кг');
   await card
-    .getByRole('button', { name: 'Изменить тренировку', exact: true })
+    .getByRole('link', { name: 'Изменить тренировку', exact: true })
     .click();
   await expect(
     page.getByRole('button', { name: /Удалить тренировку/ }),
@@ -113,14 +122,15 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
     .fill(`${title} изменён`);
   await page.getByLabel('Вес, кг', { exact: true }).fill('60');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page).toHaveURL(/\/workouts\?date=/);
+  await expect(page).toHaveURL(
+    /\/workouts\/plans\/[^/]+\/workouts\/[^?]+\?date=/,
+  );
   const editedPlan = (await workouts(page, id)).plans.find(
     (value) => value.id === plan.id,
   )!;
   expect(
     editedPlan.workouts.find((workout) => workout.id === otherWorkout.id),
   ).toEqual(otherWorkout);
-  await card.getByRole('button', { name: 'Все дни этого плана' }).click();
   await card
     .getByRole('button', { name: 'Удалить весь план', exact: true })
     .click();
@@ -130,6 +140,7 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole('tab', { name: 'История' })).toHaveCount(0);
   const history = page.getByTestId(`session-${session.id}`);
+  await expect(page).toHaveURL(/\/workouts\?date=/);
   await expect(history).toContainText(title);
   await expect(history).toContainText('Фактическая нагрузка');
   const stored = (await workouts(page, id)).sessions.find(
@@ -209,6 +220,17 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     );
     expect(created.ok()).toBe(true);
     const plan = (await created.json()).data;
+    await trainer.goto(`/workouts/plans/${plan.id}/workouts/a?date=2026-10-11`);
+    await expect(
+      trainer.getByRole('heading', { name: 'Силовая', exact: true }),
+    ).toBeVisible();
+    await expect(
+      trainer.getByRole('link', { name: 'Изменить тренировку', exact: true }),
+    ).toBeVisible();
+    await expect(
+      trainer.getByRole('button', { name: 'Записать результат' }),
+    ).toHaveCount(0);
+
     const actual = {
       title: 'Силовая',
       date: '2026-10-11',
@@ -295,6 +317,13 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
       trainer.getByText('Нет разрешения на доступ к тренировкам владельца.'),
     ).toBeVisible();
     await expect(trainer.getByLabel('Название (необязательно)')).toHaveCount(0);
+    await trainer.goto(`/workouts/plans/${plan.id}/workouts/a?date=2026-10-11`);
+    await expect(
+      trainer.getByText('Нет разрешения на доступ к тренировкам владельца.'),
+    ).toBeVisible();
+    await expect(
+      trainer.getByRole('heading', { name: 'Силовая', exact: true }),
+    ).toHaveCount(0);
   } finally {
     database
       .prepare('DELETE FROM trainer_access WHERE trainer_id = ?')
@@ -321,17 +350,25 @@ test('unnamed editor preserves drafts, handles errors and copies only the select
     '',
   );
   await page
-    .getByRole('textbox', { name: 'Упражнение', exact: true })
+    .getByRole('combobox', { name: 'Упражнение', exact: true })
     .fill(exerciseName);
+  await page
+    .getByRole('option', {
+      name: `Добавить вручную: ${exerciseName}`,
+      exact: true,
+    })
+    .click();
   await page.getByLabel('Вес, кг', { exact: true }).fill('42');
-  await page.getByRole('button', { name: 'Выбрать из каталога' }).click();
-  await page.getByLabel('Поиск упражнений TransformMate').fill('жим');
+  await page
+    .getByRole('combobox', { name: 'Упражнение', exact: true })
+    .fill('жим');
+  await page.keyboard.press('Escape');
   await expect(page.getByLabel('Вес, кг', { exact: true })).toHaveValue('42');
   await page.getByRole('button', { name: 'К тренировкам' }).click();
   await expect(page).toHaveURL(`/workouts?date=${date}`);
   await page.goBack();
   await expect(
-    page.getByRole('textbox', { name: 'Упражнение', exact: true }),
+    page.getByRole('combobox', { name: 'Упражнение', exact: true }),
   ).toHaveValue(exerciseName);
   await expect(page.getByLabel('Вес, кг', { exact: true })).toHaveValue('42');
   const keys: string[] = [];
@@ -359,7 +396,9 @@ test('unnamed editor preserves drafts, handles errors and copies only the select
   ).toBeVisible();
   await expect(page.getByLabel('Вес, кг', { exact: true })).toHaveValue('42');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page).toHaveURL('/workouts?date=2026-10-13');
+  await expect(page).toHaveURL(
+    /\/workouts\/plans\/[^/]+\/workouts\/[^?]+\?date=2026-10-13$/,
+  );
   expect(keys).toHaveLength(2);
   expect(keys[0]).toBe(keys[1]);
   const created = (await workouts(page, id)).plans.find(
@@ -421,17 +460,8 @@ test('unnamed editor preserves drafts, handles errors and copies only the select
     ),
   ).toBe(false);
   await expect(
-    page.getByRole('textbox', { name: 'Упражнение', exact: true }),
+    page.getByRole('combobox', { name: 'Упражнение', exact: true }),
   ).toHaveValue(exerciseName);
-  await page.screenshot({
-    path: test.info().outputPath('workout-editor.png'),
-    fullPage: true,
-  });
-  await page.getByRole('button', { name: 'Переключить тему' }).click();
-  await page.screenshot({
-    path: test.info().outputPath('workout-editor-dark.png'),
-    fullPage: true,
-  });
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -441,7 +471,9 @@ test('unnamed editor preserves drafts, handles errors and copies only the select
   await expect(page).toHaveURL('/workouts?date=2026-10-13');
   await page.goBack();
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page).toHaveURL('/workouts?date=2026-10-24');
+  await expect(page).toHaveURL(
+    /\/workouts\/plans\/[^/]+\/workouts\/[^?]+\?date=2026-10-24$/,
+  );
   const copied = (await workouts(page, id)).plans.find(
     (plan) =>
       plan.startsOn === '2026-10-24' &&
@@ -470,8 +502,14 @@ test('a save settling after Back does not redirect or repeat the write', async (
     .getByRole('button', { name: 'Добавить тренировку', exact: true })
     .click();
   await page
-    .getByRole('textbox', { name: 'Упражнение', exact: true })
+    .getByRole('combobox', { name: 'Упражнение', exact: true })
     .fill('Delayed save');
+  await page
+    .getByRole('option', {
+      name: 'Добавить вручную: Delayed save',
+      exact: true,
+    })
+    .click();
   await page
     .getByRole('textbox', { name: 'Дата', exact: true })
     .fill('2026-10-13');

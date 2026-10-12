@@ -1,6 +1,8 @@
 .player {
   min-width: 0;
   width: 100%;
+  max-width: 40rem;
+  scroll-margin-top: var(--app-shell-header-offset, 0px);
 }
 
 .player :global(.video-js .vjs-control-bar) {

@@ -47,11 +47,22 @@ export const emptySession = (): WorkoutSessionInput => ({
 type Controls = { busy: boolean; error: string | null; onCancel: () => void };
 function Footer({ busy, onCancel }: Controls) {
   return (
-    <Group grow>
-      <Button mih={44} variant="default" disabled={busy} onClick={onCancel}>
+    <Group justify="flex-end">
+      <Button
+        flex={{ base: 1, sm: '0 0 auto' }}
+        mih={44}
+        variant="default"
+        disabled={busy}
+        onClick={onCancel}
+      >
         {m.cancel}
       </Button>
-      <Button mih={44} type="submit" loading={busy}>
+      <Button
+        flex={{ base: 1, sm: '0 0 auto' }}
+        mih={44}
+        type="submit"
+        loading={busy}
+      >
         {m.save}
       </Button>
     </Group>

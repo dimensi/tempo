@@ -162,9 +162,14 @@ export function SyncSummary({
 }: {
   sync: ReturnType<typeof useTransformMateSync>;
 }) {
+  if (sync.configured === false)
+    return (
+      <Text size="sm" c="dimmed">
+        {m.notConfigured}
+      </Text>
+    );
   return (
     <Stack gap="xs">
-      {sync.configured === false && <Alert>{m.notConfigured}</Alert>}
       {(sync.nativeRefresh.status === 'error' ||
         sync.nativeRefresh.status === 'unavailable') && (
         <Alert color="orange" role="alert">
@@ -195,8 +200,16 @@ export function SyncSummary({
     </Stack>
   );
 }
-export function WorkoutSync({ item }: { item?: TransformMateSyncItem }) {
-  if (!item) return null;
+export function WorkoutSync({
+  item,
+  showActual = true,
+}: {
+  item?: TransformMateSyncItem;
+  showActual?: boolean;
+}) {
+  if (!item || (!showActual && item.reason === 'not_configured')) return null;
+  const unpublished =
+    item.reason === 'unsupported' && item.remoteTrainingId === null;
   return (
     <Stack gap="xs">
       <Group>
@@ -215,14 +228,18 @@ export function WorkoutSync({ item }: { item?: TransformMateSyncItem }) {
         >
           {item.status === 'started' && item.actual?.finished
             ? m.completed
-            : statuses[item.status]}
+            : unpublished
+              ? m.notPublished
+              : statuses[item.status]}
         </Badge>
       </Group>
-      {item.reason && (
+      {item.reason && !unpublished && (
         <Text size="sm">
           {item.reason === 'remote_started' && item.actual?.finished
             ? m.completedSafeguard
-            : reasons[item.reason]}
+            : unpublished
+              ? m.notPublished
+              : reasons[item.reason]}
         </Text>
       )}
       {item.updateAttempt && (
@@ -237,13 +254,15 @@ export function WorkoutSync({ item }: { item?: TransformMateSyncItem }) {
           }
         </Text>
       )}
-      <Text size="xs" c="var(--mantine-color-text)">
-        {m.checked}:{' '}
-        {item.checkedAt
-          ? new Date(item.checkedAt).toLocaleString('ru-RU')
-          : '—'}
-      </Text>
-      {item.actual && (
+      {item.checkedAt && (
+        <Text size="xs" c="var(--mantine-color-text)">
+          {m.checked}:{' '}
+          {item.checkedAt
+            ? new Date(item.checkedAt).toLocaleString('ru-RU')
+            : '—'}
+        </Text>
+      )}
+      {showActual && item.actual && (
         <>
           <Group>
             <Text fw={600}>{m.remoteActual}</Text>

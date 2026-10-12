@@ -16,6 +16,7 @@ function setup() {
     getTraining: vi.fn().mockResolvedValue({ body: detail }),
   };
   const repository = {
+    get: vi.fn().mockReturnValue(null),
     save: vi.fn().mockReturnValue(true),
     list: vi.fn().mockReturnValue({ items: [], nextCursor: null }),
   };

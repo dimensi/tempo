@@ -1,14 +1,19 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Group, Loader, Text } from '@mantine/core';
+import { Alert } from '@mantine/core';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
 import styles from './teaching-video.module.css';
 import { workoutMessages as m } from './messages';
-export function TeachingVideo({ src }: { src: string }) {
+export function TeachingVideo({
+  src,
+  poster,
+}: {
+  src: string;
+  poster?: string;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
-  const [loading, setLoading] = useState(false);
   useEffect(() => {
     if (!host.current) return;
     const element = document.createElement('video-js');
@@ -18,6 +23,7 @@ export function TeachingVideo({ src }: { src: string }) {
     const player = videojs(element, {
       controls: true,
       autoplay: false,
+      poster,
       preload: 'none',
       fluid: true,
       responsive: false,
@@ -36,26 +42,42 @@ export function TeachingVideo({ src }: { src: string }) {
       playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
       sources: [{ src, type: 'video/mp4' }],
     });
-    player.on('loadstart', () => setLoading(true));
-    player.on('waiting', () => setLoading(true));
-    player.on('canplay', () => setLoading(false));
-    player.on('playing', () => setLoading(false));
+    const rateButton = player
+      .getChild('controlBar')
+      ?.getChild('playbackRateMenuButton');
+    const fitRateMenu = () => {
+      const button = rateButton?.el();
+      const menu = button?.querySelector<HTMLElement>('.vjs-menu-content');
+      if (!button || !menu || !host.current) return;
+      const popup = button.querySelector<HTMLElement>('.vjs-menu');
+      const bounds = button.getBoundingClientRect();
+      const header = document.fullscreenElement
+        ? 0
+        : (document
+            .querySelector('.mantine-AppShell-header')
+            ?.getBoundingClientRect().bottom ?? 0);
+      const above = bounds.top - header - 8;
+      const downward = above < 44;
+      if (popup) {
+        popup.style.top = downward ? '44px' : '';
+        popup.style.bottom = downward ? 'auto' : '';
+      }
+      menu.style.top = downward ? '0' : '';
+      menu.style.bottom = downward ? 'auto' : '';
+      menu.style.maxHeight = `${Math.max(44, downward ? window.innerHeight - bounds.bottom - 8 : above)}px`;
+    };
+    rateButton?.on('mouseenter', fitRateMenu);
+    rateButton?.on('click', fitRateMenu);
+    rateButton?.on('keydown', fitRateMenu);
     player.on('error', () => {
-      setLoading(false);
       setFailed(true);
     });
     return () => {
       if (!player.isDisposed()) player.dispose();
     };
-  }, [src]);
+  }, [src, poster]);
   return (
     <div>
-      {loading && !failed && (
-        <Group role="status" gap="xs">
-          <Loader size="sm" />
-          <Text size="sm">{m.videoLoading}</Text>
-        </Group>
-      )}
       {failed && (
         <Alert role="alert" color="red">
           {m.videoError}

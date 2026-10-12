@@ -1,23 +1,29 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 const mocks = vi.hoisted(() => ({
   authorize: vi.fn(),
   listExercises: vi.fn(),
   getExercise: vi.fn(),
+  listExercisePage: vi.fn(),
+  database: null as ReturnType<
+    typeof import('@/server/db/connection').openDatabase
+  > | null,
   assertCurrent: vi.fn(),
   assertBindingCurrent: vi.fn(),
 }));
+vi.mock('@/server/db', () => ({ getDatabase: () => mocks.database }));
 vi.mock('@/server/auth/guards', () => ({ authorize: mocks.authorize }));
 vi.mock('@/server/transformmate/runtime', () => ({
   getTransformMateConnectionFence: async () => ({
     client: mocks,
     generation: 'synthetic-connection',
+    accountScope: 'synthetic-account',
     assertCurrent: mocks.assertCurrent,
     assertBindingCurrent: mocks.assertBindingCurrent,
   }),
 }));
 import {
-  listExercises,
+  listCatalog,
   exerciseInfo,
   catalogResponse,
 } from '@/server/transformmate/catalog';
@@ -31,14 +37,60 @@ import {
 } from '@/server/transformmate/catalog-schema';
 import { invalidateTransformMateCatalog } from '@/server/transformmate/catalog-cache';
 import { exerciseDetailFixture } from '../fixtures/transformmate-exercise';
+async function listExercises(headers: Headers, ownerId: string, query: string) {
+  return (
+    await listCatalog(headers, ownerId, {
+      query,
+      commonMuscleGroup: null,
+      muscleGroups: [],
+      offset: 0,
+      limit: 50,
+    })
+  ).items;
+}
 const signed = 'https://kinescopecdn.net/video.mp4?sign=private';
 function detail() {
   const e = exerciseDetailFixture();
   e.kinescope_data[0]!.url = signed;
   return e;
 }
+import { projectDetail } from '@/server/transformmate/catalog-projection';
+import { catalogStore } from '@/server/transformmate/catalog-store';
+import { openDatabase } from '@/server/db/connection';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { user } from '@/server/db/schema';
+afterEach(() => {
+  mocks.database?.sqlite.close();
+});
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.database = openDatabase('file::memory:');
+  migrate(mocks.database.db, { migrationsFolder: './drizzle' });
+  mocks.database.db
+    .insert(user)
+    .values({
+      id: 'owner',
+      name: 'Synthetic',
+      role: 'OWNER',
+      email: 'owner@example.test',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .run();
+  mocks.listExercisePage.mockImplementation(
+    async ({ search, offset, limit }) => {
+      const { body } = await mocks.listExercises();
+      const matches = body.filter((row: { name: string }) =>
+        row.name.toLowerCase().includes(search),
+      );
+      return {
+        body: {
+          results: matches.slice(offset, offset + limit),
+          count: matches.length,
+        },
+      };
+    },
+  );
   invalidateTransformMateCatalog('owner');
   mocks.authorize.mockResolvedValue({ ok: true });
   mocks.getExercise.mockResolvedValue({ body: detail() });
@@ -57,8 +109,14 @@ describe('private catalog', () => {
         { id: 2, name: 'Run', metrics: [] },
       ],
     });
-    expect(await listExercises(new Headers(), 'owner', 'squ')).toEqual([
-      { id: 1, name: 'Squat', canPlan: true },
+    expect(await listExercises(new Headers(), 'owner', 'squ')).toMatchObject([
+      {
+        id: 1,
+        name: 'Squat',
+        canPlan: true,
+        publicationCapability: { state: 'unknown', reason: null },
+        detailCoverage: 'unknown',
+      },
     ]);
     expect(
       canPlanExercise({ metrics: [...metrics, { id: 5, key: 'time' }] }),
@@ -107,7 +165,7 @@ describe('private catalog', () => {
       await expect(listExercises(new Headers(), 'owner', '')).rejects.toThrow(
         'TransformMate connection changed',
       );
-      expect(mocks.assertBindingCurrent).toHaveBeenCalledOnce();
+      expect(mocks.assertBindingCurrent).toHaveBeenCalled();
     },
   );
   it.each(['disconnect', 'reconnect'] as const)(
@@ -128,7 +186,7 @@ describe('private catalog', () => {
       await expect(exerciseInfo(new Headers(), 'owner', 501)).rejects.toThrow(
         'TransformMate connection changed',
       );
-      expect(mocks.assertBindingCurrent).toHaveBeenCalledOnce();
+      expect(mocks.assertBindingCurrent).toHaveBeenCalled();
     },
   );
 });
@@ -139,6 +197,7 @@ describe('media proxy', () => {
     'https://user@kinescopecdn.net/x',
     'https://127.0.0.1/x',
     'https://kinescopecdn.net:443/x#fragment',
+    'https://kinescopecdn.net:443/x',
   ])('rejects unsafe URL %s', (url) => {
     expect(selectMediaUrl({ kinescope_data: [{ url }] })).toBeNull();
   });
@@ -190,17 +249,10 @@ describe('media proxy', () => {
     expect(upstream).not.toHaveBeenCalled();
   });
   it('discards stream if access revoked while media fetch awaits', async () => {
-    mocks.authorize
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({ ok: false, status: 403 });
-    const upstream = vi
-      .fn()
-      .mockResolvedValue(
-        new Response('abc', { headers: { 'Content-Type': 'video/mp4' } }),
-      );
+    const upstream = vi.fn().mockImplementation(async () => {
+      mocks.authorize.mockResolvedValue({ ok: false, status: 403 });
+      return new Response('abc', { headers: { 'Content-Type': 'video/mp4' } });
+    });
     expect(
       (
         await streamExerciseVideo(
@@ -255,10 +307,10 @@ describe('media proxy', () => {
       .mockResolvedValue(
         new Response(body, { headers: { 'Content-Type': 'video/mp4' } }),
       );
-    mocks.assertCurrent
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error('Connection changed'));
+    upstream.mockImplementation(async () => {
+      mocks.assertCurrent.mockRejectedValue(new Error('Connection changed'));
+      return new Response(body, { headers: { 'Content-Type': 'video/mp4' } });
+    });
     const response = await streamExerciseVideo(
       new Request('https://app.test/video?ownerId=owner'),
       '501',
@@ -418,5 +470,176 @@ describe('range response validation and cancellation', () => {
       upstream,
     );
     expect(signal?.aborted).toBe(true);
+  });
+});
+
+describe('truthful persistent catalog metadata', () => {
+  const filters = {
+    query: '',
+    commonMuscleGroup: null,
+    muscleGroups: [],
+    offset: 0,
+    limit: 50,
+  };
+  it('cold upstream failure remains unknown/unavailable with nullable count', async () => {
+    mocks.listExercises.mockRejectedValue(new Error('upstream unavailable'));
+    const result = await listCatalog(new Headers(), 'owner', filters);
+    expect(result).toMatchObject({
+      items: [],
+      metadata: {
+        coverage: 'unknown',
+        refreshState: 'unavailable',
+        total: null,
+        fetchedAt: null,
+      },
+    });
+    const response = await catalogResponse(async () => result, true);
+    const body = await response.json();
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.catalog.coverage).toBe('unknown');
+  });
+  it('warm stale data survives refresh failure, retaining original fetched time', async () => {
+    const at = '2020-01-01T00:00:00.000Z';
+    catalogStore().full(
+      {
+        ownerId: 'owner',
+        accountScope: 'synthetic-account',
+        generation: 'synthetic-connection',
+        locale: 'ru',
+      },
+      [{ id: 1, name: 'Existing exercise', metrics: [] }],
+      at,
+    );
+    mocks.listExercises.mockRejectedValue(new Error('upstream unavailable'));
+    const result = await listCatalog(new Headers(), 'owner', filters);
+    expect(result.items[0]?.name).toBe('Existing exercise');
+    expect(result.metadata).toMatchObject({
+      fetchedAt: at,
+      stale: true,
+      coverage: 'complete',
+    });
+    expect(
+      (await listCatalog(new Headers(), 'owner', filters)).metadata
+        .refreshState,
+    ).toBe('unavailable');
+  });
+  it('forwards exact dictionary names and canonicalizes subgroup union without guessing IDs', async () => {
+    mocks.listExercisePage.mockResolvedValue({
+      body: { results: [], count: 0 },
+    });
+    const result = await listCatalog(new Headers(), 'owner', {
+      ...filters,
+      query: ' Присед ',
+      commonMuscleGroup: 'Ноги',
+      muscleGroups: ['Квадрицепс', 'Бицепс бедра', 'Квадрицепс'],
+    });
+    expect(mocks.listExercisePage).toHaveBeenCalledWith({
+      search: 'присед',
+      commonMuscleGroup: 'Ноги',
+      muscleGroups: ['Бицепс бедра', 'Квадрицепс'],
+      offset: 0,
+      limit: 50,
+    });
+    expect(result.metadata).toMatchObject({ coverage: 'complete', total: 0 });
+  });
+  it('uses persisted video metadata across HEAD/GET and refreshes expiry at most once', async () => {
+    const upstream = vi
+      .fn()
+      .mockImplementation(
+        async () =>
+          new Response(null, { headers: { 'Content-Type': 'video/mp4' } }),
+      );
+    await streamExerciseVideo(
+      new Request('https://app.test/video?ownerId=owner', { method: 'HEAD' }),
+      '501',
+      upstream,
+    );
+    await streamExerciseVideo(
+      new Request('https://app.test/video?ownerId=owner'),
+      '501',
+      upstream,
+    );
+    expect(mocks.getExercise).toHaveBeenCalledTimes(1);
+    upstream
+      .mockReset()
+      .mockImplementation(async () => new Response(null, { status: 403 }));
+    expect(
+      (
+        await streamExerciseVideo(
+          new Request('https://app.test/video?ownerId=owner'),
+          '501',
+          upstream,
+        )
+      ).status,
+    ).toBe(502);
+    expect(upstream).toHaveBeenCalledTimes(2);
+    expect(mocks.getExercise).toHaveBeenCalledTimes(2);
+  });
+});
+
+it('local subgroup union intersects common-group membership independently across actual muscles', async () => {
+  const identity = {
+    ownerId: 'owner',
+    accountScope: 'synthetic-account',
+    generation: 'synthetic-connection',
+    locale: 'ru' as const,
+  };
+  const at = new Date().toISOString();
+  const base = exerciseDetailFixture();
+  catalogStore().dictionary(
+    identity,
+    [
+      {
+        id: 13,
+        name: 'Subgroup A',
+        commonGroup: { id: 1, name: 'Upper' },
+        muscleIds: [20],
+      },
+      {
+        id: 14,
+        name: 'Subgroup B',
+        commonGroup: { id: 2, name: 'Legs' },
+        muscleIds: [21],
+      },
+    ],
+    at,
+  );
+  catalogStore().detail(
+    identity,
+    projectDetail({
+      ...base,
+      muscles: [
+        {
+          ...base.muscles[0]!,
+          muscle: {
+            ...base.muscles[0]!.muscle,
+            muscle_group: { id: 13, name: 'Subgroup A', image: null },
+          },
+        },
+        {
+          ...base.muscles[0]!,
+          muscle: {
+            ...base.muscles[0]!.muscle,
+            id: 21,
+            muscle_group: { id: 14, name: 'Subgroup B', image: null },
+          },
+        },
+      ],
+    }),
+    at,
+  );
+  mocks.listExercisePage.mockRejectedValue(new Error('temporary outage'));
+  const result = await listCatalog(new Headers(), 'owner', {
+    query: '',
+    commonMuscleGroup: 'Legs',
+    muscleGroups: ['Subgroup A'],
+    offset: 0,
+    limit: 50,
+  });
+  expect(result.items.map((item) => item.id)).toEqual([501]);
+  expect(result.metadata).toMatchObject({
+    coverage: 'partial',
+    total: null,
+    refreshState: 'unavailable',
   });
 });

@@ -654,6 +654,18 @@ test('imports a phone-created workout read-only without echoing provider writes'
       (item) => item.remoteTrainingId === remoteId,
     ),
   ).toBe(true);
+  await page.goto(`/workouts/native/${remoteId}?date=2026-01-01`);
+  await expect(
+    page.getByRole('heading', { name: 'Native phone workout', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Записать результат' }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('link', { name: 'Изменить тренировку' }),
+  ).toHaveCount(0);
+  await page.getByRole('link', { name: 'К тренировкам', exact: true }).click();
+  await expect(page).toHaveURL('/workouts?date=2026-01-01');
   const counters = await control(request);
   expect(counters.posts).toHaveLength(0);
   expect(counters.patches).toHaveLength(0);
@@ -675,7 +687,7 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
   const list = await page.request.get(catalog);
   expect(list.ok()).toBe(true);
   expect(await list.json()).toMatchObject({
-    data: { items: [{ id: 501, canPlan: true }] },
+    data: [{ id: 501, canPlan: true }],
   });
   expect(await list.text()).not.toMatch(/kinescope|sign=|synthetic-id-token/);
   const detail = await page.request.get(
@@ -701,16 +713,12 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
     .getByRole('button', { name: 'Добавить тренировку', exact: true })
     .click();
   const dialog = page;
-  await dialog
-    .getByRole('button', { name: 'Добавить упражнение', exact: true })
-    .click();
   const picker = page;
-  await picker.getByLabel('Поиск упражнений TransformMate').fill('Demo');
   await picker
-    .getByRole('button', { name: 'Demo exercise', exact: true })
-    .click();
-  await dialog
-    .getByRole('button', { name: 'Показать обучающее видео' })
+    .getByRole('combobox', { name: 'Упражнение', exact: true })
+    .fill('Demo');
+  await picker
+    .getByRole('option', { name: 'Demo exercise', exact: true })
     .click();
   const player = dialog.locator('video');
   await expect(player).toHaveCount(1);
@@ -764,18 +772,38 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
     path: test.info().outputPath('synthetic-video.png'),
     fullPage: false,
   });
-  await dialog.getByRole('button', { name: 'Скрыть видео' }).click();
-  await expect(player).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await page
+    .getByRole('dialog', {
+      name: 'Удалить несохранённые изменения?',
+      exact: true,
+    })
+    .getByRole('button', { name: 'Удалить черновик', exact: true })
+    .click();
+  await expect(player).toHaveCount(0);
   const context = await browser.newContext();
+  let grantedTrainerId: string | null = null;
   try {
     const trainer = await context.newPage();
     const trainerId = await login(trainer, 'trainer');
+    grantedTrainerId = trainerId;
+    grant(owner, trainerId, false);
     expect((await trainer.request.get(video)).status()).toBe(403);
     grant(owner, trainerId, true);
     expect((await trainer.request.head(video)).status()).toBe(200);
     await control(request, 'cachedauthdelay');
-    // Catalog reads are cached; detail reads always reach the synthetic upstream.
+    // Expire this synthetic cached detail so the read genuinely reaches the provider.
+    const cache = new Database('.data/e2e.sqlite');
+    try {
+      const expired = cache
+        .prepare(
+          'UPDATE transformmate_catalog_exercise SET detail_fetched_at = ? WHERE owner_id = ? AND exercise_id = 501',
+        )
+        .run('2020-01-01T00:00:00Z', owner);
+      expect(expired.changes).toBeGreaterThan(0);
+    } finally {
+      cache.close();
+    }
     const inFlight = trainer.request.get(catalog.replace('?', '/501?'));
     await expect
       .poll(async () => (await control(request)).activeReads)
@@ -788,6 +816,10 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
       data: { action: 'cachedauthdelay', delay: 0 },
     });
   } finally {
+    if (grantedTrainerId) grant(owner, grantedTrainerId, false);
+    await request.post('http://127.0.0.1:3158/control', {
+      data: { action: 'cachedauthdelay', delay: 0 },
+    });
     await context.close();
   }
   expect((await control(request)).forbiddenWrites).toBe(0);
@@ -925,8 +957,8 @@ test('saving creates once, idle updates once, and remote facts preserve initial 
   const table = card.getByRole('table');
   await expect(table.getByRole('columnheader')).toHaveText([
     'Подход',
-    'Запланировано',
-    'Выполнено',
+    'План',
+    'Факт',
   ]);
   await expect(
     table.getByRole('row').nth(1).getByRole('cell').nth(1),
@@ -994,6 +1026,14 @@ test('saving creates once, idle updates once, and remote facts preserve initial 
   expect((await read()).items.find((s) => s.id === item.id)).toEqual(
     startedItem,
   );
+  await page.goto(`/workouts/links/${item.id}?date=2026-01-02`);
+  await expect(page.getByRole('table')).toContainText('6 × 15 кг');
+  await expect(
+    page.getByRole('button', { name: 'Удалить весь план' }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('link', { name: 'Изменить тренировку' }),
+  ).toHaveCount(0);
   expect((await control(request)).posts).toHaveLength(1);
   expect((await control(request)).patches).toHaveLength(1);
   expect((await control(request)).forbiddenWrites).toBe(0);

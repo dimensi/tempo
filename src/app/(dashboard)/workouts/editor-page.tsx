@@ -51,6 +51,7 @@ export async function EditorPage({
       plan={plan}
       workoutId={workoutId}
       copying={Boolean(copyId)}
+      returnToView={query.from === 'view' && Boolean(plan && workoutId)}
     />
   );
 }

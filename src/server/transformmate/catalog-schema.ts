@@ -1,4 +1,5 @@
 import 'server-only';
+import { transformMatePublicationCapability } from '@/contracts/transformmate-capability';
 import { z } from 'zod';
 export const transformMateCatalogSchema = z
   .array(
@@ -20,9 +21,7 @@ export function canPlanExercise(exercise: {
   metrics: { id: number; key: string }[];
 }) {
   return (
-    exercise.metrics.length === 2 &&
-    exercise.metrics.some((m) => m.id === 3 && m.key === 'weight') &&
-    exercise.metrics.some((m) => m.id === 4 && m.key === 'reps')
+    transformMatePublicationCapability(exercise.metrics).state === 'supported'
   );
 }
 
@@ -34,6 +33,7 @@ export function selectMediaUrl(exercise: {
     try {
       const url = new URL(media.url);
       if (
+        /^https:\/\/kinescopecdn\.net(?:[/?]|$)/.test(media.url) &&
         url.protocol === 'https:' &&
         url.hostname === 'kinescopecdn.net' &&
         !url.port &&
