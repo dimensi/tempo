@@ -12,6 +12,14 @@ export const workoutSetSchema = z
 export const workoutExerciseSchema = z
   .object({
     name,
+    comment: z.string().trim().max(4000).optional(),
+    transformMate: z
+      .object({
+        exerciseId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+        occurrenceKey: z.uuid(),
+      })
+      .strict()
+      .optional(),
     sets: z.array(workoutSetSchema).min(1).max(50),
   })
   .strict();
