@@ -4,10 +4,21 @@ import { openDatabase } from '@/server/db/connection';
 import { user, trainerAccess } from '@/server/db/schema';
 const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
+  calls: 0,
+  revokeAt: 0,
 }));
 vi.mock('server-only', () => ({}));
 vi.mock('@/server/auth', () => ({
-  getAuth: () => ({ api: { getSession: async () => state.session } }),
+  getAuth: () => ({
+    api: {
+      getSession: async () => {
+        state.calls++;
+        if (state.revokeAt === state.calls)
+          database.sqlite.prepare('DELETE FROM trainer_access').run();
+        return state.session;
+      },
+    },
+  }),
 }));
 const database = openDatabase('file::memory:');
 vi.mock('@/server/db', () => ({ getDatabase: () => database }));
@@ -157,4 +168,21 @@ it('preserves exact nutrition coverage and excludes finished planned workouts', 
     title: 'Completed',
     date: '2026-10-12',
   });
+});
+
+it('denies a grant revoked between source reads and final authorization', async () => {
+  state.session = { user: { id: 'trainer', role: 'TRAINER' } };
+  database.db
+    .insert(trainerAccess)
+    .values({ trainerId: 'trainer', ownerId: 'owner', createdAt: new Date() })
+    .run();
+  state.calls = 0;
+  state.revokeAt = 6;
+  try {
+    await expect(getOverview(new Headers(), 'UTC')).rejects.toMatchObject({
+      status: 403,
+    });
+  } finally {
+    state.revokeAt = 0;
+  }
 });

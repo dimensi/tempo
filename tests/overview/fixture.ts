@@ -16,6 +16,10 @@ try {
   db.sqlite
     .prepare('DELETE FROM nutrition_days WHERE owner_id=?')
     .run(owner.id);
+  if (mode === 'empty') {
+    for (const table of ['workout_sessions', 'workout_plans', 'measurements'])
+      db.sqlite.prepare(`DELETE FROM ${table} WHERE owner_id=?`).run(owner.id);
+  }
   if (mode !== 'empty') {
     const add = (
       date: string,
