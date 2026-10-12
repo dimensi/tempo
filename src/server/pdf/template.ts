@@ -1,4 +1,5 @@
 import 'server-only';
+import { hasNutritionMealContent } from '@/lib/nutrition-meal-content';
 import { formatDecimal } from '@/lib/number-display';
 import {
   meals,
@@ -62,11 +63,15 @@ function totals(values: NutritionTotals, known?: NutritionTotals): string {
   const shares = macroShares(values);
   return `<section class="summary-block daily-totals">${keys.map((key, index) => `<div class="total-column" data-nutrient="${key}"><p class="total-label">${names[key]}</p><strong class="summary-value number"><span class="numeric">${value(values[key])}</span> <span class="summary-unit">${key === 'calories' ? m.kcal : m.grams}</span></strong><p class="total-caption">${index === 0 ? m.totalDay : `<span class="energy-share number numeric">${shares === null ? m.unavailable : percentage(shares.tenths[index - 1]!)}</span> ${m.macroEnergyShare}`}</p>${values[key] === null && known?.[key] !== null && known?.[key] !== undefined ? `<p class="partial">${m.partial}: ${value(known[key])} ${key === 'calories' ? m.kcal : m.grams}</p>` : ''}</div>`).join('')}</section>`;
 }
-function charts(values: NutritionTotals, day?: NutritionDay): string {
+function charts(
+  values: NutritionTotals,
+  day?: NutritionDay,
+  visibleMeals = meals as readonly (typeof meals)[number][],
+): string {
   const shares = macroShares(values);
   const distribution = day ? mealShares(day) : null;
   const macroKeys = ['protein', 'fat', 'carbs'] as const;
-  return `<section class="summary-block charts"><div class="chart"><h2>${m.macroRatio}</h2>${shares ? `<div class="bar macro-bar" role="img" aria-label="${m.macroRatio}">${macroKeys.map((key, index) => `<span class="segment" data-nutrient="${key}" style="width:${shares.widths[index]}%"></span>`).join('')}</div>` : ''}<div class="legend">${macroKeys.map((key, index) => `<span class="legend-item" data-nutrient="${key}"><i class="marker"></i>${names[key]} <span class="numeric">${shares ? percentage(shares.tenths[index]!) : m.unavailable}</span></span>`).join('')}</div></div>${day ? `<div class="chart"><h2>${m.distribution}</h2>${distribution?.widths ? `<div class="bar meal-bar" role="img" aria-label="${m.distribution}">${meals.map((kind, index) => `<span class="segment" data-meal="${kind}" style="width:${distribution.widths![index] ?? 0}%"></span>`).join('')}</div>` : ''}<div class="legend legend--meals">${meals.map((kind, index) => `<span class="legend-item" data-meal="${kind}"><i class="marker"></i>${m[kind]} <span class="numeric">${distribution?.percentages?.[index] === null || distribution?.percentages?.[index] === undefined ? m.unavailable : `${distribution.percentages[index]}%`}</span></span>`).join('')}</div>${distribution?.recordedOnly ? `<p class="small-note">${m.recordedCalorieShare}</p>` : ''}</div>` : ''}</section>`;
+  return `<section class="summary-block charts"><div class="chart"><h2>${m.macroRatio}</h2>${shares ? `<div class="bar macro-bar" role="img" aria-label="${m.macroRatio}">${macroKeys.map((key, index) => `<span class="segment" data-nutrient="${key}" style="width:${shares.widths[index]}%"></span>`).join('')}</div>` : ''}<div class="legend">${macroKeys.map((key, index) => `<span class="legend-item" data-nutrient="${key}"><i class="marker"></i>${names[key]} <span class="numeric">${shares ? percentage(shares.tenths[index]!) : m.unavailable}</span></span>`).join('')}</div></div>${day && visibleMeals.length ? `<div class="chart"><h2>${m.distribution}</h2>${distribution?.widths ? `<div class="bar meal-bar" role="img" aria-label="${m.distribution}">${meals.map((kind, index) => (visibleMeals.includes(kind) ? `<span class="segment" data-meal="${kind}" style="width:${distribution.widths![index] ?? 0}%"></span>` : '')).join('')}</div>` : ''}<div class="legend legend--meals">${meals.map((kind, index) => (visibleMeals.includes(kind) ? `<span class="legend-item" data-meal="${kind}"><i class="marker"></i>${m[kind]} <span class="numeric">${distribution?.percentages?.[index] === null || distribution?.percentages?.[index] === undefined ? m.unavailable : `${distribution.percentages[index]}%`}</span></span>` : '')).join('')}</div>${distribution?.recordedOnly ? `<p class="small-note">${m.recordedCalorieShare}</p>` : ''}</div>` : ''}</section>`;
 }
 function entryMetadata(entry: NutritionEntry): string {
   const parts = [entry.diaryDateTime.slice(11)];
@@ -122,21 +127,22 @@ export function renderReportHtml(
       const photos = dataset.photos.filter((photo) => photo.date === date);
       const entries =
         day?.meals.reduce((sum, meal) => sum + meal.entries.length, 0) ?? 0;
-      const mealsWithData =
-        day?.meals.filter(
-          (meal) =>
-            meal.entries.length ||
-            photos.some((photo) => photo.daytime === meal.kind),
-        ).length ?? photos.length;
-      const details = meals
+      const visibleMeals = meals.filter((kind) =>
+        hasNutritionMealContent(
+          day?.meals.find((meal) => meal.kind === kind),
+          photos.some((photo) => photo.daytime === kind),
+        ),
+      );
+      const mealsWithData = visibleMeals.length;
+      const details = visibleMeals
         .map((kind) => {
           const meal = day?.meals.find((candidate) => candidate.kind === kind);
           const photo = photos.find((candidate) => candidate.daytime === kind);
           if (!meal && !photo) return '';
-          return `<section class="meal-block" data-meal="${kind}" data-name="${m[kind]}"><div class="meal-heading"><h2>${m[kind]}</h2>${keys.map((key) => `<span class="meal-total number numeric" data-nutrient="${key}">${value(meal?.totals[key] ?? null)}</span>`).join('')}</div><div class="meal-body"><figure class="meal-media">${photo ? `<img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}">` : ''}</figure><div class="meal-entries">${meal?.entries.map(food).join('') ?? ''}</div></div></section>`;
+          return `<section class="meal-block" data-meal="${kind}" data-name="${m[kind]}"><div class="meal-heading"><h2>${m[kind]}</h2>${keys.map((key) => `<span class="meal-total number numeric" data-nutrient="${key}">${value(meal?.totals[key] ?? null)}</span>`).join('')}</div><div class="meal-body">${photo ? `<figure class="meal-media"><img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}"></figure>` : ''}<div class="meal-entries">${meal?.entries.map(food).join('') ?? ''}</div></div></section>`;
         })
         .join('');
-      return `<section class="day-source" data-date="${date}" data-title="${m.diary}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}"><div class="day-start"><p class="counts">${m.mealCount}: ${mealsWithData} · ${m.entryCount}: ${entries} · ${m.photoCount}: ${photos.length}</p>${!day ? `<p class="empty">${m.missing}</p>` : entries === 0 ? `<p class="empty">${m.empty}</p>` : ''}${totals(dayTotals, day?.knownTotals)}${charts(dayTotals, day)}</div><div class="day-meals">${columnHeaders()}${details}</div>${notes(dayTotals, day?.fetchedAt)}</section>`;
+      return `<section class="day-source" data-date="${date}" data-title="${m.diary}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}"><div class="day-start"><p class="counts">${m.mealCount}: ${mealsWithData} · ${m.entryCount}: ${entries} · ${m.photoCount}: ${photos.length}</p>${mealsWithData === 0 ? `<p class="empty">${!day ? m.missing : m.empty}</p>` : ''}${totals(dayTotals, day?.knownTotals)}${charts(dayTotals, day, visibleMeals)}</div><div class="day-meals">${details ? columnHeaders() : ''}${details}</div>${notes(dayTotals, day?.fetchedAt)}</section>`;
     })
     .join('');
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${reportCsp}"><title>${m.diary}</title>${fontFaces}</head><body><main id="report-source" data-continued="${m.continued}">${overview}${sections}</main></body></html>`;
