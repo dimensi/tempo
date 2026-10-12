@@ -19,3 +19,15 @@ main {
 .skip-link:focus {
   top: 12px;
 }
+
+/* Keep touch text controls readable without Safari focus zoom; retain pinch zoom. */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not(
+      [type='hidden']
+    ),
+  select,
+  textarea,
+  .mantine-Input-input {
+    font-size: max(16px, var(--input-fz, 1rem)) !important;
+  }
+}
