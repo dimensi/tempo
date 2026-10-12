@@ -30,7 +30,7 @@ import { authClient } from '@/lib/auth-client';
 import { ru } from '@/config/messages';
 import { BrandMark } from '@/components/branding/brand-mark';
 import {
-  purgeOfflineDevice,
+  withOfflineDevicePurge,
   offlineDeviceMessages,
 } from '@/lib/offline-device';
 const icons = [
@@ -63,14 +63,10 @@ export function ApplicationShell({
     setBusy(true);
     setError(false);
     try {
-      let result;
-      try {
-        await purgeOfflineDevice();
-      } catch {
-        setCleanupError(true);
-      } finally {
-        result = await authClient.signOut();
-      }
+      const result = await withOfflineDevicePurge(
+        () => authClient.signOut(),
+        () => setCleanupError(true),
+      );
       if (result.error) {
         setError(true);
         return;

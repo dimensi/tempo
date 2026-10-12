@@ -2,16 +2,60 @@ import {
   OfflineStorage,
   purgeOfflineDevice,
   subscribeOfflineBlocked,
+  withOfflineDevicePurge,
 } from '../../src/lib/offline-device';
+import { OfflineController } from '../../src/features/offline/controller';
 import { prepareOfflineShell } from '../../src/features/offline/shell';
 import { offlineFixture } from './fixtures';
 const storage = new OfflineStorage();
 let lastFence: Awaited<ReturnType<typeof storage.enable>>;
 const now = Date.now();
+let finishMutation!: () => void;
+let mutation: Promise<string>;
+let mutationEntered = false;
 Object.assign(window, {
   offlineTest: {
     now,
     prepareShell: prepareOfflineShell,
+    async shortenExpiry() {
+      const fixture = offlineFixture(now);
+      const identity = {
+        contractVersion: fixture.contractVersion,
+        partition: fixture.partition,
+        connectionGeneration: fixture.connectionGeneration,
+        role: fixture.role,
+        serverNow: fixture.serverNow,
+        expiresAt: new Date(now + 1000).toISOString(),
+        sessionExpiresAt: new Date(now + 2000).toISOString(),
+      };
+      const controller = new OfflineController(
+        storage,
+        (async () => new Response(JSON.stringify(identity))) as typeof fetch,
+        () => now,
+        async () => {},
+      );
+      await controller.activate(true);
+      const expiry = controller.getSnapshot().bundle?.expiresAt;
+      controller.invalidate();
+      return expiry;
+    },
+    startMutation() {
+      mutationEntered = false;
+      mutation = withOfflineDevicePurge(async () => {
+        mutationEntered = true;
+        await new Promise<void>((resolve) => {
+          finishMutation = resolve;
+        });
+        return 'provider-success';
+      });
+    },
+    enteredMutation() {
+      return mutationEntered;
+    },
+    async finishMutation() {
+      finishMutation();
+      return mutation;
+    },
     async seed() {
       const snapshot = offlineFixture(now);
       const id = 'I'.repeat(43);

@@ -6,6 +6,7 @@ vi.mock('@/lib/offline-device', async (importOriginal) => ({
 import { OfflineController } from '@/features/offline/controller';
 import {
   initialMetadata,
+  canReadBundle,
   purgeOfflineDevice,
   type OfflineStorage,
   type CachedBundle,
@@ -44,7 +45,10 @@ function storage() {
       generation: metadata.generation,
       deviceEpoch: 'epoch',
     }),
-    read: async () => ({ metadata, bundle, photos: [] }),
+    read: async (time = now) => {
+      if (bundle && !canReadBundle(metadata, bundle, time)) bundle = null;
+      return { metadata, bundle, photos: [] };
+    },
   };
 }
 const identity = () =>
@@ -165,4 +169,46 @@ it('network verification failure keeps the store but shows no private cached con
     error: 'unavailable',
     bundle: null,
   });
+});
+
+it('fresh same-generation identity durably shortens expiry before display and offline reload', async () => {
+  const persistence = storage();
+  let clock = now;
+  let shortened = false;
+  const fetcher = async (url: string) => {
+    if (url !== '/api/offline/identity')
+      return new Response(JSON.stringify(fixture));
+    if (!shortened) return identity();
+    const fresh = await identity().json();
+    return new Response(
+      JSON.stringify({
+        ...fresh,
+        expiresAt: new Date(now + 2000).toISOString(),
+        sessionExpiresAt: new Date(now + 3000).toISOString(),
+      }),
+    );
+  };
+  const controller = new OfflineController(
+    persistence as unknown as OfflineStorage,
+    fetcher as typeof fetch,
+    () => clock,
+    async () => {},
+  );
+  await controller.save({ from: fixture.from, to: fixture.to });
+  shortened = true;
+  await controller.activate(true);
+  expect(persistence.commit).toHaveBeenCalledTimes(2);
+  expect((await persistence.read()).bundle?.expiresAt).toBe(now + 2000);
+  expect((await persistence.read()).bundle?.sessionExpiresAt).toBe(now + 3000);
+  expect(controller.getSnapshot().bundle?.expiresAt).toBe(now + 2000);
+  clock = now + 2000;
+  const reopened = new OfflineController(
+    persistence as unknown as OfflineStorage,
+    fetcher as typeof fetch,
+    () => clock,
+    async () => {},
+  );
+  await reopened.activate(false);
+  expect(reopened.getSnapshot().bundle).toBeNull();
+  controller.invalidate();
 });

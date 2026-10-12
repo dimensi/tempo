@@ -6,7 +6,7 @@ import { useForm } from '@mantine/form';
 import { authClient } from '@/lib/auth-client';
 import { ru } from '@/config/messages';
 import {
-  purgeOfflineDevice,
+  withOfflineDevicePurge,
   offlineDeviceMessages,
 } from '@/lib/offline-device';
 export function LoginForm() {
@@ -26,14 +26,10 @@ export function LoginForm() {
     setBusy(true);
     setError(false);
     try {
-      let result;
-      try {
-        await purgeOfflineDevice();
-      } catch {
-        setCleanupError(true);
-      } finally {
-        result = await authClient.signIn.email(values);
-      }
+      const result = await withOfflineDevicePurge(
+        () => authClient.signIn.email(values),
+        () => setCleanupError(true),
+      );
       if (result.error) {
         setError(true);
         return;

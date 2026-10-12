@@ -18,7 +18,7 @@ import {
   transformMateCredentialsSchema,
   type TransformMateConnectionStatus,
 } from '@/contracts/transformmate-connection';
-import { purgeOfflineDevice } from '@/lib/offline-device';
+import { withOfflineDevicePurge } from '@/lib/offline-device';
 
 const copy = {
   cancel: 'Отмена',
@@ -63,19 +63,22 @@ export function TransformMateSettingsForm({
       setError(null);
       setNotice(null);
       try {
-        if (action === 'connect' || action === 'disconnect')
-          await purgeOfflineDevice().catch(() => {});
-        const response = await fetch(`/api/transformmate/${action}`, {
-          method: action === 'status' ? 'GET' : 'POST',
-          cache: 'no-store',
-          signal: controller.signal,
-          ...(action === 'status'
-            ? {}
-            : {
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body ?? {}),
-              }),
-        });
+        const request = () =>
+          fetch(`/api/transformmate/${action}`, {
+            method: action === 'status' ? 'GET' : 'POST',
+            cache: 'no-store',
+            signal: controller.signal,
+            ...(action === 'status'
+              ? {}
+              : {
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(body ?? {}),
+                }),
+          });
+        const response =
+          action === 'connect' || action === 'disconnect'
+            ? await withOfflineDevicePurge(request)
+            : await request();
         const result: unknown = await response.json();
         if (!response.ok) {
           if (response.status === 401 || response.status === 403) {

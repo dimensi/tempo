@@ -162,13 +162,38 @@ export class OfflineController {
         )
       )
         throw new OfflineReadError('invalid');
+      let bundle = { ...cached.bundle, snapshot };
+      if (identity) {
+        bundle = {
+          ...bundle,
+          sessionExpiresAt: Math.min(
+            bundle.sessionExpiresAt,
+            Date.parse(identity.sessionExpiresAt),
+          ),
+          expiresAt: Math.min(
+            bundle.expiresAt,
+            Date.parse(identity.expiresAt),
+            Date.parse(identity.sessionExpiresAt),
+          ),
+        };
+        if (bundle.expiresAt <= this.now()) {
+          await this.disable();
+          return;
+        }
+        if (
+          bundle.expiresAt !== cached.bundle.expiresAt ||
+          bundle.sessionExpiresAt !== cached.bundle.sessionExpiresAt
+        )
+          await this.storage.commit(bundle, cached.photos, this.now());
+        if (this.revision !== operation.revision) return;
+      }
       this.set({
         status: online ? 'ready' : 'offline',
-        bundle: { ...cached.bundle, snapshot },
+        bundle,
         photos: cached.photos,
         error: null,
       });
-      this.scheduleExpiry(cached.bundle);
+      this.scheduleExpiry(bundle);
     } catch (error) {
       if (this.revision !== operation.revision) return;
       if (

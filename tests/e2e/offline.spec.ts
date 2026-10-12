@@ -345,3 +345,121 @@ test('offline read-only view renders all synthetic stored sections without mutat
     await context.setOffline(false);
   }
 });
+
+test('delayed provider completion clears a sibling tab re-enabled during the pending mutation', async ({
+  page,
+  context,
+}) => {
+  await inject(page);
+  const sibling = await context.newPage();
+  await inject(sibling);
+  await sibling.evaluate(call('listen()'));
+  await page.evaluate(call('startMutation()'));
+  await expect.poll(() => page.evaluate(call('enteredMutation()'))).toBe(true);
+  await sibling.evaluate(call('seed()'));
+  expect(await sibling.evaluate(call('read()'))).toMatchObject({
+    present: true,
+    photos: 1,
+  });
+  await sibling.evaluate(() => {
+    const node = document.createElement('div');
+    node.dataset.offlinePrivate = '';
+    node.textContent = 'Synthetic provider data';
+    document.body.append(node);
+  });
+  expect(await page.evaluate(call('finishMutation()'))).toBe(
+    'provider-success',
+  );
+  await expect(sibling.locator('[data-offline-private]')).toBeHidden();
+  expect(await sibling.evaluate(call('read()'))).toEqual({
+    present: false,
+    photos: 0,
+    enabled: false,
+  });
+  expect(await sibling.evaluate(call('stale()'))).toBe(true);
+});
+
+test('same-generation fresh expiry is persisted in native IDB before offline reopen', async ({
+  page,
+}) => {
+  await inject(page);
+  await page.evaluate(call('seed()'));
+  const baseline = Number(await page.evaluate(call('now')));
+  expect(await page.evaluate(call('shortenExpiry()'))).toBe(baseline + 1000);
+  expect(
+    await page.evaluate(call('read(window.offlineTest.now+999)')),
+  ).toMatchObject({ present: true, photos: 1 });
+  expect(
+    await page.evaluate(call('read(window.offlineTest.now+1000)')),
+  ).toEqual({ present: false, photos: 0, enabled: false });
+});
+test('actual provider form completion purges the cache saved by a sibling during delayed POST', async ({
+  page,
+  context,
+}) => {
+  const signIn = () =>
+    page.request.post('/api/auth/sign-in/email', {
+      headers: { origin: `http://localhost:${process.env.E2E_PORT ?? '3100'}` },
+      data: {
+        email: 'owner@example.test',
+        password: 'Test-only-password-12345',
+      },
+    });
+  let auth = await signIn();
+  if (auth.status() === 429) {
+    const seconds = Number(
+      auth.headers()['x-retry-after'] ?? auth.headers()['retry-after'] ?? 10,
+    );
+    await new Promise((resolve) => setTimeout(resolve, (seconds + 1) * 1000));
+    auth = await signIn();
+  }
+  expect(auth.status()).toBe(200);
+  await page.goto('/settings#transformmate');
+  let release!: () => void;
+  let entered!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  await page.route('**/api/transformmate/connect', async (route) => {
+    entered();
+    await pending;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          configured: false,
+          account: null,
+          checkedAt: null,
+          errorCode: null,
+        },
+      }),
+    });
+  });
+  const form = page.locator('#transformmate');
+  await form.getByLabel(/^Firebase API key/).fill('synthetic-key');
+  await form.getByLabel(/^Firebase refresh token/).fill('synthetic-refresh');
+  await form.getByRole('button', { name: 'Подключить', exact: true }).click();
+  await started;
+  const sibling = await context.newPage();
+  await inject(sibling);
+  await sibling.evaluate(call('listen()'));
+  await sibling.evaluate(call('seed()'));
+  expect(await sibling.evaluate(call('read()'))).toMatchObject({
+    present: true,
+    photos: 1,
+  });
+  release();
+  await expect(
+    form.getByText('Подключение сохранено.', { exact: true }),
+  ).toBeVisible();
+  expect(await sibling.evaluate(call('read()'))).toEqual({
+    present: false,
+    photos: 0,
+    enabled: false,
+  });
+  expect(await sibling.evaluate(call('stale()'))).toBe(true);
+});

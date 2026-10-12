@@ -221,6 +221,28 @@ export async function purgeOfflineDevice() {
   }
   if (failed) throw new OfflineStorageError('unavailable');
 }
+export async function withOfflineDevicePurge<T>(
+  operation: () => Promise<T>,
+  onCleanupFailure?: () => void,
+): Promise<T> {
+  const cleanup = async () => {
+    try {
+      await purgeOfflineDevice();
+    } catch {
+      try {
+        onCleanupFailure?.();
+      } catch {
+        /* Cleanup reporting cannot replace the operation result. */
+      }
+    }
+  };
+  await cleanup();
+  try {
+    return await operation();
+  } finally {
+    await cleanup();
+  }
+}
 export class OfflineStorageError extends Error {
   constructor(
     public readonly reason: 'unavailable' | 'fence' | 'expired' | 'quota',
