@@ -122,6 +122,17 @@ test('OWNER explicitly saves real API snapshot, offline read preserves zero and 
     await expect(section).toContainText(
       'По умолчанию данные на устройстве не сохраняются',
     );
+    expect(
+      await section
+        .locator('input[type=date]')
+        .evaluateAll((inputs) =>
+          inputs.every(
+            (input) =>
+              input.getBoundingClientRect().height >= 44 &&
+              parseFloat(getComputedStyle(input).fontSize) >= 16,
+          ),
+        ),
+    ).toBe(true);
     await section.locator('input[type=date]').nth(0).fill(date);
     await section.locator('input[type=date]').nth(1).fill(date);
     await section
@@ -130,6 +141,11 @@ test('OWNER explicitly saves real API snapshot, offline read preserves zero and 
     await expect(
       section.getByRole('link', { name: 'Открыть сохранённые данные' }),
     ).toBeVisible({ timeout: 30000 });
+    expect(
+      (await section
+        .getByRole('link', { name: 'Открыть сохранённые данные' })
+        .boundingBox())!.height,
+    ).toBeGreaterThanOrEqual(44);
     await page.goto('/offline/index.html');
     await expect(
       page.getByRole('heading', { name: 'Offline-чтение', exact: true }),
