@@ -39,7 +39,23 @@ export async function isTransformMateConfigured(
 ): Promise<boolean> {
   return Boolean((await configuredTransformMateStore(ownerId).load()).token);
 }
-export async function getTransformMateClient(
+const pendingClients = new Map<string, Promise<TransformMateClient | null>>();
+export function getTransformMateClient(
+  ownerId: string,
+): Promise<TransformMateClient | null> {
+  const pending = pendingClients.get(ownerId);
+  if (pending) return pending;
+  const operation = loadTransformMateClient(ownerId);
+  pendingClients.set(ownerId, operation);
+  void operation
+    .finally(() => {
+      if (pendingClients.get(ownerId) === operation)
+        pendingClients.delete(ownerId);
+    })
+    .catch(() => {});
+  return operation;
+}
+async function loadTransformMateClient(
   ownerId: string,
 ): Promise<TransformMateClient | null> {
   const cached = clients.get(ownerId);

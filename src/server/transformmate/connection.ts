@@ -83,6 +83,7 @@ export async function getTransformMateStatus(
     return status(state);
   } catch (error) {
     if (error instanceof TransformMateConnectionAccessError) throw error;
+    await recheck(headers, ownerId);
     return {
       configured: false,
       account: null,
@@ -147,7 +148,9 @@ export async function connectTransformMate(headers: Headers, input: unknown) {
   await store.save(token);
   invalidateTransformMateClient(ownerId);
   await recheck(headers, ownerId);
-  return status(await store.load());
+  const snapshot = status(await store.load());
+  await recheck(headers, ownerId);
+  return snapshot;
 }
 export async function checkTransformMate(headers: Headers, input: unknown) {
   const ownerId = await transformMateOwner(headers);
@@ -179,7 +182,9 @@ export async function checkTransformMate(headers: Headers, input: unknown) {
     });
     invalidateTransformMateClient(ownerId);
     await recheck(headers, ownerId);
-    return status(await store.load());
+    const snapshot = status(await store.load());
+    await recheck(headers, ownerId);
+    return snapshot;
   } catch (error) {
     if (
       error instanceof TransformMateConnectionAccessError ||
@@ -191,7 +196,9 @@ export async function checkTransformMate(headers: Headers, input: unknown) {
     const current = await configuredTransformMateStore(ownerId).load();
     if (current.token?.connectionId !== previous.token.connectionId)
       throw new TransformMateStaleConnectionError();
-    return status(current, connectionErrorCode(error));
+    const snapshot = status(current, connectionErrorCode(error));
+    await recheck(headers, ownerId);
+    return snapshot;
   }
 }
 export async function disconnectTransformMate(
@@ -206,5 +213,7 @@ export async function disconnectTransformMate(
   await store.disconnect();
   invalidateTransformMateClient(ownerId);
   await recheck(headers, ownerId);
-  return status(await store.load());
+  const snapshot = status(await store.load());
+  await recheck(headers, ownerId);
+  return snapshot;
 }

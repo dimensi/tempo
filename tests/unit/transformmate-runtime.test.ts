@@ -167,3 +167,32 @@ it('disconnect while API response is pending rejects returned data', async () =>
   await expect(operation).rejects.toThrow();
   expect((await store.load()).token).toBeNull();
 });
+
+it('deduplicates concurrent cold clients and their first refresh rotation', async () => {
+  await connected();
+  const request = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+    if (String(input).includes('securetoken.googleapis.com'))
+      return refreshed();
+    return new Response(JSON.stringify({ id: 7 }), { status: 200 });
+  });
+  vi.stubGlobal('fetch', request);
+  const [first, second] = await Promise.all([
+    getTransformMateClient('owner'),
+    getTransformMateClient('owner'),
+  ]);
+  expect(first).toBe(second);
+  await Promise.all([first!.getMe(), second!.getMe()]);
+  expect(
+    request.mock.calls.filter((call) =>
+      String(call[0]).includes('securetoken.googleapis.com'),
+    ),
+  ).toHaveLength(1);
+  expect(
+    request.mock.calls.filter(
+      (call) => !String(call[0]).includes('securetoken.googleapis.com'),
+    ),
+  ).toHaveLength(2);
+  expect(
+    (await configuredTransformMateStore('owner').load()).token?.refreshToken,
+  ).toBe('synthetic-rotation');
+});

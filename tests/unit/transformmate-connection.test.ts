@@ -42,6 +42,7 @@ import {
   configuredTransformMateStore,
   invalidateTransformMateClient,
 } from '@/server/transformmate/runtime';
+import * as tokenStores from '@/server/transformmate/token-store';
 import { POST } from '@/app/api/transformmate/connect/route';
 import { readTransformMateJson } from '@/server/transformmate/http';
 let directory: string;
@@ -90,6 +91,7 @@ beforeEach(async () => {
 afterEach(async () => {
   invalidateTransformMateClient('owner');
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   await rm(directory, { recursive: true, force: true });
 });
 it('validates profile, persists only encrypted connection, checks and disconnects with retained binding', async () => {
@@ -259,4 +261,60 @@ it('bounds request stream bytes before JSON parse and rejects malformed JSON', a
       }),
     ),
   ).rejects.toThrow();
+});
+
+function revokeOnLoad(target: number, fail = false) {
+  const original = tokenStores.fileTransformMateTokenStore;
+  let loads = 0;
+  vi.spyOn(tokenStores, 'fileTransformMateTokenStore').mockImplementation(
+    (...args) => {
+      const store = original(...args);
+      const load = store.load;
+      store.load = async () => {
+        loads++;
+        if (loads === target && fail) {
+          state.status = 403;
+          throw new tokenStores.TransformMateStorageError();
+        }
+        const result = await load();
+        if (loads === target) state.status = 403;
+        return result;
+      };
+      return store;
+    },
+  );
+}
+it.each(['connect', 'check', 'disconnect'] as const)(
+  'rechecks authorization after %s final status load',
+  async (operation) => {
+    if (operation !== 'connect')
+      await connectTransformMate(headers, credentials);
+    invalidateTransformMateClient('owner');
+    revokeOnLoad(operation === 'check' ? 4 : 2);
+    const result =
+      operation === 'connect'
+        ? connectTransformMate(headers, credentials)
+        : operation === 'check'
+          ? checkTransformMate(headers, {})
+          : disconnectTransformMate(headers, {});
+    await expect(result).rejects.toMatchObject({ status: 403 });
+  },
+);
+it('rechecks authorization after failed storage lookup before returning status error', async () => {
+  revokeOnLoad(1, true);
+  await expect(getTransformMateStatus(headers)).rejects.toMatchObject({
+    status: 403,
+  });
+});
+it('rechecks authorization after failed check final error status load', async () => {
+  await connectTransformMate(headers, credentials);
+  invalidateTransformMateClient('owner');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockRejectedValue(new Error('synthetic upstream failure')),
+  );
+  revokeOnLoad(3);
+  await expect(checkTransformMate(headers, {})).rejects.toMatchObject({
+    status: 403,
+  });
 });
