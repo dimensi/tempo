@@ -142,7 +142,8 @@ export async function generateReport(
   const request = reportRequestSchema.parse(input);
   const dataset = await loadReportDataset(source, request, signal);
   signal.throwIfAborted();
-  const html = renderReportHtml(request, dataset, await readReportFonts());
+  const fonts = request.format === 'pdf' ? await readReportFonts() : undefined;
+  const html = renderReportHtml(request, dataset, fonts);
   if (Buffer.byteLength(html) > reportLimits.htmlBytes)
     throw new ReportError('OVERSIZED', 413);
   signal.throwIfAborted();

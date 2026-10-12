@@ -73,6 +73,11 @@ it('displays natural-flow HTML and the real embedded photo with scripts/network 
     expect(
       await page.locator('html').getAttribute('data-report-ready'),
     ).toBeNull();
+    expect(
+      await page
+        .locator('body')
+        .evaluate((node) => getComputedStyle(node).fontFamily),
+    ).toBe('Arial, system-ui, sans-serif');
     const image = page.locator('img');
     expect(await image.getAttribute('src')).toBe(dataUri);
     expect(
