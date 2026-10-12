@@ -124,14 +124,12 @@ it('retains original link snapshots through local edits and deletion; list does 
       .find((l) => l.planId === plan.id)!.state.attempted,
   ).toBe(false);
 });
-it('does not persist caller-supplied or stale/foreign plans', async () => {
+it('does not change durable intents for caller-supplied stale or missing plans', async () => {
   state.session = { user: { id: 'owner', role: 'OWNER' } };
   const plan = repository.createPlan('owner', input);
+  const before = syncRepository(database.db).list('owner');
   await api.syncSavedPlan(headers, 'owner', { ...plan, revision: 2 });
   await api.syncSavedPlan(headers, 'owner', { ...plan, id: 'missing' });
-  expect(
-    syncRepository(database.db)
-      .list('owner')
-      .find((l) => l.planId === plan.id),
-  ).toBeUndefined();
+  expect(syncRepository(database.db).list('owner')).toEqual(before);
+  expect(before.find((l) => l.planId === plan.id)?.state.attempted).toBe(false);
 });

@@ -282,17 +282,15 @@ describe('range response validation and cancellation', () => {
     ).toBe(502);
   });
   it('rejects unsolicited 206 responses', async () => {
-    const upstream = vi
-      .fn()
-      .mockResolvedValue(
-        new Response('abc', {
-          status: 206,
-          headers: {
-            'Content-Type': 'video/mp4',
-            'Content-Range': 'bytes 0-2/30',
-          },
-        }),
-      );
+    const upstream = vi.fn().mockResolvedValue(
+      new Response('abc', {
+        status: 206,
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Range': 'bytes 0-2/30',
+        },
+      }),
+    );
     expect(
       (
         await streamExerciseVideo(
@@ -304,18 +302,16 @@ describe('range response validation and cancellation', () => {
     ).toBe(502);
   });
   it('strips upstream error-body length on 416', async () => {
-    const upstream = vi
-      .fn()
-      .mockResolvedValue(
-        new Response('error payload', {
-          status: 416,
-          headers: {
-            'Content-Length': '13',
-            'Content-Range': 'bytes */30',
-            'Content-Type': 'text/plain',
-          },
-        }),
-      );
+    const upstream = vi.fn().mockResolvedValue(
+      new Response('error payload', {
+        status: 416,
+        headers: {
+          'Content-Length': '13',
+          'Content-Range': 'bytes */30',
+          'Content-Type': 'text/plain',
+        },
+      }),
+    );
     const response = await streamExerciseVideo(
       new Request('https://app.test/video?ownerId=owner', {
         headers: { Range: 'bytes=50-' },

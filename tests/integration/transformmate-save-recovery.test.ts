@@ -16,6 +16,7 @@ import {
 } from '../fixtures/transformmate';
 import { exerciseDetailFixture } from '../fixtures/transformmate-exercise';
 import type { RawResponse } from '@/server/transformmate/types';
+import { transformMateTrainingDetailSchema } from '@/server/transformmate/schemas';
 vi.mock('server-only', () => ({}));
 const input = () =>
   workoutPlanInputSchema.parse({
@@ -111,7 +112,8 @@ it('recovers an intent committed with a plan after process restart and reconcile
       },
       listTrainings: async () =>
         raw([{ ...trainingSummaryFixture(), description: detail.description }]),
-      getTraining: async () => raw(detail),
+      getTraining: async () =>
+        raw(transformMateTrainingDetailSchema.parse(detail)),
     };
     const engine = syncEngine({
       repository: links,
