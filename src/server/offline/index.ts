@@ -1,4 +1,8 @@
 import 'server-only';
+import {
+  ownerConfirmedYazioWeightPolicyVersion,
+  ownerConfirmedYazioWeightUnit,
+} from '@/contracts/yazio-weight-policy';
 import { createHmac } from 'node:crypto';
 import { resolve, sep } from 'node:path';
 import { z } from 'zod';
@@ -98,6 +102,7 @@ async function identityContext(headers: Headers, session: Session) {
   const sessionExpires = new Date(session.session.expiresAt).getTime();
   const identity: OfflineIdentity = offlineIdentitySchema.parse({
     contractVersion: 1,
+    weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
     partition: hash(secret, 'offline-owner/v1', [session.user.id]),
     connectionGeneration: hash(secret, 'offline-connection/v1', [
       session.user.id,
@@ -230,6 +235,7 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
       ...value,
       key: key('weight', id),
       source: 'yazio',
+      ...ownerConfirmedYazioWeightUnit,
     })),
     dailySteps: rows.steps.map((value) => ({ ...value, source: 'yazio' })),
     plannedWorkouts: rows.plans.flatMap((plan) =>

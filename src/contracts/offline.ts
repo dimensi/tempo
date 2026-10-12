@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import {
+  ownerConfirmedYazioWeightPolicyVersion,
+  ownerConfirmedYazioWeightUnit,
+} from './yazio-weight-policy';
+import {
   mealKindSchema,
   nutritionTotalsSchema,
   nutritionDeltaSchema,
@@ -33,6 +37,7 @@ export const offlinePeriodSchema = z
 export const offlineIdentitySchema = z
   .object({
     contractVersion: z.literal(1),
+    weightPolicyVersion: z.literal(ownerConfirmedYazioWeightPolicyVersion),
     partition: opaque,
     connectionGeneration: opaque,
     role: z.literal('OWNER'),
@@ -144,7 +149,8 @@ export const offlineSnapshotSchema = offlineIdentitySchema
             providerDate: z.string().max(128),
             measuredDate: date,
             rawValue: decimal,
-            unit: z.null(),
+            unit: z.literal(ownerConfirmedYazioWeightUnit.unit),
+            unitStatus: z.literal(ownerConfirmedYazioWeightUnit.unitStatus),
             unitContext: z.string().max(128).nullable(),
             observedAt: timestamp,
           })

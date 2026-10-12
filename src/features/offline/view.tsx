@@ -1,5 +1,10 @@
 'use client';
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+} from 'react';
 import Decimal from 'decimal.js';
 import {
   Accordion,
@@ -22,8 +27,9 @@ import type { NutritionTotals } from '@/contracts/nutrition';
 import { healthRangeDates } from '@/contracts/health';
 import { hasNutritionMealContent } from '@/lib/nutrition-meal-content';
 import { formatDecimal } from '@/lib/number-display';
-import { concealOfflineContent } from '@/lib/offline-device';
+import { revealOfflineContent } from '@/lib/offline-device';
 import { getOfflineController } from './controller';
+import { attachOfflineRefresh } from './refresh';
 import { offlineMessages as m } from './messages';
 import classes from './offline.module.css';
 
@@ -238,7 +244,7 @@ function Measurements({ snapshot }: { snapshot: OfflineSnapshot }) {
         </Table.ScrollContainer>
       )}
       <Title order={2}>{m.weight}</Title>
-      <Text>{m.unknownHelp}</Text>
+      <Text>{m.weightHelp}</Text>
       {snapshot.importedWeights.length === 0 ? (
         <Text>{m.empty}</Text>
       ) : (
@@ -256,8 +262,9 @@ function Measurements({ snapshot }: { snapshot: OfflineSnapshot }) {
                 <Table.Tr key={record.key}>
                   <Table.Td>{record.measuredDate}</Table.Td>
                   <Table.Td>
-                    {display(record.rawValue)}
-                    <Text>{m.unknown}</Text>
+                    {display(record.rawValue)}{' '}
+                    {record.rawValue !== null && m.kg}
+                    <Text>{m.ownerConfirmed}</Text>
                   </Table.Td>
                   <Table.Td>YAZIO</Table.Td>
                 </Table.Tr>
@@ -448,31 +455,15 @@ export function OfflineViewer() {
   );
   useEffect(() => {
     const stop = controller.listen();
-    const activate = () => {
-      void controller.activate();
-    };
-    const visible = () => {
-      if (document.visibilityState === 'visible') activate();
-    };
-    const hide = () => {
-      concealOfflineContent();
-      controller.invalidate();
-    };
-    activate();
-    window.addEventListener('online', activate);
-    window.addEventListener('focus', activate);
-    window.addEventListener('pageshow', activate);
-    window.addEventListener('pagehide', hide);
-    document.addEventListener('visibilitychange', visible);
+    const detach = attachOfflineRefresh(controller);
     return () => {
       stop();
-      window.removeEventListener('online', activate);
-      window.removeEventListener('focus', activate);
-      window.removeEventListener('pageshow', activate);
-      window.removeEventListener('pagehide', hide);
-      document.removeEventListener('visibilitychange', visible);
+      detach();
     };
   }, [controller]);
+  useLayoutEffect(() => {
+    if (state.bundle) revealOfflineContent(state.bundle.fence);
+  }, [state]);
   const bundle = state.bundle;
   const photoMap = new Map(
     state.photos.map((photo) => [photo.id, photo.bytes]),
@@ -509,10 +500,6 @@ export function OfflineViewer() {
                 </Text>
                 <Text>
                   {m.saved}: {new Date(bundle.savedAt).toLocaleString('ru-RU')}
-                </Text>
-                <Text>
-                  {m.until}:{' '}
-                  {new Date(bundle.expiresAt).toLocaleString('ru-RU')}
                 </Text>
                 <Text>
                   {m.photoCoverage}: {state.photos.length} /{' '}

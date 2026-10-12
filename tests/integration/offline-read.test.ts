@@ -290,9 +290,21 @@ it('safe local projection preserves null/zero/notes/workouts/facts while strippi
   const value = offlineSnapshotSchema.parse(await response.json());
   expect(value.dailySteps.map((day) => day.steps)).toEqual([null, 0]);
   expect(value.importedWeights[0]).toMatchObject({
-    unit: null,
+    unit: 'kg',
+    unitStatus: 'OWNER_CONFIRMED',
     unitContext: 'lb',
     rawValue: '160',
+  });
+  expect(
+    database.sqlite
+      .prepare(
+        'SELECT raw_value AS rawValue, unit, external_id AS externalId FROM yazio_weight_entries WHERE owner_id=?',
+      )
+      .get(ownerId),
+  ).toEqual({
+    rawValue: '160',
+    unit: null,
+    externalId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   });
   expect(value.measurements[0]?.values).toHaveLength(3);
   expect(value.measurements[0]?.note).toBe('Synthetic note');

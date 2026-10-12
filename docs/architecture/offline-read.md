@@ -4,7 +4,7 @@ The opt-in browser cache consumes version-1 `src/contracts/offline.ts`. This ser
 
 ## Routes and authorization
 
-- `GET /api/offline/identity` accepts no query and returns an opaque owner partition, opaque connection generation, OWNER role, server time, session expiry and offline expiry.
+- `GET /api/offline/identity` accepts no query and returns an opaque owner partition, opaque connection generation, OWNER role, server time, session expiry and server expiry observation, plus the current weight policy version.
 - `GET /api/offline/snapshot?from=YYYY-MM-DD&to=YYYY-MM-DD` accepts precisely one of each parameter, inclusive at most 30 calendar dates. No owner selector or duplicate/unknown parameter is accepted.
 - `GET /api/offline/photos/<opaque>?date=YYYY-MM-DD` accepts precisely one date. The opaque photo key is resolved only in that session owner's photos for that date. It never exposes native YAZIO photo IDs, which embed the owner ID.
 
@@ -14,11 +14,11 @@ HMAC-SHA256 uses the existing `BETTER_AUTH_SECRET` with distinct purpose strings
 
 The local binding helper also captures a noncredential revision inside the existing token-store serialization. Stable binding mutations advance that revision synchronously before their file write; ordinary refresh with the same connection ID does not. Each final release synchronously fences both this revision and the YAZIO epoch after its last async authorization check. A disconnect/reconnect during that check therefore cannot release an older binding.
 
-Offline expiry is `min(serverNow + 24 hours, minimum session expiry observed across every authorization check)`. The guard returns the latest validated session while retaining the earlier expiry cap even if a later check renews it. A server response does not prove continued authorization while offline; the browser worker owns opt-in, clock/expiry enforcement, generation fencing and purging on identity/logout/connection changes.
+The genuine server `expiresAt` observation remains `min(serverNow + 24 hours, minimum session expiry observed across every authorization check)`. It does not determine downloaded local-copy retention. The guard returns the latest validated session while retaining the earlier expiry cap even if a later check renews it. A server response does not prove continued authorization while offline; the browser owns explicit OWNER device opt-in, calendar retention, clock rollback checks, generation fencing and purging on identity/logout/connection changes. Live requests retain the existing server authorization checks.
 
 ## Data projection and limits
 
-Snapshots contain safe diary entries/totals; photo metadata; all manual measurement values and notes; in-range raw YAZIO weights with literal `unit:null`; in-range nullable daily step observations; in-range planned workouts and local sessions; and available cached TransformMate actual facts/metrics. Provider IDs, owner IDs, profile/account data, source locators, signed URLs, remote exercise/occurrence/training IDs and token payloads are omitted. Record keys are purpose-separated opaque HMACs. Unknown mass preferences remain metadata and never become kg. Zero, null and missing dates are preserved. Ambiguous provider weight dates cannot establish range membership, so they are excluded from a dated snapshot.
+Snapshots contain safe diary entries/totals; photo metadata; all manual measurement values and notes; in-range raw YAZIO weights with account-specific `unit:kg` / `unitStatus:OWNER_CONFIRMED`; in-range nullable daily step observations; in-range planned workouts and local sessions; and available cached TransformMate actual facts/metrics. Provider IDs, owner IDs, profile/account data, source locators, signed URLs, remote exercise/occurrence/training IDs and token payloads are omitted. Record keys are purpose-separated opaque HMACs. This application’s OWNER explicitly confirmed that they enter YAZIO weights in kg. Projection applies that account assumption without conversion; raw persisted values, NULL SDK units and upstream UUIDs remain unchanged. A preference such as `unitContext:lb` is not treated as evidence or converted. Zero, null and missing dates are preserved. Ambiguous provider weight dates cannot establish range membership, so they are excluded from a dated snapshot.
 
 Photo `availability:'metadata-only'` explicitly means bytes were not checked/downloaded by the snapshot. The browser must track each authenticated photo download separately and must not claim all photos are saved from metadata alone. Server photo responses are at most 10 MiB; the frontend owns its aggregate image quota.
 
@@ -34,4 +34,14 @@ Focused synthetic tests use genuine seven migrations and real Better Auth owner/
 pnpm exec vitest run tests/integration/offline-read.test.ts tests/integration/offline-repository.test.ts tests/unit/offline-binding.test.ts
 ```
 
-Service worker, IndexedDB, offline UI, activation, integration CI and deployment are separate coordinated work. This server API alone does not activate offline storage.
+## Device local-copy policy
+
+The default-off OWNER switch “Доступно офлайн” saves today and the previous 14 calendar dates in the browser’s current IANA timezone. There are no manual date controls. Snapshot requests use those 15 dates; the server’s strict maximum of 30 remains unchanged. Read and commit prune every dated collection and photo Blob in one IndexedDB transaction, including offline reads. Clock rollback fails closed; zero and null stay distinct.
+
+Downloaded data remains locally viewable without a 24-hour or server-session-expiry cutoff. Genuine server expiry fields are retained without modification, and never extend authorization. Offline revocation cannot be checked; the UI explicitly discloses that a local copy may remain available after a server session ends. Each online entry/reconnect verifies current OWNER identity before revealing a copy. 401/403/409, logout, account/role and provider binding changes retain the durable blocker, generation CAS and all-tab purge. No cached response substitutes for live authorization.
+
+Refresh runs best-effort only while the app is open: startup, online, visible/focus/pageshow events coalesce, one download is in flight, and snapshot attempts are bounded to five-minute cadence. Visibility/pagehide conceals private state and aborts pending reads. No closed-app or iOS background-refresh guarantee is made. The service worker caches only versioned allowlisted static shell assets; opt-in snapshots/Blobs live in IndexedDB. No auth cookies/tokens, SSR/RSC, private API responses, settings/PDF or provider video are cached. Photos have a 50 MiB aggregate quota and honest partial-download notices.
+
+Cache schema 2 and the required `owner-confirmed-kg/v1` policy marker clear old unknown-unit snapshots and photos before read, while preserving the device opt-in preference. Repopulation requires a fresh authenticated identity and snapshot; no old-format compatibility renderer or silent reinterpretation exists. Legitimate account/session/provider generation changes still disable opt-in and clear all tabs.
+
+Targeted tests additionally cover calendar/DST boundaries, atomic offline prune/physical Blob deletion, old-cache invalidation, singleflight/cadence, expired-session local viewing versus online denial, generation isolation and multi-tab purging. Activation, integration CI and deployment remain separately coordinated.

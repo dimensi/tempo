@@ -1,3 +1,5 @@
+import { shiftDate } from '../../src/contracts/nutrition-sync-dates';
+import { ownerConfirmedYazioWeightPolicyVersion } from '../../src/contracts/yazio-weight-policy';
 import {
   OfflineStorage,
   purgeOfflineDevice,
@@ -21,6 +23,7 @@ Object.assign(window, {
       const fixture = offlineFixture(now);
       const identity = {
         contractVersion: fixture.contractVersion,
+        weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
         partition: fixture.partition,
         connectionGeneration: fixture.connectionGeneration,
         role: fixture.role,
@@ -62,12 +65,12 @@ Object.assign(window, {
       snapshot.photos.items = [
         {
           id,
-          date: snapshot.from,
+          date: snapshot.to,
           daytime: 'breakfast',
           source: 'manual',
           observedAt: snapshot.serverNow,
           mime: 'image/png',
-          downloadUrl: `/api/offline/photos/${id}?date=${snapshot.from}`,
+          downloadUrl: `/api/offline/photos/${id}?date=${snapshot.to}`,
         },
       ];
       const bytes = new Blob(
@@ -114,7 +117,8 @@ Object.assign(window, {
       );
       await storage.commit(
         {
-          schemaVersion: 1,
+          schemaVersion: 2,
+          weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
           fence: lastFence,
           savedAt: now,
           expiresAt: now + 600000,
@@ -128,6 +132,96 @@ Object.assign(window, {
       );
       return (await storage.read(now)).photos.length;
     },
+    async commitOldPhoto() {
+      const cached = await storage.read(now, 'UTC');
+      const bundle = cached.bundle!;
+      const old = shiftDate(bundle.snapshot.from, -1);
+      for (const photo of bundle.snapshot.photos.items) photo.date = old;
+      await storage.commit(bundle, cached.photos, now, 'UTC');
+      return (await storage.read(now, 'UTC')).photos.length;
+    },
+    async alterNative(mode: 'old-format' | 'boundary') {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('yazio-offline-read-v1', 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(['metadata', 'bundle'], 'readwrite');
+        tx.oncomplete = () => resolve();
+        tx.onabort = () => reject(tx.error);
+        const request = tx.objectStore('bundle').get('current');
+        request.onsuccess = () => {
+          const bundle = request.result;
+          if (mode === 'old-format') {
+            bundle.schemaVersion = 1;
+            delete bundle.weightPolicyVersion;
+            bundle.snapshot.importedWeights[0].unit = null;
+            delete bundle.snapshot.importedWeights[0].unitStatus;
+            const metadata = tx.objectStore('metadata').get('current');
+            metadata.onsuccess = () => {
+              const value = metadata.result;
+              delete value.weightPolicyVersion;
+              tx.objectStore('metadata').put(value, 'current');
+            };
+          } else {
+            const date = bundle.snapshot.from;
+            for (const item of bundle.snapshot.photos.items) item.date = date;
+            for (const key of [
+              'diary',
+              'dailySteps',
+              'plannedWorkouts',
+              'workoutSessions',
+              'transformMateFacts',
+            ])
+              for (const item of bundle.snapshot[key]) item.date = date;
+            for (const item of bundle.snapshot.measurements)
+              item.measuredAt = date;
+            for (const item of bundle.snapshot.importedWeights)
+              item.measuredDate = date;
+          }
+          tx.objectStore('bundle').put(bundle, 'current');
+        };
+      });
+      db.close();
+    },
+    async rawCounts() {
+      const db = await new Promise<IDBDatabase>((resolve) => {
+        const request = indexedDB.open('yazio-offline-read-v1', 1);
+        request.onsuccess = () => resolve(request.result);
+      });
+      const result = await new Promise<{ bundle: number; photos: number }>(
+        (resolve) => {
+          const tx = db.transaction(['bundle', 'photos'], 'readonly');
+          const bundle = tx.objectStore('bundle').count();
+          const photos = tx.objectStore('photos').count();
+          tx.oncomplete = () =>
+            resolve({ bundle: bundle.result, photos: photos.result });
+        },
+      );
+      db.close();
+      return result;
+    },
+    async details(time = now) {
+      const value = await storage.read(time, 'UTC');
+      const snapshot = value.bundle?.snapshot;
+      return {
+        enabled: value.metadata.enabled,
+        photos: value.photos.length,
+        collections: snapshot
+          ? [
+              snapshot.diary.length,
+              snapshot.photos.items.length,
+              snapshot.measurements.length,
+              snapshot.importedWeights.length,
+              snapshot.dailySteps.length,
+              snapshot.plannedWorkouts.length,
+              snapshot.workoutSessions.length,
+              snapshot.transformMateFacts.length,
+            ]
+          : null,
+      };
+    },
     async read(time = now) {
       const value = await storage.read(time);
       return {
@@ -140,7 +234,8 @@ Object.assign(window, {
       try {
         await storage.commit(
           {
-            schemaVersion: 1,
+            schemaVersion: 2,
+            weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
             fence: lastFence,
             savedAt: now,
             expiresAt: now + 600000,

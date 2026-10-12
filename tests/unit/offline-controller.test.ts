@@ -6,12 +6,17 @@ vi.mock('@/lib/offline-device', async (importOriginal) => ({
 import { OfflineController } from '@/features/offline/controller';
 import {
   initialMetadata,
-  canReadBundle,
   purgeOfflineDevice,
+  canReadBundle,
   type OfflineStorage,
   type CachedBundle,
   type CacheMetadata,
 } from '@/lib/offline-device';
+import {
+  offlineLocalWindow,
+  pruneOfflineSnapshot,
+} from '@/contracts/offline-retention';
+import { ownerConfirmedYazioWeightPolicyVersion } from '@/contracts/yazio-weight-policy';
 import { offlineFixture } from '../offline/fixtures';
 import type { OfflineSnapshot } from '@/contracts/offline';
 const now = Date.parse('2026-10-12T12:00:00Z');
@@ -45,76 +50,103 @@ function storage() {
       generation: metadata.generation,
       deviceEpoch: 'epoch',
     }),
-    read: async (time = now) => {
+    read: async (time = now, timezone = 'UTC') => {
       if (bundle && !canReadBundle(metadata, bundle, time)) bundle = null;
+      if (bundle)
+        bundle = {
+          ...bundle,
+          snapshot: pruneOfflineSnapshot(
+            bundle.snapshot,
+            offlineLocalWindow(time, timezone),
+          ),
+        };
       return { metadata, bundle, photos: [] };
     },
   };
 }
-const identity = () =>
-  new Response(
-    JSON.stringify(
-      Object.fromEntries(
-        Object.entries(fixture).filter(([key]) =>
-          [
-            'contractVersion',
-            'partition',
-            'connectionGeneration',
-            'role',
-            'serverNow',
-            'sessionExpiresAt',
-            'expiresAt',
-          ].includes(key),
-        ),
-      ),
-    ),
-    { status: 200 },
+function identity() {
+  const {
+    contractVersion,
+    weightPolicyVersion,
+    partition,
+    connectionGeneration,
+    role,
+    serverNow,
+    sessionExpiresAt,
+    expiresAt,
+  } = fixture;
+  return new Response(
+    JSON.stringify({
+      contractVersion,
+      weightPolicyVersion,
+      partition,
+      connectionGeneration,
+      role,
+      serverNow,
+      sessionExpiresAt,
+      expiresAt,
+    }),
   );
-afterEach(() => vi.clearAllMocks());
-it('requires fresh identity before opt-in and cache reads, requests date-only data and keeps zero/null', async () => {
-  const persistence = storage();
-  const fetcher = vi.fn(async (url: string) =>
+}
+function fetcher() {
+  return vi.fn(async (url: string) =>
     url === '/api/offline/identity'
       ? identity()
       : new Response(JSON.stringify(fixture)),
   );
-  const controller = new OfflineController(
+}
+const controller = (
+  persistence: ReturnType<typeof storage>,
+  fetch: typeof globalThis.fetch,
+  clock = () => now,
+) =>
+  new OfflineController(
     persistence as unknown as OfflineStorage,
-    fetcher as typeof fetch,
-    () => now,
+    fetch,
+    clock,
     async () => {},
+    () => 'UTC',
   );
-  await controller.save({ from: fixture.from, to: fixture.to });
-  expect(fetcher.mock.calls.map((call) => call[0])).toEqual([
+afterEach(() => vi.clearAllMocks());
+it('explicit opt-in verifies OWNER and always requests rolling15 date-only data, preserving zero/null/kg policy', async () => {
+  const persistence = storage();
+  const request = fetcher();
+  const reader = controller(persistence, request as typeof fetch);
+  await reader.save();
+  expect(request.mock.calls.map((call) => call[0])).toEqual([
     '/api/offline/identity',
     `/api/offline/snapshot?from=${fixture.from}&to=${fixture.to}`,
     '/api/offline/identity',
   ]);
   expect(persistence.commit).toHaveBeenCalledOnce();
-  expect(controller.getSnapshot().bundle?.snapshot.dailySteps[0]?.steps).toBe(
-    0,
-  );
+  expect(reader.getSnapshot()).toMatchObject({
+    enabled: true,
+    status: 'ready',
+  });
+  expect(reader.getSnapshot().bundle?.snapshot.dailySteps[0]?.steps).toBe(0);
   expect(
-    controller.getSnapshot().bundle?.snapshot.importedWeights[0]?.rawValue,
-  ).toBeNull();
-  fetcher.mockClear();
-  await controller.activate(true);
-  expect(fetcher).toHaveBeenCalledWith(
-    '/api/offline/identity',
-    expect.objectContaining({ cache: 'no-store', credentials: 'same-origin' }),
-  );
+    reader.getSnapshot().bundle?.snapshot.importedWeights[0],
+  ).toMatchObject({
+    rawValue: null,
+    unit: 'kg',
+    unitStatus: 'OWNER_CONFIRMED',
+  });
 });
-it('denials purge and never use cached data as fallback', async () => {
+it('OFF devices make no background requests; denial of an enabled cache purges before displaying content', async () => {
   const persistence = storage();
-  const controller = new OfflineController(
-    persistence as unknown as OfflineStorage,
+  const request = fetcher();
+  const reader = controller(persistence, request as typeof fetch);
+  await reader.activate(true);
+  expect(request).not.toHaveBeenCalled();
+  await reader.save();
+  const denied = controller(
+    persistence,
     (async () => new Response('{}', { status: 403 })) as typeof fetch,
-    () => now,
-    async () => {},
   );
-  await controller.activate(true);
+  await denied.activate(true);
   expect(purgeOfflineDevice).toHaveBeenCalledOnce();
-  expect(controller.getSnapshot()).toMatchObject({
+  expect(denied.getSnapshot()).toMatchObject({
+    enabled: false,
     bundle: null,
     photos: [],
     error: 'denied',
@@ -130,85 +162,94 @@ it('a delayed snapshot cannot commit after logout-style invalidation', async () 
   const pending = new Promise<Response>((resolve) => {
     release = resolve;
   });
-  const fetcher = async (url: string) => {
+  const reader = controller(persistence, (async (url: string) => {
     if (url === '/api/offline/identity') return identity();
     entered();
     return pending;
-  };
-  const controller = new OfflineController(
-    persistence as unknown as OfflineStorage,
-    fetcher as typeof fetch,
-    () => now,
-    async () => {},
-  );
-  const saving = controller.save({ from: fixture.from, to: fixture.to });
+  }) as typeof fetch);
+  const saving = reader.save();
   await started;
-  controller.invalidate();
+  reader.invalidate();
   release(new Response(JSON.stringify(fixture)));
   await saving;
   expect(persistence.commit).not.toHaveBeenCalled();
-  expect(controller.getSnapshot()).toMatchObject({
-    status: 'disabled',
-    bundle: null,
-  });
+  expect(reader.getSnapshot().bundle).toBeNull();
 });
-it('network verification failure keeps the store but shows no private cached content', async () => {
-  const persistence = storage();
-  const controller = new OfflineController(
-    persistence as unknown as OfflineStorage,
-    (async () => {
-      throw new TypeError('Network unavailable');
-    }) as typeof fetch,
-    () => now,
-    async () => {},
-  );
-  await controller.activate(true);
-  expect(purgeOfflineDevice).not.toHaveBeenCalled();
-  expect(controller.getSnapshot()).toMatchObject({
-    status: 'error',
-    error: 'unavailable',
-    bundle: null,
-  });
-});
-
-it('fresh same-generation identity durably shortens expiry before display and offline reload', async () => {
+it('an expired server session does not expire downloaded offline copy; online denial is still required', async () => {
   const persistence = storage();
   let clock = now;
-  let shortened = false;
-  const fetcher = async (url: string) => {
-    if (url !== '/api/offline/identity')
-      return new Response(JSON.stringify(fixture));
-    if (!shortened) return identity();
-    const fresh = await identity().json();
-    return new Response(
-      JSON.stringify({
-        ...fresh,
-        expiresAt: new Date(now + 2000).toISOString(),
-        sessionExpiresAt: new Date(now + 3000).toISOString(),
-      }),
-    );
-  };
-  const controller = new OfflineController(
-    persistence as unknown as OfflineStorage,
-    fetcher as typeof fetch,
+  const reader = controller(
+    persistence,
+    fetcher() as typeof fetch,
     () => clock,
-    async () => {},
   );
-  await controller.save({ from: fixture.from, to: fixture.to });
-  shortened = true;
-  await controller.activate(true);
-  expect(persistence.commit).toHaveBeenCalledTimes(2);
-  expect((await persistence.read()).bundle?.expiresAt).toBe(now + 2000);
-  expect((await persistence.read()).bundle?.sessionExpiresAt).toBe(now + 3000);
-  expect(controller.getSnapshot().bundle?.expiresAt).toBe(now + 2000);
-  clock = now + 2000;
-  const reopened = new OfflineController(
-    persistence as unknown as OfflineStorage,
-    fetcher as typeof fetch,
+  await reader.save();
+  const original = reader.getSnapshot().bundle!;
+  clock = now + 3 * 86400000;
+  const offline = controller(
+    persistence,
+    (async () => {
+      throw new Error('offline must not fetch');
+    }) as typeof fetch,
     () => clock,
-    async () => {},
   );
-  await reopened.activate(false);
-  expect(reopened.getSnapshot().bundle).toBeNull();
-  controller.invalidate();
+  await offline.activate(false);
+  expect(offline.getSnapshot().bundle?.expiresAt).toBe(original.expiresAt);
+  expect(offline.getSnapshot()).toMatchObject({
+    enabled: true,
+    status: 'offline',
+  });
+});
+it('foreground event bursts are singleflight and snapshot refresh is bounded while open', async () => {
+  const persistence = storage();
+  let clock = now;
+  const request = fetcher();
+  const reader = controller(persistence, request as typeof fetch, () => clock);
+  await reader.save();
+  request.mockClear();
+  clock += 31000;
+  await Promise.all([
+    reader.activate(true, true),
+    reader.activate(true, true),
+    reader.activate(true, true),
+  ]);
+  expect(request.mock.calls.map((call) => call[0])).toEqual([
+    '/api/offline/identity',
+  ]);
+  clock += 300000;
+  await reader.activate(true, true);
+  expect(
+    request.mock.calls.filter((call) =>
+      call[0].startsWith('/api/offline/snapshot'),
+    ),
+  ).toHaveLength(1);
+});
+it('failed live verification hides cache and preserves copied data; failed background download keeps verified copy', async () => {
+  const persistence = storage();
+  const initial = controller(persistence, fetcher() as typeof fetch);
+  await initial.save();
+  const reader = controller(persistence, (async () => {
+    throw new TypeError('network');
+  }) as typeof fetch);
+  await reader.activate(true);
+  expect(reader.getSnapshot().bundle).toBeNull();
+  expect(purgeOfflineDevice).not.toHaveBeenCalled();
+  expect((await persistence.read()).bundle).not.toBeNull();
+  const background = controller(
+    persistence,
+    (async (url: string) => {
+      if (url === '/api/offline/identity') return identity();
+      throw new TypeError('network');
+    }) as typeof fetch,
+    () => now + 300001,
+  );
+  await background.activate(true);
+  expect(background.getSnapshot()).toMatchObject({
+    enabled: true,
+    status: 'ready',
+    error: 'unavailable',
+  });
+  expect(background.getSnapshot().bundle?.weightPolicyVersion).toBe(
+    ownerConfirmedYazioWeightPolicyVersion,
+  );
 });

@@ -1,11 +1,12 @@
 import {
   offlineIdentitySchema,
   offlineSnapshotSchema,
-  offlinePeriodSchema,
   offlineLimits,
   type OfflineIdentity,
   type OfflineSnapshot,
 } from '@/contracts/offline';
+import { offlineLocalWindow } from '@/contracts/offline-retention';
+import { ownerConfirmedYazioWeightPolicyVersion } from '@/contracts/yazio-weight-policy';
 import {
   OfflineStorage,
   OfflineStorageError,
@@ -14,24 +15,24 @@ import {
   offlineDeviceLimits,
   type CachedBundle,
   type StoredPhoto,
-  type CacheFence,
 } from '@/lib/offline-device';
 import { prepareOfflineShell } from './shell';
-
 export interface OfflineState {
   status: 'checking' | 'disabled' | 'saving' | 'ready' | 'offline' | 'error';
+  enabled: boolean;
   bundle: CachedBundle<OfflineSnapshot> | null;
   photos: StoredPhoto[];
-  error: 'unavailable' | 'denied' | 'invalid' | null;
+  error: 'unavailable' | 'denied' | null;
 }
 const empty: OfflineState = {
   status: 'checking',
+  enabled: false,
   bundle: null,
   photos: [],
   error: null,
 };
 export class OfflineReadError extends Error {
-  constructor(public readonly reason: 'unavailable' | 'denied' | 'invalid') {
+  constructor(public readonly reason: 'unavailable' | 'denied') {
     super(`Offline read ${reason}`);
   }
 }
@@ -40,12 +41,18 @@ export class OfflineController {
   private listeners = new Set<() => void>();
   private revision = 0;
   private pending?: AbortController;
-  private expiry?: ReturnType<typeof setTimeout>;
+  private flight?: Promise<void>;
+  private flightRevision = -1;
+  private optedIn = false;
+  private lastVerifiedAt = 0;
+  private lastRefreshAttempt = Number.NEGATIVE_INFINITY;
   constructor(
     private readonly storage = new OfflineStorage(),
     private readonly fetcher: typeof fetch = fetch,
     private readonly now = Date.now,
     private readonly prepareShell = prepareOfflineShell,
+    private readonly timezone = () =>
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
   ) {}
   getSnapshot = () => this.state;
   getServerSnapshot = () => empty;
@@ -56,21 +63,31 @@ export class OfflineController {
     };
   };
   private set(state: OfflineState) {
-    this.state = state;
+    this.state = { ...state, enabled: this.optedIn };
     for (const listener of this.listeners) listener();
   }
   invalidate = () => {
     this.revision++;
     this.pending?.abort();
-    clearTimeout(this.expiry);
+    this.lastVerifiedAt = 0;
     this.set({ ...empty, status: 'disabled' });
+  };
+  private block = () => {
+    this.optedIn = false;
+    this.invalidate();
   };
   private begin(status: OfflineState['status']) {
     this.pending?.abort();
     this.pending = new AbortController();
     const revision = ++this.revision;
     this.set({ ...empty, status });
-    return { revision, signal: this.pending.signal };
+    return {
+      revision,
+      signal: AbortSignal.any([
+        this.pending.signal,
+        AbortSignal.timeout(120000),
+      ]),
+    };
   }
   private async request(url: string, signal: AbortSignal) {
     let response: Response;
@@ -80,8 +97,7 @@ export class OfflineController {
         credentials: 'same-origin',
         signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
       });
-    } catch (error) {
-      if (signal.aborted) throw error;
+    } catch {
       throw new OfflineReadError('unavailable');
     }
     if (
@@ -105,116 +121,6 @@ export class OfflineController {
       first.partition === second.partition &&
       first.connectionGeneration === second.connectionGeneration
     );
-  }
-  private scheduleExpiry(bundle: CachedBundle<OfflineSnapshot>) {
-    clearTimeout(this.expiry);
-    this.expiry = setTimeout(
-      () => {
-        void this.disable();
-      },
-      Math.max(0, bundle.expiresAt - this.now()),
-    );
-  }
-  async activate(online = navigator.onLine) {
-    const operation = this.begin('checking');
-    try {
-      const identity = online ? await this.identity(operation.signal) : null;
-      if (this.revision !== operation.revision) return;
-      const metadata = await this.storage.metadata();
-      if (
-        identity &&
-        metadata.enabled &&
-        (metadata.partition !== identity.partition ||
-          metadata.connectionGeneration !== identity.connectionGeneration)
-      ) {
-        await this.disable();
-        return;
-      }
-      const cached = await this.storage.read<OfflineSnapshot>(this.now());
-      if (this.revision !== operation.revision) return;
-      if (!cached.bundle) {
-        this.set({ ...empty, status: 'disabled' });
-        return;
-      }
-      const snapshot = offlineSnapshotSchema.parse(cached.bundle.snapshot);
-      if (
-        snapshot.partition !== cached.metadata.partition ||
-        snapshot.connectionGeneration !==
-          cached.metadata.connectionGeneration ||
-        (identity && !this.sameIdentity(identity, snapshot))
-      ) {
-        await this.disable();
-        return;
-      }
-      const ids = new Map(
-        snapshot.photos.items.map((photo) => [photo.id, photo.mime]),
-      );
-      const bytes = cached.photos.reduce(
-        (sum, photo) => sum + photo.bytes.size,
-        0,
-      );
-      if (
-        bytes !== cached.bundle.photoBytes ||
-        cached.photos.some(
-          (photo) =>
-            !(photo.bytes instanceof Blob) ||
-            photo.bytes.type !== ids.get(photo.id),
-        )
-      )
-        throw new OfflineReadError('invalid');
-      let bundle = { ...cached.bundle, snapshot };
-      if (identity) {
-        bundle = {
-          ...bundle,
-          sessionExpiresAt: Math.min(
-            bundle.sessionExpiresAt,
-            Date.parse(identity.sessionExpiresAt),
-          ),
-          expiresAt: Math.min(
-            bundle.expiresAt,
-            Date.parse(identity.expiresAt),
-            Date.parse(identity.sessionExpiresAt),
-          ),
-        };
-        if (bundle.expiresAt <= this.now()) {
-          await this.disable();
-          return;
-        }
-        if (
-          bundle.expiresAt !== cached.bundle.expiresAt ||
-          bundle.sessionExpiresAt !== cached.bundle.sessionExpiresAt
-        )
-          await this.storage.commit(bundle, cached.photos, this.now());
-        if (this.revision !== operation.revision) return;
-      }
-      this.set({
-        status: online ? 'ready' : 'offline',
-        bundle,
-        photos: cached.photos,
-        error: null,
-      });
-      this.scheduleExpiry(bundle);
-    } catch (error) {
-      if (this.revision !== operation.revision) return;
-      if (
-        error instanceof OfflineStorageError ||
-        !(error instanceof OfflineReadError)
-      )
-        await purgeOfflineDevice().catch(() => {});
-      this.set({
-        ...empty,
-        status: 'error',
-        error: error instanceof OfflineReadError ? error.reason : 'unavailable',
-      });
-    }
-  }
-  async disable() {
-    this.invalidate();
-    try {
-      await purgeOfflineDevice();
-    } catch {
-      this.set({ ...empty, status: 'error', error: 'unavailable' });
-    }
   }
   private async photo(
     url: string,
@@ -250,59 +156,199 @@ export class OfflineController {
       return null;
     }
   }
-  async save(period: { from: string; to: string }) {
-    const parsed = offlinePeriodSchema.safeParse(period);
-    if (!parsed.success) {
-      this.set({ ...empty, status: 'error', error: 'invalid' });
-      return;
-    }
-    const operation = this.begin('saving');
+  activate(online = navigator.onLine, force = false): Promise<void> {
+    if (this.flight && this.flightRevision === this.revision)
+      return this.flight;
+    const window = offlineLocalWindow(this.now(), this.timezone());
+    if (
+      !force &&
+      online &&
+      this.state.status === 'ready' &&
+      this.state.bundle?.snapshot.to === window.to &&
+      this.now() - this.lastVerifiedAt < 30000
+    )
+      return Promise.resolve();
+    const work = this.load(online);
+    this.flight = work;
+    this.flightRevision = this.revision;
+    return work.finally(() => {
+      if (this.flight === work) this.flight = undefined;
+    });
+  }
+  private publish(
+    cached: Awaited<ReturnType<OfflineStorage['read']>>,
+    online: boolean,
+  ) {
+    this.optedIn = cached.metadata.enabled;
+    this.set({
+      ...empty,
+      status: this.optedIn ? (online ? 'ready' : 'offline') : 'disabled',
+      bundle: cached.bundle,
+      photos: cached.photos,
+    });
+  }
+  private async load(online: boolean) {
+    const operation = this.begin('checking');
+    let verifiedCache: OfflineState | undefined;
     try {
-      const identity = await this.identity(operation.signal);
-      if (this.revision !== operation.revision) return;
-      await this.prepareShell();
-      if (this.revision !== operation.revision) return;
       const metadata = await this.storage.metadata();
+      if (this.revision !== operation.revision) return;
+      this.optedIn = metadata.enabled;
+      if (!metadata.enabled) {
+        await this.storage.read(this.now(), this.timezone());
+        this.set({ ...empty, status: 'disabled' });
+        return;
+      }
+      const identity = online ? await this.identity(operation.signal) : null;
+      if (this.revision !== operation.revision) return;
       if (
-        metadata.enabled &&
+        identity &&
         (metadata.partition !== identity.partition ||
           metadata.connectionGeneration !== identity.connectionGeneration)
       ) {
         await this.disable();
         return;
       }
-      const fence: CacheFence = metadata.enabled
-        ? await this.storage.currentFence()
-        : await this.storage.enable(
+      if (identity) this.lastVerifiedAt = this.now();
+      const cached = await this.storage.read(this.now(), this.timezone());
+      if (this.revision !== operation.revision) return;
+      if (cached.bundle) {
+        const snapshot = offlineSnapshotSchema.parse(cached.bundle.snapshot);
+        if (
+          snapshot.partition !== cached.metadata.partition ||
+          snapshot.connectionGeneration !==
+            cached.metadata.connectionGeneration ||
+          (identity && !this.sameIdentity(identity, snapshot))
+        ) {
+          await this.disable();
+          return;
+        }
+        const ids = new Map(
+          snapshot.photos.items.map((photo) => [photo.id, photo.mime]),
+        );
+        if (
+          cached.photos.reduce((sum, photo) => sum + photo.bytes.size, 0) !==
+            cached.bundle.photoBytes ||
+          cached.photos.some(
+            (photo) =>
+              !(photo.bytes instanceof Blob) ||
+              photo.bytes.type !== ids.get(photo.id),
+          )
+        )
+          throw new OfflineReadError('unavailable');
+      }
+      this.publish(cached, online);
+      verifiedCache = identity ? this.state : undefined;
+      const window = offlineLocalWindow(this.now(), this.timezone());
+      const copyDay = cached.bundle
+        ? offlineLocalWindow(cached.bundle.savedAt, this.timezone()).to
+        : null;
+      const refreshDue =
+        !cached.bundle ||
+        copyDay !== window.to ||
+        this.now() - cached.bundle.savedAt >= 300000;
+      if (
+        identity &&
+        refreshDue &&
+        this.now() - this.lastRefreshAttempt >= 300000
+      )
+        await this.download(identity, operation, cached);
+    } catch (error) {
+      await this.failed(error, operation.revision, verifiedCache);
+    }
+  }
+  async save() {
+    if (
+      this.flight &&
+      this.flightRevision === this.revision &&
+      this.state.status === 'saving'
+    )
+      return this.flight;
+    this.optedIn = true;
+    const operation = this.begin('saving');
+    const work = (async () => {
+      try {
+        const identity = await this.identity(operation.signal);
+        if (this.revision !== operation.revision) return;
+        const metadata = await this.storage.metadata();
+        if (
+          metadata.enabled &&
+          (metadata.partition !== identity.partition ||
+            metadata.connectionGeneration !== identity.connectionGeneration)
+        ) {
+          await this.disable();
+          return;
+        }
+        if (!metadata.enabled)
+          await this.storage.enable(
             identity.partition,
             identity.connectionGeneration,
             this.now(),
           );
-      if (this.revision !== operation.revision) return;
-      const response = await this.request(
-        `/api/offline/snapshot?from=${parsed.data.from}&to=${parsed.data.to}`,
-        operation.signal,
-      );
-      const text = await response.text();
-      if (new TextEncoder().encode(text).length > offlineLimits.payloadBytes)
-        throw new OfflineReadError('invalid');
-      const snapshot = offlineSnapshotSchema.parse(JSON.parse(text));
-      if (
-        !this.sameIdentity(identity, snapshot) ||
-        snapshot.from !== period.from ||
-        snapshot.to !== period.to
-      ) {
-        await this.disable();
-        return;
-      }
-      const photos: StoredPhoto[] = [];
-      const missingPhotos: string[] = [];
-      let photoBytes = 0;
-      for (const photo of snapshot.photos.items) {
         if (this.revision !== operation.revision) return;
-        const remaining = offlineDeviceLimits.photoBytes - photoBytes;
-        const bytes =
-          remaining > 0
+        this.optedIn = true;
+        this.set({ ...this.state });
+        const cached = await this.storage.read(this.now(), this.timezone());
+        await this.download(identity, operation, cached);
+      } catch (error) {
+        await this.failed(error, operation.revision);
+      }
+    })();
+    this.flight = work;
+    this.flightRevision = operation.revision;
+    return work.finally(() => {
+      if (this.flight === work) this.flight = undefined;
+    });
+  }
+  private async download(
+    identity: OfflineIdentity,
+    operation: { revision: number; signal: AbortSignal },
+    cached: Awaited<ReturnType<OfflineStorage['read']>>,
+  ) {
+    this.lastRefreshAttempt = this.now();
+    await this.prepareShell();
+    if (this.revision !== operation.revision) return;
+    const fence = await this.storage.currentFence();
+    const period = offlineLocalWindow(this.now(), this.timezone());
+    const response = await this.request(
+      `/api/offline/snapshot?from=${period.from}&to=${period.to}`,
+      operation.signal,
+    );
+    const text = await response.text();
+    if (new TextEncoder().encode(text).length > offlineLimits.payloadBytes)
+      throw new OfflineStorageError('unavailable');
+    const snapshot = offlineSnapshotSchema.parse(JSON.parse(text));
+    if (
+      !this.sameIdentity(identity, snapshot) ||
+      snapshot.from !== period.from ||
+      snapshot.to !== period.to
+    ) {
+      await this.disable();
+      return;
+    }
+    const previousPhotos = new Map(
+      cached.photos.map((photo) => [photo.id, photo.bytes]),
+    );
+    const previousMetadata = new Map(
+      cached.bundle?.snapshot.photos.items.map((photo) => [photo.id, photo]) ??
+        [],
+    );
+    const photos: StoredPhoto[] = [];
+    const missingPhotos: string[] = [];
+    let photoBytes = 0;
+    for (const photo of snapshot.photos.items) {
+      if (this.revision !== operation.revision) return;
+      const remaining = offlineDeviceLimits.photoBytes - photoBytes;
+      const previous = previousMetadata.get(photo.id);
+      const existing =
+        previous?.observedAt === photo.observedAt &&
+        previous.mime === photo.mime
+          ? previousPhotos.get(photo.id)
+          : undefined;
+      const bytes =
+        existing && existing.size <= remaining
+          ? existing
+          : remaining > 0
             ? await this.photo(
                 photo.downloadUrl,
                 photo.mime,
@@ -310,57 +356,74 @@ export class OfflineController {
                 operation.signal,
               )
             : null;
-        if (bytes) {
-          photoBytes += bytes.size;
-          photos.push({ id: photo.id, bytes });
-        } else missingPhotos.push(photo.id);
+      if (bytes) {
+        photoBytes += bytes.size;
+        photos.push({ id: photo.id, bytes });
+      } else missingPhotos.push(photo.id);
+    }
+    const finalIdentity = await this.identity(operation.signal);
+    if (this.revision !== operation.revision) return;
+    if (!this.sameIdentity(snapshot, finalIdentity)) {
+      await this.disable();
+      return;
+    }
+    const bundle: CachedBundle<OfflineSnapshot> = {
+      schemaVersion: 2,
+      weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
+      fence,
+      savedAt: Date.parse(snapshot.serverNow),
+      expiresAt: Date.parse(snapshot.expiresAt),
+      sessionExpiresAt: Date.parse(snapshot.sessionExpiresAt),
+      snapshot,
+      missingPhotos,
+      photoBytes,
+    };
+    await this.storage.commit(bundle, photos, this.now(), this.timezone());
+    if (this.revision !== operation.revision) return;
+    const retained = await this.storage.read(this.now(), this.timezone());
+    if (this.revision !== operation.revision) return;
+    this.lastVerifiedAt = this.now();
+    this.publish(retained, true);
+  }
+  private async failed(
+    error: unknown,
+    revision: number,
+    verifiedCache?: OfflineState,
+  ) {
+    if (this.revision !== revision) return;
+    if (error instanceof OfflineReadError && error.reason === 'denied') {
+      this.optedIn = false;
+      this.set({ ...empty, status: 'error', error: 'denied' });
+      return;
+    }
+    if (
+      error instanceof OfflineStorageError ||
+      !(error instanceof OfflineReadError)
+    ) {
+      await purgeOfflineDevice().catch(() => {});
+      if (this.revision === revision) {
+        this.optedIn = false;
+        this.set({ ...empty, status: 'error', error: 'unavailable' });
       }
-      const finalIdentity = await this.identity(operation.signal);
-      if (this.revision !== operation.revision) return;
-      if (!this.sameIdentity(snapshot, finalIdentity)) {
-        await this.disable();
-        return;
-      }
-      const savedAt = Date.parse(snapshot.serverNow);
-      const sessionExpiresAt = Math.min(
-        Date.parse(snapshot.sessionExpiresAt),
-        Date.parse(finalIdentity.sessionExpiresAt),
-      );
-      const bundle = {
-        schemaVersion: 1 as const,
-        fence,
-        savedAt,
-        sessionExpiresAt,
-        expiresAt: Math.min(
-          Date.parse(snapshot.expiresAt),
-          Date.parse(finalIdentity.expiresAt),
-          savedAt + offlineDeviceLimits.lifetimeMs,
-          sessionExpiresAt,
-        ),
-        snapshot,
-        missingPhotos,
-        photoBytes,
-      };
-      await this.storage.commit(bundle, photos, this.now());
-      if (this.revision !== operation.revision) return;
-      this.set({ status: 'ready', bundle, photos, error: null });
-      this.scheduleExpiry(bundle);
-    } catch (error) {
-      if (this.revision !== operation.revision) return;
-      if (
-        error instanceof OfflineStorageError ||
-        !(error instanceof OfflineReadError)
-      )
-        await purgeOfflineDevice().catch(() => {});
-      this.set({
-        ...empty,
-        status: 'error',
-        error: error instanceof OfflineReadError ? error.reason : 'unavailable',
-      });
+      return;
+    }
+    this.set({
+      ...(verifiedCache ?? empty),
+      status: verifiedCache?.bundle ? 'ready' : 'error',
+      error: 'unavailable',
+    });
+  }
+  async disable() {
+    this.optedIn = false;
+    this.invalidate();
+    try {
+      await purgeOfflineDevice();
+    } catch {
+      this.set({ ...empty, status: 'error', error: 'unavailable' });
     }
   }
   listen() {
-    return subscribeOfflineBlocked(this.invalidate);
+    return subscribeOfflineBlocked(this.block);
   }
 }
 let controller: OfflineController | undefined;
