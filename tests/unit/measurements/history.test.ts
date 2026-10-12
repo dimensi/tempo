@@ -28,6 +28,12 @@ it('combined kg chart preserves all same-day observations and source differences
       range: { from: '2026-10-01', to: '2026-10-03' },
       local: [
         {
+          measuredAt: '2025-10-01',
+          value: '68.5',
+          unit: 'kg',
+          source: 'LOCAL',
+        },
+        {
           measuredAt: '2026-10-02',
           value: '72.125',
           unit: 'kg',
@@ -65,6 +71,7 @@ it('combined kg chart preserves all same-day observations and source differences
       ],
     }),
   ).toEqual([
+    { date: '2025-10-01', local: 68.5, yazio: null },
     { date: '2026-10-01', local: null, yazio: 0 },
     { date: '2026-10-02', local: 72.125, yazio: 73.125 },
     { date: '2026-10-02', local: 72.5, yazio: null },

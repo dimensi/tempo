@@ -41,6 +41,7 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
     .prepare("SELECT id FROM user WHERE email = 'trainer@example.test'")
     .get() as { id: string };
   const from = shiftDate(today(), -6);
+  const olderLocalDate = shiftDate(today(), -400);
   const observedAt = new Date().toISOString();
   const uuid = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
   const nullUuid = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
@@ -72,6 +73,14 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
     owner.id,
     today(),
     JSON.stringify([{ metric: 'weight', value: '71.875', unit: 'kg' }]),
+  );
+  db.prepare(
+    'INSERT OR REPLACE INTO measurements(id,owner_id,measured_at,values_json) VALUES(?,?,?,?)',
+  ).run(
+    'health-e2e-older',
+    owner.id,
+    olderLocalDate,
+    JSON.stringify([{ metric: 'weight', value: '68.5', unit: 'kg' }]),
   );
   try {
     await login(page.request, 'owner');
@@ -131,7 +140,11 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
     await expect(weightChart).toContainText('Вручную');
     await expect(weightChart).toContainText('YAZIO');
     expect(await weightChart.locator('.recharts-line').count()).toBe(2);
-    await expect(weightChart.locator('.recharts-line-dot')).toHaveCount(3);
+    await expect(weightChart.locator('.recharts-line-dot')).toHaveCount(4);
+    await expect(weightChart).toContainText(olderLocalDate);
+    await expect(page.getByTestId('measurements-panel')).toContainText(
+      'Ручные замеры — вся доступная история.',
+    );
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -157,6 +170,19 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
       path: testInfo.outputPath('synthetic-health.png'),
       fullPage: true,
     });
+    for (const status of [401, 403]) {
+      await page.route('**/api/measurements?*', (route) =>
+        route.fulfill({ status, json: { error: 'Synthetic denial' } }),
+      );
+      await page.goto('/measurements');
+      const panel = page.getByTestId('measurements-panel');
+      await expect(panel.getByRole('alert')).toContainText(
+        'Доступ к замерам не предоставлен.',
+      );
+      await expect(panel.getByTestId('measurement-trend-chart')).toHaveCount(0);
+      await expect(panel).not.toContainText('YAZIO');
+      await page.unroute('**/api/measurements?*');
+    }
     await login(page.request, 'trainer');
     db.prepare(
       'INSERT OR REPLACE INTO trainer_access(trainer_id,owner_id,created_at) VALUES(?,?,?)',
@@ -205,6 +231,7 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
     db.prepare('DELETE FROM measurements WHERE id = ?').run(
       'health-e2e-same-day',
     );
+    db.prepare('DELETE FROM measurements WHERE id = ?').run('health-e2e-older');
     db.prepare('DELETE FROM trainer_access WHERE trainer_id = ?').run(
       trainer.id,
     );

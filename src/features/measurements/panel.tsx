@@ -47,6 +47,7 @@ export function MeasurementsPanel({
 }) {
   const [items, setItems] = useState<Measurement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [readDenied, setReadDenied] = useState(false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string>();
@@ -62,11 +63,20 @@ export function MeasurementsPanel({
     let active = true;
     fetch(url)
       .then(async (r) => {
-        if (!r.ok) throw new Error();
+        if (!r.ok) {
+          if (active && (r.status === 401 || r.status === 403)) {
+            setItems([]);
+            setReadDenied(true);
+          }
+          throw new Error();
+        }
         return r.json() as Promise<Measurement[]>;
       })
       .then((data) => {
-        if (active) setItems(data);
+        if (active) {
+          setReadDenied(false);
+          setItems(data);
+        }
       })
       .catch(() => {
         if (active) setError(m.loadError);
@@ -150,33 +160,36 @@ export function MeasurementsPanel({
       setBusy(false);
     }
   }
+  if (readDenied)
+    return (
+      <Stack data-testid="measurements-panel">
+        <Title order={1}>{m.title}</Title>
+        <Alert color="red" role="alert">
+          {m.denied}
+        </Alert>
+      </Stack>
+    );
   const chart =
     metric === 'weight'
       ? weightTrendChart({
           ...weightHistory,
-          local: items
-            .filter(
-              (item) =>
-                item.measuredAt >= weightHistory.range.from &&
-                item.measuredAt <= weightHistory.range.to,
-            )
-            .flatMap((item) =>
-              item.values
-                .filter((value) => value.metric === 'weight')
-                .map((value) => ({
-                  measuredAt: item.measuredAt,
-                  value: value.value,
-                  unit: 'kg' as const,
-                  source: 'LOCAL' as const,
-                })),
-            ),
+          local: items.flatMap((item) =>
+            item.values
+              .filter((value) => value.metric === 'weight')
+              .map((value) => ({
+                measuredAt: item.measuredAt,
+                value: value.value,
+                unit: 'kg' as const,
+                source: 'LOCAL' as const,
+              })),
+          ),
         })
       : [...items].reverse().flatMap((item) => {
           const v = item.values.find((v) => v.metric === metric);
           return v ? [{ date: item.measuredAt, value: Number(v.value) }] : [];
         });
   return (
-    <Stack>
+    <Stack data-testid="measurements-panel">
       <Title order={1}>{m.title}</Title>
       {error && (
         <Alert color="red" role="alert">
@@ -253,6 +266,12 @@ export function MeasurementsPanel({
           if (v) setMetric(v as MeasurementMetric);
         }}
       />
+      {metric === 'weight' && (
+        <Text size="sm">
+          {m.localWholeHistory} {m.yazioRange}: {weightHistory.range.from} —{' '}
+          {weightHistory.range.to}.
+        </Text>
+      )}
       {chart.length ? (
         <LineChart
           data-testid="measurement-trend-chart"

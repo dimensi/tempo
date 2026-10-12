@@ -12,6 +12,8 @@ export const measurementMessages = {
   trend: 'Динамика',
   localSource: 'Вручную',
   yazioSource: 'YAZIO',
+  localWholeHistory: 'Ручные замеры — вся доступная история.',
+  yazioRange: 'YAZIO за период',
   error:
     'Не удалось сохранить изменения. Повторите попытку позже. Введённые значения сохранены.',
   validation:
