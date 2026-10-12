@@ -71,6 +71,7 @@ export function Catalog({
           if (!response.ok) throw new Error();
           const result = await response.json();
           const data = transformMateExerciseInfoSchema.parse(result.data);
+          if (data.id !== selected) throw new Error();
           if (!controller.signal.aborted) setInfo(data);
         })
         .catch(() => {

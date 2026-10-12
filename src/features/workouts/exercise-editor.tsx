@@ -59,6 +59,7 @@ export function ExerciseEditor({
             )}
             {ownerId && (
               <Catalog
+                key={`${ownerId}-${exercise.transformMate?.occurrenceKey ?? index}-${exercise.transformMate?.exerciseId ?? 'manual'}`}
                 ownerId={ownerId}
                 exercise={exercise}
                 onSelect={(item) =>

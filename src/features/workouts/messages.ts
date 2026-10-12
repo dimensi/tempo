@@ -4,7 +4,7 @@ export const workoutMessages = {
   catalogError: 'Каталог недоступен. Повторите поиск.',
   makeManual: 'Сделать ручным упражнением',
   manual: 'Ручное упражнение: сохраняется только здесь.',
-  linked: 'TransformMate: отправляется автоматически при сохранении плана.',
+  linked: 'Упражнение из TransformMate: поддерживает автоматическую отправку.',
   autoHint:
     'Для автоматической отправки выберите каждое упражнение из каталога. Ручные упражнения сохраняются здесь. Статус отправки появится после сохранения.',
   unsupported: 'Это упражнение нельзя отправить автоматически.',
@@ -21,6 +21,10 @@ export const workoutMessages = {
   syncError: 'Не удалось проверить TransformMate. Повторите проверку.',
   notConfigured: 'TransformMate не подключён. План сохранится здесь.',
   checked: 'Последняя проверка',
+  remoteStartedAt: 'Начата',
+  remoteFinishedAt: 'Завершена',
+  completedSafeguard:
+    'Тренировка завершена в TransformMate. Результаты доступны для чтения и не перезаписываются.',
   remoteActual: 'Текущие результаты TransformMate',
   done: 'Выполнен',
   notDone: 'Не выполнен',

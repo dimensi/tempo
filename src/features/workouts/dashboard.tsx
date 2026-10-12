@@ -413,6 +413,17 @@ function ScopedWorkoutsDashboard({
                   <Stack>
                     <Title order={2}>{item.actual?.title}</Title>
                     <Text>{item.actual?.date}</Text>
+                    <Text fw={600}>
+                      {m.snapshot}: {item.planSnapshot.planTitle}
+                    </Text>
+                    <Text>
+                      {item.planSnapshot.workout.title} ·{' '}
+                      {item.planSnapshot.workout.date}
+                    </Text>
+                    <ExerciseTable
+                      exercises={item.planSnapshot.workout.exercises}
+                      sync={item}
+                    />
                     <WorkoutSync item={item} />
                   </Stack>
                 </Paper>

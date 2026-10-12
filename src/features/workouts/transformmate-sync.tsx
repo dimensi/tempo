@@ -124,9 +124,30 @@ export function WorkoutSync({ item }: { item?: TransformMateSyncItem }) {
     <Stack gap="xs">
       <Group>
         <Text fw={600}>{m.sync}</Text>
-        <Badge>{statuses[item.status]}</Badge>
+        <Badge
+          color={
+            (item.status === 'started' && item.actual?.finished) ||
+            item.status === 'synced'
+              ? 'green'
+              : item.status === 'error'
+                ? 'red'
+                : item.status === 'conflict' || item.status === 'unknown'
+                  ? 'orange'
+                  : 'gray'
+          }
+        >
+          {item.status === 'started' && item.actual?.finished
+            ? m.completed
+            : statuses[item.status]}
+        </Badge>
       </Group>
-      {item.reason && <Text size="sm">{reasons[item.reason]}</Text>}
+      {item.reason && (
+        <Text size="sm">
+          {item.reason === 'remote_started' && item.actual?.finished
+            ? m.completedSafeguard
+            : reasons[item.reason]}
+        </Text>
+      )}
       <Text size="xs" c="dimmed">
         {m.checked}:{' '}
         {item.checkedAt
@@ -135,7 +156,22 @@ export function WorkoutSync({ item }: { item?: TransformMateSyncItem }) {
       </Text>
       {item.actual && (
         <>
-          <Text fw={600}>{m.remoteActual}</Text>
+          <Group>
+            <Text fw={600}>{m.remoteActual}</Text>
+            {item.actual.finished && item.status !== 'started' && (
+              <Badge color="green">{m.completed}</Badge>
+            )}
+          </Group>
+          {item.actual.started && (
+            <Text size="sm">
+              {m.remoteStartedAt}: {item.actual.started}
+            </Text>
+          )}
+          {item.actual.finished && (
+            <Text size="sm">
+              {m.remoteFinishedAt}: {item.actual.finished}
+            </Text>
+          )}
           {item.actual.exercises.map((exercise, index) => (
             <Stack gap={4} key={`${exercise.occurrenceKey}-${index}`}>
               <Text>{exercise.name}</Text>

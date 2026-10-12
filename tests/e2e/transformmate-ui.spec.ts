@@ -23,6 +23,7 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
           items: [
             { id: 7, name: 'Приседание из каталога', canPlan: true },
             { id: 8, name: 'Не поддержано', canPlan: false },
+            { id: 9, name: 'Другое упражнение', canPlan: true },
           ],
         },
       },
@@ -39,6 +40,21 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
           description: 'Держите спину ровно',
           canPlan: true,
           hasVideo: true,
+        },
+      },
+    }),
+  );
+  await page.route('**/api/workouts/transformmate/exercises/9?*', (route) =>
+    route.fulfill({
+      json: {
+        contractVersion: 1,
+        source: 'user',
+        data: {
+          id: 9,
+          name: 'Другое упражнение',
+          description: 'Другая техника',
+          canPlan: true,
+          hasVideo: false,
         },
       },
     }),
@@ -92,6 +108,26 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
   expect(mediaRequests).toBe(0);
   await dialog.getByRole('button', { name: 'Скрыть видео' }).click();
   await expect(dialog.locator('video')).toHaveCount(0);
+  await dialog
+    .getByRole('button', { name: 'Показать обучающее видео' })
+    .click();
+  await dialog.getByLabel('Поиск упражнений TransformMate').fill('другое');
+  await dialog
+    .getByRole('button', { name: 'Другое упражнение', exact: true })
+    .click();
+  await expect(dialog.getByText('Другая техника')).toBeVisible();
+  await expect(dialog.getByText('Держите спину ровно')).toHaveCount(0);
+  await expect(dialog.locator('video')).toHaveCount(0);
+  await expect(
+    dialog.getByRole('button', { name: 'Скрыть видео' }),
+  ).toHaveCount(0);
+  await dialog.getByLabel('Поиск упражнений TransformMate').fill('присед');
+  await dialog
+    .getByRole('button', { name: 'Приседание из каталога', exact: true })
+    .click();
+  await expect(dialog.getByText('Держите спину ровно')).toBeVisible();
+  await expect(dialog.locator('video')).toHaveCount(0);
+
   await dialog.getByLabel('Комментарий к упражнению').fill('Медленно');
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(dialog).not.toBeVisible();
@@ -118,8 +154,8 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
       actual: {
         date: '2026-03-29',
         title: 'Ноги TransformMate',
-        started: null,
-        finished: null,
+        started: '2026-03-29T09:00:00Z',
+        finished: '2026-03-29T10:00:00Z',
         exercises: [
           {
             occurrenceKey:
