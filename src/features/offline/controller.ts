@@ -75,7 +75,7 @@ export class OfflineController {
   private async request(url: string, signal: AbortSignal) {
     let response: Response;
     try {
-      response = await this.fetcher(url, {
+      response = await this.fetcher.call(globalThis, url, {
         cache: 'no-store',
         credentials: 'same-origin',
         signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
