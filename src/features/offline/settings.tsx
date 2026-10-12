@@ -87,6 +87,10 @@ export function OfflineSettings() {
               <TextInput
                 label={m.from}
                 type="date"
+                styles={{
+                  input: { fontSize: 16, minHeight: 44 },
+                  label: { fontSize: 16 },
+                }}
                 required
                 value={period.from}
                 disabled={!ready || busy}
@@ -98,6 +102,10 @@ export function OfflineSettings() {
               <TextInput
                 label={m.to}
                 type="date"
+                styles={{
+                  input: { fontSize: 16, minHeight: 44 },
+                  label: { fontSize: 16 },
+                }}
                 required
                 value={period.to}
                 disabled={!ready || busy}

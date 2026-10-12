@@ -50,3 +50,8 @@
     transition: none !important;
   }
 }
+
+.reader :global(.mantine-Anchor-root) {
+  display: inline-flex;
+  align-items: center;
+}
