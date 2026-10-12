@@ -69,9 +69,9 @@ test('real owner/trainer sessions read durable sync snapshots and private photos
     `/api/nutrition/photos/${encodeURIComponent(id)}?${scope}`;
   expect((await request.get(dayUrl)).status()).toBe(401);
   await login(page, 'owner');
-  await page.goto('/settings/yazio');
+  await page.goto('/settings#connection');
   await expect(
-    page.getByRole('heading', { name: 'Подключение YAZIO' }),
+    page.getByRole('heading', { name: 'Аккаунт YAZIO', level: 2, exact: true }),
   ).toBeVisible();
   expect((await page.request.get('/api/yazio/status')).status()).toBe(200);
   const dayResponse = await page.request.get(dayUrl);
