@@ -448,11 +448,15 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     expect(closedBrowserResult.sync.state).toBe('completed');
     expect(closedBrowserResult.sync.completedDates).toHaveLength(4);
     await owner.reload();
-    expect(
-      await owner
-        .getByRole('button', { name: 'Обновить сейчас', exact: true })
-        .isEnabled(),
-    ).toBe(true);
+    await expect
+      .poll(
+        () =>
+          owner
+            .getByRole('button', { name: 'Обновить сейчас', exact: true })
+            .isEnabled(),
+        { timeout: 10000 },
+      )
+      .toBe(true);
     expect(
       await owner
         .getByRole('textbox', { name: 'Пароль YAZIO', exact: true })
