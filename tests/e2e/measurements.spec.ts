@@ -1,4 +1,127 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+async function login(page: Page, role: 'owner' | 'trainer', origin: string) {
+  const signIn = () =>
+    page.request.post('/api/auth/sign-in/email', {
+      headers: { origin },
+      data: {
+        email: `${role}@example.test`,
+        password: 'Test-only-password-12345',
+      },
+    });
+  let response = await signIn();
+  if (response.status() === 429) {
+    const seconds = Number(
+      response.headers()['x-retry-after'] ??
+        response.headers()['retry-after'] ??
+        10,
+    );
+    await new Promise((resolve) => setTimeout(resolve, (seconds + 1) * 1000));
+    response = await signIn();
+  }
+  expect(response.ok()).toBe(true);
+  return (await (await page.request.get('/api/auth/get-session')).json()).user
+    .id as string;
+}
+
+test('owner denial explains access and retains the complete draft', async ({
+  page,
+  baseURL,
+}) => {
+  await login(page, 'owner', baseURL!);
+  await page.goto('/measurements');
+  await page.getByLabel('Вес (кг)', { exact: true }).fill('72.125');
+  await page.getByLabel('Дата замера').fill('2026-10-11');
+  await page
+    .getByLabel('Заметка', { exact: true })
+    .fill('Preserved synthetic draft');
+  await page.route('**/api/measurements?*', (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({ status: 403, json: { error: 'Forbidden' } })
+      : route.continue(),
+  );
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText(
+    'Сохранение замеров запрещено',
+  );
+  await expect(page.getByRole('alert')).not.toContainText('Проверьте');
+  await expect(page.getByLabel('Вес (кг)', { exact: true })).toHaveValue(
+    '72.125',
+  );
+  await expect(page.getByLabel('Дата замера')).toHaveValue('2026-10-11');
+  await expect(page.getByLabel('Заметка', { exact: true })).toHaveValue(
+    'Preserved synthetic draft',
+  );
+});
+
+test('granted trainer reads measurements without write controls and cannot write directly', async ({
+  page,
+  browser,
+  baseURL,
+}) => {
+  const ownerId = await login(page, 'owner', baseURL!);
+  const context = await browser.newContext({ baseURL });
+  const trainer = await context.newPage();
+  const trainerId = await login(trainer, 'trainer', baseURL!);
+  const scope = { ownerId, trainerId };
+  expect(
+    (
+      await page.request.post('/api/trainers', {
+        headers: { origin: baseURL! },
+        data: scope,
+      })
+    ).ok(),
+  ).toBe(true);
+  try {
+    await trainer.goto('/measurements');
+    await expect(
+      trainer.getByText(
+        'Тренер может просматривать замеры. Изменять их может только владелец.',
+      ),
+    ).toBeVisible();
+    await expect(trainer.getByLabel('Вес (кг)', { exact: true })).toHaveCount(
+      0,
+    );
+    for (const name of ['Сохранить', 'Изменить', 'Удалить']) {
+      await expect(
+        trainer.getByRole('button', { name, exact: true }),
+      ).toHaveCount(0);
+    }
+    expect(
+      (
+        await trainer.request.get(`/api/measurements?ownerId=${ownerId}`)
+      ).status(),
+    ).toBe(200);
+    for (const method of ['POST', 'PUT', 'DELETE']) {
+      expect(
+        (
+          await trainer.request.fetch(
+            `/api/measurements${method === 'POST' ? '' : '/synthetic-id'}?ownerId=${ownerId}`,
+            {
+              method,
+              headers: { origin: baseURL! },
+              data: {},
+            },
+          )
+        ).status(),
+      ).toBe(403);
+    }
+    expect(
+      (
+        await page.request.post('/api/measurements?ownerId=foreign', {
+          headers: { origin: baseURL! },
+          data: {},
+        })
+      ).status(),
+    ).toBe(403);
+  } finally {
+    await page.request.delete('/api/trainers', {
+      headers: { origin: baseURL! },
+      data: scope,
+    });
+    await context.close();
+  }
+});
 test('owner creates, edits and deletes a manual measurement on mobile and desktop', async ({
   page,
 }) => {
@@ -53,13 +176,16 @@ test('owner creates, edits and deletes a manual measurement on mobile and deskto
   await expect(row).toHaveCount(0);
   expect(errors).toEqual([]);
 });
-test('anonymous measurement API is protected', async ({ request }) => {
+test('anonymous measurement API is protected', async ({ request, baseURL }) => {
   expect((await request.get('/api/measurements?ownerId=owner')).status()).toBe(
     401,
   );
   expect(
     (
-      await request.post('/api/measurements?ownerId=owner', { data: {} })
+      await request.post('/api/measurements?ownerId=owner', {
+        headers: { origin: baseURL! },
+        data: {},
+      })
     ).status(),
   ).toBe(401);
 });
