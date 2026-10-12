@@ -1,0 +1,23 @@
+.surface {
+  --mantine-color-dimmed: light-dark(
+    var(--mantine-color-gray-7),
+    var(--mantine-color-gray-4)
+  );
+}
+.today {
+  padding: 24px;
+  background: var(--mantine-color-default-hover);
+  border-radius: var(--mantine-radius-md);
+}
+.calories {
+  font-size: 40px;
+  font-weight: 600;
+  margin-block: 20px;
+  overflow-wrap: anywhere;
+}
+.link {
+  color: light-dark(var(--mantine-color-teal-9), var(--mantine-color-teal-3));
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
