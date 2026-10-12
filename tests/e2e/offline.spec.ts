@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { test, expect } from '@playwright/test';
+import { test, expect, type Response } from '@playwright/test';
 import { build } from 'esbuild';
 let harness: string;
 test.beforeAll(async () => {
@@ -453,16 +453,27 @@ for (const unmount of [false, true]) {
         }),
       });
     });
-    const completed = page.waitForResponse(
-      (response) => response.url().endsWith('/api/transformmate/connect'),
-      { timeout: 15000 },
-    );
+    // Observe from submission, but start the bounded wait only after releasing the held POST.
+    let completed: Response | undefined;
+    const observeCompletion = (response: Response) => {
+      if (response.url().endsWith('/api/transformmate/connect'))
+        completed = response;
+    };
+    page.on('response', observeCompletion);
     const form = page.locator('#transformmate');
     await form.getByLabel(/^Firebase API key/).fill('synthetic-key');
     await form.getByLabel(/^Firebase refresh token/).fill('synthetic-refresh');
     await form.getByRole('button', { name: 'Подключить', exact: true }).click();
     await started;
     if (unmount) {
+      const navigation = page.getByRole('button', {
+        name: 'Навигация',
+        exact: true,
+      });
+      if (await navigation.isVisible()) {
+        await navigation.click();
+        await expect(navigation).toHaveAttribute('aria-expanded', 'true');
+      }
       await page.getByRole('link', { name: 'Обзор', exact: true }).click();
       await expect(form).toHaveCount(0);
     }
@@ -475,7 +486,8 @@ for (const unmount of [false, true]) {
       photos: 1,
     });
     release();
-    expect((await completed).status()).toBe(200);
+    await expect.poll(() => completed?.status(), { timeout: 15000 }).toBe(200);
+    page.off('response', observeCompletion);
     if (!unmount)
       await expect(
         form.getByText('Подключение сохранено.', { exact: true }),
