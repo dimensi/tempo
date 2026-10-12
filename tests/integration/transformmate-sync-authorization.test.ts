@@ -12,6 +12,7 @@ import {
 } from '@/server/transformmate/token-store';
 const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
+  sessionRead: vi.fn(),
   client: vi.fn(),
   fence: vi.fn(),
   binding: vi.fn(),
@@ -19,7 +20,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock('server-only', () => ({}));
 vi.mock('@/server/auth', () => ({
-  getAuth: () => ({ api: { getSession: async () => state.session } }),
+  getAuth: () => ({ api: { getSession: () => state.sessionRead() } }),
 }));
 const database = openDatabase('file::memory:');
 vi.mock('@/server/db', () => ({ getDatabase: () => database }));
@@ -80,12 +81,14 @@ beforeAll(() => {
       .run();
 });
 beforeEach(() => {
+  state.sessionRead.mockReset().mockImplementation(async () => state.session);
   state.client.mockReset().mockResolvedValue(null);
   state.fence.mockReset().mockResolvedValue(null);
   state.binding.mockReset().mockResolvedValue({
     configured: false,
     accountScope: null,
     assertCurrent: vi.fn(async () => {}),
+    assertBindingCurrent: vi.fn(),
   });
   state.configured.mockReset().mockResolvedValue(false);
 });
@@ -131,6 +134,53 @@ it('requires a real owner-scoped grant for local-only list, refresh and saving l
     api.listTransformMateSync(headers, 'other-owner', nativeQuery),
   ).rejects.toMatchObject({ status: 403 });
 });
+
+it.each(['disconnect', 'reconnect'] as const)(
+  'does not release a stale native response after %s during final authorization',
+  async () => {
+    state.session = { user: { id: 'owner', role: 'OWNER' } };
+    let revision = 0;
+    const capturedRevision = revision;
+    let afterConnectionFence = false;
+    let heldFinalAccess = false;
+    let entered!: () => void;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    state.binding.mockResolvedValue({
+      configured: true,
+      accountScope: 'a'.repeat(64),
+      assertCurrent: vi.fn(async () => {
+        afterConnectionFence = true;
+      }),
+      assertBindingCurrent: vi.fn(() => {
+        if (revision !== capturedRevision)
+          throw new TransformMateStaleConnectionError();
+      }),
+    });
+    state.sessionRead.mockImplementation(async () => {
+      if (afterConnectionFence && !heldFinalAccess) {
+        heldFinalAccess = true;
+        entered();
+        await gate;
+      }
+      return state.session;
+    });
+
+    const operation = api.listTransformMateSync(headers, 'owner', nativeQuery);
+    await ready;
+    revision += 1;
+    release();
+
+    await expect(operation).rejects.toBeInstanceOf(
+      TransformMateStaleConnectionError,
+    );
+  },
+);
 it('retains latest unattempted link snapshots after local edits and deletion; list does no upstream read', async () => {
   state.session = { user: { id: 'owner', role: 'OWNER' } };
   const plan = repository.createPlan('owner', input);
@@ -355,6 +405,7 @@ for (const revoked of ['session', 'grant'] as const) {
       client: null,
       generation: 'synthetic-connection',
       assertCurrent,
+      assertBindingCurrent: vi.fn(),
     });
     const beforePlans = repository.list('owner');
     const beforeLinks = syncRepository(database.db).list('owner');

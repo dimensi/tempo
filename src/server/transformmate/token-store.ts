@@ -263,6 +263,13 @@ export function fileTransformMateTokenStore(
     generation() {
       return expected;
     },
+    bindingRevision() {
+      return transformMateOfflineBindingRevision(path);
+    },
+    assertBindingRevision(revision: number) {
+      if (transformMateOfflineBindingRevision(path) !== revision)
+        throw new TransformMateStaleConnectionError();
+    },
   };
 }
 

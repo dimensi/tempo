@@ -29,6 +29,7 @@ function setup() {
     repository,
     access: vi.fn().mockResolvedValue(undefined),
     checkConnection: vi.fn().mockResolvedValue(undefined),
+    checkBinding: vi.fn(),
     linkedRemoteIds: () => new Set<number>(),
   };
   return { client, repository, context, service: nativeService(context) };
@@ -130,6 +131,42 @@ describe('native readonly importer', () => {
     await expect(service.refresh(query)).rejects.toThrow('Stale binding');
     expect(repository.save).not.toHaveBeenCalled();
   });
+  it.each(['disconnect', 'reconnect'] as const)(
+    'rejects %s during final authorization before native snapshot SQL',
+    async () => {
+      const { service, context, repository } = setup();
+      let accessCalls = 0;
+      let stale = false;
+      let entered!: () => void;
+      let release!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      context.access.mockImplementation(async () => {
+        accessCalls += 1;
+        if (accessCalls === 10) {
+          entered();
+          await gate;
+        }
+      });
+      context.checkBinding.mockImplementation(() => {
+        if (stale) throw new Error('TransformMate connection changed');
+      });
+
+      const operation = service.refresh(query);
+      await ready;
+      stale = true;
+      release();
+
+      await expect(operation).rejects.toThrow(
+        'TransformMate connection changed',
+      );
+      expect(repository.save).not.toHaveBeenCalled();
+    },
+  );
 
   it('rechecks access after the asynchronous connection fence', async () => {
     const { service, context, repository } = setup();
