@@ -12,6 +12,7 @@ test('synthetic diary: one computed total, honest comparisons, existing photos a
     entryPoints: ['tests/e2e/diary-harness.tsx'],
     bundle: true,
     write: false,
+    outdir: '.tmp/diary-harness',
     format: 'iife',
     platform: 'browser',
     define: { 'process.env.NODE_ENV': '"development"' },
@@ -24,24 +25,27 @@ test('synthetic diary: one computed total, honest comparisons, existing photos a
   );
   await page.route('**/synthetic-photo', (route) =>
     route.fulfill({
-      contentType: 'image/png',
-      body: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aKxkAAAAASUVORK5CYII=',
-        'base64',
-      ),
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480"><rect width="640" height="480" fill="#e7ece4"/><circle cx="320" cy="240" r="184" fill="#fff"/><circle cx="270" cy="220" r="80" fill="#bfd294"/><circle cx="385" cy="260" r="62" fill="#d98b55"/><text x="320" y="430" text-anchor="middle" font-family="sans-serif" font-size="24" fill="#334329">Synthetic meal photo</text></svg>',
     }),
   );
   await page.goto('/diary-component-test');
   await page.addStyleTag({
     content: await readFile('node_modules/@mantine/core/styles.css', 'utf8'),
   });
-  await page.addScriptTag({ content: bundle.outputFiles[0]!.text });
+  await page.addStyleTag({
+    content: bundle.outputFiles.find((file) => file.path.endsWith('.css'))!
+      .text,
+  });
+  await page.addScriptTag({
+    content: bundle.outputFiles.find((file) => file.path.endsWith('.js'))!.text,
+  });
   expect(errors).toEqual([]);
   await expect(page.getByText('Демонстрационные данные')).toBeVisible();
   await expect(page.getByText('123,46 ккал').first()).toBeVisible();
   await expect(
     page.getByText('Масса: нет данных', { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   const summary = page.getByRole('region', { name: 'Итоги дня', exact: true });
   await expect(
     summary.getByText('Итого по записям', { exact: true }),
@@ -111,7 +115,13 @@ test('synthetic diary: one computed total, honest comparisons, existing photos a
   await page.addStyleTag({
     content: await readFile('node_modules/@mantine/core/styles.css', 'utf8'),
   });
-  await page.addScriptTag({ content: bundle.outputFiles[0]!.text });
+  await page.addStyleTag({
+    content: bundle.outputFiles.find((file) => file.path.endsWith('.css'))!
+      .text,
+  });
+  await page.addScriptTag({
+    content: bundle.outputFiles.find((file) => file.path.endsWith('.js'))!.text,
+  });
   const zeroSummary = page.getByRole('region', {
     name: 'Итоги дня',
     exact: true,
@@ -133,6 +143,38 @@ test('synthetic diary: one computed total, honest comparisons, existing photos a
   ).toHaveCount(0);
   await page.screenshot({
     path: test.info().outputPath('diary-zero.png'),
+    fullPage: true,
+  });
+  await expect(
+    zeroSummary.getByLabel('Соотношение БЖУ по массе', { exact: true }),
+  ).toHaveCount(0);
+  await page.goto('/diary-component-test?fixture=complete');
+  await page.addStyleTag({
+    content: await readFile('node_modules/@mantine/core/styles.css', 'utf8'),
+  });
+  await page.addStyleTag({
+    content: bundle.outputFiles.find((file) => file.path.endsWith('.css'))!
+      .text,
+  });
+  await page.addScriptTag({
+    content: bundle.outputFiles.find((file) => file.path.endsWith('.js'))!.text,
+  });
+  await expect(
+    page
+      .getByRole('region', { name: 'Итоги дня', exact: true })
+      .getByLabel('Соотношение БЖУ по массе', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('Количество: 0', { exact: true })).toBeVisible();
+  await expect(page.getByText('Масса: 0 г', { exact: true })).toBeVisible();
+  await expect(page.locator('img[src="/wrong-photo"]')).toHaveCount(0);
+  await expect(
+    page.getByRole('region', { name: 'Ужин', exact: true }).getByRole('img'),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole('region', { name: 'Завтрак', exact: true }).getByRole('img'),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: test.info().outputPath('diary-complete.png'),
     fullPage: true,
   });
   expect(errors).toEqual([]);

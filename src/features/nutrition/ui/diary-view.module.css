@@ -1,0 +1,100 @@
+.diary {
+  width: 100%;
+  max-width: 960px;
+  margin-inline: auto;
+  min-width: 0;
+}
+
+.nutrients {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 640px;
+}
+
+.nutrient {
+  min-width: 0;
+  padding-inline-start: 10px;
+  border-inline-start: 1px solid var(--mantine-color-default-border);
+}
+
+.nutrient[data-nutrient='calories'] {
+  --nutrient-color: #b93800;
+}
+.nutrient[data-nutrient='protein'] {
+  --nutrient-color: var(--mantine-color-blue-8);
+}
+.nutrient[data-nutrient='fat'] {
+  --nutrient-color: var(--mantine-color-grape-8);
+}
+.nutrient[data-nutrient='carbs'] {
+  --nutrient-color: var(--mantine-color-teal-9);
+}
+
+.nutrientValue {
+  color: var(--nutrient-color);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.entry {
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding-block: 14px;
+}
+
+.entry .nutrients {
+  max-width: 560px;
+}
+.photos {
+  max-width: 640px;
+}
+.macroSummary {
+  max-width: 640px;
+}
+.macroBar {
+  display: flex;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+}
+.macroBar [data-nutrient='protein'] {
+  background: var(--mantine-color-blue-8);
+}
+.macroBar [data-nutrient='fat'] {
+  background: var(--mantine-color-grape-8);
+}
+.macroBar [data-nutrient='carbs'] {
+  background: var(--mantine-color-teal-8);
+}
+
+[data-mantine-color-scheme='dark'] .nutrient {
+  --nutrient-color: var(--mantine-color-orange-3);
+}
+[data-mantine-color-scheme='dark'] .nutrient[data-nutrient='protein'] {
+  --nutrient-color: var(--mantine-color-blue-3);
+}
+[data-mantine-color-scheme='dark'] .nutrient[data-nutrient='fat'] {
+  --nutrient-color: var(--mantine-color-grape-3);
+}
+[data-mantine-color-scheme='dark'] .nutrient[data-nutrient='carbs'] {
+  --nutrient-color: var(--mantine-color-teal-3);
+}
+
+@media (max-width: 480px) {
+  .nutrients {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .entry {
+    padding-block: 12px;
+  }
+}
+
+.amounts {
+  max-width: 640px;
+  column-gap: 20px;
+}
+.meal > div {
+  gap: 12px;
+}
