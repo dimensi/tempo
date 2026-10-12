@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TransformMateActual } from '@/contracts/transformmate';
+import { richCatalogFields } from '../../fixtures/workout-catalog';
 import type { WorkoutExercise } from '@/contracts/workouts';
 import {
   actualSetForExercise,
@@ -39,10 +40,15 @@ const actual: TransformMateActual = {
 describe('catalog occurrence identity', () => {
   it('preserves identity only for reselecting the same exercise', () => {
     expect(
-      selectCatalogExercise(exercise, { id: 7, name: 'Первое', canPlan: true })
-        .transformMate?.occurrenceKey,
+      selectCatalogExercise(exercise, {
+        ...richCatalogFields,
+        id: 7,
+        name: 'Первое',
+        canPlan: true,
+      }).transformMate?.occurrenceKey,
     ).toBe(exercise.transformMate?.occurrenceKey);
     const changed = selectCatalogExercise(exercise, {
+      ...richCatalogFields,
       id: 9,
       name: 'Другое',
       canPlan: true,

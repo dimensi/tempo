@@ -1,7 +1,5 @@
 'use client';
-import { useState } from 'react';
 import {
-  Accordion,
   ActionIcon,
   Box,
   Button,
@@ -17,6 +15,7 @@ import { IconTrash } from '@tabler/icons-react';
 import type { WorkoutExercise } from '@/contracts/workouts';
 import { selectCatalogExercise } from './transformmate-exercises';
 import { Catalog } from './catalog';
+import { ExerciseDetails } from './exercise-details';
 import { workoutMessages as m } from './messages';
 
 export const emptyExercise = (): WorkoutExercise => ({
@@ -32,42 +31,8 @@ export function ExerciseEditor({
   value: WorkoutExercise[];
   onChange: (value: WorkoutExercise[]) => void;
 }) {
-  const [adding, setAdding] = useState<number | 'new' | null>(null);
   const update = (index: number, exercise: WorkoutExercise) =>
     onChange(value.map((item, i) => (i === index ? exercise : item)));
-  const picker = (target: number | 'new') =>
-    ownerId && (
-      <Stack gap="xs">
-        <Catalog
-          ownerId={ownerId}
-          exercise={emptyExercise()}
-          onSelect={(item) => {
-            if (typeof target === 'number')
-              update(target, selectCatalogExercise(value[target]!, item));
-            else
-              onChange([
-                ...value,
-                selectCatalogExercise(emptyExercise(), item),
-              ]);
-            setAdding(null);
-          }}
-        />
-        <Button
-          variant="default"
-          mih={44}
-          onClick={() => {
-            if (typeof target === 'number') {
-              const manual = { ...value[target]! };
-              delete manual.transformMate;
-              update(target, { ...manual, name: '' });
-            } else onChange([...value, emptyExercise()]);
-            setAdding(null);
-          }}
-        >
-          {m.addManual}
-        </Button>
-      </Stack>
-    );
   return (
     <Stack>
       {value.map((exercise, index) => (
@@ -80,20 +45,37 @@ export function ExerciseEditor({
         >
           <Stack gap="sm">
             <Group align="end" wrap="nowrap">
-              <TextInput
-                style={{ flex: 1, minWidth: 0 }}
-                label={m.exercise}
-                readOnly={Boolean(exercise.transformMate)}
-                value={exercise.name}
-                required
-                maxLength={160}
-                onChange={(event) =>
-                  update(index, {
-                    ...exercise,
-                    name: event.currentTarget.value,
-                  })
-                }
-              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {ownerId ? (
+                  <Catalog
+                    key={exercise.transformMate?.occurrenceKey ?? exercise.name}
+                    showDetails={false}
+                    ownerId={ownerId}
+                    exercise={exercise}
+                    onSelect={(item) =>
+                      update(index, selectCatalogExercise(exercise, item))
+                    }
+                    onManual={(name) => {
+                      const manual = { ...exercise, name };
+                      delete manual.transformMate;
+                      update(index, manual);
+                    }}
+                  />
+                ) : (
+                  <TextInput
+                    label={m.exercise}
+                    value={exercise.name}
+                    required
+                    maxLength={160}
+                    onChange={(event) =>
+                      update(index, {
+                        ...exercise,
+                        name: event.currentTarget.value,
+                      })
+                    }
+                  />
+                )}
+              </div>
               <ActionIcon
                 size={44}
                 variant="subtle"
@@ -104,26 +86,11 @@ export function ExerciseEditor({
                 <IconTrash size={18} />
               </ActionIcon>
             </Group>
-            {ownerId && (!exercise.name || adding === index)
-              ? picker(index)
-              : ownerId && (
-                  <Button
-                    variant="subtle"
-                    mih={44}
-                    onClick={() => setAdding(index)}
-                  >
-                    {m.chooseExercise}
-                  </Button>
-                )}
             {ownerId && exercise.transformMate && (
-              <Catalog
-                searchable={false}
-                key={`${ownerId}-${exercise.transformMate.occurrenceKey}-${exercise.transformMate.exerciseId}`}
+              <ExerciseDetails
+                key={`${ownerId}-${exercise.transformMate.exerciseId}`}
                 ownerId={ownerId}
-                exercise={exercise}
-                onSelect={(item) =>
-                  update(index, selectCatalogExercise(exercise, item))
-                }
+                exerciseId={exercise.transformMate.exerciseId}
               />
             )}
             {exercise.sets.map((set, setIndex) => (
@@ -213,91 +180,94 @@ export function ExerciseEditor({
             >
               {m.addSet}
             </Button>
-            <Accordion variant="default">
-              <Accordion.Item value="details">
-                <Accordion.Control>{m.exerciseDetails}</Accordion.Control>
-                <Accordion.Panel>
-                  <Stack>
-                    <Textarea
-                      label={m.exerciseComment}
-                      maxLength={4000}
-                      value={exercise.comment ?? ''}
-                      onChange={(event) =>
-                        update(index, {
-                          ...exercise,
-                          comment: event.currentTarget.value,
-                        })
-                      }
-                    />
-                    <Group grow>
-                      <Button
-                        mih={44}
-                        variant="subtle"
-                        disabled={index === 0}
-                        onClick={() => {
-                          const next = [...value];
-                          [next[index - 1], next[index]] = [
-                            next[index]!,
-                            next[index - 1]!,
-                          ];
-                          onChange(next);
-                        }}
-                      >
-                        {m.up}
-                      </Button>
-                      <Button
-                        mih={44}
-                        variant="subtle"
-                        disabled={index === value.length - 1}
-                        onClick={() => {
-                          const next = [...value];
-                          [next[index], next[index + 1]] = [
-                            next[index + 1]!,
-                            next[index]!,
-                          ];
-                          onChange(next);
-                        }}
-                      >
-                        {m.down}
-                      </Button>
-                    </Group>
-                    {exercise.transformMate && (
-                      <Button
-                        variant="subtle"
-                        mih={44}
-                        onClick={() => {
-                          const manual = { ...exercise };
-                          delete manual.transformMate;
-                          update(index, manual);
-                        }}
-                      >
-                        {m.makeManual}
-                      </Button>
-                    )}
-                  </Stack>
-                </Accordion.Panel>
-              </Accordion.Item>
-            </Accordion>
+
+            <Stack>
+              <Textarea
+                label={m.exerciseComment}
+                maxLength={4000}
+                value={exercise.comment ?? ''}
+                onChange={(event) =>
+                  update(index, {
+                    ...exercise,
+                    comment: event.currentTarget.value,
+                  })
+                }
+              />
+              {value.length > 1 && (
+                <Group grow>
+                  <Button
+                    mih={44}
+                    variant="subtle"
+                    disabled={index === 0}
+                    onClick={() => {
+                      const next = [...value];
+                      [next[index - 1], next[index]] = [
+                        next[index]!,
+                        next[index - 1]!,
+                      ];
+                      onChange(next);
+                    }}
+                  >
+                    {m.up}
+                  </Button>
+                  <Button
+                    mih={44}
+                    variant="subtle"
+                    disabled={index === value.length - 1}
+                    onClick={() => {
+                      const next = [...value];
+                      [next[index], next[index + 1]] = [
+                        next[index + 1]!,
+                        next[index]!,
+                      ];
+                      onChange(next);
+                    }}
+                  >
+                    {m.down}
+                  </Button>
+                </Group>
+              )}
+              {exercise.transformMate && (
+                <Button
+                  variant="subtle"
+                  mih={44}
+                  onClick={() => {
+                    const manual = { ...exercise };
+                    delete manual.transformMate;
+                    update(index, manual);
+                  }}
+                >
+                  {m.makeManual}
+                </Button>
+              )}
+            </Stack>
           </Stack>
         </Paper>
       ))}
-      {adding === 'new' && (
-        <Paper withBorder p="sm">
-          {picker('new')}
-        </Paper>
+      {ownerId && value.length < 50 ? (
+        <Catalog
+          label={m.addExercise}
+          required={false}
+          key={`add-${value.length}`}
+          ownerId={ownerId}
+          exercise={emptyExercise()}
+          onSelect={(item) =>
+            onChange([...value, selectCatalogExercise(emptyExercise(), item)])
+          }
+          onManual={(name) =>
+            onChange([...value, { ...emptyExercise(), name }])
+          }
+        />
+      ) : (
+        <Button
+          mih={44}
+          variant="light"
+          disabled={value.length >= 50}
+          onClick={() => onChange([...value, emptyExercise()])}
+        >
+          {m.addExercise}
+        </Button>
       )}
-      <Button
-        mih={44}
-        variant="light"
-        disabled={value.length >= 50}
-        onClick={() =>
-          ownerId
-            ? setAdding(value.length === 1 && !value[0]!.name ? 0 : 'new')
-            : onChange([...value, emptyExercise()])
-        }
-      >
-        {m.addExercise}
-      </Button>
     </Stack>
   );
 }

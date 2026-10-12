@@ -96,12 +96,19 @@ test('measurement and actual-session comments compose after CRUD with real train
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Название (необязательно)').fill(note);
     await dialog
-      .getByRole('textbox', { name: 'Упражнение', exact: true })
+      .getByRole('combobox', { name: 'Упражнение', exact: true })
       .fill('Synthetic squat');
+    await page
+      .getByRole('option', {
+        name: 'Добавить вручную: Synthetic squat',
+        exact: true,
+      })
+      .click();
     await dialog
       .getByRole('button', { name: 'Сохранить', exact: true })
       .click();
     await expect(dialog).not.toBeVisible();
+    await page.goto('/workouts');
     const data = (
       await (await page.request.get(`/api/workouts?ownerId=${ownerId}`)).json()
     ).data;

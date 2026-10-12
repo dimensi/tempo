@@ -4,7 +4,11 @@ import { useRouter } from 'next/navigation';
 import { Alert, Button, Group, Modal, Stack, Text, Title } from '@mantine/core';
 import { z } from 'zod';
 import { subscribeOfflineBlocked } from '@/lib/offline-device';
-import { type WorkoutPlan, type WorkoutPlanInput } from '@/contracts/workouts';
+import {
+  type WorkoutPlan,
+  type WorkoutPlanInput,
+  workoutPlanSchema,
+} from '@/contracts/workouts';
 import { PlanForm, emptyPlan } from './forms';
 import { copyPlanToDate } from './copy-plan';
 import { workoutMessages as m } from './messages';
@@ -66,6 +70,7 @@ export function WorkoutEditorPage({
   plan,
   workoutId,
   copying,
+  returnToView = false,
 }: {
   userId: string;
   ownerId: string;
@@ -74,6 +79,7 @@ export function WorkoutEditorPage({
   plan?: WorkoutPlan;
   workoutId?: string;
   copying: boolean;
+  returnToView?: boolean;
 }) {
   const router = useRouter();
   const identity = `${userId}:${ownerId}`;
@@ -196,7 +202,12 @@ export function WorkoutEditorPage({
     } catch {
       /* Storage unavailable. */
     }
-    if (mounted.current) router.push(`/workouts?date=${destination}`);
+    if (mounted.current)
+      router.push(
+        returnToView && plan && workoutId
+          ? `/workouts/plans/${plan.id}/workouts/${workoutId}?date=${destination}`
+          : `/workouts?date=${destination}`,
+      );
   };
   const change = (value: WorkoutPlanInput) => {
     dirty.current = true;
@@ -265,12 +276,21 @@ export function WorkoutEditorPage({
               : m.error,
         );
       }
-      leave(
-        workoutId
-          ? (value.workouts.find((item) => item.id === workoutId)?.date ??
-              value.workouts[0]!.date)
-          : value.workouts[0]!.date,
-      );
+      const result = await response.json();
+      const saved = workoutPlanSchema.parse(result.data);
+      const savedWorkout =
+        saved.workouts.find((item) => item.id === workoutId) ??
+        saved.workouts[0]!;
+      dirty.current = false;
+      try {
+        sessionStorage.removeItem(key);
+      } catch {
+        /* Storage unavailable. */
+      }
+      if (mounted.current)
+        router.push(
+          `/workouts/plans/${saved.id}/workouts/${savedWorkout.id}?date=${savedWorkout.date}`,
+        );
     } catch (cause) {
       if (mounted.current)
         setError(cause instanceof Error ? cause.message : m.error);
@@ -288,7 +308,13 @@ export function WorkoutEditorPage({
           mih={44}
           variant="subtle"
           disabled={busy}
-          onClick={() => router.push(`/workouts?date=${returnDate}`)}
+          onClick={() =>
+            router.push(
+              returnToView && plan && workoutId
+                ? `/workouts/plans/${plan.id}/workouts/${workoutId}?date=${returnDate}`
+                : `/workouts?date=${returnDate}`,
+            )
+          }
         >
           {m.back}
         </Button>
@@ -321,12 +347,13 @@ export function WorkoutEditorPage({
         opened={cancel}
         onClose={() => setCancel(false)}
         title={m.discardQuestion}
+        closeButtonProps={{ 'aria-label': m.close, size: 44 }}
       >
         <Group>
-          <Button variant="default" onClick={() => setCancel(false)}>
+          <Button mih={44} variant="default" onClick={() => setCancel(false)}>
             {m.keepEditing}
           </Button>
-          <Button color="red" onClick={() => leave()}>
+          <Button mih={44} color="red" onClick={() => leave()}>
             {m.discard}
           </Button>
         </Group>

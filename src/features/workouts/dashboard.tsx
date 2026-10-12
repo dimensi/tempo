@@ -1,7 +1,12 @@
 'use client';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
-  Accordion,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import {
   Alert,
   Badge,
   Button,
@@ -9,9 +14,7 @@ import {
   Loader,
   Modal,
   Paper,
-  ScrollArea,
   Stack,
-  Table,
   Text,
   TextInput,
   Title,
@@ -19,7 +22,6 @@ import {
 import {
   workoutPlanSchema,
   workoutSessionSchema,
-  type WorkoutExercise,
   type WorkoutPlan,
   type WorkoutSession,
   type WorkoutSessionInput,
@@ -31,9 +33,17 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { z } from 'zod';
 import { workoutTitle } from '@/lib/workout-title';
 import { DateNavigation } from '@/components/shared/date-navigation';
-import type { TransformMateSyncItem } from '@/contracts/transformmate';
 import { NativeWorkout } from './native-workout';
-import { actualSetForExercise } from './transformmate-exercises';
+import { ExerciseTable } from './exercise-table';
+import {
+  IconArrowRight,
+  IconPencil,
+  IconCopy,
+  IconTrash,
+  IconClipboardCheck,
+  IconCalendar,
+} from '@tabler/icons-react';
+import Link from 'next/link';
 import {
   SyncSummary,
   WorkoutSync,
@@ -62,94 +72,6 @@ const sessionInput = ({
   note,
   status,
 });
-function ExerciseTable({
-  exercises,
-  sync,
-  actual,
-  factOnly = false,
-}: {
-  exercises: WorkoutExercise[];
-  sync?: TransformMateSyncItem;
-  actual?: WorkoutExercise[];
-  factOnly?: boolean;
-}) {
-  return (
-    <Stack gap="md">
-      {exercises.map((exercise, index) => (
-        <Stack gap="xs" key={index}>
-          <Text fw={600}>{exercise.name}</Text>
-          {exercise.comment && <Text size="sm">{exercise.comment}</Text>}
-          <ScrollArea type="auto">
-            <Table miw={280} style={{ tableLayout: 'fixed' }}>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th w={80}>{m.set}</Table.Th>
-                  <Table.Th>{factOnly ? m.reps : m.planned}</Table.Th>
-                  <Table.Th>{factOnly ? m.weight : m.actual}</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {exercise.sets.map((set, i) => {
-                  const matched = exercise.transformMate
-                    ? actual?.find(
-                        (entry) =>
-                          entry.transformMate?.occurrenceKey ===
-                          exercise.transformMate?.occurrenceKey,
-                      )
-                    : actual?.[index]?.name === exercise.name
-                      ? actual[index]
-                      : undefined;
-                  const result = matched?.sets[i];
-                  const remote = sync?.actual
-                    ? actualSetForExercise(sync.actual, exercise, i + 1)
-                    : undefined;
-                  const value = (entry: typeof set) =>
-                    `${entry.reps} × ${entry.weightKg ?? m.noWeight}${entry.weightKg === null ? '' : ' кг'}`;
-                  return (
-                    <Table.Tr key={i}>
-                      <Table.Td>{i + 1}</Table.Td>
-                      <Table.Td>
-                        {factOnly ? (
-                          set.reps
-                        ) : (
-                          <Text size="sm">{value(set)}</Text>
-                        )}
-                      </Table.Td>
-                      <Table.Td>
-                        {factOnly ? (
-                          (set.weightKg ?? '—')
-                        ) : result ? (
-                          <Text size="sm">{value(result)}</Text>
-                        ) : remote ? (
-                          <Stack gap={2}>
-                            <Text size="sm" fw={600}>
-                              {remote.done ? m.done : m.notDone}
-                            </Text>
-                            {remote.metrics.map((metric, metricIndex) => (
-                              <Text size="sm" key={metricIndex}>
-                                {metric.name}:{' '}
-                                {metric.values.length
-                                  ? metric.values.join(' / ')
-                                  : '—'}{' '}
-                                {metric.unit}
-                              </Text>
-                            ))}
-                          </Stack>
-                        ) : (
-                          '—'
-                        )}
-                      </Table.Td>
-                    </Table.Tr>
-                  );
-                })}
-              </Table.Tbody>
-            </Table>
-          </ScrollArea>
-        </Stack>
-      ))}
-    </Stack>
-  );
-}
 function SessionResult({
   session,
   canLog,
@@ -183,14 +105,10 @@ function SessionResult({
         />
       )}
       {session.planSnapshot && (
-        <Accordion>
-          <Accordion.Item value="actual">
-            <Accordion.Control>{m.actualDetails}</Accordion.Control>
-            <Accordion.Panel>
-              <ExerciseTable exercises={session.exercises} factOnly />
-            </Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
+        <Stack gap="xs">
+          <Text fw={600}>{m.actualDetails}</Text>
+          <ExerciseTable exercises={session.exercises} factOnly />
+        </Stack>
       )}
       {!session.planSnapshot && (
         <ExerciseTable exercises={session.exercises} factOnly />
@@ -198,13 +116,38 @@ function SessionResult({
       {session.note && (
         <Text style={{ whiteSpace: 'pre-wrap' }}>{session.note}</Text>
       )}
+      <Button
+        component={Link}
+        href={`/workouts/sessions/${session.id}?date=${session.date}`}
+        variant="subtle"
+        size="compact-sm"
+        mih={44}
+        leftSection={<IconArrowRight size={16} />}
+      >
+        {m.view}
+      </Button>
       {canLog && (
-        <Group>
-          <Button mih={44} variant="light" onClick={onEdit}>
-            {m.editActual}
+        <Group gap="xs">
+          <Button
+            mih={44}
+            size="compact-sm"
+            variant="subtle"
+            leftSection={<IconPencil size={16} />}
+            aria-label={m.editActual}
+            onClick={onEdit}
+          >
+            {m.editShort}
           </Button>
-          <Button mih={44} variant="subtle" color="red" onClick={onDelete}>
-            {m.removeActual}
+          <Button
+            mih={44}
+            size="compact-sm"
+            variant="subtle"
+            color="red"
+            leftSection={<IconTrash size={16} />}
+            aria-label={m.removeActual}
+            onClick={onDelete}
+          >
+            {m.deleteShort}
           </Button>
         </Group>
       )}
@@ -292,6 +235,13 @@ function ScopedWorkoutsDashboard({
     setEditorError(null);
     setEditor(editor);
   };
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   async function mutate(path: string, method: string, body: unknown) {
     setBusy(true);
     setEditorError(null);
@@ -307,13 +257,19 @@ function ScopedWorkoutsDashboard({
         const result = await response.json();
         throw new Error(result.error ?? m.error);
       }
+      if (!mounted.current) return;
       setEditor(null);
       setDeletion(null);
-      await load();
+      if (method !== 'DELETE') {
+        const result = await response.json();
+        const saved = workoutSessionSchema.parse(result.data);
+        router.push(`/workouts/sessions/${saved.id}?date=${saved.date}`);
+      } else await load();
     } catch (error) {
-      setEditorError(error instanceof Error ? error.message : m.error);
+      if (mounted.current)
+        setEditorError(error instanceof Error ? error.message : m.error);
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
   const record = (plan: WorkoutPlan, workout: PlannedWorkout) =>
@@ -430,7 +386,19 @@ function ScopedWorkoutsDashboard({
             ),
         )
         .map((item) => (
-          <NativeWorkout key={item.remoteTrainingId} item={item} />
+          <Stack key={item.remoteTrainingId}>
+            <NativeWorkout item={item} />
+            <Button
+              component={Link}
+              href={`/workouts/native/${item.remoteTrainingId}?date=${date}`}
+              variant="subtle"
+              size="compact-sm"
+              mih={44}
+              leftSection={<IconArrowRight size={16} />}
+            >
+              {m.view}
+            </Button>
+          </Stack>
         ))}
       {sync.nativePage.nextCursor && (
         <Button
@@ -465,7 +433,9 @@ function ScopedWorkoutsDashboard({
                 <Title order={2}>
                   {workoutTitle(workout.title, workout.date)}
                 </Title>
-                <Badge>{item ? m.sync : m.localWorkout}</Badge>
+                <Badge color="gray" variant="outline">
+                  {m.localSource}
+                </Badge>
               </Group>
               {plan.title && <Text size="sm">{plan.title}</Text>}
               {plan.description && (
@@ -478,75 +448,84 @@ function ScopedWorkoutsDashboard({
                 sync={item}
                 actual={latestResult?.exercises}
               />
-              <WorkoutSync item={item} />
-              <Group>
+              <WorkoutSync item={item} showActual={false} />
+              <Group gap="xs">
                 <Button
+                  component={Link}
+                  href={`/workouts/plans/${plan.id}/workouts/${workout.id}?date=${date}`}
+                  size="compact-sm"
                   mih={44}
-                  variant="light"
+                  leftSection={<IconArrowRight size={16} />}
+                >
+                  {m.view}
+                </Button>
+                <Button
+                  variant="subtle"
+                  size="compact-sm"
+                  mih={44}
+                  leftSection={<IconPencil size={16} />}
+                  aria-label={m.editWorkout}
                   onClick={() => editWorkout(plan, workout)}
                 >
-                  {m.editWorkout}
+                  {m.editShort}
                 </Button>
                 {canLog && (
                   <Button
+                    variant="subtle"
+                    size="compact-sm"
                     mih={44}
-                    variant="light"
+                    leftSection={<IconClipboardCheck size={16} />}
+                    aria-label={m.record}
                     onClick={() => record(plan, workout)}
                   >
-                    {m.record}
+                    {m.recordShort}
                   </Button>
                 )}
                 <Button
+                  variant="subtle"
+                  size="compact-sm"
                   mih={44}
-                  variant="default"
+                  leftSection={<IconCopy size={16} />}
+                  aria-label={m.copy}
                   onClick={() => {
                     setCopy({ plan, workout });
                     setCopyDate(workout.date);
                   }}
                 >
-                  {m.copy}
+                  {m.copyShort}
+                </Button>
+                {plan.workouts.length > 1 && (
+                  <Button
+                    component={Link}
+                    href={`/workouts/plans/${plan.id}/edit?date=${date}`}
+                    variant="subtle"
+                    size="compact-sm"
+                    mih={44}
+                    leftSection={<IconCalendar size={16} />}
+                    aria-label={m.editPlan}
+                  >
+                    {m.planShort}
+                  </Button>
+                )}
+                <Button
+                  variant="subtle"
+                  color="red"
+                  size="compact-sm"
+                  mih={44}
+                  leftSection={<IconTrash size={16} />}
+                  aria-label={m.removePlan}
+                  onClick={() => {
+                    setEditorError(null);
+                    setDeletion({
+                      kind: 'plans',
+                      id: plan.id,
+                      revision: plan.revision,
+                    });
+                  }}
+                >
+                  {m.deleteShort}
                 </Button>
               </Group>
-              <Accordion>
-                <Accordion.Item value="plan">
-                  <Accordion.Control>{m.managePlan}</Accordion.Control>
-                  <Accordion.Panel>
-                    <Stack>
-                      <Text>
-                        {plan.startsOn} — {plan.endsOn}
-                      </Text>
-                      <Group>
-                        <Button
-                          mih={44}
-                          variant="default"
-                          onClick={() =>
-                            router.push(
-                              `/workouts/plans/${plan.id}/edit?date=${date}`,
-                            )
-                          }
-                        >
-                          {m.editPlan}
-                        </Button>
-                        <Button
-                          mih={44}
-                          color="red"
-                          variant="subtle"
-                          onClick={() => {
-                            setEditorError(null);
-                            setDeletion({
-                              kind: 'plans',
-                              id: plan.id,
-                              revision: plan.revision,
-                            });
-                          }}
-                        >
-                          {m.removePlan}
-                        </Button>
-                      </Group>
-                    </Stack>
-                  </Accordion.Panel>
-                </Accordion.Item>
-              </Accordion>
               {results.map((session) => (
                 <SessionResult
                   key={session.id}
@@ -578,7 +557,19 @@ function ScopedWorkoutsDashboard({
       {dayRemote.map((item) => (
         <Paper withBorder p="md" key={item.id}>
           <Stack>
-            <Title order={2}>{item.actual?.title}</Title>
+            <Group justify="space-between">
+              <Title order={2}>{item.actual?.title}</Title>
+              <Button
+                component={Link}
+                href={`/workouts/links/${item.id}?date=${date}`}
+                variant="subtle"
+                size="compact-sm"
+                mih={44}
+                leftSection={<IconArrowRight size={16} />}
+              >
+                {m.view}
+              </Button>
+            </Group>
             <Text>
               {m.publishedSnapshot}:{' '}
               {workoutTitle(

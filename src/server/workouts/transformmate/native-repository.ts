@@ -60,6 +60,24 @@ export function nativeRepository(
     });
   };
   return {
+    get(ownerId: string, accountScope: string, remoteTrainingId: number) {
+      z.number()
+        .int()
+        .positive()
+        .max(Number.MAX_SAFE_INTEGER)
+        .parse(remoteTrainingId);
+      const row = db
+        .select()
+        .from(rows)
+        .where(
+          and(
+            scope(ownerId, accountScope),
+            eq(rows.remoteTrainingId, remoteTrainingId),
+          ),
+        )
+        .get();
+      return row ? decode(row) : null;
+    },
     list(
       ownerId: string,
       accountScope: string,

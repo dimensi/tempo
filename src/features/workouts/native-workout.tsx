@@ -2,6 +2,7 @@
 
 import {
   Badge,
+  Button,
   Group,
   Paper,
   ScrollArea,
@@ -11,6 +12,9 @@ import {
   Title,
 } from '@mantine/core';
 import type { TransformMateNativeItem } from '@/contracts/transformmate-native';
+import { useState } from 'react';
+import { IconInfoCircle } from '@tabler/icons-react';
+import { ExerciseDetails } from './exercise-details';
 import { workoutMessages as m } from './messages';
 
 type NativeSet =
@@ -39,18 +43,29 @@ function SetMetrics({ sets }: { sets: NativeSet[] }) {
   );
 }
 
-export function NativeWorkout({ item }: { item: TransformMateNativeItem }) {
+export function NativeWorkout({
+  item,
+  ownerId,
+  fullView = false,
+}: {
+  item: TransformMateNativeItem;
+  ownerId?: string;
+  fullView?: boolean;
+}) {
+  const [inspecting, setInspecting] = useState<string | null>(null);
   return (
     <Paper
-      withBorder
-      p="md"
+      withBorder={!fullView}
+      p={fullView ? 0 : 'md'}
       data-testid={`native-workout-${item.remoteTrainingId}`}
       style={{ overflowWrap: 'anywhere' }}
     >
       <Stack gap="md">
         <Group justify="space-between">
-          <Title order={2}>{item.title || m.workoutTitle}</Title>
-          <Badge>{m.sync}</Badge>
+          {!fullView && <Title order={2}>{item.title || m.workoutTitle}</Title>}
+          <Badge variant="outline" color="gray">
+            {m.sync}
+          </Badge>
         </Group>
         <Text size="sm">{m.nativeReadonly}</Text>
         {item.progress && (
@@ -89,7 +104,36 @@ export function NativeWorkout({ item }: { item: TransformMateNativeItem }) {
                 gap="xs"
                 key={`${exercise.protocolId}-${exercise.remoteExerciseId}`}
               >
-                <Title order={3}>{exercise.name || m.exercise}</Title>
+                <Group justify="space-between" gap="xs">
+                  <Title order={3}>{exercise.name || m.exercise}</Title>
+                  {ownerId &&
+                    inspecting !==
+                      `${exercise.protocolId}-${exercise.remoteExerciseId}` && (
+                      <Button
+                        variant="subtle"
+                        size="compact-sm"
+                        mih={44}
+                        leftSection={<IconInfoCircle size={16} />}
+                        aria-label={`${m.details}: ${exercise.name}`}
+                        onClick={() =>
+                          setInspecting(
+                            `${exercise.protocolId}-${exercise.remoteExerciseId}`,
+                          )
+                        }
+                      >
+                        {m.details}
+                      </Button>
+                    )}
+                </Group>
+                {ownerId &&
+                  inspecting ===
+                    `${exercise.protocolId}-${exercise.remoteExerciseId}` && (
+                    <ExerciseDetails
+                      key={`${ownerId}-${exercise.exerciseId}`}
+                      ownerId={ownerId}
+                      exerciseId={exercise.exerciseId}
+                    />
+                  )}
                 {exercise.comment && (
                   <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
                     {exercise.comment}

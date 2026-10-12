@@ -1,3 +1,4 @@
+import { richCatalogFields } from '../fixtures/workout-catalog';
 import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
 
@@ -128,12 +129,41 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
       json: {
         contractVersion: 1,
         source: 'user',
-        data: {
-          items: [
-            { id: 7, name: 'Приседание из каталога', canPlan: true },
-            { id: 8, name: 'Не поддержано', canPlan: false },
-            { id: 9, name: 'Другое упражнение', canPlan: true },
-          ],
+        data: [
+          {
+            ...richCatalogFields,
+            id: 7,
+            name: 'Приседание из каталога',
+            canPlan: true,
+          },
+          {
+            ...richCatalogFields,
+            id: 8,
+            name: 'Не поддержано',
+            canPlan: false,
+          },
+          {
+            ...richCatalogFields,
+            id: 9,
+            name: 'Другое упражнение',
+            canPlan: true,
+          },
+        ],
+        catalog: {
+          fetchedAt: '2026-10-12T00:00:00Z',
+          stale: false,
+          coverage: 'complete',
+          refreshState: 'idle',
+          total: 3,
+          hasMore: false,
+          unknownMembershipCount: 0,
+          filters: {
+            query: '',
+            commonMuscleGroup: null,
+            muscleGroups: [],
+            offset: 0,
+            limit: 20,
+          },
         },
       },
     }),
@@ -144,6 +174,9 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
         contractVersion: 1,
         source: 'user',
         data: {
+          ...richCatalogFields,
+          muscles: [],
+          stale: false,
           id: 7,
           name: 'Приседание из каталога',
           description: 'Держите спину ровно',
@@ -159,11 +192,57 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
         contractVersion: 1,
         source: 'user',
         data: {
+          ...richCatalogFields,
+          muscles: [],
+          stale: false,
           id: 9,
           name: 'Другое упражнение',
           description: 'Другая техника',
           canPlan: true,
           hasVideo: false,
+        },
+      },
+    }),
+  );
+  await page.route('**/api/workouts/transformmate/exercises/8?*', (route) =>
+    route.fulfill({
+      json: {
+        contractVersion: 1,
+        source: 'user',
+        data: {
+          ...richCatalogFields,
+          id: 8,
+          name: 'Не поддержано',
+          canPlan: false,
+          hasVideo: false,
+          description: 'Техника без добавления',
+          muscles: [],
+          stale: false,
+          publicationCapability: {
+            state: 'unsupported',
+            reason: 'metric_count',
+          },
+        },
+      },
+    }),
+  );
+  await page.route('**/api/workouts/transformmate/muscle-groups?*', (route) =>
+    route.fulfill({
+      json: {
+        contractVersion: 1,
+        source: 'user',
+        data: {
+          groups: [
+            {
+              id: 1,
+              name: 'Квадрицепсы',
+              commonGroup: { id: 10, name: 'Ноги' },
+              muscleIds: [11],
+            },
+          ],
+          fetchedAt: '2026-10-12T00:00:00Z',
+          stale: false,
+          coverage: 'complete',
         },
       },
     }),
@@ -205,71 +284,100 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
   await dialog
     .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(title);
-  await dialog
-    .getByRole('button', { name: 'Добавить упражнение', exact: true })
-    .click();
   const picker = page;
-  await picker.getByLabel('Поиск упражнений TransformMate').fill('присед');
-  await expect(
-    picker.getByRole('button', { name: 'Не поддержано' }),
-  ).toBeDisabled();
   await picker
-    .getByRole('button', { name: 'Приседание из каталога', exact: true })
+    .getByRole('combobox', { name: 'Упражнение', exact: true })
+    .click();
+  await picker
+    .getByRole('combobox', { name: 'Область тела', exact: true })
+    .click();
+  await picker.getByRole('option', { name: 'Ноги', exact: true }).click();
+  await picker
+    .getByRole('combobox', { name: 'Группы мышц', exact: true })
+    .click();
+  const filtered = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return (
+      url.pathname === '/api/workouts/transformmate/exercises' &&
+      url.searchParams.get('commonMuscleGroup') === 'Ноги' &&
+      url.searchParams.getAll('muscleGroup').includes('Квадрицепсы')
+    );
+  });
+  await picker
+    .getByRole('option', { name: 'Квадрицепсы', exact: true })
+    .click();
+  await filtered;
+  await picker
+    .getByRole('button', { name: 'Сбросить фильтры', exact: true })
+    .click();
+  await expect(
+    picker.getByRole('combobox', { name: 'Область тела', exact: true }),
+  ).toHaveValue('');
+
+  await picker
+    .getByRole('combobox', { name: 'Упражнение', exact: true })
+    .fill('присед');
+  await expect(
+    picker.getByRole('option', { name: 'Не поддержано', exact: true }),
+  ).toContainText('Только просмотр');
+  await picker
+    .getByRole('option', { name: 'Не поддержано', exact: true })
+    .click();
+  await expect(picker.getByTestId('exercise-details-8')).toContainText(
+    'Техника без добавления',
+  );
+  await expect(
+    picker.getByRole('combobox', { name: 'Упражнение', exact: true }),
+  ).toHaveValue('присед');
+  await picker
+    .getByRole('combobox', { name: 'Упражнение', exact: true })
+    .click();
+  await picker
+    .getByRole('combobox', { name: 'Упражнение', exact: true })
+    .fill('присед');
+  await picker
+    .getByRole('option', { name: 'Приседание из каталога', exact: true })
     .click();
   await expect(dialog.getByText('Держите спину ровно')).toBeVisible();
-  await expect(
-    dialog.getByRole('button', { name: 'Показать обучающее видео' }),
-  ).toBeVisible();
-  expect(mediaRequests).toBe(0);
-  await dialog
-    .getByRole('button', { name: 'Показать обучающее видео' })
-    .click();
   await expect(dialog.locator('video')).toHaveCount(1);
   expect(mediaRequests).toBe(0);
-  await dialog.getByRole('button', { name: 'Скрыть видео' }).click();
-  await expect(dialog.locator('video')).toHaveCount(0);
-  await dialog
-    .getByRole('button', { name: 'Показать обучающее видео' })
-    .click();
-  await dialog
-    .getByRole('button', { name: 'Выбрать из каталога', exact: true })
-    .click();
-  await picker.getByLabel('Поиск упражнений TransformMate').fill('другое');
+  await expect(dialog.locator('video')).toHaveAttribute('preload', 'none');
   await picker
-    .getByRole('button', { name: 'Другое упражнение', exact: true })
+    .getByRole('combobox', { name: 'Упражнение', exact: true })
+    .fill('другое');
+  await picker
+    .getByRole('option', { name: 'Другое упражнение', exact: true })
     .click();
   await expect(dialog.getByText('Другая техника')).toBeVisible();
   await expect(dialog.getByText('Держите спину ровно')).toHaveCount(0);
   await expect(dialog.locator('video')).toHaveCount(0);
-  await expect(
-    dialog.getByRole('button', { name: 'Скрыть видео' }),
-  ).toHaveCount(0);
-  await dialog
-    .getByRole('button', { name: 'Выбрать из каталога', exact: true })
-    .click();
-  await picker
-    .getByRole('button', { name: 'Ввести упражнение вручную', exact: true })
-    .click();
-  const manualName = dialog.getByRole('textbox', {
+
+  const manualName = dialog.getByRole('combobox', {
     name: 'Упражнение',
     exact: true,
   });
-  await expect(manualName).toBeEditable();
   await manualName.fill('Ручное упражнение');
-  await dialog
-    .getByRole('button', { name: 'Выбрать из каталога', exact: true })
-    .click();
-  await picker.getByLabel('Поиск упражнений TransformMate').fill('присед');
   await picker
-    .getByRole('button', { name: 'Приседание из каталога', exact: true })
+    .getByRole('option', {
+      name: 'Добавить вручную: Ручное упражнение',
+      exact: true,
+    })
+    .click();
+  await expect(dialog.locator('video')).toHaveCount(0);
+  await picker
+    .getByRole('combobox', { name: 'Упражнение', exact: true })
+    .fill('присед');
+  await picker
+    .getByRole('option', { name: 'Приседание из каталога', exact: true })
     .click();
   await expect(dialog.getByText('Держите спину ровно')).toBeVisible();
-  await expect(dialog.locator('video')).toHaveCount(0);
+  await expect(dialog.locator('video')).toHaveCount(1);
 
-  await page.getByRole('button', { name: 'Комментарий и порядок' }).click();
   await dialog.getByLabel('Комментарий к упражнению').fill('Медленно');
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page).toHaveURL(/\/workouts\?date=/);
+  await expect(page).toHaveURL(
+    /\/workouts\/plans\/[^/]+\/workouts\/[^?]+\?date=/,
+  );
   const plans = (
     await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json()
   ).data.plans;
@@ -278,6 +386,28 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
       plan.workouts[0]?.title === title,
   );
   expect(original.workouts[0].exercises[0].transformMate.exerciseId).toBe(7);
+  const savedView = page.getByTestId(`plan-${original.id}`);
+  await savedView
+    .getByRole('button', {
+      name: 'Об упражнении: Приседание из каталога',
+      exact: true,
+    })
+    .click();
+  await expect(savedView.getByTestId('exercise-details-7')).toContainText(
+    'Держите спину ровно',
+  );
+  await expect(savedView.locator('video')).toHaveCount(1);
+  expect(mediaRequests).toBe(0);
+  await expect(
+    savedView.getByRole('button', { name: 'Все дни плана' }),
+  ).toHaveCount(0);
+  await expect(
+    savedView.getByRole('columnheader', { name: 'План', exact: true }),
+  ).toBeVisible();
+  await expect(
+    savedView.getByRole('columnheader', { name: 'Факт', exact: true }),
+  ).toBeVisible();
+
   // A neighbouring plan represents data left by another case or a failed retry.
   const origin = `http://localhost:${process.env.E2E_PORT ?? 3100}`;
   const neighbourResponse = await page.request.post(
@@ -352,6 +482,7 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
       },
     },
   ];
+  await page.goto('/workouts?date=2026-03-29');
   await page
     .getByRole('button', { name: 'Обновить статус и результаты' })
     .click();
@@ -374,7 +505,9 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
     .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(`${title} копия`);
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page).toHaveURL(/\/workouts\?date=/);
+  await expect(page).toHaveURL(
+    /\/workouts\/plans\/[^/]+\/workouts\/[^?]+\?date=/,
+  );
   const copied = (
     await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json()
   ).data.plans.find(
@@ -393,15 +526,6 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
   ).toBe(true);
   await page.goto('/workouts?date=2026-03-29');
   const originalCard = page.getByTestId(`plan-${original.id}`);
-  await originalCard
-    .getByRole('button', { name: 'Все дни этого плана' })
-    .click();
-  const planPanel = originalCard.getByRole('region', {
-    name: 'Все дни этого плана',
-    exact: true,
-  });
-  // Element stability alone misses scrolling inside the height-animated panel.
-  await expect(planPanel).toHaveCSS('overflow', 'visible');
   await originalCard
     .getByRole('button', { name: 'Удалить весь план', exact: true })
     .click();
