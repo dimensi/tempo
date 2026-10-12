@@ -1,0 +1,44 @@
+.player {
+  min-width: 0;
+  width: 100%;
+}
+
+.player :global(.video-js .vjs-control-bar) {
+  height: 88px;
+  flex-wrap: wrap;
+}
+
+.player :global(.video-js .vjs-control) {
+  min-width: 44px;
+  height: 44px;
+}
+
+.player :global(.video-js .vjs-button) {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.player :global(.video-js .vjs-progress-control) {
+  flex: 0 0 100%;
+  width: 100%;
+  order: -1;
+}
+
+.player :global(.video-js .vjs-remaining-time) {
+  flex: 1;
+  line-height: 44px;
+}
+
+.player :global(.video-js .vjs-playback-rate-value) {
+  line-height: 44px;
+}
+
+.player :global(.video-js .vjs-menu-button-popup .vjs-menu) {
+  bottom: 44px;
+}
+
+.player :global(.video-js .vjs-menu-item) {
+  min-height: 44px;
+  line-height: 44px;
+  padding-block: 0;
+}

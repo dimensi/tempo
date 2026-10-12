@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert } from '@mantine/core';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
+import styles from './teaching-video.module.css';
 import { workoutMessages as m } from './messages';
 export function TeachingVideo({ src }: { src: string }) {
   const host = useRef<HTMLDivElement>(null);
@@ -18,7 +19,18 @@ export function TeachingVideo({ src }: { src: string }) {
       autoplay: false,
       preload: 'none',
       fluid: true,
-      responsive: true,
+      responsive: false,
+      controlBar: {
+        volumePanel: { inline: false },
+        children: [
+          'playToggle',
+          'volumePanel',
+          'progressControl',
+          'remainingTimeDisplay',
+          'playbackRateMenuButton',
+          'fullscreenToggle',
+        ],
+      },
       playsinline: true,
       playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
       sources: [{ src, type: 'video/mp4' }],
@@ -35,7 +47,7 @@ export function TeachingVideo({ src }: { src: string }) {
           {m.videoError}
         </Alert>
       )}
-      <div ref={host} data-vjs-player />
+      <div ref={host} className={styles.player} data-vjs-player />
     </div>
   );
 }
