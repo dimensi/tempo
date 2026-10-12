@@ -1,126 +1,200 @@
 import 'server-only';
-import type { TransformMateClient } from './client';
-import type { TransformMateExerciseDetail } from './types';
-import { TransformMateApiError } from './errors';
-import { MAX_RETRY_AFTER_MS } from './retry-after';
-import type { z } from 'zod';
-import type { transformMateCatalogSchema } from './catalog-schema';
-
-type Catalog = z.infer<typeof transformMateCatalogSchema>;
-export type CatalogScope = {
-  ownerId: string;
-  generation: string;
-  locale: 'ru';
+import type { TransformMateClient } from '@/server/transformmate/client';
+import type { CatalogIdentity } from '@/server/transformmate/catalog-store';
+import { catalogStore } from '@/server/transformmate/catalog-store';
+import { projectDetail } from '@/server/transformmate/catalog-projection';
+import { TransformMateApiError } from '@/server/transformmate/errors';
+import { MAX_RETRY_AFTER_MS } from '@/server/transformmate/retry-after';
+import type { TransformMateCatalogFilters } from '@/contracts/transformmate';
+export type CatalogScope = CatalogIdentity & {
   client: TransformMateClient;
+  assertCurrent: () => Promise<void>;
 };
-type Entry = {
-  client: TransformMateClient;
-  catalog?: Catalog;
-  expires: number;
-  pending?: Promise<Catalog>;
-  cooldown: number;
-  aliases: Map<number, string[]>;
-};
-const entries = new Map<string, Entry>();
-const TTL_MS = 5 * 60_000;
-const MAX_SCOPES = 32;
-function key(scope: CatalogScope) {
-  return JSON.stringify([scope.ownerId, scope.generation, scope.locale]);
+export const CATALOG_TTL_MS = 5 * 60_000;
+const pending = new Map<string, Promise<unknown>>();
+const cooldown = new Map<string, number>();
+const failed = new Set<string>();
+let runningDetails = 0;
+const detailWaiters: { priority: boolean; run: () => void }[] = [];
+async function detailSlot<T>(work: () => Promise<T>, priority: boolean) {
+  if (detailWaiters.length >= 64) throw new Error('Catalog detail queue full');
+  if (runningDetails >= 2)
+    await new Promise<void>((resolve) => {
+      const waiter = { priority, run: resolve };
+      if (priority) {
+        const firstVisible = detailWaiters.findIndex(
+          (entry) => !entry.priority,
+        );
+        detailWaiters.splice(
+          firstVisible < 0 ? detailWaiters.length : firstVisible,
+          0,
+          waiter,
+        );
+      } else detailWaiters.push(waiter);
+    });
+  else runningDetails++;
+  try {
+    return await work();
+  } finally {
+    const next = detailWaiters.shift();
+    if (next) next.run();
+    else runningDetails--;
+  }
+}
+function boundFailures() {
+  while (failed.size > 256) failed.delete(failed.values().next().value!);
+  while (cooldown.size > 32) cooldown.delete(cooldown.keys().next().value!);
+}
+export function scopeKey(scope: CatalogIdentity) {
+  return JSON.stringify([
+    scope.ownerId,
+    scope.accountScope,
+    scope.generation,
+    scope.locale,
+  ]);
+}
+export function fresh(at: string | null | undefined) {
+  return Boolean(at && Date.now() - Date.parse(at) < CATALOG_TTL_MS);
 }
 export function invalidateTransformMateCatalog(ownerId: string) {
-  for (const scope of entries.keys())
-    if ((JSON.parse(scope) as string[])[0] === ownerId) entries.delete(scope);
+  // Persisted generations stay private/inaccessible; pending old writes fail fences.
+  for (const key of [...cooldown.keys()])
+    if (key.startsWith(JSON.stringify([ownerId]).slice(0, -1) + ','))
+      cooldown.delete(key);
 }
-function entryFor(scope: CatalogScope): Entry {
-  const scopeKey = key(scope);
-  let entry = entries.get(scopeKey);
-  if (!entry || entry.client !== scope.client) {
-    // A binding change discards old generations, aliases and cooldowns.
-    for (const other of entries.keys())
-      if (
-        (JSON.parse(other) as string[])[0] === scope.ownerId &&
-        other !== scopeKey
-      )
-        entries.delete(other);
-    entry = {
-      client: scope.client,
-      expires: 0,
-      cooldown: 0,
-      aliases: new Map(),
-    };
-    entries.set(scopeKey, entry);
+export function refreshState(scope: CatalogScope, operation: string) {
+  const key = scopeKey(scope) + operation;
+  return pending.has(key)
+    ? ('updating' as const)
+    : failed.has(key)
+      ? ('unavailable' as const)
+      : ('idle' as const);
+}
+async function coalesce<T>(
+  scope: CatalogScope,
+  operation: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const key = scopeKey(scope) + operation;
+  const current = pending.get(key);
+  if (current) return current as Promise<T>;
+  if ((cooldown.get(scopeKey(scope)) ?? 0) > Date.now()) {
+    failed.add(key);
+    throw new Error('Catalog cooldown');
   }
-  entries.delete(scopeKey);
-  entries.set(scopeKey, entry);
-  while (entries.size > MAX_SCOPES)
-    entries.delete(entries.keys().next().value!);
-  return entry;
-}
-export async function cachedCatalog(scope: CatalogScope): Promise<Catalog> {
-  const entry = entryFor(scope);
-  const now = Date.now();
-  if (entry.catalog && entry.expires > now) return entry.catalog;
-  if (entry.pending) return entry.pending;
-  if (entry.cooldown > now)
-    throw new TransformMateApiError({
-      status: 429,
-      statusText: '',
-      contentType: '',
-      isJson: false,
-      body: null,
-      retryAfterMs: entry.cooldown - now,
-    });
-  const operation = scope.client
-    .listExercises()
-    .then(({ body }) => {
-      entry.catalog = body;
-      entry.expires = Date.now() + TTL_MS;
-      entry.cooldown = 0;
-      entry.aliases.clear();
-      return body;
+  const task = work()
+    .then((result) => {
+      failed.delete(key);
+      return result;
     })
     .catch((error: unknown) => {
+      failed.add(key);
       if (error instanceof TransformMateApiError && error.status === 429)
-        entry.cooldown =
+        cooldown.set(
+          scopeKey(scope),
           Date.now() +
-          Math.min(
-            MAX_RETRY_AFTER_MS,
-            Math.max(1_000, error.retryAfterMs ?? 5_000),
-          );
+            Math.min(
+              MAX_RETRY_AFTER_MS,
+              Math.max(1000, error.retryAfterMs ?? 5000),
+            ),
+        );
+      boundFailures();
       throw error;
     })
     .finally(() => {
-      if (entry.pending === operation) entry.pending = undefined;
+      if (pending.get(key) === task) pending.delete(key);
     });
-  entry.pending = operation;
-  return operation;
+  pending.set(key, task);
+  return task;
 }
-export function rememberExerciseAliases(
+export function queryKey(filters: TransformMateCatalogFilters) {
+  return JSON.stringify(filters);
+}
+export async function refreshFull(scope: CatalogScope) {
+  return coalesce(scope, ':full', async () => {
+    const { body } = await scope.client.listExercises();
+    await scope.assertCurrent();
+    catalogStore().full(scope, body, new Date().toISOString());
+  });
+}
+export async function refreshPage(
   scope: CatalogScope,
-  detail: TransformMateExerciseDetail,
+  filters: TransformMateCatalogFilters,
 ) {
-  const entry = entryFor(scope);
-  // Store only bounded search terms from a requested detail, never URLs or media.
-  if (entry.aliases.size >= 1_000 && !entry.aliases.has(detail.id))
-    entry.aliases.delete(entry.aliases.keys().next().value!);
-  entry.aliases.set(
-    detail.id,
-    detail.other_names
-      .slice(0, 50)
-      .map((name) => name.slice(0, 500).toLocaleLowerCase(scope.locale)),
-  );
+  return coalesce(scope, ':page:' + queryKey(filters), async () => {
+    const { body } = await scope.client.listExercisePage({
+      search: filters.query,
+      ...(filters.commonMuscleGroup
+        ? { commonMuscleGroup: filters.commonMuscleGroup }
+        : {}),
+      muscleGroups: filters.muscleGroups,
+      offset: filters.offset,
+      limit: filters.limit,
+    });
+    await scope.assertCurrent();
+    catalogStore().page(
+      scope,
+      queryKey(filters),
+      body.results,
+      body.count,
+      filters.offset + body.results.length < body.count,
+      new Date().toISOString(),
+    );
+  });
 }
-export function catalogMatches(
+export async function refreshDictionary(scope: CatalogScope) {
+  return coalesce(scope, ':dictionary', async () => {
+    const { body } = await scope.client.listMuscleGroups();
+    const groups = body.map((group) => ({
+      id: group.id,
+      name: group.name,
+      commonGroup: group.common_muscle_group,
+      muscleIds: group.muscles,
+    }));
+    await scope.assertCurrent();
+    catalogStore().dictionary(scope, groups, new Date().toISOString());
+  });
+}
+export async function cachedDetail(
   scope: CatalogScope,
   id: number,
-  name: string,
-  query: string,
+  force = false,
+  priority = true,
 ) {
-  return (
-    !query ||
-    name.toLocaleLowerCase(scope.locale).includes(query) ||
-    (entryFor(scope).aliases.get(id) ?? []).some((alias) =>
-      alias.includes(query),
-    )
-  );
+  const current = catalogStore().record(scope, id);
+  if (!force && current?.detail && fresh(current.detailFetchedAt))
+    return current;
+  try {
+    await coalesce(scope, ':detail:' + id, async () => {
+      const { body } = await detailSlot(async () => {
+        await scope.assertCurrent();
+        return scope.client.getExercise(id);
+      }, priority);
+      if (body.id !== id) throw new Error('Catalog exercise mismatch');
+      const detail = projectDetail(body);
+      await scope.assertCurrent();
+      catalogStore().detail(scope, detail, new Date().toISOString());
+    });
+  } catch (error) {
+    if (force || !current?.detail) throw error;
+  }
+  const result = catalogStore().record(scope, id);
+  if (!result?.detail) throw new Error('Catalog detail unavailable');
+  return result;
+}
+// Caller supplies visible IDs once per visible page, never a request per keystroke.
+export async function enrichVisible(scope: CatalogScope, ids: number[]) {
+  const queue = [...new Set(ids)].slice(0, 6);
+  async function worker() {
+    for (;;) {
+      const id = queue.shift();
+      if (id === undefined) return;
+      try {
+        await cachedDetail(scope, id, false, false);
+      } catch {
+        /* Item retains unknown coverage. */
+      }
+    }
+  }
+  await Promise.all([worker(), worker()]);
 }

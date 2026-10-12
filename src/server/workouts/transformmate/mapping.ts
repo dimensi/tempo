@@ -1,3 +1,4 @@
+import { transformMatePublicationCapability } from '@/contracts/transformmate-capability';
 import { workoutTitle } from '@/lib/workout-title';
 import 'server-only';
 import { createHash } from 'node:crypto';
@@ -20,15 +21,7 @@ export function canProject(
 ) {
   void weighted;
   return (
-    detail.metrics.length === 2 &&
-    [3, 4].every((id) =>
-      detail.metrics.some(
-        (m) =>
-          m.id === id &&
-          m.key === (id === 3 ? 'weight' : 'reps') &&
-          m.set_metric_types.some((t) => t.type === 'straight'),
-      ),
-    )
+    transformMatePublicationCapability(detail.metrics).state === 'supported'
   );
 }
 export function createProjection(

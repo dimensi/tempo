@@ -1,11 +1,20 @@
-import { catalogResponse, listExercises } from '@/server/transformmate/catalog';
+import { catalogResponse, listCatalog } from '@/server/transformmate/catalog';
 export async function GET(request: Request) {
   const query = new URL(request.url).searchParams;
-  return catalogResponse(async () => ({
-    items: await listExercises(
-      request.headers,
-      query.get('ownerId') ?? '',
-      query.get('q') ?? '',
-    ),
-  }));
+  return catalogResponse(
+    () =>
+      listCatalog(
+        request.headers,
+        query.get('ownerId') ?? '',
+        {
+          query: query.get('q') ?? '',
+          commonMuscleGroup: query.get('commonMuscleGroup'),
+          muscleGroups: query.getAll('muscleGroup'),
+          offset: Number(query.get('offset') ?? 0),
+          limit: Number(query.get('limit') ?? 50),
+        },
+        query.getAll('visible').map(Number),
+      ),
+    true,
+  );
 }
