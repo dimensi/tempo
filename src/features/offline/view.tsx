@@ -448,7 +448,9 @@ export function OfflineViewer() {
       <Stack gap="lg">
         <Group justify="space-between">
           <Title order={1}>{m.title}</Title>
-          <Anchor href="/settings#offline">{m.settings}</Anchor>
+          <Anchor href="/settings#offline" c="var(--mantine-color-text)">
+            {m.settings}
+          </Anchor>
         </Group>
         <Text>{m.disclosure}</Text>
         <Text>{m.readonly}</Text>
@@ -487,6 +489,10 @@ export function OfflineViewer() {
                 )}
                 <Button
                   variant="outline"
+                  style={{
+                    color: 'var(--mantine-color-text)',
+                    borderColor: 'var(--mantine-color-text)',
+                  }}
                   mih={44}
                   onClick={() => void controller.disable()}
                 >

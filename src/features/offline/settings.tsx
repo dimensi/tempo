@@ -68,7 +68,9 @@ export function OfflineSettings() {
             {state.bundle.missingPhotos.length > 0 && (
               <Text>{m.partialPhotos}</Text>
             )}
-            <Anchor href="/offline/index.html">{m.open}</Anchor>
+            <Anchor href="/offline/index.html" c="var(--mantine-color-text)">
+              {m.open}
+            </Anchor>
           </Stack>
         ) : (
           <Text>{m.off}</Text>
@@ -109,6 +111,7 @@ export function OfflineSettings() {
             <Group>
               <Button
                 type="submit"
+                color="teal.9"
                 loading={state.status === 'saving'}
                 disabled={!ready || state.status === 'checking'}
                 mih={44}
@@ -117,6 +120,10 @@ export function OfflineSettings() {
               </Button>
               <Button
                 variant="outline"
+                style={{
+                  color: 'var(--mantine-color-text)',
+                  borderColor: 'var(--mantine-color-text)',
+                }}
                 mih={44}
                 disabled={!ready}
                 onClick={() => void controller.disable()}
