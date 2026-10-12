@@ -133,14 +133,18 @@ describe('diary presentation', () => {
       'нет данных',
       '123,46 ккал',
       'Итого по записям',
-      'Сравнить со сводкой YAZIO',
-      'Итог по записям отличается от сводки YAZIO',
       'Оценка ИИ',
       'Неизвестен белок',
       'Слот комментариев',
       'Демонстрационные данные',
     ])
       expect(html).toContain(text);
+    for (const removedCopy of [
+      'Сравнить со сводкой YAZIO',
+      'Итог по записям отличается от сводки YAZIO',
+      'В этой записи',
+    ])
+      expect(html).not.toContain(removedCopy);
     for (const emptyMeal of ['Завтрак', 'Ужин', 'Перекус'])
       expect(html).not.toContain(`aria-label="${emptyMeal}"`);
     expect(html).not.toContain('Масса: нет данных');
