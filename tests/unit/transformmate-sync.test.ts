@@ -155,10 +155,17 @@ function setup() {
         }) as never,
     ),
     getTraining: vi.fn(async () => ({ body: detail }) as never),
-    updateTrainingOnce: vi.fn(async (_id: number, body: TrainingWriteBody) => {
-      detail = remote(body);
-      return { body: { id: 101 } } as never;
-    }),
+    updateTrainingOnce: vi.fn(
+      async (
+        _id: number,
+        body: TrainingWriteBody,
+        beforeSend?: () => Promise<void>,
+      ) => {
+        await beforeSend?.();
+        detail = remote(body);
+        return { body: { id: 101 } } as never;
+      },
+    ),
   };
   const access = vi.fn(
     async (permission: 'workouts:read' | 'workouts:plan') => {
