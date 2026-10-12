@@ -9,6 +9,7 @@ import {
   revisionSchema,
 } from '@/contracts/workouts';
 import { workoutRepository, WorkoutError } from './repository';
+import { syncSavedPlan } from './transformmate/service';
 
 export class WorkoutAccessError extends Error {
   constructor(public status: number) {
@@ -39,11 +40,13 @@ export async function createWorkoutPlan(
   input: unknown,
   requestId?: string,
 ) {
-  return (await access(headers, ownerId, 'workouts:plan')).createPlan(
+  const plan = (await access(headers, ownerId, 'workouts:plan')).createPlan(
     ownerId,
     workoutPlanInputSchema.parse(input),
     requestId === undefined ? undefined : z.uuid().parse(requestId),
   );
+  await syncSavedPlan(headers, ownerId, plan);
+  return plan;
 }
 export async function updateWorkoutPlan(
   headers: Headers,
@@ -52,12 +55,14 @@ export async function updateWorkoutPlan(
   revision: unknown,
   input: unknown,
 ) {
-  return (await access(headers, ownerId, 'workouts:plan')).updatePlan(
+  const plan = (await access(headers, ownerId, 'workouts:plan')).updatePlan(
     ownerId,
     ownerSchema.parse(id),
     revisionSchema.parse(revision),
     workoutPlanInputSchema.parse(input),
   );
+  await syncSavedPlan(headers, ownerId, plan);
+  return plan;
 }
 export async function deleteWorkoutPlan(
   headers: Headers,

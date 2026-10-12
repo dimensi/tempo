@@ -1,6 +1,6 @@
 import 'server-only';
 import { and, eq, asc } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { getDatabase } from '@/server/db';
 import { workoutPlans, workoutSessions } from '@/server/db/schema/workouts';
 import {
@@ -64,35 +64,40 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
       };
     },
     createPlan(ownerId: string, data: WorkoutPlanInput, requestId?: string) {
-      if (requestId) {
-        const existing = db
-          .select()
-          .from(workoutPlans)
-          .where(eq(workoutPlans.id, requestId))
-          .get();
-        if (existing) {
-          if (
-            existing.ownerId !== ownerId ||
-            JSON.stringify(existing.data) !== JSON.stringify(data)
-          )
-            throw new WorkoutError(409);
-          return planDto(existing);
+      return db.transaction((tx) => {
+        if (requestId) {
+          const existing = tx
+            .select()
+            .from(workoutPlans)
+            .where(eq(workoutPlans.id, requestId))
+            .get();
+          if (existing) {
+            if (
+              existing.ownerId !== ownerId ||
+              createHash('sha256')
+                .update(JSON.stringify(existing.data))
+                .digest('hex') !==
+                createHash('sha256').update(JSON.stringify(data)).digest('hex')
+            )
+              throw new WorkoutError(409);
+            return planDto(existing);
+          }
         }
-      }
-      const now = new Date().toISOString();
-      return planDto(
-        db
-          .insert(workoutPlans)
-          .values({
-            id: requestId ?? randomUUID(),
-            ownerId,
-            data,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning()
-          .get(),
-      );
+        const now = new Date().toISOString();
+        return planDto(
+          tx
+            .insert(workoutPlans)
+            .values({
+              id: requestId ?? randomUUID(),
+              ownerId,
+              data,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning()
+            .get(),
+        );
+      });
     },
     updatePlan(
       ownerId: string,
