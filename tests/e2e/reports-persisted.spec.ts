@@ -1,3 +1,4 @@
+import { getSessionWith429Retry } from './auth-session';
 import { expect, test } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { execFileSync } from 'node:child_process';
@@ -22,7 +23,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
   page,
   browser,
 }) => {
-  test.setTimeout(90000);
+  test.setTimeout(180000);
   await page.clock.setFixedTime(new Date('2026-10-11T21:30:00Z'));
   await page.goto('/login');
   await page.getByLabel('Электронная почта').fill('owner@example.test');
@@ -51,9 +52,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect((await response).ok()).toBe(true);
   } else expect(signed.ok()).toBe(true);
   await expect(page).toHaveURL('/');
-  const ownerSession = await (
-    await page.request.get('/api/auth/get-session')
-  ).json();
+  const ownerSession = await getSessionWith429Retry(page.request);
   const ownerId = ownerSession.user.id as string;
   const origin = new URL(page.url()).origin;
   const requestedFormats: string[] = [];

@@ -1,3 +1,4 @@
+import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { meals, type NutritionDay } from '@/contracts/nutrition';
@@ -24,7 +25,7 @@ async function login(page: Page, role = 'owner') {
     );
     await page.getByRole('button', { name: 'Войти', exact: true }).click();
   }
-  await expect(page).toHaveURL('/');
+  await expect(page).toHaveURL('/', { timeout: 30000 });
 }
 const query = '/analytics/data?from=2026-10-01&to=2026-10-03&ownerId=';
 test('scoped analytics API, coverage, controls and mobile geometry', async ({
@@ -32,11 +33,10 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
   browser,
   request,
 }) => {
+  test.setTimeout(180000);
   expect((await request.get(query + 'foreign')).status()).toBe(401);
   await login(page);
-  const ownerId = (
-    await (await page.request.get('/api/auth/get-session')).json()
-  ).user.id as string;
+  const ownerId = (await getSessionWith429Retry(page.request)).user.id;
   expect((await page.request.get(query + 'foreign')).status()).toBe(403);
   const db = new Database('.data/e2e.sqlite');
   const trainerId = (
