@@ -11,6 +11,7 @@ import {
 } from '@/server/transformmate/schemas';
 import { transformMateCatalogSchema } from '@/server/transformmate/catalog-schema';
 import { transformMateExerciseDetailSchema } from '@/server/transformmate/exercise-schema';
+import { parseRetryAfter } from '@/server/transformmate/retry-after';
 import { trainingWriteSnapshot } from '@/server/transformmate/write-snapshot';
 import {
   addExerciseInputSchema,
@@ -164,6 +165,13 @@ export function createTransformMateClient(options: {
         contentType: redact(response.headers.get('content-type') ?? ''),
         isJson,
         body,
+        ...(response.status === 429
+          ? {
+              retryAfterMs: parseRetryAfter(
+                response.headers.get('retry-after'),
+              ),
+            }
+          : {}),
       };
       return raw;
     } catch {
