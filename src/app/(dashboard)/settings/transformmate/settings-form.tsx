@@ -59,6 +59,11 @@ export function TransformMateSettingsForm({
       inflight.current?.abort();
       const controller = new AbortController();
       inflight.current = controller;
+      const mutation = action === 'connect' || action === 'disconnect';
+      const current = () =>
+        mounted.current &&
+        inflight.current === controller &&
+        !controller.signal.aborted;
       setBusy(true);
       setError(null);
       setNotice(null);
@@ -67,7 +72,8 @@ export function TransformMateSettingsForm({
           fetch(`/api/transformmate/${action}`, {
             method: action === 'status' ? 'GET' : 'POST',
             cache: 'no-store',
-            signal: controller.signal,
+            // Cancellation fences UI updates; a mutation must settle before final cache purge.
+            ...(mutation ? { keepalive: true } : { signal: controller.signal }),
             ...(action === 'status'
               ? {}
               : {
@@ -75,14 +81,13 @@ export function TransformMateSettingsForm({
                   body: JSON.stringify(body ?? {}),
                 }),
           });
-        const response =
-          action === 'connect' || action === 'disconnect'
-            ? await withOfflineDevicePurge(request)
-            : await request();
+        const response = mutation
+          ? await withOfflineDevicePurge(request)
+          : await request();
         const result: unknown = await response.json();
         if (!response.ok) {
           if (response.status === 401 || response.status === 403) {
-            if (mounted.current && !controller.signal.aborted) {
+            if (current()) {
               setDenied(true);
               setStatus({
                 configured: false,
@@ -101,12 +106,7 @@ export function TransformMateSettingsForm({
               : null;
           const known =
             transformMateConnectionStatusSchema.shape.errorCode.safeParse(code);
-          if (
-            known.success &&
-            known.data &&
-            mounted.current &&
-            !controller.signal.aborted
-          )
+          if (known.success && known.data && current())
             setStatus((current) => ({ ...current, errorCode: known.data }));
           throw new Error(
             known.success && known.data ? m[known.data] : m.requestError,
@@ -117,7 +117,7 @@ export function TransformMateSettingsForm({
             ? result.data
             : null,
         );
-        if (mounted.current && !controller.signal.aborted) {
+        if (current()) {
           setStatus(parsed);
           setDenied(false);
           if (action === 'connect') setNotice(m.saved);
@@ -127,7 +127,7 @@ export function TransformMateSettingsForm({
           }
         }
       } catch (failure) {
-        if (mounted.current && !controller.signal.aborted)
+        if (current())
           setError(
             failure instanceof Error &&
               Object.values(m).includes(
@@ -137,7 +137,7 @@ export function TransformMateSettingsForm({
               : m.requestError,
           );
       } finally {
-        if (mounted.current && inflight.current === controller) {
+        if (current()) {
           clearCredentials();
           setBusy(false);
           inflight.current = null;
