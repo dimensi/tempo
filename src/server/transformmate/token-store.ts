@@ -60,6 +60,12 @@ const envelopeSchema = z
   })
   .strict();
 const writes = new Map<string, Promise<void>>();
+// Synchronous, noncredential fence for stable binding changes in this process.
+// Ordinary refresh saves retain the binding and do not advance this revision.
+const offlineBindingRevisions = new Map<string, number>();
+export function transformMateOfflineBindingRevision(file: string) {
+  return offlineBindingRevisions.get(resolve(file)) ?? 0;
+}
 async function serialized<T>(
   path: string,
   operation: () => Promise<T>,
@@ -201,6 +207,16 @@ export function fileTransformMateTokenStore(
         if (!current.token) throw new TransformMateStaleConnectionError();
       });
     },
+    async offlineBinding() {
+      return serialized(path, async () => {
+        const current = await read();
+        return {
+          configured: Boolean(current.token),
+          connectionId: current.token?.connectionId ?? null,
+          revision: transformMateOfflineBindingRevision(path),
+        };
+      });
+    },
     async save(token: TransformMateToken) {
       const validated = transformMateTokenSchema.parse(token);
       const generation = expected;
@@ -209,6 +225,11 @@ export function fileTransformMateTokenStore(
         const current = await read();
         if (!wasLoaded || current.generation !== generation)
           throw new TransformMateStaleConnectionError();
+        if (current.token?.connectionId !== validated.connectionId)
+          offlineBindingRevisions.set(
+            path,
+            transformMateOfflineBindingRevision(path) + 1,
+          );
         await write({
           token: validated,
           binding: {
@@ -226,6 +247,11 @@ export function fileTransformMateTokenStore(
         const current = await read();
         if (!wasLoaded || current.generation !== generation)
           throw new TransformMateStaleConnectionError();
+        if (current.token)
+          offlineBindingRevisions.set(
+            path,
+            transformMateOfflineBindingRevision(path) + 1,
+          );
         await write({ token: null, binding: current.binding });
       });
     },
@@ -233,4 +259,14 @@ export function fileTransformMateTokenStore(
       return expected;
     },
   };
+}
+
+// Purpose-limited local metadata read: never construct a client or expose the
+// decrypted credential/profile payload. connectionId survives token refresh.
+export async function readTransformMateOfflineBinding(
+  file: string,
+  ownerId: string,
+  secret: string,
+) {
+  return fileTransformMateTokenStore(file, ownerId, secret).offlineBinding();
 }

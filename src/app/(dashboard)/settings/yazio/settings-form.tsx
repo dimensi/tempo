@@ -25,6 +25,7 @@ import {
 } from '@/contracts/nutrition-sync';
 import type { NutritionScheduleStatus } from '@/contracts/nutrition-schedule';
 import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
+import { withOfflineDevicePurge } from '@/lib/offline-device';
 const subscribeToHydration = () => () => {};
 const clientReady = () => true;
 const serverReady = () => false;
@@ -153,11 +154,18 @@ export function YazioSettingsForm({
     }
     let outcome: Exclude<typeof result, null> = 'failure';
     try {
-      const response = await fetch(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      const request = () =>
+        fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      const response =
+        path === '/api/yazio/connect' ||
+        path === '/api/yazio/token' ||
+        path === '/api/yazio/disconnect'
+          ? await withOfflineDevicePurge(request)
+          : await request();
       if (!response.ok) throw new Error();
       if (path === '/api/yazio/connect' || path === '/api/yazio/token') {
         const connected: {

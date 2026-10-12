@@ -9,6 +9,7 @@ import { ru } from '@/config/messages';
 import { YazioSettingsForm } from './yazio/settings-form';
 import { TransformMateSettingsForm } from './transformmate/settings-form';
 import { SettingsNavigation } from './settings-navigation';
+import { OfflineSettings } from '@/features/offline';
 
 export const metadata = { title: 'Настройки' };
 export default async function Page() {
@@ -43,6 +44,7 @@ export default async function Page() {
               headingOrder={2}
             />
           </section>
+          <OfflineSettings />
         </Stack>
       </SettingsNavigation>
     </Stack>

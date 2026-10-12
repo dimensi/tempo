@@ -55,11 +55,10 @@ export async function prepareReportPage(page: Page, html: string) {
       throw new Error('Report not ready');
   });
 }
-export async function renderReport(
+export async function renderPdfReport(
   html: string,
-  format: 'html' | 'pdf',
   signal?: AbortSignal,
-): Promise<string | Uint8Array> {
+): Promise<Uint8Array> {
   let browser: Browser | undefined;
   let onAbort: (() => void) | undefined;
   let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -75,7 +74,6 @@ export async function renderReport(
     const page = await context.newPage();
     const operation = async () => {
       await prepareReportPage(page, html);
-      if (format === 'html') return page.content();
       return page.pdf({
         format: 'A4',
         preferCSSPageSize: true,

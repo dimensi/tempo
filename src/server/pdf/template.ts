@@ -13,7 +13,7 @@ import type { ReportDataset } from '@/server/pdf/source';
 import type { ReportFonts } from '@/server/pdf/fonts';
 import { summarizeDays } from '@/server/pdf/summary';
 import { macroShares, mealShares } from '@/server/pdf/shares';
-import { reportStyles } from '@/server/pdf/styles';
+import { reportStyles, reportPreviewStyles } from '@/server/pdf/styles';
 
 export const reportCsp =
   "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
@@ -111,15 +111,24 @@ function notes(values: NutritionTotals, fetchedAt?: string): string {
 export function renderReportHtml(
   request: ReportRequest,
   dataset: ReportDataset,
-  fonts: ReportFonts,
+  fonts?: ReportFonts,
 ): string {
   const dates = periodDates(request.start, request.end);
   const summary = summarizeDays(dataset.days, dates.length);
-  const fontFaces = `<style>@font-face{font-family:'Report Sans';src:url(data:font/ttf;base64,${Buffer.from(fonts.sans).toString('base64')});font-weight:400}@font-face{font-family:'Report Sans';src:url(data:font/ttf;base64,${Buffer.from(fonts.bold).toString('base64')});font-weight:700}@font-face{font-family:'Report Serif';src:url(data:font/ttf;base64,${Buffer.from(fonts.serif).toString('base64')});font-weight:400}${reportStyles}</style>`;
+  if (request.format === 'pdf' && !fonts) throw new Error('PDF fonts required');
+  const embeddedFonts =
+    request.format === 'pdf'
+      ? `@font-face{font-family:'Report Sans';src:url(data:font/ttf;base64,${Buffer.from(fonts!.sans).toString('base64')});font-weight:400}@font-face{font-family:'Report Sans';src:url(data:font/ttf;base64,${Buffer.from(fonts!.bold).toString('base64')});font-weight:700}@font-face{font-family:'Report Serif';src:url(data:font/ttf;base64,${Buffer.from(fonts!.serif).toString('base64')});font-weight:400}`
+      : '';
+  const fontFaces = `<style>${embeddedFonts}${reportStyles}${request.format === 'html' ? reportPreviewStyles : ''}</style>`;
+  const previewHeader = (title: string, label: string) =>
+    request.format === 'html'
+      ? `<header class="preview-header"><h1>${escapeHtml(title)}</h1><span>${escapeHtml(label)}</span></header>`
+      : '';
   const overview =
     dates.length === 1
       ? ''
-      : `<section class="day-source" data-overview="true" data-title="${m.periodTitle}" data-header="${escapeHtml(`${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)}`)}" data-footer="${m.summary}"><div class="day-start"><p class="counts">${m.completeness}: ${summary.availableDays} / ${summary.expectedDays}</p>${totals(summary.totals, summary.knownTotals)}${charts(summary.totals)}</div><div class="day-meals"></div>${notes(summary.totals)}</section>`;
+      : `<section class="day-source" data-overview="true" data-title="${m.periodTitle}" data-header="${escapeHtml(`${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)}`)}" data-footer="${m.summary}">${previewHeader(m.periodTitle, `${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)}`)}<div class="day-start"><p class="counts">${m.completeness}: ${summary.availableDays} / ${summary.expectedDays}</p>${totals(summary.totals, summary.knownTotals)}${charts(summary.totals)}</div><div class="day-meals"></div>${notes(summary.totals)}</section>`;
   const sections = dates
     .map((date) => {
       const day = dataset.days.find((candidate) => candidate.date === date);
@@ -142,8 +151,8 @@ export function renderReportHtml(
           return `<section class="meal-block" data-meal="${kind}" data-name="${m[kind]}"><div class="meal-heading"><h2>${m[kind]}</h2>${keys.map((key) => `<span class="meal-total number numeric" data-nutrient="${key}">${value(meal?.totals[key] ?? null)}</span>`).join('')}</div><div class="meal-body">${photo ? `<figure class="meal-media"><img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}"></figure>` : ''}<div class="meal-entries">${meal?.entries.map(food).join('') ?? ''}</div></div></section>`;
         })
         .join('');
-      return `<section class="day-source" data-date="${date}" data-title="${m.diary}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}"><div class="day-start"><p class="counts">${m.mealCount}: ${mealsWithData} · ${m.entryCount}: ${entries} · ${m.photoCount}: ${photos.length}</p>${mealsWithData === 0 ? `<p class="empty">${!day ? m.missing : m.empty}</p>` : ''}${totals(dayTotals, day?.knownTotals)}${charts(dayTotals, day, visibleMeals)}</div><div class="day-meals">${details ? columnHeaders() : ''}${details}</div>${notes(dayTotals, day?.fetchedAt)}</section>`;
+      return `<section class="day-source" data-date="${date}" data-title="${m.diary}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}">${previewHeader(m.diary, diaryDateLabel(date))}<div class="day-start"><p class="counts">${m.mealCount}: ${mealsWithData} · ${m.entryCount}: ${entries} · ${m.photoCount}: ${photos.length}</p>${mealsWithData === 0 ? `<p class="empty">${!day ? m.missing : m.empty}</p>` : ''}${totals(dayTotals, day?.knownTotals)}${charts(dayTotals, day, visibleMeals)}</div><div class="day-meals">${details ? columnHeaders() : ''}${details}</div>${notes(dayTotals, day?.fetchedAt)}</section>`;
     })
     .join('');
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${reportCsp}"><title>${m.diary}</title>${fontFaces}</head><body><main id="report-source" data-continued="${m.continued}">${overview}${sections}</main></body></html>`;
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${reportCsp}"><title>${m.diary}</title>${fontFaces}</head><body${request.format === 'html' ? ' class="report-preview"' : ''}><main id="report-source" data-continued="${m.continued}">${overview}${sections}</main></body></html>`;
 }

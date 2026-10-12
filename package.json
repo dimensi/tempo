@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "description": "",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build && node scripts/prepare-standalone.mjs",
+    "dev": "pnpm offline:build && next dev",
+    "offline:build": "node scripts/build-offline.mjs",
+    "build": "pnpm offline:build && next build && node scripts/prepare-standalone.mjs",
     "start": "node scripts/start.mjs",
     "lint": "eslint . && tsx scripts/check-boundaries.ts",
     "format": "prettier --write .",

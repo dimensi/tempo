@@ -9,7 +9,7 @@ vi.mock('server-only', () => ({}));
 import { generateReport, withReportSlot } from '@/server/pdf/service';
 import { readReportFonts } from '@/server/pdf/fonts';
 import { renderReportHtml } from '@/server/pdf/template';
-import { prepareReportPage, renderReport } from '@/server/pdf/renderer';
+import { prepareReportPage, renderPdfReport } from '@/server/pdf/renderer';
 import type { ReportDataSource } from '@/server/pdf/source';
 import type { ReportRequest } from '@/contracts/reports';
 const directory = await mkdtemp(join(tmpdir(), 'yazio-pdf-tests-'));
@@ -227,7 +227,7 @@ it('cancels real Chromium preparation and releases the report slot before the ne
       start: '2026-10-10',
       end: '2026-10-10',
       period: 'daily',
-      format: 'html',
+      format: 'pdf',
     };
     const html = renderReportHtml(
       request,
@@ -235,7 +235,7 @@ it('cancels real Chromium preparation and releases the report slot before the ne
       await readReportFonts(),
     );
     await expect(
-      withReportSlot(() => renderReport(html, 'html', controller.signal)),
+      withReportSlot(() => renderPdfReport(html, controller.signal)),
     ).rejects.toMatchObject({ name: 'AbortError' });
     expect(launched?.isConnected()).toBe(false);
     await expect(
