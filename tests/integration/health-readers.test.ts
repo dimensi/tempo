@@ -145,13 +145,11 @@ it('existing raw weights project kg without conversion or storage changes, and r
     },
     '2026-10-12T12:00:00Z',
   );
-  measurementPersistence
-    .measurementRepository()
-    .create('owner', {
-      measuredAt: '2026-05-02',
-      values: [{ metric: 'weight', value: '72.125', unit: 'kg' }],
-      note: null,
-    });
+  measurementPersistence.measurementRepository().create('owner', {
+    measuredAt: '2026-05-02',
+    values: [{ metric: 'weight', value: '72.125', unit: 'kg' }],
+    note: null,
+  });
   const history = await getWeightHistory(ownerHeaders, {
     from: '2026-05-01',
     to: '2026-05-02',

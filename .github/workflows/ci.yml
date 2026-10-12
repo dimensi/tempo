@@ -17,6 +17,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
+      - name: Verify constrained CD protocol and recovery guards
+        run: python3 scripts/cd/test-cd-candidates.py
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm exec playwright install --with-deps chromium

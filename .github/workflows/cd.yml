@@ -1,0 +1,97 @@
+name: Nutrition CD
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful main CI run ID
+        required: true
+      revision:
+        description: Exact 40-character main Git SHA
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: nutrition-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    # Off until the approved host installation and secure key handoff are verified.
+    if: ${{ vars.NUTRITION_CD_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    environment: nutrition-production
+    steps:
+      - name: Require authoritative successful main CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
+          REVISION: ${{ inputs.revision || github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ && "$REVISION" =~ ^[0-9a-f]{40}$ ]]
+          umask 077
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" > jobs.json
+          python3 - <<'PYVERIFY'
+          import json, os
+          run = json.load(open('run.json'))
+          assert run['event'] == 'push' and run['head_branch'] == 'main'
+          assert run['head_sha'] == os.environ['REVISION']
+          assert run['status'] == 'completed' and run['conclusion'] == 'success'
+          jobs = json.load(open('jobs.json'))['jobs']
+          for name in ('checks', 'docker'):
+              found = [j for j in jobs if j['name'] == name]
+              assert len(found) == 1 and found[0]['status'] == 'completed' and found[0]['conclusion'] == 'success'
+          PYVERIFY
+      - uses: actions/download-artifact@v4
+        with:
+          name: nutrition-release-${{ inputs.revision || github.event.workflow_run.head_sha }}
+          run-id: ${{ inputs.run_id || github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: release-artifact
+      - name: Verify archive and Git tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVISION: ${{ inputs.revision || github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          export EXPECTED_TREE=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$REVISION" --jq '.tree.sha')
+          python3 - <<'PYVERIFY'
+          import hashlib, json, os
+          m = json.load(open('release-artifact/manifest.json'))
+          assert m['revision'] == os.environ['REVISION'] and m['tree'] == os.environ['EXPECTED_TREE']
+          assert m['imageTag'] == 'nutrition-release:' + m['revision'][:12]
+          h = hashlib.sha256()
+          with open('release-artifact/image.tar.gz', 'rb') as f:
+              for chunk in iter(lambda: f.read(1048576), b''): h.update(chunk)
+          assert h.hexdigest() == m['archiveSHA256']
+          PYVERIFY
+      - name: Invoke constrained deployment (candidate protocol)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_KEY: ${{ secrets.NUTRITION_DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ vars.NUTRITION_DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.NUTRITION_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.NUTRITION_DEPLOY_USER }}
+          REVISION: ${{ inputs.revision || github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          set +x
+          umask 077
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$DEPLOY_USER" == nutrition-deploy ]]
+          key=$(mktemp)
+          hosts=$(mktemp)
+          trap 'rm -f "$key" "$hosts"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          unset DEPLOY_KEY KNOWN_HOSTS
+          tree=$(python3 -c 'import json; print(json.load(open("release-artifact/manifest.json"))["tree"])')
+          digest=$(python3 -c 'import json; print(json.load(open("release-artifact/manifest.json"))["archiveSHA256"])')
+          current_main=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          [[ "$current_main" == "$REVISION" ]] || { echo 'Stale main revision refused.' >&2; exit 1; }
+          tar --format=ustar -C release-artifact -cf - manifest.json image.tar.gz | ssh -p 2224 -i "$key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "nutrition-release $RUN_ID $REVISION $tree $digest"
