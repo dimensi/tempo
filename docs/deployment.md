@@ -30,7 +30,7 @@ The first owner is created by the user on the server:
 bash /opt/compose/yazio-dashboard/bootstrap-owner.sh
 ```
 
-The coordinator confirmed that the user has already created the first OWNER. Bootstrap is for a new empty stack, not a repeat setup step. The server-local helper prompts for a password with hidden input; the agent does not choose or collect it. Open registration is disabled. The owner then invites trainers and grants/revokes access through `/settings/trainers`. Other installations can use bundled `node scripts/create-user.mjs` with the documented `CREATE_USER_*` variables without logging or committing the password.
+The coordinator confirmed that the user has already created the first OWNER. Bootstrap is for a new empty stack, not a repeat setup step. The server-local helper prompts for a password with hidden input; the agent does not choose or collect it. Open registration is disabled. The owner then invites trainers and grants/revokes access through `/settings#trainers`. Other installations can use bundled `node scripts/create-user.mjs` with the documented `CREATE_USER_*` variables without logging or committing the password.
 
 ## Release validation
 
