@@ -12,6 +12,14 @@ export const workoutSetSchema = z
 export const workoutExerciseSchema = z
   .object({
     name,
+    comment: z.string().trim().max(4000).optional(),
+    transformMate: z
+      .object({
+        exerciseId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+        occurrenceKey: z.uuid(),
+      })
+      .strict()
+      .optional(),
     sets: z.array(workoutSetSchema).min(1).max(50),
   })
   .strict();
@@ -41,6 +49,23 @@ export const workoutPlanInputSchema = z
       });
     const ids = new Set<string>();
     value.workouts.forEach((workout, index) => {
+      const occurrences = new Set<string>();
+      workout.exercises.forEach((exercise, exerciseIndex) => {
+        const key = exercise.transformMate?.occurrenceKey;
+        if (key && occurrences.has(key))
+          ctx.addIssue({
+            code: 'custom',
+            path: [
+              'workouts',
+              index,
+              'exercises',
+              exerciseIndex,
+              'transformMate',
+            ],
+            message: 'duplicate exercise occurrence',
+          });
+        if (key) occurrences.add(key);
+      });
       if (workout.date < value.startsOn || workout.date > value.endsOn)
         ctx.addIssue({
           code: 'custom',

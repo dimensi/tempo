@@ -1,6 +1,6 @@
 import 'server-only';
 import { and, eq, asc } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { getDatabase } from '@/server/db';
 import { workoutPlans, workoutSessions } from '@/server/db/schema/workouts';
 import {
@@ -11,6 +11,7 @@ import {
   type WorkoutSessionInput,
   type WorkoutsData,
 } from '@/contracts/workouts';
+import { syncRepository } from './transformmate/repository';
 
 export class WorkoutError extends Error {
   constructor(public status: 404 | 409) {
@@ -63,21 +64,44 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
           .map(sessionDto),
       };
     },
-    createPlan(ownerId: string, data: WorkoutPlanInput) {
-      const now = new Date().toISOString();
-      return planDto(
-        db
-          .insert(workoutPlans)
-          .values({
-            id: randomUUID(),
-            ownerId,
-            data,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning()
-          .get(),
-      );
+    createPlan(ownerId: string, data: WorkoutPlanInput, requestId?: string) {
+      return db.transaction((tx) => {
+        if (requestId) {
+          const existing = tx
+            .select()
+            .from(workoutPlans)
+            .where(eq(workoutPlans.id, requestId))
+            .get();
+          if (existing) {
+            if (
+              existing.ownerId !== ownerId ||
+              createHash('sha256')
+                .update(JSON.stringify(existing.data))
+                .digest('hex') !==
+                createHash('sha256').update(JSON.stringify(data)).digest('hex')
+            )
+              throw new WorkoutError(409);
+            return planDto(existing);
+          }
+        }
+        const now = new Date().toISOString();
+        const saved = planDto(
+          tx
+            .insert(workoutPlans)
+            .values({
+              id: requestId ?? randomUUID(),
+              ownerId,
+              data,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning()
+            .get(),
+        );
+        // Commit the publication intent with the plan; restart can recover without another save.
+        syncRepository(tx).ensure(ownerId, saved);
+        return saved;
+      });
     },
     updatePlan(
       ownerId: string,
@@ -85,27 +109,33 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
       revision: number,
       data: WorkoutPlanInput,
     ) {
-      const row = db
-        .update(workoutPlans)
-        .set({
-          data,
-          revision: revision + 1,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(and(planScope(ownerId, id), eq(workoutPlans.revision, revision)))
-        .returning()
-        .get();
-      if (!row)
-        throw new WorkoutError(
-          db
-            .select({ id: workoutPlans.id })
-            .from(workoutPlans)
-            .where(planScope(ownerId, id))
-            .get()
-            ? 409
-            : 404,
-        );
-      return planDto(row);
+      return db.transaction((tx) => {
+        const row = tx
+          .update(workoutPlans)
+          .set({
+            data,
+            revision: revision + 1,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(
+            and(planScope(ownerId, id), eq(workoutPlans.revision, revision)),
+          )
+          .returning()
+          .get();
+        if (!row)
+          throw new WorkoutError(
+            tx
+              .select({ id: workoutPlans.id })
+              .from(workoutPlans)
+              .where(planScope(ownerId, id))
+              .get()
+              ? 409
+              : 404,
+          );
+        const saved = planDto(row);
+        syncRepository(tx).ensure(ownerId, saved);
+        return saved;
+      });
     },
     deletePlan(ownerId: string, id: string, revision: number) {
       const result = db
