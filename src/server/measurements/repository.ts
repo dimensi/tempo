@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, eq, desc } from 'drizzle-orm';
+import { and, eq, desc, asc, gte, lte } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDatabase } from '@/server/db';
 import { measurements } from '@/server/db/schema/measurements';
@@ -14,6 +14,22 @@ export function measurementRepository(db = getDatabase().db) {
         .from(measurements)
         .where(eq(measurements.ownerId, ownerId))
         .orderBy(desc(measurements.measuredAt), desc(measurements.id))
+        .all(),
+    listPeriod: (ownerId: string, period: { from: string; to: string }) =>
+      db
+        .select({
+          measuredAt: measurements.measuredAt,
+          values: measurements.values,
+        })
+        .from(measurements)
+        .where(
+          and(
+            eq(measurements.ownerId, ownerId),
+            gte(measurements.measuredAt, period.from),
+            lte(measurements.measuredAt, period.to),
+          ),
+        )
+        .orderBy(asc(measurements.measuredAt), asc(measurements.id))
         .all(),
     find: (ownerId: string, id: string) =>
       db.select().from(measurements).where(scope(ownerId, id)).get(),

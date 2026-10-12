@@ -46,6 +46,11 @@ function source(): NutritionUpstream {
       simple_products: [],
     })),
     summary: vi.fn(async () => emptySummary),
+    healthSummary: vi.fn(async (date) => ({
+      dailySteps: { source: 'yazio' as const, date, steps: null },
+      unitContext: null,
+    })),
+    weight: vi.fn(async () => null),
     images: vi.fn(async () => ({})),
     product: vi.fn(async () => null),
     recipe: vi.fn(async () => null),
@@ -69,6 +74,8 @@ function setup(images?: NutritionSchedulerDependencies['images']) {
   };
   const repository = nutritionRepository(database);
   const deps = {
+    healthRepository:
+      undefined as NutritionSchedulerDependencies['healthRepository'],
     database,
     automaticEnabled: vi.fn(() => true),
     configured: vi.fn(() => true),
@@ -113,6 +120,64 @@ afterEach(() => {
 });
 
 describe('durable owner schedule', () => {
+  it('refreshes exactly the selected day with a durable lease without changing history, timezone or enablement', async () => {
+    const { service, deps, upstream } = setup();
+    service.enable('owner', input);
+    const delayed = deferred<Awaited<ReturnType<NutritionUpstream['items']>>>();
+    vi.mocked(upstream.items).mockImplementationOnce(() => delayed.promise);
+    const running = service.run('owner', period, {
+      mode: 'day-refresh',
+      timezone: 'America/New_York',
+    });
+    await vi.waitFor(() =>
+      expect(upstream.items).toHaveBeenCalledWith(period.from),
+    );
+    await expect(
+      createNutritionScheduler(deps).run('owner', period, {
+        mode: 'day-refresh',
+      }),
+    ).rejects.toThrow('Sync already running');
+    expect(service.status('owner')).toMatchObject({
+      initialFrom: input.initialFrom,
+      timezone: input.timezone,
+      enabled: true,
+      running: true,
+    });
+    delayed.resolve({ products: [], recipe_portions: [], simple_products: [] });
+    expect(await running).toMatchObject({
+      state: 'completed',
+      completedDates: [period.from],
+    });
+    expect(upstream.items).toHaveBeenCalledTimes(1);
+    expect(service.status('owner')).toMatchObject({
+      initialFrom: input.initialFrom,
+      timezone: input.timezone,
+      enabled: true,
+      running: false,
+    });
+    service.disable('owner');
+    await service.run('owner', period, {
+      mode: 'day-refresh',
+      timezone: 'UTC',
+    });
+    expect(service.status('owner')).toMatchObject({
+      initialFrom: input.initialFrom,
+      timezone: input.timezone,
+      enabled: false,
+    });
+  });
+  it('does not auto-enable or set history for a day-refresh-first legacy connection', async () => {
+    const { service } = setup();
+    await service.run('owner', period, {
+      mode: 'day-refresh',
+      timezone: 'Europe/Moscow',
+    });
+    expect(service.status('owner')).toMatchObject({
+      enabled: false,
+      initialFrom: null,
+      timezone: 'UTC',
+    });
+  });
   it('persists the latest explicit manual start after narrowing history and never overwrites it hourly', async () => {
     const { service, deps, upstream } = setup();
     await service.run(
@@ -796,4 +861,209 @@ it('never boots timers for dev/build/edge/disabled runtime or missing configurat
   vi.stubEnv('ENABLE_NUTRITION_SCHEDULER', 'true');
   startNutritionScheduler();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it('imports nullable steps and deduplicated raw last weights independently of food', async () => {
+  const { service, upstream, repository } = setup();
+  vi.mocked(upstream.healthSummary).mockImplementation(async (date) => ({
+    dailySteps: {
+      source: 'yazio',
+      date,
+      steps: date === period.from ? 0 : null,
+    },
+    unitContext: 'kg',
+  }));
+  vi.mocked(upstream.weight).mockImplementation(async (_date, unitContext) => ({
+    source: 'yazio',
+    externalId: '123e4567-e89b-42d3-a456-426614174000',
+    providerDate: '2026-10-11T09:00:00Z',
+    measuredDate: null,
+    rawValue: '80',
+    unit: null,
+    unitContext,
+    upstreamSource: 'synthetic',
+    gateway: null,
+  }));
+  const result = await service.run(
+    'owner',
+    { from: period.from, to: '2026-10-12' },
+    { mode: 'manual' },
+  );
+  expect(result.health).toEqual({
+    completedStepsDates: [period.from, '2026-10-12'],
+    failedStepsDates: [],
+    completedWeightDates: [period.from, '2026-10-12'],
+    failedWeightDates: [],
+    error: null,
+  });
+  expect(
+    database.sqlite
+      .prepare('SELECT steps FROM yazio_daily_steps ORDER BY date')
+      .all(),
+  ).toEqual([{ steps: 0 }, { steps: null }]);
+  expect(
+    database.sqlite
+      .prepare(
+        'SELECT provider_date, measured_date, raw_value, unit, unit_context FROM yazio_weight_entries',
+      )
+      .all(),
+  ).toEqual([
+    {
+      provider_date: '2026-10-11T09:00:00Z',
+      measured_date: null,
+      raw_value: '80',
+      unit: null,
+      unit_context: 'kg',
+    },
+  ]);
+  expect(repository.status('owner').state).toBe('completed');
+});
+it('health read failures preserve successful food status, success timestamp and schedule', async () => {
+  const { service, upstream, repository } = setup();
+  vi.mocked(upstream.healthSummary).mockRejectedValue(
+    new Error('PRIVATE HEALTH ERROR'),
+  );
+  vi.mocked(upstream.weight).mockRejectedValue(
+    new Error('PRIVATE HEALTH ERROR'),
+  );
+  const result = await service.run('owner', period, { mode: 'manual' });
+  expect(result.health).toMatchObject({
+    failedStepsDates: [period.from],
+    failedWeightDates: [period.from],
+    error: 'HEALTH_IMPORT_FAILED',
+  });
+  expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  expect(repository.status('owner').state).toBe('completed');
+  expect(service.status('owner')).toMatchObject({
+    lastSuccess: new Date().toISOString(),
+    lastError: null,
+    attempt: 0,
+  });
+});
+it('fences health results across disconnect/reconnect while retaining completed food', async () => {
+  const { service, upstream, repository, deps } = setup();
+  const pending = deferred<Awaited<ReturnType<NutritionUpstream['weight']>>>();
+  vi.mocked(upstream.weight).mockReturnValue(pending.promise);
+  const upsert = vi.fn();
+  deps.healthRepository = { upsert };
+  const running = createNutritionScheduler(deps).run('owner', period, {
+    mode: 'manual',
+  });
+  const rejected = expect(running).rejects.toMatchObject({
+    code: 'LEASE_LOST',
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  const foodSuccess = service.status('owner').lastSuccess;
+  expect(repository.status('owner').state).toBe('completed');
+  service.disable('owner');
+  service.enable('owner', input);
+  pending.resolve(null);
+  await rejected;
+  expect(upsert).not.toHaveBeenCalled();
+  expect(service.status('owner').lastSuccess).toBe(foodSuccess);
+  expect(repository.status('owner').state).toBe('completed');
+});
+it('health persistence failure rolls back its batch without changing food completion', async () => {
+  const { service, upstream, repository } = setup();
+  vi.mocked(upstream.healthSummary).mockImplementation(async (date) => ({
+    dailySteps: { source: 'yazio', date, steps: 7 },
+    unitContext: null,
+  }));
+  database.sqlite.exec(
+    "CREATE TRIGGER synthetic_health_failure BEFORE INSERT ON yazio_daily_steps WHEN NEW.date = '2026-10-12' BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END",
+  );
+  const result = await service.run(
+    'owner',
+    { from: period.from, to: '2026-10-12' },
+    { mode: 'manual' },
+  );
+  expect(result.health).toMatchObject({
+    completedStepsDates: [],
+    failedStepsDates: [period.from, '2026-10-12'],
+    error: 'HEALTH_IMPORT_FAILED',
+  });
+  expect(
+    database.sqlite.prepare('SELECT * FROM yazio_daily_steps').all(),
+  ).toEqual([]);
+  expect(repository.status('owner').state).toBe('completed');
+  expect(service.status('owner').lastError).toBeNull();
+});
+
+it('holds an expired health lease until its pending read drains and rejects late writes', async () => {
+  const { upstream, deps, service } = setup();
+  const pending = deferred<Awaited<ReturnType<NutritionUpstream['weight']>>>();
+  vi.mocked(upstream.weight).mockReturnValue(pending.promise);
+  const upsert = vi.fn();
+  deps.healthRepository = { upsert };
+  const running = createNutritionScheduler(deps).run('owner', period, {
+    mode: 'manual',
+  });
+  const rejected = expect(running).rejects.toMatchObject({
+    code: 'LEASE_LOST',
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  const lastSuccess = service.status('owner').lastSuccess;
+  await vi.advanceTimersByTimeAsync(2 * 3600000);
+  expect(
+    database.db.select().from(nutritionSchedule).get()!.leaseId,
+  ).toBeTruthy();
+  await expect(
+    service.run('owner', period, { mode: 'manual' }),
+  ).rejects.toThrow('Sync already running');
+  pending.resolve(null);
+  await rejected;
+  expect(upsert).not.toHaveBeenCalled();
+  expect(service.status('owner').lastSuccess).toBe(lastSuccess);
+  expect(
+    database.db.select().from(nutritionSchedule).get()!.leaseId,
+  ).toBeNull();
+});
+
+it('day refresh preserves history and food success when photo metadata and health weight fail independently', async () => {
+  const { service, upstream, repository } = setup();
+  service.enable('owner', input);
+  vi.mocked(upstream.images).mockRejectedValue(
+    new Error('Synthetic photo metadata failure'),
+  );
+  vi.mocked(upstream.healthSummary).mockImplementation(async (date) => ({
+    dailySteps: { source: 'yazio', date, steps: 0 },
+    unitContext: null,
+  }));
+  vi.mocked(upstream.weight).mockRejectedValue(
+    new Error('Synthetic health failure'),
+  );
+  const result = await service.run('owner', period, { mode: 'day-refresh' });
+  expect(result).toMatchObject({
+    state: 'partial',
+    completedDates: [period.from],
+    failedDates: [],
+    photoFailedDates: [period.from],
+    health: {
+      completedStepsDates: [period.from],
+      failedStepsDates: [],
+      completedWeightDates: [],
+      failedWeightDates: [period.from],
+      error: 'HEALTH_IMPORT_FAILED',
+    },
+  });
+  expect(repository.status('owner')).toMatchObject({
+    state: 'partial',
+    failedDates: [],
+    photoFailedDates: [period.from],
+  });
+  expect(service.status('owner')).toMatchObject({
+    enabled: true,
+    initialFrom: input.initialFrom,
+    timezone: input.timezone,
+    lastSuccess: new Date().toISOString(),
+    lastError: 'PHOTO_INCOMPLETE',
+    attempt: 1,
+    running: false,
+  });
+  expect(upstream.items).toHaveBeenCalledExactlyOnceWith(period.from);
+  expect(upstream.healthSummary).toHaveBeenCalledExactlyOnceWith(period.from);
+  expect(upstream.weight).toHaveBeenCalledExactlyOnceWith(period.from, null);
+  expect(
+    database.sqlite.prepare('SELECT date, steps FROM yazio_daily_steps').all(),
+  ).toEqual([{ date: period.from, steps: 0 }]);
 });

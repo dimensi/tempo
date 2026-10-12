@@ -3,6 +3,8 @@ import { Alert, Stack, Title } from '@mantine/core';
 import { requireSession } from '@/server/auth/guards';
 import { getAccessibleOwnerId } from '@/server/access/owner';
 import { getAnalytics, AnalyticsError } from '@/server/analytics';
+import { getStepsSummary, HealthReadError } from '@/server/health';
+import { StepsPanel } from '@/features/health';
 import {
   AnalyticsDashboard,
   analyticsMessages as m,
@@ -25,13 +27,18 @@ export default async function Page({
       ? { from: params.from, to: params.to }
       : presetRange('week', today);
   let data;
+  let steps;
   try {
     data = await getAnalytics(requestHeaders, ownerId, range);
+    steps = await getStepsSummary(requestHeaders, range);
   } catch (error) {
     const message =
-      error instanceof AnalyticsError && error.status === 400
+      (error instanceof AnalyticsError || error instanceof HealthReadError) &&
+      error.status === 400
         ? m.rangeError
-        : error instanceof AnalyticsError && error.status === 403
+        : (error instanceof AnalyticsError ||
+              error instanceof HealthReadError) &&
+            error.status === 403
           ? m.forbidden
           : m.loadError;
     return (
@@ -43,10 +50,13 @@ export default async function Page({
     );
   }
   return (
-    <AnalyticsDashboard
-      key={`${data.summary.range.from}:${data.summary.range.to}`}
-      {...data}
-      today={today}
-    />
+    <Stack gap="lg" style={{ minWidth: 0 }}>
+      <AnalyticsDashboard
+        key={`${data.summary.range.from}:${data.summary.range.to}`}
+        {...data}
+        today={today}
+      />
+      <StepsPanel summary={steps} />
+    </Stack>
   );
 }

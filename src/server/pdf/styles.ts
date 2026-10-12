@@ -65,7 +65,7 @@ h2{font-size:11pt;line-height:1.2;font-weight:700}
 .meal-body{display:grid;grid-template-columns:31.75mm minmax(0,1fr);column-gap:4.25mm;align-items:start}
 .meal-media{min-width:0;margin:0}
 .meal-media img{display:block;width:31.75mm;height:31.75mm;object-fit:cover;object-position:center;image-orientation:from-image}
-.meal-entries{min-width:0}
+.meal-entries{min-width:0;grid-column:2}
 .entry{display:grid;grid-template-columns:minmax(0,1fr) var(--numeric-columns);column-gap:2.5mm;align-items:start;break-inside:avoid;min-width:0}
 .entry+.entry{border-top:.25mm solid var(--rule);margin-top:2mm;padding-top:2mm}
 .entry-info{min-width:0}

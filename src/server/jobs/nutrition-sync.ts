@@ -8,7 +8,7 @@ import {
 } from '@/features/nutrition/domain';
 import { meals } from '@/contracts/nutrition';
 import { periodSchema, type SyncStatus } from '@/contracts/nutrition-sync';
-import type { NutritionUpstream } from '@/server/yazio/adapter';
+import type { NutritionDayUpstream } from '@/server/yazio/adapter';
 import type {
   NutritionRepository,
   PhotoRow,
@@ -49,9 +49,10 @@ export class NutritionSyncBusyError extends Error {}
 export async function syncNutritionPeriod(
   ownerId: string,
   period: { from: string; to: string },
-  upstream: NutritionUpstream,
+  upstream: NutritionDayUpstream,
   repository: NutritionRepository,
   images = { fetch: fetchCdnImage, store: storeImage },
+  options?: { photoFailurePolicy: 'independent' },
 ) {
   const dates = periodDates(period);
   if (active.has(ownerId))
@@ -69,11 +70,21 @@ export async function syncNutritionPeriod(
     repository.saveStatus(ownerId, status);
     for (const date of dates) {
       try {
+        let photoMetadataFailed = false;
         // Complete all upstream reads before replacing any part of the persisted day.
         const [items, summary, urls] = await Promise.all([
           upstream.items(date),
           upstream.summary(date),
-          upstream.images(date),
+          options?.photoFailurePolicy === 'independent'
+            ? upstream
+                .images(date)
+                .catch(
+                  (): Awaited<ReturnType<NutritionDayUpstream['images']>> => {
+                    photoMetadataFailed = true;
+                    return {};
+                  },
+                )
+            : upstream.images(date),
         ]);
         const products: Record<string, Product | null> = {};
         const recipes: Record<string, Recipe | null> = {};
@@ -105,40 +116,49 @@ export async function syncNutritionPeriod(
           products,
           recipes,
         });
-        let photoFailed = false;
-        const photos = await boundedMap(
-          meals.filter((meal) => urls[meal]),
-          2,
-          async (daytime): Promise<PhotoRow | null> => {
-            const sourceUrl = urls[daytime]!;
-            const id = `${ownerId}:${date}:${daytime}:yazio`;
-            try {
-              const { bytes, mime } = await images.fetch(sourceUrl);
-              const stored = await images.store(bytes, mime);
-              return {
-                id,
-                ownerId,
-                date,
-                daytime,
-                source: 'yazio' as const,
-                sourceUrl,
-                observedAt: fetchedAt,
-                mime,
-                ...stored,
-              };
-            } catch {
-              photoFailed = true;
-              const existing = repository.photo(ownerId, id);
-              return existing?.source === 'yazio' ? existing : null;
-            }
-          },
-        );
-        // A photo transfer failure must not hide successfully fetched food.
-        // Retain the old nonempty snapshot when the new day is empty and the
-        // media update is incomplete; never erase valid data on that failure.
+        let photoFailed = photoMetadataFailed;
+        const photos = photoMetadataFailed
+          ? repository
+              .photos(ownerId, date)
+              .filter((photo) => photo.source === 'yazio')
+              .map((photo) => repository.photo(ownerId, photo.id))
+              .filter((photo) => photo !== null)
+          : await boundedMap(
+              meals.filter((meal) => urls[meal]),
+              2,
+              async (daytime): Promise<PhotoRow | null> => {
+                const sourceUrl = urls[daytime]!;
+                const id = `${ownerId}:${date}:${daytime}:yazio`;
+                try {
+                  const { bytes, mime } = await images.fetch(sourceUrl);
+                  const stored = await images.store(bytes, mime);
+                  return {
+                    id,
+                    ownerId,
+                    date,
+                    daytime,
+                    source: 'yazio' as const,
+                    sourceUrl,
+                    observedAt: fetchedAt,
+                    mime,
+                    ...stored,
+                  };
+                } catch {
+                  photoFailed = true;
+                  const existing = repository.photo(ownerId, id);
+                  return existing?.source === 'yazio' ? existing : null;
+                }
+              },
+            );
+        // Range/scheduled sync retains its existing empty-snapshot protection.
+        // A selected-day refresh trusts successfully fetched food independently
+        // of media, including a confirmed empty day.
         const empty = day.meals.every((meal) => !meal.entries.length);
         const preserveSnapshot =
-          photoFailed && empty && Boolean(repository.day(ownerId, date));
+          options?.photoFailurePolicy !== 'independent' &&
+          photoFailed &&
+          empty &&
+          Boolean(repository.day(ownerId, date));
         if (!preserveSnapshot) {
           repository.replaceDay(
             ownerId,

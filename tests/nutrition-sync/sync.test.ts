@@ -2,7 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '@/server/db/connection';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { user } from '@/server/db/schema';
-import type { NutritionUpstream } from '@/server/yazio/adapter';
+import type { NutritionDayUpstream } from '@/server/yazio/adapter';
 vi.mock('server-only', () => ({}));
 const { nutritionRepository } = await import('@/server/nutrition/repository');
 const { syncNutritionPeriod, boundedMap, periodDates } =
@@ -17,7 +17,7 @@ const nutrients = {
   'nutrient.fat': 0.2,
   'nutrient.carb': 0.3,
 };
-function upstream(): NutritionUpstream {
+function upstream(): NutritionDayUpstream {
   return {
     items: vi.fn(async () => ({
       products: [
@@ -116,6 +116,105 @@ describe('whole-day synchronization', () => {
     expect(source.product).toHaveBeenCalledTimes(2);
     expect(source.recipe).toHaveBeenCalledTimes(2);
     expect(repository.day('owner', date)!.meals[1]!.totals.calories).toBe('4');
+  });
+  it.each(['metadata', 'download'] as const)(
+    'day-refresh persists successful empty food and retains existing photos on %s failure',
+    async (failure) => {
+      const source = upstream();
+      vi.mocked(source.images).mockResolvedValue({
+        lunch: 'https://images.yazio-cdn.com/synthetic.jpg',
+      });
+      const images = {
+        fetch: vi.fn(async () => ({
+          bytes: Buffer.from([1]),
+          mime: 'image/jpeg',
+        })),
+        store: vi.fn(async () => ({
+          storageKey: 'a'.repeat(64),
+          contentHash: 'a'.repeat(64),
+        })),
+      };
+      await syncNutritionPeriod('owner', period, source, repository, images);
+      const oldPhoto = repository.photo('owner', `owner:${date}:lunch:yazio`);
+      expect(
+        repository.day('owner', date)!.meals[1]!.entries.length,
+      ).toBeGreaterThan(0);
+      vi.mocked(source.items).mockResolvedValue({
+        products: [],
+        recipe_portions: [],
+        simple_products: [],
+      });
+      if (failure === 'metadata')
+        vi.mocked(source.images).mockRejectedValue(
+          new Error('Synthetic unavailable photo metadata'),
+        );
+      else
+        images.fetch.mockRejectedValue(
+          new Error('Synthetic unavailable photo bytes'),
+        );
+      const result = await syncNutritionPeriod(
+        'owner',
+        period,
+        source,
+        repository,
+        images,
+        { photoFailurePolicy: 'independent' },
+      );
+      expect(result).toMatchObject({
+        state: 'partial',
+        completedDates: [date],
+        failedDates: [],
+        photoFailedDates: [date],
+      });
+      expect(
+        repository
+          .day('owner', date)!
+          .meals.every((meal) => meal.entries.length === 0),
+      ).toBe(true);
+      expect(repository.photo('owner', `owner:${date}:lunch:yazio`)).toEqual(
+        oldPhoto,
+      );
+    },
+  );
+  it('independent photo metadata failure preserves newly fetched food but food failure still preserves the old snapshot', async () => {
+    const source = upstream();
+    vi.mocked(source.images).mockRejectedValue(
+      new Error('Synthetic photo metadata error'),
+    );
+    const result = await syncNutritionPeriod(
+      'owner',
+      period,
+      source,
+      repository,
+      undefined,
+      { photoFailurePolicy: 'independent' },
+    );
+    expect(result).toMatchObject({
+      state: 'partial',
+      completedDates: [date],
+      failedDates: [],
+      photoFailedDates: [date],
+    });
+    const old = repository.day('owner', date);
+    expect(old!.meals[1]!.totals.calories).toBe('10');
+    vi.mocked(source.summary).mockRejectedValue(
+      new Error('Synthetic food error'),
+    );
+    expect(
+      await syncNutritionPeriod(
+        'owner',
+        period,
+        source,
+        repository,
+        undefined,
+        { photoFailurePolicy: 'independent' },
+      ),
+    ).toMatchObject({
+      state: 'failed',
+      completedDates: [],
+      failedDates: [date],
+    });
+    expect(repository.day('owner', date)).toEqual(old);
   });
   it('is idempotent, caches references, and preserves exact normalized totals/issues', async () => {
     const source = upstream();
@@ -355,4 +454,17 @@ it('bounds concurrency, waits for all workers on failure, and validates inclusiv
     '2024-03-01',
   ]);
   expect(() => periodDates({ from: '2026-02-01', to: '2026-01-01' })).toThrow();
+});
+
+it('food-only synchronization never reads or persists health capabilities', async () => {
+  const source = { ...upstream(), healthSummary: vi.fn(), weight: vi.fn() };
+  await syncNutritionPeriod('owner', period, source, repository);
+  expect(source.healthSummary).not.toHaveBeenCalled();
+  expect(source.weight).not.toHaveBeenCalled();
+  expect(
+    database.sqlite.prepare('SELECT * FROM yazio_daily_steps').all(),
+  ).toEqual([]);
+  expect(
+    database.sqlite.prepare('SELECT * FROM yazio_weight_entries').all(),
+  ).toEqual([]);
 });
