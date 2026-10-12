@@ -308,6 +308,112 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect(requestedFormats.filter((format) => format === 'html')).toHaveLength(
       htmlRequestsAfterDownload,
     );
+    // A real private preview must be purged on explicit denial, not on runtime failures.
+    let deniedFormat: 'html' | 'pdf' = 'html';
+    let denialStatus = 503;
+    const denialRequests: string[] = [];
+    const interceptDenial = async () => {
+      await page.route('**/api/reports?**', async (route) => {
+        const format = new URL(route.request().url()).searchParams.get(
+          'format',
+        )!;
+        denialRequests.push(format);
+        if (format === deniedFormat)
+          await route.fulfill({
+            status: denialStatus,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'Synthetic report failure' }),
+          });
+        else await route.continue();
+      });
+    };
+    const assertPurged = async (selected: string) => {
+      await expect(page.locator('iframe')).toHaveAttribute('srcdoc', '');
+      await expect(
+        preview.getByText('Яйцо · запись 1', { exact: true }),
+      ).toHaveCount(0);
+      await expect(page.getByText(/^Предпросмотр HTML:/)).toHaveCount(0);
+      await expect(page.getByLabel('Начало')).toHaveValue(selected);
+      await expect(page.getByLabel('Начало')).toBeEnabled();
+      await expect(page.getByRole('combobox', { name: 'Период' })).toHaveValue(
+        'День',
+      );
+    };
+    await interceptDenial();
+    await page.getByLabel('Начало').fill('2026-02-09');
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Synthetic report failure' }),
+    ).toBeVisible();
+    await expect(
+      preview.getByText('Яйцо · запись 1', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(`Предпросмотр HTML: ${date} — ${date}`, { exact: true }),
+    ).toBeVisible();
+    await page.unroute('**/api/reports?**');
+    await page.getByLabel('Начало').fill(date);
+    await expect(
+      page.getByRole('button', { name: 'Скачать PDF' }),
+    ).toBeEnabled();
+    await page.evaluate(() => {
+      const create = URL.createObjectURL.bind(URL);
+      const readBlob = Response.prototype.blob;
+      let count = 0;
+      Response.prototype.blob = function () {
+        count++;
+        return readBlob.call(this);
+      };
+      Object.defineProperty(window, 'reportBlobCount', { get: () => count });
+      URL.createObjectURL = (blob) => {
+        count++;
+        return create(blob);
+      };
+    });
+    const deniedDownloads: string[] = [];
+    page.on('download', (download) =>
+      deniedDownloads.push(download.suggestedFilename()),
+    );
+    for (const status of [401, 403]) {
+      denialStatus = status;
+      deniedFormat = 'html';
+      await interceptDenial();
+      await page.getByLabel('Начало').fill('2026-02-10');
+      await expect(
+        page
+          .getByRole('alert')
+          .filter({ hasText: 'Нет доступа к данным владельца.' }),
+      ).toBeVisible();
+      await assertPurged('2026-02-10');
+      await page.unroute('**/api/reports?**');
+      await page.getByLabel('Начало').fill(date);
+      await expect(
+        preview.getByText('Яйцо · запись 1', { exact: true }),
+      ).toBeVisible();
+      deniedFormat = 'pdf';
+      denialRequests.length = 0;
+      await interceptDenial();
+      await page.getByRole('button', { name: 'Скачать PDF' }).click();
+      await expect(
+        page
+          .getByRole('alert')
+          .filter({ hasText: 'Нет доступа к данным владельца.' }),
+      ).toBeVisible();
+      await assertPurged(date);
+      // Download completion must not automatically refill a denied private preview.
+      await page.waitForTimeout(500);
+      await assertPurged(date);
+      expect(denialRequests).toEqual(['pdf']);
+      expect(
+        await page.evaluate(() => Reflect.get(window, 'reportBlobCount')),
+      ).toBe(0);
+      expect(deniedDownloads).toHaveLength(0);
+      await page.unroute('**/api/reports?**');
+      await page.getByLabel('Начало').fill('2026-02-10');
+      await page.getByLabel('Начало').fill(date);
+      await expect(
+        preview.getByText('Яйцо · запись 1', { exact: true }),
+      ).toBeVisible();
+    }
     const signIn = () =>
       context.request.post(`${origin}/api/auth/sign-in/email`, {
         headers: { origin },

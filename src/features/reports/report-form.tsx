@@ -1,5 +1,11 @@
 'use client';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {
   Alert,
   Button,
@@ -36,6 +42,15 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
   } | null>(null);
   const html = preview?.ownerId === ownerId ? preview.html : '';
   const successfulPreviewKey = useRef('');
+  const deniedPreviewKey = useRef('');
+  const clearPrivatePreview = useCallback((query: URLSearchParams) => {
+    const previewQuery = new URLSearchParams(query);
+    previewQuery.set('format', 'html');
+    deniedPreviewKey.current = previewQuery.toString();
+    successfulPreviewKey.current = '';
+    setPreview(null);
+    setPreviewRange('');
+  }, []);
   const pending = useRef<AbortController | null>(null);
   const downloadPending = useRef<AbortController | null>(null);
   useEffect(
@@ -84,7 +99,10 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         format: 'html',
       });
       // Returning from Download does not regenerate an already visible range.
-      if (successfulPreviewKey.current === query.toString()) {
+      if (
+        successfulPreviewKey.current === query.toString() ||
+        deniedPreviewKey.current === query.toString()
+      ) {
         setBusy(false);
         return;
       }
@@ -96,12 +114,21 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
           cache: 'no-store',
         });
         if (!response.ok) {
+          if (
+            (response.status === 401 || response.status === 403) &&
+            !controller.signal.aborted
+          ) {
+            clearPrivatePreview(query);
+            setError(m.denied);
+            return;
+          }
           const failure = await response.json();
           if (!controller.signal.aborted) setError(failure.error ?? m.failed);
           return;
         }
         const nextHtml = await response.text();
         if (!controller.signal.aborted) {
+          deniedPreviewKey.current = '';
           successfulPreviewKey.current = query.toString();
           setPreview({ ownerId, html: nextHtml });
           setPreviewRange(`${parsed.data.start} — ${parsed.data.end}`);
@@ -116,7 +143,15 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [ready, ownerId, period, selectedStart, finish, downloading]);
+  }, [
+    ready,
+    ownerId,
+    period,
+    selectedStart,
+    finish,
+    downloading,
+    clearPrivatePreview,
+  ]);
   async function download() {
     const parsed = reportRequestSchema.safeParse({
       ownerId: ownerId ?? '',
@@ -148,6 +183,14 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         cache: 'no-store',
       });
       if (!response.ok) {
+        if (
+          (response.status === 401 || response.status === 403) &&
+          !controller.signal.aborted
+        ) {
+          clearPrivatePreview(query);
+          setError(m.denied);
+          return;
+        }
         setError((await response.json()).error ?? m.failed);
         return;
       }
@@ -181,6 +224,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         value={period}
         allowDeselect={false}
         onChange={(value) => {
+          deniedPreviewKey.current = '';
           setPeriod(value ?? 'daily');
           setError('');
         }}
@@ -196,6 +240,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
           date={selectedStart}
           labels={m}
           onSelect={(value) => {
+            deniedPreviewKey.current = '';
             setStart(value);
             setError('');
           }}
@@ -214,6 +259,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         }
         value={selectedStart}
         onChange={(event) => {
+          deniedPreviewKey.current = '';
           setStart(event.currentTarget.value);
           setError('');
         }}
@@ -227,6 +273,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
           label={m.end}
           value={end ?? ''}
           onChange={(event) => {
+            deniedPreviewKey.current = '';
             setEnd(event.currentTarget.value);
             setError('');
           }}
