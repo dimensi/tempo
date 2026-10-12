@@ -8,7 +8,7 @@ import {
 } from '@/features/nutrition/domain';
 import { meals } from '@/contracts/nutrition';
 import { periodSchema, type SyncStatus } from '@/contracts/nutrition-sync';
-import type { NutritionUpstream } from '@/server/yazio/adapter';
+import type { NutritionDayUpstream } from '@/server/yazio/adapter';
 import type {
   NutritionRepository,
   PhotoRow,
@@ -49,7 +49,7 @@ export class NutritionSyncBusyError extends Error {}
 export async function syncNutritionPeriod(
   ownerId: string,
   period: { from: string; to: string },
-  upstream: NutritionUpstream,
+  upstream: NutritionDayUpstream,
   repository: NutritionRepository,
   images = { fetch: fetchCdnImage, store: storeImage },
 ) {

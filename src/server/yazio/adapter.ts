@@ -1,5 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
+import { yazioHealthUpstream } from './health-adapter';
+import { normalizeHealthSummary } from './health-normalize';
 import { mealKindSchema, diaryDateTimeSchema } from '@/contracts/nutrition';
 import {
   createYazioClient,
@@ -68,7 +70,7 @@ const summarySchema = z.object({
   }),
 });
 const imagesSchema = z.partialRecord(mealKindSchema, z.url());
-export interface NutritionUpstream {
+export interface NutritionDayUpstream {
   items(date: string): Promise<ConsumedItems>;
   summary(date: string): Promise<NormalizeDayInput['summary']>;
   images(
@@ -76,6 +78,12 @@ export interface NutritionUpstream {
   ): Promise<Partial<Record<z.infer<typeof mealKindSchema>, string>>>;
   product(id: string): Promise<Product | null>;
   recipe(id: string): Promise<Recipe | null>;
+}
+export interface NutritionUpstream extends NutritionDayUpstream {
+  healthSummary(
+    date: string,
+  ): Promise<ReturnType<typeof normalizeHealthSummary>>;
+  weight: ReturnType<typeof yazioHealthUpstream>['weight'];
 }
 export async function nutritionUpstream(
   store: YazioTokenStore,
@@ -87,7 +95,25 @@ export async function nutritionUpstream(
   };
   if (typeof user.getMealImages !== 'function')
     throw new Error('YAZIO SDK meal-images support is required');
+  const health = yazioHealthUpstream(user);
+  // One adapter is constructed for each leased run. Cache transport outcomes,
+  // including rejection, so each date has exactly one daily-summary request.
+  const summaries = new Map<string, Promise<unknown>>();
+  const rawSummary = (date: string) => {
+    z.iso.date().parse(date);
+    let pending = summaries.get(date);
+    if (!pending) {
+      if (summaries.size >= 366)
+        throw new Error('Summary period limit exceeded');
+      pending = yazioRequest(() => user.getDailySummary({ date }));
+      summaries.set(date, pending);
+    }
+    return pending;
+  };
   return {
+    healthSummary: async (date) =>
+      normalizeHealthSummary(await rawSummary(date), date),
+    weight: health.weight,
     items: (date) =>
       yazioRequest(
         async () =>
@@ -96,9 +122,7 @@ export async function nutritionUpstream(
           ) as ConsumedItems,
       ),
     summary: (date) =>
-      yazioRequest(async () =>
-        summarySchema.parse(await user.getDailySummary({ date })),
-      ),
+      yazioRequest(async () => summarySchema.parse(await rawSummary(date))),
     images: (date) =>
       yazioRequest(async () =>
         imagesSchema.parse(await user.getMealImages!({ date })),

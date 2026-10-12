@@ -29,6 +29,8 @@ import {
   periodDates,
   syncNutritionPeriod,
 } from '@/server/jobs/nutrition-sync';
+import { yazioHealthRepository } from '@/server/yazio/health-repository';
+import { syncYazioHealthPeriod } from './yazio-health-sync';
 import { fetchCdnImage, storeImage } from '@/server/nutrition/images';
 
 const HOUR = 3600000;
@@ -66,6 +68,7 @@ export interface NutritionSchedulerDependencies {
   store: (ownerId: string) => YazioTokenStore;
   source?: (store: YazioTokenStore) => Promise<NutritionUpstream>;
   repository?: NutritionRepository;
+  healthRepository?: Pick<ReturnType<typeof yazioHealthRepository>, 'upsert'>;
   images?: { fetch: typeof fetchCdnImage; store: typeof storeImage };
 }
 
@@ -280,6 +283,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
           .run();
       });
     }
+    let foodCompleted = false;
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
     try {
       if (options.mode === 'manual') {
@@ -400,11 +404,21 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
             : null,
         foodSucceeded,
       );
-      return result;
+      foodCompleted = true;
+      const health = await syncYazioHealthPeriod(
+        ownerId,
+        period,
+        guardedSource,
+        deps.healthRepository ?? yazioHealthRepository(db),
+        assertCurrent,
+        new Date(now()).toISOString(),
+      );
+      assertCurrent();
+      return { ...result, health };
     } catch (error) {
       const code =
         error instanceof NutritionScheduleError ? error.code : 'SYNC_FAILED';
-      complete(code);
+      if (!foodCompleted) complete(code);
       throw new NutritionScheduleError(code);
     } finally {
       // A rejected sibling in Promise.all must not free the logical owner lease

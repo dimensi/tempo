@@ -43,3 +43,16 @@ export const dailyStepsSchema = z
   .strict();
 export type ImportedWeight = z.infer<typeof importedWeightSchema>;
 export type DailySteps = z.infer<typeof dailyStepsSchema>;
+
+// Dates describe requested endpoint reads, not inferred measurement dates.
+// A successful nullable last-weight response completes a date without adding a row.
+export const healthSyncResultSchema = z
+  .object({
+    completedStepsDates: z.array(z.iso.date()),
+    failedStepsDates: z.array(z.iso.date()),
+    completedWeightDates: z.array(z.iso.date()),
+    failedWeightDates: z.array(z.iso.date()),
+    error: z.literal('HEALTH_IMPORT_FAILED').nullable(),
+  })
+  .strict();
+export type HealthSyncResult = z.infer<typeof healthSyncResultSchema>;

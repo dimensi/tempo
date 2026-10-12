@@ -2,7 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '@/server/db/connection';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { user } from '@/server/db/schema';
-import type { NutritionUpstream } from '@/server/yazio/adapter';
+import type { NutritionDayUpstream } from '@/server/yazio/adapter';
 vi.mock('server-only', () => ({}));
 const { nutritionRepository } = await import('@/server/nutrition/repository');
 const { syncNutritionPeriod, boundedMap, periodDates } =
@@ -17,7 +17,7 @@ const nutrients = {
   'nutrient.fat': 0.2,
   'nutrient.carb': 0.3,
 };
-function upstream(): NutritionUpstream {
+function upstream(): NutritionDayUpstream {
   return {
     items: vi.fn(async () => ({
       products: [
@@ -355,4 +355,17 @@ it('bounds concurrency, waits for all workers on failure, and validates inclusiv
     '2024-03-01',
   ]);
   expect(() => periodDates({ from: '2026-02-01', to: '2026-01-01' })).toThrow();
+});
+
+it('food-only synchronization never reads or persists health capabilities', async () => {
+  const source = { ...upstream(), healthSummary: vi.fn(), weight: vi.fn() };
+  await syncNutritionPeriod('owner', period, source, repository);
+  expect(source.healthSummary).not.toHaveBeenCalled();
+  expect(source.weight).not.toHaveBeenCalled();
+  expect(
+    database.sqlite.prepare('SELECT * FROM yazio_daily_steps').all(),
+  ).toEqual([]);
+  expect(
+    database.sqlite.prepare('SELECT * FROM yazio_weight_entries').all(),
+  ).toEqual([]);
 });
