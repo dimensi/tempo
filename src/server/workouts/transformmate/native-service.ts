@@ -21,17 +21,19 @@ interface NativeContext {
   checkConnection(): Promise<void>;
   linkedRemoteIds(): ReadonlySet<number>;
 }
-const recent = new Map<
-  string,
-  { at: number; result: TransformMateNativeRefresh }
->();
-const pending = new Map<string, Promise<TransformMateNativeRefresh>>();
+type NativeRefreshResult = {
+  refresh: TransformMateNativeRefresh;
+  nextCursor: string | null;
+};
+const recent = new Map<string, { at: number; result: NativeRefreshResult }>();
+const pending = new Map<string, Promise<NativeRefreshResult>>();
 
 /** Read-only importer. Call after linked-record recovery, inside the owner queue. */
 export function nativeService(context: NativeContext) {
   const guard = async () => {
     await context.access();
     await context.checkConnection();
+    await context.access();
   };
   const list = async (input: unknown) => {
     const query = transformMateNativeQuerySchema.parse(input);
@@ -43,14 +45,15 @@ export function nativeService(context: NativeContext) {
       context.linkedRemoteIds(),
     );
   };
-  const refresh = async (
-    input: unknown,
-  ): Promise<TransformMateNativeRefresh> => {
+  const refresh = async (input: unknown): Promise<NativeRefreshResult> => {
     const query = transformMateNativeQuerySchema.parse(input);
     const cursor = parseNativeCursor(query.cursor);
     await guard();
     if (!context.client)
-      return { status: 'unavailable', checkedAt: null, errorCode: null };
+      return {
+        refresh: { status: 'unavailable', checkedAt: null, errorCode: null },
+        nextCursor: null,
+      };
     const key = JSON.stringify([
       context.ownerId,
       context.accountScope,
@@ -67,11 +70,17 @@ export function nativeService(context: NativeContext) {
     }
     const cached = recent.get(key);
     if (cached && Date.now() - cached.at < 60_000)
-      return { ...cached.result, status: 'cooldown' };
+      return cached.result.refresh.status === 'fresh'
+        ? {
+            ...cached.result,
+            refresh: { ...cached.result.refresh, status: 'cooldown' },
+          }
+        : cached.result;
     const client = context.client;
-    const run = async (): Promise<TransformMateNativeRefresh> => {
+    const run = async (): Promise<NativeRefreshResult> => {
       const checkedAt = new Date().toISOString();
       let errorCode: TransformMateNativeRefresh['errorCode'] = null;
+      let nextCursor: string | null = null;
       try {
         const response = await client.getTrainings();
         await guard();
@@ -93,6 +102,9 @@ export function nativeService(context: NativeContext) {
             (summary) => !seen.has(summary.id) && Boolean(seen.add(summary.id)),
           )
           .slice(0, Math.min(query.limit, 20));
+        const last = bounded.at(-1);
+        if (last && candidates.length > bounded.length)
+          nextCursor = `${last.date}:${last.id}`;
         for (const summary of bounded) {
           await guard();
           try {
@@ -121,7 +133,14 @@ export function nativeService(context: NativeContext) {
         await guard();
         errorCode = classify(error);
       }
-      return { status: errorCode ? 'error' : 'fresh', checkedAt, errorCode };
+      return {
+        refresh: {
+          status: errorCode ? 'error' : 'fresh',
+          checkedAt,
+          errorCode,
+        },
+        nextCursor,
+      };
     };
     const work = run();
     pending.set(key, work);
