@@ -81,7 +81,7 @@ export function Catalog({
   }, [selected, ownerId]);
   return (
     <Stack gap="xs">
-      <Text size="sm" c="dimmed">
+      <Text size="sm" c="var(--mantine-color-text)">
         {selected ? m.linked : m.manual}
       </Text>
       <TextInput

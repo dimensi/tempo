@@ -148,7 +148,7 @@ export function WorkoutSync({ item }: { item?: TransformMateSyncItem }) {
             : reasons[item.reason]}
         </Text>
       )}
-      <Text size="xs" c="dimmed">
+      <Text size="xs" c="var(--mantine-color-text)">
         {m.checked}:{' '}
         {item.checkedAt
           ? new Date(item.checkedAt).toLocaleString('ru-RU')

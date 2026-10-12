@@ -257,7 +257,7 @@ function ScopedWorkoutsDashboard({
   return (
     <Stack style={{ minWidth: 0 }}>
       <Title order={1}>{m.title}</Title>
-      <Text c="dimmed">{m.description}</Text>
+      <Text c="var(--mantine-color-text)">{m.description}</Text>
       {!canLog && <Alert>{m.trainerHint}</Alert>}
       {error && (
         <Alert color="red" role="alert">
