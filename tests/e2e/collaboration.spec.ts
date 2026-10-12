@@ -80,7 +80,7 @@ test('real invited trainer login, owner grant revocation and direct API isolatio
     .getByRole('textbox', { name: 'Имя', exact: true })
     .fill('Synthetic trainer');
   await invitePage
-    .getByLabel('Пароль (от 12 символов)')
+    .getByLabel('Пароль (от 8 символов)')
     .filter({ visible: true })
     .fill('Synthetic-password-123');
   await invitePage

@@ -5,7 +5,7 @@ Owned branch: `feat/trainer-collaboration`. Runtime uses the foundation DB and `
 - OWNER UI: `/settings#trainers`; accept UI: `/invite#TOKEN` (fragment keeps token out of HTTP/access logs and referrers).
 - `GET /api/trainers?ownerId=...`: safe trainer list. `POST/DELETE /api/trainers`: `{ ownerId, trainerId }` grant/revoke.
 - `POST /api/trainers/invitations`: `{ ownerId, email }` → `{ token, expiresAt }`, no-store. 24-hour one-use token, only SHA-256 stored.
-- `POST /api/trainers/invitations/accept`: `{ token, name, password }`, strict input (role rejected). Invitation capability is the authorization for this deliberately anonymous entry. Creates TRAINER user, Better Auth credential account and grant in one short transaction, hashing before transaction. Existing email rejects without consuming token. No automatic login or email sending.
+- `POST /api/trainers/invitations/accept`: `{ token, name, password }`, strict input (role rejected), shared app-account password policy of 8–128 characters with no required special characters. Invitation capability is the authorization for this deliberately anonymous entry. Creates TRAINER user, Better Auth credential account and grant in one short transaction, hashing before transaction. Existing email rejects without consuming token. No automatic login or email sending.
 - `GET /api/comments?ownerId=...&type=nutrition_day|measurement|workout&targetId=...`: safe CommentDto list.
 - `POST /api/comments`: `{ ownerId, target: { type, id }, body, parentId? }` → `{ id }`. Nutrition target ID is ISO calendar date; other targets are IDs. Reply parent must belong to same owner/target and be a root comment.
 - `PATCH /api/comments/:id`: `{ ownerId, body }`; `DELETE`: `{ ownerId }`. Author only, permission/grant checked again each call. Deleting a root preserves replies as root comments instead of deleting another author's text.
@@ -19,3 +19,5 @@ Owned branch: `feat/trainer-collaboration`. Runtime uses the foundation DB and `
 4. E2E creates only invitation DDL in disposable `.data/e2e.sqlite` until the generated migration is available. Remove that temporary hook when the schema is integrated. Full successful comments UI E2E remains dependent on target/page integration; direct API grant/isolation and real invitation/password login are covered now.
 
 No production accounts, migrations, deployment or messages are created by this branch. Runtime account creation is the requested owner-controlled flow; tests use synthetic accounts only.
+
+Accept errors use fixed safe codes for invalid input, unavailable capability (invalid/expired/consumed combined), and existing account. Duplicate failure rolls back consumption; UI preserves form input and fragment on failure, clears fragment/password only after validated success. No email/token/password/error internals are echoed.

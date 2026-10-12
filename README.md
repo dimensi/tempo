@@ -28,7 +28,7 @@ pnpm db:seed
 pnpm auth:create-user
 ```
 
-Перед последней командой задайте `CREATE_USER_EMAIL`, `CREATE_USER_NAME`, `CREATE_USER_PASSWORD` и необязательный `CREATE_USER_ROLE=OWNER` в окружении либо временно в локальном `.env`. Пароль 12–128 символов. В интерактивном bash/zsh пароль можно прочитать без echo и записи в history:
+Перед последней командой задайте `CREATE_USER_EMAIL`, `CREATE_USER_NAME`, `CREATE_USER_PASSWORD` и необязательный `CREATE_USER_ROLE=OWNER` в окружении либо временно в локальном `.env`. Новый пароль аккаунта — 8–128 символов; обязательных специальных символов нет. В интерактивном bash/zsh пароль можно прочитать без echo и записи в history:
 
 ```sh
 printf 'Password: '
