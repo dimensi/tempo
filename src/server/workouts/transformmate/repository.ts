@@ -7,7 +7,12 @@ import type { WorkoutPlan } from '@/contracts/workouts';
 import { workoutTransformMateLinks as links } from '@/server/db/schema/transformmate';
 import { syncStateSchema, type SyncLink, type SyncState } from './state';
 
-export function syncRepository(db: ReturnType<typeof getDatabase>['db']) {
+export function syncRepository(
+  db: Pick<
+    ReturnType<typeof getDatabase>['db'],
+    'select' | 'insert' | 'update'
+  >,
+) {
   const encode = (state: SyncState) => {
     const json = JSON.stringify(syncStateSchema.parse(state));
     if (Buffer.byteLength(json, 'utf8') > 8 * 1024 * 1024)

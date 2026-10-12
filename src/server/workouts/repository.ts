@@ -11,6 +11,7 @@ import {
   type WorkoutSessionInput,
   type WorkoutsData,
 } from '@/contracts/workouts';
+import { syncRepository } from './transformmate/repository';
 
 export class WorkoutError extends Error {
   constructor(public status: 404 | 409) {
@@ -84,7 +85,7 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
           }
         }
         const now = new Date().toISOString();
-        return planDto(
+        const saved = planDto(
           tx
             .insert(workoutPlans)
             .values({
@@ -97,6 +98,9 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
             .returning()
             .get(),
         );
+        // Commit the publication intent with the plan; restart can recover without another save.
+        syncRepository(tx).ensure(ownerId, saved);
+        return saved;
       });
     },
     updatePlan(
@@ -105,27 +109,33 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
       revision: number,
       data: WorkoutPlanInput,
     ) {
-      const row = db
-        .update(workoutPlans)
-        .set({
-          data,
-          revision: revision + 1,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(and(planScope(ownerId, id), eq(workoutPlans.revision, revision)))
-        .returning()
-        .get();
-      if (!row)
-        throw new WorkoutError(
-          db
-            .select({ id: workoutPlans.id })
-            .from(workoutPlans)
-            .where(planScope(ownerId, id))
-            .get()
-            ? 409
-            : 404,
-        );
-      return planDto(row);
+      return db.transaction((tx) => {
+        const row = tx
+          .update(workoutPlans)
+          .set({
+            data,
+            revision: revision + 1,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(
+            and(planScope(ownerId, id), eq(workoutPlans.revision, revision)),
+          )
+          .returning()
+          .get();
+        if (!row)
+          throw new WorkoutError(
+            tx
+              .select({ id: workoutPlans.id })
+              .from(workoutPlans)
+              .where(planScope(ownerId, id))
+              .get()
+              ? 409
+              : 404,
+          );
+        const saved = planDto(row);
+        syncRepository(tx).ensure(ownerId, saved);
+        return saved;
+      });
     },
     deletePlan(ownerId: string, id: string, revision: number) {
       const result = db
