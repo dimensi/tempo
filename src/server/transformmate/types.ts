@@ -21,6 +21,8 @@ export interface TransformMateTokenProvider {
 export interface RawResponse<T = unknown> {
   status: number;
   statusText: string;
+  /** Bounded, parsed Retry-After delay; never the raw header. */
+  retryAfterMs?: number;
   contentType: string;
   isJson: boolean;
   body: T;

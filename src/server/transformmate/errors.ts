@@ -4,6 +4,7 @@ import type { RawResponse } from '@/server/transformmate/types';
 export class TransformMateApiError extends Error implements RawResponse {
   readonly status: number;
   readonly statusText: string;
+  readonly retryAfterMs?: number;
   readonly contentType: string;
   readonly isJson: boolean;
   readonly body: unknown;
@@ -13,6 +14,7 @@ export class TransformMateApiError extends Error implements RawResponse {
     this.name = 'TransformMateApiError';
     this.status = response.status;
     this.statusText = response.statusText;
+    this.retryAfterMs = response.retryAfterMs;
     this.contentType = response.contentType;
     this.isJson = response.isJson;
     this.body = response.body;

@@ -8,8 +8,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('@/server/auth/guards', () => ({ authorize: mocks.authorize }));
 vi.mock('@/server/transformmate/runtime', () => ({
-  getTransformMateClient: () => mocks,
   getTransformMateConnectionFence: async () => ({
+    client: mocks,
     generation: 'synthetic-connection',
     assertCurrent: mocks.assertCurrent,
   }),
@@ -27,6 +27,7 @@ import {
   canPlanExercise,
   transformMateCatalogSchema,
 } from '@/server/transformmate/catalog-schema';
+import { invalidateTransformMateCatalog } from '@/server/transformmate/catalog-cache';
 import { exerciseDetailFixture } from '../fixtures/transformmate-exercise';
 const signed = 'https://kinescopecdn.net/video.mp4?sign=private';
 function detail() {
@@ -36,6 +37,7 @@ function detail() {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  invalidateTransformMateCatalog('owner');
   mocks.authorize.mockResolvedValue({ ok: true });
   mocks.getExercise.mockResolvedValue({ body: detail() });
   mocks.assertCurrent.mockResolvedValue(undefined);
@@ -208,6 +210,7 @@ describe('media proxy', () => {
         new Response(body, { headers: { 'Content-Type': 'video/mp4' } }),
       );
     mocks.assertCurrent
+      .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error('Connection changed'));
     const response = await streamExerciseVideo(
