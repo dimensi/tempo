@@ -11,6 +11,7 @@ import {
 } from '@/contracts/nutrition';
 import type { ReportDataset, ReportDataSource } from '@/server/pdf/source';
 import { redesignDay } from '../unit/reports/redesign-fixtures';
+import { formatDecimal } from '@/lib/number-display';
 vi.mock('server-only', () => ({}));
 import { generateReport } from '@/server/pdf/service';
 import { readReportFonts } from '@/server/pdf/fonts';
@@ -105,9 +106,24 @@ it('renders the specified one-page compact day and six records, then measures ph
       fat: '999999999.99',
       carbs: '999999999.99',
     };
-    const empty = redesignDay();
-    empty.meals.forEach((meal) => {
+    const totalsOnly = redesignDay();
+    totalsOnly.meals.forEach((meal) => {
       meal.entries = [];
+    });
+    const empty = structuredClone(totalsOnly);
+    const emptyTotals = {
+      calories: '0',
+      protein: null,
+      fat: '-0e+10',
+      carbs: '0',
+    };
+    empty.totals = { ...emptyTotals };
+    empty.knownTotals = { ...emptyTotals };
+    empty.officialTotals = { ...emptyTotals };
+    empty.meals.forEach((meal) => {
+      meal.totals = { ...emptyTotals };
+      meal.knownTotals = { ...emptyTotals };
+      meal.officialTotals = { ...emptyTotals };
     });
     const second = redesignDay('2026-10-12');
     const cases: Array<{
@@ -123,7 +139,8 @@ it('renders the specified one-page compact day and six records, then measures ph
         expected: 1,
       },
       { name: 'no-photos', days: [baseline], photos: [] },
-      { name: 'empty', days: [empty], photos: [] },
+      { name: 'totals-only', days: [totalsOnly], photos: [] },
+      { name: 'empty', days: [empty], photos: [], expected: 1 },
       {
         name: 'four-photos',
         days: [baseline],
@@ -214,13 +231,13 @@ it('renders the specified one-page compact day and six records, then measures ph
           fit: 'cover',
           position: '50% 50%',
         });
-      expect(geometry.emptyMedia.every((height) => height === 0)).toBe(true);
+      expect(geometry.emptyMedia).toEqual([]);
       for (const columns of geometry.columns)
         columns.forEach((right, index) =>
           expect(right).toBeCloseTo(geometry.columns[0]![index]!, 1),
         );
       expect(await page.locator('.meal-heading .meal-total').count()).toBe(
-        scenario.days.length * 16,
+        scenario.name === 'empty' ? 0 : scenario.days.length * 16,
       );
       expect(await page.locator('.report-page:has(.meal-block)').count()).toBe(
         await page.locator('.table-header').count(),
@@ -325,6 +342,42 @@ it('renders the specified one-page compact day and six records, then measures ph
       }
       if (scenario.name === 'no-photos')
         expect(await page.locator('img').count()).toBe(0);
+      if (scenario.name === 'totals-only') {
+        expect(await page.locator('.meal-block').count()).toBe(4);
+        expect(await page.locator('.empty,.entry,.meal-media').count()).toBe(0);
+        for (const meal of totalsOnly.meals) {
+          expect(
+            await page
+              .locator(`.meal-block[data-meal="${meal.kind}"] .meal-total`)
+              .allTextContents(),
+          ).toEqual(
+            Object.values(meal.totals).map(
+              (value) => formatDecimal(value) ?? '—',
+            ),
+          );
+        }
+        expect(
+          await page.locator('.daily-totals .numeric').allTextContents(),
+        ).toEqual([
+          formatDecimal(totalsOnly.totals.calories),
+          '98,75',
+          '27,8%',
+          '76,55',
+          '48,6%',
+          '83,7',
+          '23,6%',
+        ]);
+      }
+      if (scenario.name === 'empty') {
+        expect(
+          await page
+            .locator('.meal-block,.table-header,.meal-media,.legend--meals')
+            .count(),
+        ).toBe(0);
+        expect(await page.locator('.empty').allTextContents()).toEqual([
+          'Нет записей',
+        ]);
+      }
       if (scenario.name === 'exif-orientation')
         expect(
           await page
@@ -358,7 +411,12 @@ it('renders the specified one-page compact day and six records, then measures ph
       });
       expect(text).not.toContain('mass-unavailable');
       if (scenario.name === 'empty') expect(text).toContain('Нет записей');
-      else {
+      else if (scenario.name === 'totals-only') {
+        expect(text).not.toContain('Нет записей');
+        expect(text.replace(/\s/g, '')).toContain('1460,5');
+        for (const label of ['Завтрак', 'Обед', 'Ужин', 'Перекус'])
+          expect(text).toContain(label);
+      } else {
         expect(text).toContain('00:00:00');
         expect(text.replace(/\s+/g, ' ')).toContain('масса не указана');
       }
