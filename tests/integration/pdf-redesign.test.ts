@@ -16,7 +16,7 @@ vi.mock('server-only', () => ({}));
 import { generateReport } from '@/server/pdf/service';
 import { readReportFonts } from '@/server/pdf/fonts';
 import { renderReportHtml } from '@/server/pdf/template';
-import { prepareReportPage, renderReport } from '@/server/pdf/renderer';
+import { prepareReportPage, renderPdfReport } from '@/server/pdf/renderer';
 
 const directory = await mkdtemp(join(tmpdir(), 'yazio-redesign-'));
 afterAll(async () => {
@@ -484,9 +484,8 @@ it('renders the specified one-page compact day and six records, then measures ph
       ),
     ).rejects.toMatchObject({ code: 'RUNTIME' });
     await expect(
-      renderReport(
+      renderPdfReport(
         '<!doctype html><html><body>No prepared report source</body></html>',
-        'pdf',
       ),
     ).rejects.toMatchObject({ code: 'RUNTIME' });
   } finally {
