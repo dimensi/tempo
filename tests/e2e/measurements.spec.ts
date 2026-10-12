@@ -30,8 +30,11 @@ test('owner denial explains access and retains the complete draft', async ({
 }) => {
   await login(page, 'owner', baseURL!);
   await page.goto('/measurements');
-  await page.getByLabel('Вес (кг)', { exact: true }).fill('72.125');
-  await page.getByLabel('Дата замера').fill('2026-10-11');
+  await page
+    .getByRole('main')
+    .getByLabel('Вес (кг)', { exact: true })
+    .fill('72.125');
+  await page.getByRole('main').getByLabel('Дата замера').fill('2026-10-11');
   await page
     .getByLabel('Заметка', { exact: true })
     .fill('Preserved synthetic draft');
@@ -41,17 +44,21 @@ test('owner denial explains access and retains the complete draft', async ({
       : route.continue(),
   );
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText(
+  await expect(page.getByRole('main').getByRole('alert')).toContainText(
     'Сохранение замеров запрещено',
   );
-  await expect(page.getByRole('alert')).not.toContainText('Проверьте');
-  await expect(page.getByLabel('Вес (кг)', { exact: true })).toHaveValue(
-    '72.125',
+  await expect(page.getByRole('main').getByRole('alert')).not.toContainText(
+    'Проверьте',
   );
-  await expect(page.getByLabel('Дата замера')).toHaveValue('2026-10-11');
-  await expect(page.getByLabel('Заметка', { exact: true })).toHaveValue(
-    'Preserved synthetic draft',
+  await expect(
+    page.getByRole('main').getByLabel('Вес (кг)', { exact: true }),
+  ).toHaveValue('72.125');
+  await expect(page.getByRole('main').getByLabel('Дата замера')).toHaveValue(
+    '2026-10-11',
   );
+  await expect(
+    page.getByRole('main').getByLabel('Заметка', { exact: true }),
+  ).toHaveValue('Preserved synthetic draft');
 });
 
 test('granted trainer reads measurements without write controls and cannot write directly', async ({
@@ -128,7 +135,10 @@ test('owner creates, edits and deletes a manual measurement on mobile and deskto
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/login');
-  await page.getByLabel('Электронная почта').fill('owner@example.test');
+  await page
+    .getByRole('main')
+    .getByLabel('Электронная почта')
+    .fill('owner@example.test');
   await page
     .getByRole('textbox', { name: 'Пароль', exact: true })
     .fill('Test-only-password-12345');
@@ -153,13 +163,22 @@ test('owner creates, edits and deletes a manual measurement on mobile and deskto
   expect(result.ok()).toBe(true);
   await expect(page).toHaveURL('/');
   await page.goto('/measurements');
-  await page.getByLabel('Вес (кг)', { exact: true }).fill('72.125');
-  await page.getByLabel('Заметка', { exact: true }).fill('E2E manual record');
+  await page
+    .getByRole('main')
+    .getByLabel('Вес (кг)', { exact: true })
+    .fill('72.125');
+  await page
+    .getByRole('main')
+    .getByLabel('Заметка', { exact: true })
+    .fill('E2E manual record');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   const row = page.getByRole('row').filter({ hasText: 'E2E manual record' });
   await expect(row).toContainText('72.125');
   await row.getByRole('button', { name: 'Изменить', exact: true }).click();
-  await page.getByLabel('Вес (кг)', { exact: true }).fill('71.5');
+  await page
+    .getByRole('main')
+    .getByLabel('Вес (кг)', { exact: true })
+    .fill('71.5');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(row).toContainText('71.5');
   await page.reload();

@@ -2,7 +2,7 @@ import 'server-only';
 import { z, ZodError } from 'zod';
 import { WorkoutAccessError, WorkoutError } from './index';
 import { workoutMessages as m } from '@/features/workouts';
-import { readServerEnv } from '@/server/env';
+import { hasTrustedOrigin } from '@/server/auth/origin';
 import { SyncAccessError } from './transformmate/service';
 export const workoutUpdateBody = z
   .object({ revision: z.unknown(), data: z.unknown() })
@@ -86,7 +86,5 @@ export async function workoutResponse(operation: () => Promise<unknown>) {
 
 /** Browser mutations require a same-origin request; cookie auth alone is insufficient. */
 export function checkWorkoutOrigin(request: Request) {
-  const origin = request.headers.get('origin');
-  if (!origin || origin !== new URL(readServerEnv().BETTER_AUTH_URL).origin)
-    throw new WorkoutAccessError(403);
+  if (!hasTrustedOrigin(request)) throw new WorkoutAccessError(403);
 }
