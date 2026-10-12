@@ -2,19 +2,20 @@
 
 Better Auth provides password hashing, server-side sessions, HttpOnly cookies and HTTPS Secure cookies. Sessions live in SQLite; client cookie caching is disabled so revoked access and role changes are evaluated server-side. Registration is disabled and role cannot be provided through user input.
 
-| Permission         | OWNER | TRAINER          |
-| ------------------ | ----- | ---------------- |
-| nutrition:read     | yes   | with owner grant |
-| nutrition:write    | yes   | no               |
-| measurements:read  | yes   | with owner grant |
-| measurements:write | yes   | no               |
-| workouts:read      | yes   | with owner grant |
-| workouts:plan      | yes   | with owner grant |
-| workouts:log       | yes   | no               |
-| comments:write     | yes   | with owner grant |
-| reports:export     | yes   | with owner grant |
-| yazio:manage       | yes   | no               |
-| trainers:manage    | yes   | no               |
+| Permission           | OWNER | TRAINER          |
+| -------------------- | ----- | ---------------- |
+| nutrition:read       | yes   | with owner grant |
+| nutrition:write      | yes   | no               |
+| measurements:read    | yes   | with owner grant |
+| measurements:write   | yes   | no               |
+| workouts:read        | yes   | with owner grant |
+| workouts:plan        | yes   | with owner grant |
+| workouts:log         | yes   | no               |
+| comments:write       | yes   | with owner grant |
+| reports:export       | yes   | with owner grant |
+| yazio:manage         | yes   | no               |
+| transformmate:manage | yes   | no               |
+| trainers:manage      | yes   | no               |
 
 `workouts:plan` covers planned workouts; `workouts:log` covers actual workout results and is owner-only. A trainer may read and plan workouts with an owner grant, but cannot log results.
 
@@ -22,6 +23,8 @@ Better Auth provides password hashing, server-side sessions, HttpOnly cookies an
 
 One OWNER is enforced by a partial unique index. CLI creates users transactionally using Better Auth's standard hashPassword and a credential account. It creates no session and exposes no bootstrap HTTP endpoint. `GRANT_OWNER_ACCESS=true` explicitly consents to access for a new trainer; no grant is the default.
 
-Revocation for an operator: remove trainer_access and/or that user's sessions from SQLite in a reviewed operator transaction; an owner-facing management UI is deferred. Do not grant role changes through generic update-user endpoints. YAZIO secrets live in server configuration/token files and never in session payloads. The status endpoint returns only a configured boolean and is owner-only.
+Owners manage trainer access at `/settings#trainers`: create an invitation for an unused email, copy its `/invite#…` link, and revoke or restore access with the displayed controls. Acceptance creates a TRAINER account and its owner grant together; invitations expire after 24 hours and can be used once. Open registration remains disabled. Revocation removes the grant, preserving the trainer account and history; subsequent scoped requests are denied. Settings management is owner-only, so the shared desktop/mobile navigation omits that entry for TRAINER. Direct URLs and APIs still enforce server permissions.
+
+Do not grant role changes through generic update-user endpoints. Provider credentials stay in private server-side encrypted stores and never enter session payloads. Connection management/status is owner-only and exposes safe account/status DTOs, never credentials.
 
 The deployment uses one Next.js process; Better Auth in-memory rate limiting applies within this process. Strong secret, correct HTTPS origin and trusted origin checks are mandatory. Do not disable origin/CSRF checks to accommodate a proxy. Keep the auth URL equal to the external tunnel URL.

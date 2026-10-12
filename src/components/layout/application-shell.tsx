@@ -117,6 +117,8 @@ export function ApplicationShell({
           <Stack h="100%" justify="space-between">
             <nav aria-label={ru.navigation}>
               {ru.sections.map((section, index) => {
+                if (role === 'TRAINER' && section.href === '/settings')
+                  return null;
                 const Icon = icons[index] ?? IconHome;
                 return (
                   <NavLink
