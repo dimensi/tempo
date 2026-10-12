@@ -1,5 +1,6 @@
 export const diaryMessages = {
   title: 'Дневник питания',
+  macroRatio: 'Соотношение БЖУ по массе',
   daySummary: 'Итоги дня',
   dayNavigation: 'Навигация по дням дневника',
   today: 'Сегодня',

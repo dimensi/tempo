@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
+import Decimal from 'decimal.js';
 import {
   Alert,
   Badge,
@@ -23,6 +24,7 @@ import {
   type SafeMealPhotoView,
 } from '@/contracts/nutrition';
 import { diaryMessages as m } from './messages';
+import classes from './diary-view.module.css';
 import {
   displayValue,
   displayIssue,
@@ -56,15 +58,17 @@ function Totals({
   kind?: 'value' | 'delta';
 }) {
   return (
-    <Stack gap="xs">
-      <Text fw={600}>{label}</Text>
-      <SimpleGrid cols={{ base: 2, sm: 4 }}>
+    <Stack gap="xs" className={classes.totals}>
+      <Text fw={600} size="sm">
+        {label}
+      </Text>
+      <div className={classes.nutrients}>
         {(Object.keys(m.nutrients) as (keyof NutritionTotals)[]).map((key) => (
-          <Box key={key}>
+          <Box key={key} className={classes.nutrient} data-nutrient={key}>
             <Text size="sm">{m.nutrients[key]}</Text>
             <Text
               title={totals[key] ?? undefined}
-              style={{ overflowWrap: 'anywhere' }}
+              className={classes.nutrientValue}
             >
               {displayValue(
                 totals[key],
@@ -74,7 +78,35 @@ function Totals({
             </Text>
           </Box>
         ))}
-      </SimpleGrid>
+      </div>
+    </Stack>
+  );
+}
+
+function MacroBar({ totals }: { totals: NutritionTotals }) {
+  const keys = ['protein', 'fat', 'carbs'] as const;
+  if (keys.some((key) => totals[key] === null)) return null;
+  const values = keys.map((key) => new Decimal(totals[key]!));
+  if (values.some((value) => value.isNegative())) return null;
+  const sum = values.reduce(
+    (total, value) => total.plus(value),
+    new Decimal(0),
+  );
+  if (sum.isZero()) return null;
+  return (
+    <Stack gap={6} className={classes.macroSummary}>
+      <Text size="xs">{m.macroRatio}</Text>
+      <div className={classes.macroBar} role="img" aria-label={m.macroRatio}>
+        {keys.map((key, index) => (
+          <span
+            key={key}
+            data-nutrient={key}
+            style={{
+              width: `${values[index]!.div(sum).times(100).toNumber()}%`,
+            }}
+          />
+        ))}
+      </div>
     </Stack>
   );
 }
@@ -96,14 +128,16 @@ function Summary({
   return (
     <Stack gap="sm">
       <Totals totals={totals} label={m.totals} />
+      <MacroBar totals={totals} />
       {showSource && <Text size="sm">{m.sourceNote}</Text>}
       {Object.values(totals).some((value) => value === null) && (
-        <Alert color="yellow">{m.partial}</Alert>
+        <Text size="sm">{m.partial}</Text>
       )}
       {differences.length > 0 && (
         <Alert
           color="yellow"
           role="alert"
+          p="sm"
           title={m.mismatch}
           styles={{
             title: { color: 'var(--mantine-color-text)' },
@@ -131,9 +165,7 @@ function Summary({
               <Totals totals={knownTotals} label={m.known} />
               <Totals totals={officialTotals} label={m.official} />
               <Totals totals={delta} label={m.delta} kind="delta" />
-              <Text size="sm" c="dimmed">
-                {m.roundingNote}
-              </Text>
+              <Text size="sm">{m.roundingNote}</Text>
             </Stack>
           </Accordion.Panel>
         </Accordion.Item>
@@ -167,16 +199,24 @@ export function DiaryView({
     }
   }
   return (
-    <Stack gap="lg" style={{ minWidth: 0 }}>
+    <Stack gap="md" className={classes.diary}>
       <Group justify="space-between">
-        <Title order={1}>{m.title}</Title>
+        <Title order={1} size="h2">
+          {m.title}
+        </Title>
         {source === 'demo' && <Badge color="orange">{m.demo}</Badge>}
       </Group>
       {navigationSlot}
       {!day ? (
         <Alert>{m.empty}</Alert>
       ) : (
-        <Card withBorder component="section" aria-label={m.daySummary}>
+        <Card
+          withBorder
+          radius="md"
+          padding="md"
+          component="section"
+          aria-label={m.daySummary}
+        >
           <Summary {...day} showSource />
         </Card>
       )}
@@ -196,18 +236,23 @@ export function DiaryView({
             withBorder
             component="section"
             aria-label={m.meals[kind]}
+            radius="md"
+            padding="md"
+            className={classes.meal}
           >
             <Stack>
-              <Title order={2}>{m.meals[kind]}</Title>
+              <Title order={2} size="h3">
+                {m.meals[kind]}
+              </Title>
               {meal &&
                 (meal.entries.length > 0 ||
                   noticeableDifferences(meal.delta).length > 0) && (
                   <Summary {...meal} />
                 )}
-              {!meal?.entries.length && <Text c="dimmed">{m.noEntries}</Text>}
+              {!meal?.entries.length && <Text>{m.noEntries}</Text>}
               {meal?.entries.map((entry) => (
-                <Card key={entry.id} withBorder>
-                  <Stack>
+                <Box key={entry.id} className={classes.entry}>
+                  <Stack gap="xs">
                     <Group>
                       <Text fw={600} style={{ overflowWrap: 'anywhere' }}>
                         {entry.name}
@@ -215,19 +260,28 @@ export function DiaryView({
                       {entry.kind === 'ai' && <Badge>{m.ai}</Badge>}
                     </Group>
                     <Totals totals={entry.totals} label={m.entryTotals} />
-                    <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                      {entryAmounts(entry).map(([label, value]) => (
-                        <Text
-                          key={label}
-                          size="sm"
-                          style={{ overflowWrap: 'anywhere' }}
-                        >
-                          {label}: {value}
-                        </Text>
-                      ))}
-                    </SimpleGrid>
+                    <Group gap="xs" className={classes.amounts}>
+                      {entryAmounts(entry)
+                        .filter(([, value]) => value !== m.unknown)
+                        .map(([label, value]) => (
+                          <Text
+                            key={label}
+                            size="sm"
+                            style={{ overflowWrap: 'anywhere' }}
+                          >
+                            {label}: {value}
+                          </Text>
+                        ))}
+                    </Group>
                     {entry.issues.length > 0 && (
-                      <Alert color="yellow" title={m.issues}>
+                      <Alert
+                        color="yellow"
+                        title={m.issues}
+                        styles={{
+                          title: { color: 'var(--mantine-color-text)' },
+                          message: { color: 'var(--mantine-color-text)' },
+                        }}
+                      >
                         <Stack gap="xs">
                           {entry.issues.map((issue, index) => (
                             <Text
@@ -242,17 +296,18 @@ export function DiaryView({
                       </Alert>
                     )}
                   </Stack>
-                </Card>
+                </Box>
               ))}
               {mealPhotos.length > 0 && <Text fw={600}>{m.photos}</Text>}
-              <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} className={classes.photos}>
                 {mealPhotos.map((photo) => (
                   <Stack key={photo.id}>
                     <Image
                       src={photo.href}
                       alt={`${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
                       radius="md"
-                      h={220}
+                      mah={260}
+                      style={{ aspectRatio: '4 / 3' }}
                       fit="contain"
                     />
                     <Text size="sm">
