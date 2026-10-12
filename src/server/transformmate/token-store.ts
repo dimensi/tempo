@@ -207,6 +207,11 @@ export function fileTransformMateTokenStore(
         if (!current.token) throw new TransformMateStaleConnectionError();
       });
     },
+    async assertLoadedCurrent() {
+      return serialized(path, async () => {
+        assertGeneration(await read());
+      });
+    },
     async offlineBinding() {
       return serialized(path, async () => {
         const current = await read();
