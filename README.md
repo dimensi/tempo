@@ -88,6 +88,7 @@ ID token обновляется автоматически; `TRANSFORMMATE_ID_TO
 Клиент имеет типизированные `getTrainings()` / `getTraining(id)` с runtime validation
 реального wire-контракта. CRUD/write методы используют отдельные DTO и подтверждённый APK + live probes PATCH contract.
 [Write contract, lifecycle и ограничения](docs/architecture/transformmate-write.md).
+[Exercise detail, видео и заголовки клиента](docs/architecture/transformmate-exercises.md).
 Маппинга в WorkoutPlan/WorkoutSession и изменений БД нет.
 
 ## Развёртывание

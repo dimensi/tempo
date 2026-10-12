@@ -12,6 +12,11 @@ const json = (body: unknown, status = 200) =>
     status,
     headers: { 'content-type': 'application/json' },
   });
+const transportHeaders = {
+  Accept: 'application/json; version=1.3',
+  'Accept-Language': 'ru',
+  'User-Agent': 'yazio-dashboard (TransformMate integration)',
+};
 const provider = () => ({ getIdToken: vi.fn().mockResolvedValue(token) });
 
 describe('TransformMate transport', () => {
@@ -48,7 +53,7 @@ describe('TransformMate transport', () => {
       );
       expect(request.mock.calls[0]?.[1]).toMatchObject({
         method: 'GET',
-        headers: { Authorization: `JWT ${token}` },
+        headers: { ...transportHeaders, Authorization: `JWT ${token}` },
         redirect: 'error',
         cache: 'no-store',
       });
@@ -78,8 +83,8 @@ describe('TransformMate transport', () => {
       [{ forceRefresh: true }],
     ]);
     expect(request.mock.calls.map((call) => call[1]?.headers)).toEqual([
-      { Authorization: `JWT ${token}` },
-      { Authorization: `JWT ${nextToken}` },
+      { ...transportHeaders, Authorization: `JWT ${token}` },
+      { ...transportHeaders, Authorization: `JWT ${nextToken}` },
     ]);
   });
 

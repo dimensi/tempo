@@ -168,6 +168,7 @@ GET, delete — пустой `body: ''`. Ошибки HTTP выбрасываю�
 | Method                         | Arguments                                                                                                                                      |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | listTrainings                  | none                                                                                                                                           |
+| getExercise                    | exerciseId (catalog ID); typed detail including video sources                                                                                  |
 | getTraining                    | trainingId                                                                                                                                     |
 | createTraining                 | CreateTrainingInput: name, description, date, optional protocols                                                                               |
 | updateTraining                 | trainingId, UpdateTrainingInput (partial header/timestamps/protocols)                                                                          |
@@ -211,3 +212,5 @@ Remove последнего exercise удаляет его пустой protocol
 FirebaseSession кэширует ID token и обновляет его автоматически. Rotation refresh token
 можно обработать через onRefreshToken; клиент не сохраняет обновлённый refresh token на диск.
 Подробности и безопасный CLI запуск — [auth/probe guide](transformmate-probe.md).
+
+[Exercise detail, video fields and request headers](transformmate-exercises.md).
