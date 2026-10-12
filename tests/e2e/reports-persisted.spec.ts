@@ -122,7 +122,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'Неделя', exact: true }).click();
     await expect(
-      page.getByLabel('Начало периода', { exact: true }),
+      page.getByLabel('Начало периода'),
     ).toHaveValue('2026-10-12');
     await expect(
       page.getByText(
@@ -134,14 +134,14 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       ['2026-01-29', '29 января 2026 г. — 4 февраля 2026 г.'],
       ['2026-12-29', '29 декабря 2026 г. — 4 января 2027 г.'],
     ]) {
-      await page.getByLabel('Начало периода', { exact: true }).fill(start!);
+      await page.getByLabel('Начало периода').fill(start!);
       await expect(
         page.getByText(`Период отчёта: ${label} · 7 дней`, { exact: true }),
       ).toBeVisible();
     }
     expect(
       await page
-        .getByLabel('Начало периода', { exact: true })
+        .getByLabel('Начало периода')
         .evaluate((input) =>
           Number.parseFloat(getComputedStyle(input).fontSize),
         ),
@@ -153,7 +153,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
           Number.parseFloat(getComputedStyle(input).fontSize),
         ),
     ).toBeGreaterThanOrEqual(16);
-    await page.getByLabel('Начало периода', { exact: true }).fill('2026-10-12');
+    await page.getByLabel('Начало периода').fill('2026-10-12');
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page
       .getByRole('option', { name: 'Произвольный период', exact: true })
