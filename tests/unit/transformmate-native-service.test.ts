@@ -47,8 +47,13 @@ describe('native readonly importer', () => {
     client.getTrainings.mockResolvedValue({
       body: [trainingSummaryFixture(), trainingSummaryFixture()],
     });
-    expect((await service.refresh(query)).refresh.status).toBe('fresh');
-    expect((await service.refresh(query)).refresh.status).toBe('cooldown');
+    const [first, second] = await Promise.all([
+      service.refresh(query),
+      service.refresh(query),
+    ]);
+    expect(first.refresh.status).toBe('fresh');
+    expect(second.refresh.status).toBe('fresh');
+    expect(client.getTrainings).toHaveBeenCalledTimes(1);
     expect(client.getTraining).toHaveBeenCalledTimes(1);
     expect(repository.save).toHaveBeenCalledTimes(1);
     expect(

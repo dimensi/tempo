@@ -25,7 +25,6 @@ type NativeRefreshResult = {
   refresh: TransformMateNativeRefresh;
   nextCursor: string | null;
 };
-const recent = new Map<string, { at: number; result: NativeRefreshResult }>();
 const pending = new Map<string, Promise<NativeRefreshResult>>();
 
 /** Read-only importer. Call after linked-record recovery, inside the owner queue. */
@@ -68,14 +67,6 @@ export function nativeService(context: NativeContext) {
       await guard();
       return result;
     }
-    const cached = recent.get(key);
-    if (cached && Date.now() - cached.at < 60_000)
-      return cached.result.refresh.status === 'fresh'
-        ? {
-            ...cached.result,
-            refresh: { ...cached.result.refresh, status: 'cooldown' },
-          }
-        : cached.result;
     const client = context.client;
     const run = async (): Promise<NativeRefreshResult> => {
       const checkedAt = new Date().toISOString();
@@ -147,8 +138,6 @@ export function nativeService(context: NativeContext) {
     try {
       const result = await work;
       await guard();
-      if (recent.size >= 256) recent.delete(recent.keys().next().value!);
-      recent.set(key, { at: Date.now(), result });
       return result;
     } finally {
       pending.delete(key);
