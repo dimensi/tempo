@@ -196,15 +196,16 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
   await page
     .getByRole('button', { name: 'Добавить тренировку', exact: true })
     .click();
-  const dialog = page.getByRole('dialog');
+  const dialog = page;
+  const copyDialog = page.getByRole('dialog');
   const title = `Каталог ${test.info().project.name} ${Date.now()}`;
   await dialog
-    .getByRole('textbox', { name: 'Название тренировки 1', exact: true })
+    .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(title);
   await dialog
     .getByRole('button', { name: 'Добавить упражнение', exact: true })
     .click();
-  const picker = page.getByRole('dialog', { name: 'Добавить упражнение' });
+  const picker = page;
   await picker.getByLabel('Поиск упражнений TransformMate').fill('присед');
   await expect(
     picker.getByRole('button', { name: 'Не поддержано' }),
@@ -247,7 +248,7 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
     .getByRole('button', { name: 'Ввести упражнение вручную', exact: true })
     .click();
   const manualName = dialog.getByRole('textbox', {
-    name: 'Упражнение 1',
+    name: 'Упражнение',
     exact: true,
   });
   await expect(manualName).toBeEditable();
@@ -262,14 +263,16 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
   await expect(dialog.getByText('Держите спину ровно')).toBeVisible();
   await expect(dialog.locator('video')).toHaveCount(0);
 
+  await page.getByRole('button', { name: 'Комментарий и порядок' }).click();
   await dialog.getByLabel('Комментарий к упражнению').fill('Медленно');
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(dialog).not.toBeVisible();
+  await expect(page).toHaveURL(/\/workouts\?date=/);
   const plans = (
     await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json()
   ).data.plans;
   const original = plans.find(
-    (plan: { title: string }) => plan.title === title,
+    (plan: { workouts: { title: string }[] }) =>
+      plan.workouts[0]?.title === title,
   );
   expect(original.workouts[0].exercises[0].transformMate.exerciseId).toBe(7);
   syncItems = [
@@ -328,22 +331,23 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
   );
   await page
     .getByTestId(`plan-${original.id}`)
-    .getByRole('button', { name: 'Копировать на новые даты' })
+    .getByRole('button', { name: 'Копировать на другую дату' })
     .click();
-  await dialog.getByLabel('Новая дата начала').fill('2026-10-24');
-  await dialog
-    .getByRole('button', { name: 'Копировать на новые даты' })
+  await copyDialog.getByLabel('Новая дата').fill('2026-10-24');
+  await copyDialog
+    .getByRole('button', { name: 'Копировать на другую дату' })
     .click();
-  await expect(dialog.getByLabel('Дата 1')).toHaveValue('2026-10-24');
-  await dialog
-    .getByRole('textbox', { name: 'Название плана', exact: true })
+  await expect(dialog.getByLabel('Дата')).toHaveValue('2026-10-24');
+  await page
+    .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(`${title} копия`);
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(dialog).not.toBeVisible();
+  await expect(page).toHaveURL(/\/workouts\?date=/);
   const copied = (
     await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json()
   ).data.plans.find(
-    (plan: { title: string }) => plan.title === `${title} копия`,
+    (plan: { workouts: { title: string }[] }) =>
+      plan.workouts[0]?.title === `${title} копия`,
   );
   expect(copied.workouts[0].id).not.toBe(original.workouts[0].id);
   expect(copied.workouts[0].exercises[0].transformMate.occurrenceKey).not.toBe(
@@ -355,6 +359,7 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  await page.goto('/workouts?date=2026-03-29');
   await page.getByRole('button', { name: 'Все дни этого плана' }).click();
   await page
     .getByTestId(`plan-${original.id}`)
@@ -363,7 +368,7 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
   await dialog
     .getByRole('button', { name: 'Подтвердить удаление', exact: true })
     .click();
-  await expect(dialog).not.toBeVisible();
+  await expect(page).toHaveURL(/\/workouts\?date=/);
   await expect(page.getByRole('tab', { name: 'История' })).toHaveCount(0);
   await expect(
     page.getByText('Ноги TransformMate', { exact: true }),

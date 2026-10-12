@@ -1,4 +1,5 @@
 'use client';
+import { workoutTitle } from '@/lib/workout-title';
 import {
   useEffect,
   useLayoutEffect,
@@ -374,10 +375,8 @@ function Workouts({ snapshot }: { snapshot: OfflineSnapshot }) {
       ) : (
         snapshot.plannedWorkouts.map((workout) => (
           <Stack key={workout.key} className={classes.entry}>
-            <Title order={3}>
-              {workout.date} · {workout.title}
-            </Title>
-            <Text>{workout.planTitle}</Text>
+            <Title order={3}>{workoutTitle(workout.title, workout.date)}</Title>
+            {workout.planTitle && <Text>{workout.planTitle}</Text>}
             {workout.planDescription && <Text>{workout.planDescription}</Text>}
             <LocalExercises exercises={workout.exercises} />
           </Stack>
@@ -389,9 +388,7 @@ function Workouts({ snapshot }: { snapshot: OfflineSnapshot }) {
       ) : (
         snapshot.workoutSessions.map((workout) => (
           <Stack key={workout.key} className={classes.entry}>
-            <Title order={3}>
-              {workout.date} · {workout.title}
-            </Title>
+            <Title order={3}>{workoutTitle(workout.title, workout.date)}</Title>
             <Text>{m.status[workout.status]}</Text>
             {workout.planTitle && <Text>{workout.planTitle}</Text>}
             {workout.note && <Text>{workout.note}</Text>}

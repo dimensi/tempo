@@ -1,0 +1,15 @@
+.palette {
+  --nutrient-calories: light-dark(#b93800, var(--mantine-color-orange-3));
+  --nutrient-protein: light-dark(
+    var(--mantine-color-blue-8),
+    var(--mantine-color-blue-3)
+  );
+  --nutrient-fat: light-dark(
+    var(--mantine-color-grape-8),
+    var(--mantine-color-grape-3)
+  );
+  --nutrient-carbs: light-dark(
+    var(--mantine-color-teal-9),
+    var(--mantine-color-teal-3)
+  );
+}

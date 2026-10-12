@@ -84,7 +84,7 @@ export function Catalog({
   return (
     <Stack gap="xs">
       <Text size="sm" c="var(--mantine-color-text)">
-        {selected ? m.linked : m.manual}
+        {selected ? m.linked : searchable ? m.catalogPrompt : m.manual}
       </Text>
       {searchable && (
         <TextInput

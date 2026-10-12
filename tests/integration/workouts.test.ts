@@ -154,3 +154,24 @@ it('real authorization allows granted trainer plans, rejects trainer actual writ
     api.createWorkoutSession(headers, 'owner', actual),
   ).resolves.toMatchObject({ status: 'completed' });
 });
+
+it('persists blank local names and preserves them in result snapshots', () => {
+  const input = {
+    ...planInput,
+    title: '',
+    workouts: [{ ...planInput.workouts[0]!, title: '' }],
+  };
+  const plan = repository.createPlan('owner', input);
+  const session = repository.createSession('owner', {
+    ...actual,
+    title: '',
+    planId: plan.id,
+    plannedWorkoutId: input.workouts[0]!.id,
+  });
+  expect(
+    repository.list('owner').plans.find((item) => item.id === plan.id)?.title,
+  ).toBe('');
+  expect(session.title).toBe('');
+  expect(session.planSnapshot?.planTitle).toBe('');
+  expect(session.planSnapshot?.workout.title).toBe('');
+});

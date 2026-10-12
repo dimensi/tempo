@@ -52,17 +52,17 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
     .getByRole('button', { name: 'Добавить тренировку', exact: true })
     .click();
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('textbox', { name: 'Название тренировки 1', exact: true })
+  await page
+    .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(title);
-  await dialog
-    .getByRole('textbox', { name: 'Упражнение 1', exact: true })
+  await page
+    .getByRole('textbox', { name: 'Упражнение', exact: true })
     .fill('Приседание');
-  await dialog.getByLabel('Вес, кг 1.1', { exact: true }).fill('40');
-  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(dialog).not.toBeVisible();
-  const plan = (await workouts(page, id)).plans.find(
-    (value) => value.title === title,
+  await page.getByLabel('Вес, кг', { exact: true }).fill('40');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page).toHaveURL(/\/workouts\?date=/);
+  const plan = (await workouts(page, id)).plans.find((value) =>
+    value.workouts.some((workout) => workout.title === title),
   )!;
   const nextDay = new Date(`${plan.endsOn}T12:00:00Z`);
   nextDay.setUTCDate(nextDay.getUTCDate() + 1);
@@ -92,7 +92,7 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
   await page.reload();
   const card = page.getByTestId(`plan-${plan.id}`);
   await card.getByRole('button', { name: 'Записать результат' }).click();
-  await dialog.getByLabel('Вес, кг 1.1', { exact: true }).fill('35');
+  await dialog.getByLabel('Вес, кг', { exact: true }).fill('35');
   await dialog
     .getByLabel('Заметка', { exact: true })
     .fill('Фактическая нагрузка');
@@ -106,14 +106,14 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
     .getByRole('button', { name: 'Изменить тренировку', exact: true })
     .click();
   await expect(
-    dialog.getByRole('button', { name: /Удалить тренировку/ }),
+    page.getByRole('button', { name: /Удалить тренировку/ }),
   ).toHaveCount(0);
-  await dialog
-    .getByRole('textbox', { name: 'Название тренировки 1', exact: true })
+  await page
+    .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(`${title} изменён`);
-  await dialog.getByLabel('Вес, кг 1.1', { exact: true }).fill('60');
-  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(dialog).not.toBeVisible();
+  await page.getByLabel('Вес, кг', { exact: true }).fill('60');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page).toHaveURL(/\/workouts\?date=/);
   const editedPlan = (await workouts(page, id)).plans.find(
     (value) => value.id === plan.id,
   )!;
@@ -183,6 +183,9 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
         exact: true,
       }),
     ).toHaveCount(0);
+    await trainer.goto('/workouts/new?date=2026-10-11');
+    await expect(trainer.getByLabel('Название (необязательно)')).toBeEditable();
+    await trainer.goto('/workouts?date=2026-10-11');
     const input = {
       title: 'План тренера',
       description: '',
@@ -287,6 +290,11 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     expect(
       (await trainer.request.get(`/api/workouts?ownerId=${id}`)).status(),
     ).toBe(403);
+    await trainer.goto(`/workouts/plans/${plan.id}/edit?date=2026-10-11`);
+    await expect(
+      trainer.getByText('Нет разрешения на доступ к тренировкам владельца.'),
+    ).toBeVisible();
+    await expect(trainer.getByLabel('Название (необязательно)')).toHaveCount(0);
   } finally {
     database
       .prepare('DELETE FROM trainer_access WHERE trainer_id = ?')
@@ -294,4 +302,216 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     database.close();
     await context.close();
   }
+});
+
+test('unnamed editor preserves drafts, handles errors and copies only the selected planned workout', async ({
+  page,
+}) => {
+  await login(page);
+  const id = await ownerId(page);
+  const exerciseName = `Draft press ${test.info().project.name}`;
+  const date = '2026-10-12';
+  await page.goto(`/workouts?date=${date}`);
+  await page
+    .getByRole('button', { name: 'Добавить тренировку', exact: true })
+    .click();
+  await expect(page).toHaveURL(`/workouts/new?date=${date}`);
+  await expect(page.getByLabel('Название (необязательно)')).not.toHaveAttribute(
+    'required',
+    '',
+  );
+  await page
+    .getByRole('textbox', { name: 'Упражнение', exact: true })
+    .fill(exerciseName);
+  await page.getByLabel('Вес, кг', { exact: true }).fill('42');
+  await page.getByRole('button', { name: 'Выбрать из каталога' }).click();
+  await page.getByLabel('Поиск упражнений TransformMate').fill('жим');
+  await expect(page.getByLabel('Вес, кг', { exact: true })).toHaveValue('42');
+  await page.getByRole('button', { name: 'К тренировкам' }).click();
+  await expect(page).toHaveURL(`/workouts?date=${date}`);
+  await page.goBack();
+  await expect(
+    page.getByRole('textbox', { name: 'Упражнение', exact: true }),
+  ).toHaveValue(exerciseName);
+  await expect(page.getByLabel('Вес, кг', { exact: true })).toHaveValue('42');
+  const keys: string[] = [];
+  let fail = true;
+  await page.route('**/api/workouts/plans?*', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    keys.push(route.request().headers()['idempotency-key']!);
+    if (fail) {
+      fail = false;
+      return route.fulfill({
+        status: 500,
+        json: { error: 'synthetic failure' },
+      });
+    }
+    return route.continue();
+  });
+  await page
+    .getByRole('textbox', { name: 'Дата', exact: true })
+    .fill('2026-10-13');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(
+    page.getByText('Не удалось сохранить изменения. Попробуйте ещё раз.', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByLabel('Вес, кг', { exact: true })).toHaveValue('42');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page).toHaveURL('/workouts?date=2026-10-13');
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  const created = (await workouts(page, id)).plans.find(
+    (plan) => plan.workouts[0]?.exercises[0]?.name === exerciseName,
+  )!;
+  expect(created.title).toBe('');
+  expect(created.workouts[0]!.title).toBe('');
+  expect(created.startsOn).toBe('2026-10-13');
+  expect(created.endsOn).toBe('2026-10-13');
+  await expect(page.getByTestId(`plan-${created.id}`)).toContainText(
+    'Тренировка · 13 октября',
+  );
+  const other = {
+    ...created.workouts[0]!,
+    id: crypto.randomUUID(),
+    date: '2026-10-14',
+    title: 'Другой день',
+  };
+  expect(
+    (
+      await page.request.put(
+        `/api/workouts/plans/${created.id}?ownerId=${id}`,
+        {
+          headers: {
+            origin: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+          },
+          data: {
+            revision: created.revision,
+            data: {
+              title: '',
+              description: '',
+              startsOn: created.startsOn,
+              endsOn: other.date,
+              workouts: [...created.workouts, other],
+            },
+          },
+        },
+      )
+    ).ok(),
+  ).toBe(true);
+  await page.reload();
+  await page
+    .getByTestId(`plan-${created.id}`)
+    .getByRole('button', { name: 'Копировать на другую дату' })
+    .click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Новая дата').fill('2026-10-24');
+  await dialog
+    .getByRole('button', { name: 'Копировать на другую дату' })
+    .click();
+  await expect(
+    page.getByRole('textbox', { name: 'Дата', exact: true }),
+  ).toHaveValue('2026-10-24');
+  expect(
+    (await workouts(page, id)).plans.some(
+      (plan) =>
+        plan.startsOn === '2026-10-24' &&
+        plan.workouts[0]?.exercises[0]?.name === exerciseName,
+    ),
+  ).toBe(false);
+  await expect(
+    page.getByRole('textbox', { name: 'Упражнение', exact: true }),
+  ).toHaveValue(exerciseName);
+  await page.screenshot({
+    path: test.info().outputPath('workout-editor.png'),
+    fullPage: true,
+  });
+  await page.getByRole('button', { name: 'Переключить тему' }).click();
+  await page.screenshot({
+    path: test.info().outputPath('workout-editor-dark.png'),
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole('button', { name: 'К тренировкам' }).click();
+  await expect(page).toHaveURL('/workouts?date=2026-10-13');
+  await page.goBack();
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page).toHaveURL('/workouts?date=2026-10-24');
+  const copied = (await workouts(page, id)).plans.find(
+    (plan) =>
+      plan.startsOn === '2026-10-24' &&
+      plan.workouts[0]?.exercises[0]?.name === exerciseName,
+  )!;
+  expect(copied.workouts).toHaveLength(1);
+  expect(copied.workouts[0]!.id).not.toBe(created.workouts[0]!.id);
+  expect(
+    (await workouts(page, id)).sessions.filter(
+      (session) => session.planId === copied.id,
+    ),
+  ).toHaveLength(0);
+});
+
+test('a save settling after Back does not redirect or repeat the write', async ({
+  page,
+}) => {
+  test.skip(
+    test.info().project.name !== 'desktop',
+    'Viewport-independent asynchronous navigation guard.',
+  );
+  await login(page);
+  const id = await ownerId(page);
+  await page.goto('/workouts?date=2026-10-12');
+  await page
+    .getByRole('button', { name: 'Добавить тренировку', exact: true })
+    .click();
+  await page
+    .getByRole('textbox', { name: 'Упражнение', exact: true })
+    .fill('Delayed save');
+  await page
+    .getByRole('textbox', { name: 'Дата', exact: true })
+    .fill('2026-10-13');
+  let release!: () => void;
+  let notifySaved!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const saved = new Promise<void>((resolve) => {
+    notifySaved = resolve;
+  });
+  let posts = 0;
+  await page.route('**/api/workouts/plans?*', async (route) => {
+    posts++;
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    notifySaved();
+    await gate;
+    await route.fulfill({ response });
+  });
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await saved;
+  await page.goBack();
+  await expect(page).toHaveURL('/workouts?date=2026-10-12');
+  release();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          Object.keys(sessionStorage).filter((key) =>
+            key.startsWith('workout-draft:'),
+          ).length,
+      ),
+    )
+    .toBe(0);
+  await expect(page).toHaveURL('/workouts?date=2026-10-12');
+  expect(posts).toBe(1);
+  expect(
+    (await workouts(page, id)).plans.filter(
+      (plan) => plan.workouts[0]?.exercises[0]?.name === 'Delayed save',
+    ),
+  ).toHaveLength(1);
 });

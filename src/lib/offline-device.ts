@@ -130,6 +130,12 @@ function browserGateStorage() {
   }
 }
 export function notifyOfflineBlocked() {
+  try {
+    for (const key of Object.keys(sessionStorage))
+      if (key.startsWith('workout-draft:')) sessionStorage.removeItem(key);
+  } catch {
+    /* Storage may be disabled. */
+  }
   memoryBlocked = true;
   concealOfflineContent();
   if (typeof window !== 'undefined')

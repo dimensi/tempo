@@ -1,7 +1,6 @@
 .diary {
+  composes: palette from '@/config/nutrient-colors.module.css';
   width: 100%;
-  max-width: 960px;
-  margin-inline: auto;
   min-width: 0;
 }
 
@@ -19,16 +18,16 @@
 }
 
 .nutrient[data-nutrient='calories'] {
-  --nutrient-color: #b93800;
+  --nutrient-color: var(--nutrient-calories);
 }
 .nutrient[data-nutrient='protein'] {
-  --nutrient-color: var(--mantine-color-blue-8);
+  --nutrient-color: var(--nutrient-protein);
 }
 .nutrient[data-nutrient='fat'] {
-  --nutrient-color: var(--mantine-color-grape-8);
+  --nutrient-color: var(--nutrient-fat);
 }
 .nutrient[data-nutrient='carbs'] {
-  --nutrient-color: var(--mantine-color-teal-9);
+  --nutrient-color: var(--nutrient-carbs);
 }
 
 .nutrientValue {
@@ -58,9 +57,9 @@
   min-width: 0;
 }
 .macroSummary {
-  --macro-protein: var(--mantine-color-blue-8);
-  --macro-fat: var(--mantine-color-grape-8);
-  --macro-carbs: var(--mantine-color-teal-9);
+  --macro-protein: var(--nutrient-protein);
+  --macro-fat: var(--nutrient-fat);
+  --macro-carbs: var(--nutrient-carbs);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -88,11 +87,6 @@
 .macroSwatch[data-nutrient='carbs'] {
   background: var(--macro-carbs);
 }
-[data-mantine-color-scheme='dark'] .macroSummary {
-  --macro-protein: var(--mantine-color-blue-3);
-  --macro-fat: var(--mantine-color-grape-3);
-  --macro-carbs: var(--mantine-color-teal-3);
-}
 @media (max-width: 767px) {
   .mealHeader[data-has-photo] {
     grid-template-columns: minmax(0, 1fr);
@@ -101,19 +95,6 @@
     max-width: 360px;
   }
 }
-[data-mantine-color-scheme='dark'] .nutrient {
-  --nutrient-color: var(--mantine-color-orange-3);
-}
-[data-mantine-color-scheme='dark'] .nutrient[data-nutrient='protein'] {
-  --nutrient-color: var(--mantine-color-blue-3);
-}
-[data-mantine-color-scheme='dark'] .nutrient[data-nutrient='fat'] {
-  --nutrient-color: var(--mantine-color-grape-3);
-}
-[data-mantine-color-scheme='dark'] .nutrient[data-nutrient='carbs'] {
-  --nutrient-color: var(--mantine-color-teal-3);
-}
-
 @media (max-width: 480px) {
   .nutrients {
     grid-template-columns: repeat(2, minmax(0, 1fr));

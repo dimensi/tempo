@@ -10,6 +10,7 @@
   border-radius: var(--mantine-radius-md);
 }
 .calories {
+  color: var(--nutrient-calories);
   font-size: 40px;
   font-weight: 600;
   margin-block: 20px;
@@ -20,4 +21,35 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
+}
+
+.nutrition {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 24px;
+  align-items: center;
+}
+.chart {
+  min-width: 0;
+  padding-block: 16px;
+}
+.macro {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-inline-end: 6px;
+}
+@media (max-width: 767px) {
+  .nutrition {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .today {
+    padding: 16px;
+  }
 }

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const id = z.string().min(1).max(128);
 const name = z.string().trim().min(1).max(160);
+const title = z.string().trim().max(160);
 const weight = z.number().min(0).max(2000).nullable();
 export const workoutSetSchema = z
   .object({
@@ -27,13 +28,13 @@ export const plannedWorkoutSchema = z
   .object({
     id,
     date: z.iso.date(),
-    title: name,
+    title,
     exercises: z.array(workoutExerciseSchema).min(1).max(50),
   })
   .strict();
 export const workoutPlanInputSchema = z
   .object({
-    title: name,
+    title,
     description: z.string().trim().max(4000),
     startsOn: z.iso.date(),
     endsOn: z.iso.date(),
@@ -84,7 +85,7 @@ export const workoutPlanInputSchema = z
 export const workoutSessionInputSchema = z
   .object({
     date: z.iso.date(),
-    title: name,
+    title,
     exercises: z.array(workoutExerciseSchema).max(50),
     note: z.string().trim().max(4000),
     status: z.enum(['in_progress', 'completed', 'skipped']),
@@ -112,7 +113,7 @@ export const workoutSessionSchema = workoutSessionInputSchema.safeExtend({
   planId: id.nullable(),
   plannedWorkoutId: id.nullable(),
   planSnapshot: z
-    .object({ planTitle: name, workout: plannedWorkoutSchema })
+    .object({ planTitle: title, workout: plannedWorkoutSchema })
     .nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),

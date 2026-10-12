@@ -10,7 +10,7 @@ import {
   Stack,
   Textarea,
   TextInput,
-  Title,
+  Text,
 } from '@mantine/core';
 import {
   workoutPlanInputSchema,
@@ -19,6 +19,7 @@ import {
   type WorkoutSessionInput,
 } from '@/contracts/workouts';
 import { ExerciseEditor, emptyExercise } from './exercise-editor';
+import { workoutTitle } from '@/lib/workout-title';
 import { workoutMessages as m } from './messages';
 
 export const today = () => new Date().toLocaleDateString('en-CA');
@@ -62,14 +63,22 @@ export function PlanForm({
   onSave,
   ownerId,
   workoutId,
+  onChange,
+  preservePeriod = false,
   ...controls
 }: Controls & {
   ownerId: string;
   workoutId?: string;
+  preservePeriod?: boolean;
   initial: WorkoutPlanInput;
+  onChange?: (value: WorkoutPlanInput) => void;
   onSave: (value: WorkoutPlanInput) => void;
 }) {
-  const [value, setValue] = useState(initial);
+  const [value, setDraft] = useState(initial);
+  const setValue = (next: WorkoutPlanInput) => {
+    setDraft(next);
+    onChange?.(next);
+  };
   const [invalid, setInvalid] = useState(false);
   return (
     <form
@@ -86,12 +95,19 @@ export function PlanForm({
             {controls.error ?? m.validation}
           </Alert>
         )}
-        <Alert>{m.autoHint}</Alert>
+        <Text size="sm">
+          {value.workouts.every(
+            (workout) =>
+              workout.exercises.length > 0 &&
+              workout.exercises.every((exercise) => exercise.transformMate),
+          )
+            ? m.catalogHint
+            : m.localHint}
+        </Text>
         {!workoutId && (
           <>
             <TextInput
               label={m.planTitle}
-              required
               maxLength={160}
               value={value.title}
               onChange={(event) =>
@@ -138,11 +154,11 @@ export function PlanForm({
               ),
             });
           return (
-            <Paper withBorder p="sm" key={workout.id}>
+            <Stack key={workout.id}>
               <Stack>
-                <Title order={3}>
-                  {m.planned} {index + 1}
-                </Title>
+                <Text fw={600}>
+                  {workoutTitle(workout.title, workout.date)}
+                </Text>
                 {!workoutId && (
                   <Group grow>
                     <Button
@@ -177,35 +193,48 @@ export function PlanForm({
                     </Button>
                   </Group>
                 )}
-                <TextInput
-                  label={`${m.workoutTitle} ${index + 1}`}
-                  required
-                  maxLength={160}
-                  value={workout.title}
-                  onChange={(event) => {
-                    const title = event.currentTarget.value;
-                    if (workoutId && !initial.title)
+                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                  <TextInput
+                    label={m.date}
+                    type="date"
+                    required
+                    min={preservePeriod ? value.startsOn : undefined}
+                    max={preservePeriod ? value.endsOn : undefined}
+                    value={workout.date}
+                    onChange={(event) => {
+                      const date = event.currentTarget.value;
+                      const workouts = value.workouts.map((item, i) =>
+                        i === index ? { ...item, date } : item,
+                      );
                       setValue({
                         ...value,
-                        title,
-                        workouts: value.workouts.map((item, i) =>
-                          i === index ? { ...item, title } : item,
-                        ),
+                        workouts,
+                        startsOn: preservePeriod
+                          ? value.startsOn
+                          : value.workouts.length === 1
+                            ? date
+                            : value.startsOn < date
+                              ? value.startsOn
+                              : date,
+                        endsOn: preservePeriod
+                          ? value.endsOn
+                          : value.workouts.length === 1
+                            ? date
+                            : value.endsOn > date
+                              ? value.endsOn
+                              : date,
                       });
-                    else update({ title });
-                  }}
-                />
-                <TextInput
-                  label={`${m.date} ${index + 1}`}
-                  type="date"
-                  required
-                  min={value.startsOn}
-                  max={value.endsOn}
-                  value={workout.date}
-                  onChange={(event) =>
-                    update({ date: event.currentTarget.value })
-                  }
-                />
+                    }}
+                  />
+                  <TextInput
+                    label={m.optionalTitle}
+                    maxLength={160}
+                    value={workout.title}
+                    onChange={(event) =>
+                      update({ title: event.currentTarget.value })
+                    }
+                  />
+                </SimpleGrid>
                 <ExerciseEditor
                   ownerId={ownerId}
                   value={workout.exercises}
@@ -224,11 +253,11 @@ export function PlanForm({
                       })
                     }
                   >
-                    {m.removeWorkout} {index + 1}
+                    {m.removeWorkout}
                   </Button>
                 )}
               </Stack>
-            </Paper>
+            </Stack>
           );
         })}
         {!workoutId && (
@@ -254,7 +283,18 @@ export function PlanForm({
             {m.addWorkout}
           </Button>
         )}
-        <Footer {...controls} />
+        <Paper
+          p="sm"
+          style={{
+            position: 'sticky',
+            bottom: 0,
+            zIndex: 5,
+            paddingBottom:
+              'max(var(--mantine-spacing-sm), env(safe-area-inset-bottom))',
+          }}
+        >
+          <Footer {...controls} />
+        </Paper>
       </Stack>
     </form>
   );
@@ -287,8 +327,7 @@ export function SessionForm({
           </Alert>
         )}
         <TextInput
-          label={m.workoutTitle}
-          required
+          label={m.optionalTitle}
           maxLength={160}
           value={value.title}
           onChange={(event) =>
