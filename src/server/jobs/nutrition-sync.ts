@@ -78,10 +78,12 @@ export async function syncNutritionPeriod(
           options?.photoFailurePolicy === 'independent'
             ? upstream
                 .images(date)
-                .catch((): Awaited<ReturnType<NutritionUpstream['images']>> => {
-                  photoMetadataFailed = true;
-                  return {};
-                })
+                .catch(
+                  (): Awaited<ReturnType<NutritionDayUpstream['images']>> => {
+                    photoMetadataFailed = true;
+                    return {};
+                  },
+                )
             : upstream.images(date),
         ]);
         const products: Record<string, Product | null> = {};
