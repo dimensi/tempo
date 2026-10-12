@@ -121,9 +121,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await page.getByLabel('Окончание').fill('2026-10-13');
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'Неделя', exact: true }).click();
-    await expect(
-      page.getByLabel('Начало периода'),
-    ).toHaveValue('2026-10-12');
+    await expect(page.getByLabel('Начало периода')).toHaveValue('2026-10-12');
     await expect(
       page.getByText(
         'Период отчёта: 12 октября 2026 г. — 18 октября 2026 г. · 7 дней',
