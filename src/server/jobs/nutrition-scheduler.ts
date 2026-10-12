@@ -38,7 +38,10 @@ const MAX_RUN_MS = 2 * HOUR;
 const RETRY_MS = [60000, 300000, 900000, HOUR];
 type Database = ReturnType<typeof getDatabase>;
 type Period = { from: string; to: string };
-type RunOptions = { mode: 'manual' | 'scheduled'; timezone?: string };
+type RunOptions = {
+  mode: 'manual' | 'scheduled' | 'day-refresh';
+  timezone?: string;
+};
 type ErrorCode = NonNullable<NutritionScheduleStatus['lastError']>;
 const activeRuns = new WeakMap<object, Set<string>>();
 
@@ -389,6 +392,9 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
             return value;
           },
         },
+        options.mode === 'day-refresh'
+          ? { photoFailurePolicy: 'independent' }
+          : undefined,
       );
       assertCurrent();
       const foodSucceeded = result.failedDates.length === 0;

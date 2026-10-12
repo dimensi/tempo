@@ -2,11 +2,13 @@
 
 import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { Stack } from '@mantine/core';
 import { browserToday } from '@/components/shared/date-navigation-dates';
 import { DayNavigation } from './day-navigation';
 import { diaryDateSchema, type SafeMealPhotoView } from '@/contracts/nutrition';
 import { DiaryView, type DiaryViewProps } from './diary-view';
 import { createPhotoActions, diaryPhotos } from './photo-actions';
+import { DayRefreshControl } from './day-refresh-control';
 
 export interface DiaryClientProps extends Omit<
   DiaryViewProps,
@@ -39,7 +41,18 @@ export function DiaryClient({
   return (
     <DiaryView
       {...props}
-      navigationSlot={<DayNavigation key={props.date} date={props.date} />}
+      navigationSlot={
+        <Stack gap="sm">
+          <DayNavigation key={props.date} date={props.date} />
+          {canWrite && (
+            <DayRefreshControl
+              key={`refresh:${props.date}`}
+              date={props.date}
+              onUpdated={() => router.refresh()}
+            />
+          )}
+        </Stack>
+      }
       photos={diaryPhotos(ownerId, photos)}
       photoActions={
         canWrite
