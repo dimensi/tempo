@@ -5,10 +5,15 @@ import { Alert, Button, PasswordInput, Stack, TextInput } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { authClient } from '@/lib/auth-client';
 import { ru } from '@/config/messages';
+import {
+  purgeOfflineDevice,
+  offlineDeviceMessages,
+} from '@/lib/offline-device';
 export function LoginForm() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const [cleanupError, setCleanupError] = useState(false);
   const form = useForm({
     initialValues: { email: '', password: '' },
     validate: {
@@ -21,7 +26,14 @@ export function LoginForm() {
     setBusy(true);
     setError(false);
     try {
-      const result = await authClient.signIn.email(values);
+      let result;
+      try {
+        await purgeOfflineDevice();
+      } catch {
+        setCleanupError(true);
+      } finally {
+        result = await authClient.signIn.email(values);
+      }
       if (result.error) {
         setError(true);
         return;
@@ -37,6 +49,11 @@ export function LoginForm() {
   return (
     <form onSubmit={form.onSubmit(submit)}>
       <Stack>
+        {cleanupError && (
+          <Alert color="orange" role="status">
+            {offlineDeviceMessages.cleanupWarning}
+          </Alert>
+        )}
         {error && (
           <Alert color="red" role="alert">
             {ru.loginError}

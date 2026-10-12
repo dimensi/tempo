@@ -11,3 +11,5 @@ coverage/
 *.tsbuildinfo
 dist-cli/
 .tmp/
+public/offline/
+public/offline-sw.js

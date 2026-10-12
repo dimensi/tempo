@@ -42,7 +42,8 @@
 }
 
 .content :global([id='sync']),
-.content :global([id='trainers']) {
+.content :global([id='trainers']),
+.content :global([id='offline']) {
   border-top: 1px solid var(--mantine-color-default-border);
   padding-top: 32px;
 }
@@ -54,7 +55,8 @@
 .content :global([id='connection']),
 .content :global([id='transformmate']),
 .content :global([id='sync']),
-.content :global([id='trainers']) {
+.content :global([id='trainers']),
+.content :global([id='offline']) {
   scroll-margin-top: 110px;
 }
 
@@ -68,6 +70,7 @@
     top: 64px;
     z-index: 2;
     flex-direction: row;
+    flex-wrap: wrap;
     border-left: 0;
     border-bottom: 1px solid var(--mantine-color-default-border);
     padding: 8px 0;
@@ -75,17 +78,18 @@
   }
 
   .navigation a {
-    flex: 1;
+    flex: 1 1 140px;
     justify-content: center;
     text-align: center;
     padding: 6px;
-    font-size: var(--mantine-font-size-xs);
+    font-size: 16px;
   }
 
   .content :global([id='connection']),
   .content :global([id='transformmate']),
   .content :global([id='sync']),
-  .content :global([id='trainers']) {
-    scroll-margin-top: 144px;
+  .content :global([id='trainers']),
+  .content :global([id='offline']) {
+    scroll-margin-top: 244px;
   }
 }

@@ -51,6 +51,8 @@ export default defineConfig([
   },
   globalIgnores([
     '.next/**',
+    'public/offline/assets/**',
+    'public/offline-sw.js',
     'next-env.d.ts',
     'coverage/**',
     'playwright-report/**',

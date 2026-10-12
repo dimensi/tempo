@@ -18,6 +18,7 @@ import {
   transformMateCredentialsSchema,
   type TransformMateConnectionStatus,
 } from '@/contracts/transformmate-connection';
+import { purgeOfflineDevice } from '@/lib/offline-device';
 
 const copy = {
   cancel: 'Отмена',
@@ -62,6 +63,8 @@ export function TransformMateSettingsForm({
       setError(null);
       setNotice(null);
       try {
+        if (action === 'connect' || action === 'disconnect')
+          await purgeOfflineDevice().catch(() => {});
         const response = await fetch(`/api/transformmate/${action}`, {
           method: action === 'status' ? 'GET' : 'POST',
           cache: 'no-store',

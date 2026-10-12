@@ -29,6 +29,10 @@ import {
 import { authClient } from '@/lib/auth-client';
 import { ru } from '@/config/messages';
 import { BrandMark } from '@/components/branding/brand-mark';
+import {
+  purgeOfflineDevice,
+  offlineDeviceMessages,
+} from '@/lib/offline-device';
 const icons = [
   IconHome,
   IconToolsKitchen2,
@@ -54,11 +58,19 @@ export function ApplicationShell({
   const scheme = useComputedColorScheme('light');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const [cleanupError, setCleanupError] = useState(false);
   async function logout() {
     setBusy(true);
     setError(false);
     try {
-      const result = await authClient.signOut();
+      let result;
+      try {
+        await purgeOfflineDevice();
+      } catch {
+        setCleanupError(true);
+      } finally {
+        result = await authClient.signOut();
+      }
       if (result.error) {
         setError(true);
         return;
@@ -151,6 +163,11 @@ export function ApplicationShell({
               {error && (
                 <Text c="red" role="alert" size="sm">
                   Не удалось выйти. Повторите попытку.
+                </Text>
+              )}
+              {cleanupError && (
+                <Text role="status" size="sm">
+                  {offlineDeviceMessages.cleanupWarning}
                 </Text>
               )}
               <Button variant="default" loading={busy} onClick={logout}>
