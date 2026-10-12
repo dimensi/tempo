@@ -50,6 +50,15 @@ For disposable image validation, build `docker build -t nutrition-foundation .`,
 
 ## Reuse the CI-tested image
 
+PR CI runs formatting, lint and type checks for review. A PR may merge after
+those static checks and review; full unit/integration tests, production build,
+all three E2E suites and the Docker build/smoke run once on the main-push
+workflow. Production stays on its previous stable image until that entire main
+workflow completes successfully. A failed or incomplete main workflow blocks
+deployment, even if the Docker job has already uploaded an artifact. Local
+checks remain targeted to the change; do not repeat the full gate or rebuild the
+exported image during deployment.
+
 Successful main-push Docker jobs retain `nutrition-release-<full Git SHA>` for
 seven days. The immutable GitHub artifact contains `image.tar.gz` and
 `manifest.json` (revision, Git tree, image tag/ID, archive SHA-256, ordered RootFS
