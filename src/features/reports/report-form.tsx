@@ -12,10 +12,12 @@ import {
 } from '@mantine/core';
 import { reportRequestSchema } from '@/contracts/reports';
 import { reportMessages as m } from './messages';
+import { weeklyRange } from './weekly-range';
 
 const subscribe = () => () => {};
 const clientReady = () => true;
 const serverReady = () => false;
+const inputStyles = { input: { fontSize: 16 } };
 
 export function ReportForm({ ownerId }: { ownerId: string | null }) {
   const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
@@ -34,13 +36,12 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
     if (end === null) setEnd(localToday);
   }
   const selectedStart = start ?? '';
+  const week = weeklyRange(selectedStart);
   const finish =
     period === 'daily'
       ? selectedStart
-      : period === 'weekly' && selectedStart
-        ? new Date(Date.parse(`${selectedStart}T00:00:00Z`) + 6 * 86400000)
-            .toISOString()
-            .slice(0, 10)
+      : period === 'weekly'
+        ? (week?.end ?? '')
         : (end ?? '');
   async function generate(format: 'html' | 'pdf') {
     setError('');
@@ -99,6 +100,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         </Alert>
       )}
       <Select
+        styles={inputStyles}
         disabled={!ready}
         label={m.period}
         value={period}
@@ -114,9 +116,15 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         ]}
       />
       <TextInput
+        styles={inputStyles}
         disabled={!ready}
         type="date"
-        label={m.start}
+        label={period === 'weekly' ? m.periodStart : m.start}
+        description={
+          period === 'weekly' && week
+            ? `${m.weekRange}: ${week.label} · ${m.sevenDays}`
+            : undefined
+        }
         value={selectedStart}
         onChange={(event) => {
           setStart(event.currentTarget.value);
@@ -126,6 +134,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
       />
       {period === 'custom' && (
         <TextInput
+          styles={inputStyles}
           disabled={!ready}
           type="date"
           label={m.end}

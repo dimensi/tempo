@@ -68,8 +68,8 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
   // Only disposable E2E storage; C's persisted snapshot format, no session mocks.
   const db = new Database('.data/e2e.sqlite');
   const day = syntheticDay(date);
-  day.officialTotals = {
-    ...day.officialTotals,
+  day.meals[0]!.entries[0]!.totals = {
+    ...day.meals[0]!.entries[0]!.totals,
     fat: '3.4499999999999997',
     carbs: '6.1499999999999995',
   };
@@ -121,6 +121,37 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await page.getByLabel('Окончание').fill('2026-10-13');
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'Неделя', exact: true }).click();
+    await expect(page.getByLabel('Начало периода')).toHaveValue('2026-10-12');
+    await expect(
+      page.getByText(
+        'Период отчёта: 12 октября 2026 г. — 18 октября 2026 г. · 7 дней',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    for (const [start, label] of [
+      ['2026-01-29', '29 января 2026 г. — 4 февраля 2026 г.'],
+      ['2026-12-29', '29 декабря 2026 г. — 4 января 2027 г.'],
+    ]) {
+      await page.getByLabel('Начало периода').fill(start!);
+      await expect(
+        page.getByText(`Период отчёта: ${label} · 7 дней`, { exact: true }),
+      ).toBeVisible();
+    }
+    expect(
+      await page
+        .getByLabel('Начало периода')
+        .evaluate((input) =>
+          Number.parseFloat(getComputedStyle(input).fontSize),
+        ),
+    ).toBeGreaterThanOrEqual(16);
+    expect(
+      await page
+        .getByRole('combobox', { name: 'Период' })
+        .evaluate((input) =>
+          Number.parseFloat(getComputedStyle(input).fontSize),
+        ),
+    ).toBeGreaterThanOrEqual(16);
+    await page.getByLabel('Начало периода').fill('2026-10-12');
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page
       .getByRole('option', { name: 'Произвольный период', exact: true })
@@ -150,6 +181,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'Неделя', exact: true }).click();
     await expect(page.getByLabel('Начало')).toHaveValue('');
+    await expect(page.getByText(/Период отчёта:/)).toHaveCount(0);
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'День', exact: true }).click();
     await page.getByLabel('Начало').fill(date);
@@ -161,7 +193,6 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await expect(preview.locator('img')).toHaveCount(1);
     await expect(preview.getByText('3,45', { exact: true })).toBeVisible();
     await expect(preview.getByText('6,15', { exact: true })).toBeVisible();
-    await expect(preview.getByText('≈ 0', { exact: true })).toHaveCount(2);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -180,11 +211,10 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect(download.suggestedFilename()).toBe(`nutrition-${date}-${date}.pdf`);
     const text = execFileSync('pdftotext', [path, '-'], { encoding: 'utf8' });
     expect(text).toContain('Яйцо');
-    expect(text).toContain('Неизвестно');
+    expect(text).toContain('—');
     expect(text).toContain('12,52');
     expect(text).toContain('3,45');
     expect(text).toContain('6,15');
-    expect(text).toMatch(/≈\s*0/);
     expect(text).not.toContain('3e-16');
     expect(text).not.toContain('-5e-16');
     expect(

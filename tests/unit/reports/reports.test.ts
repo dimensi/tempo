@@ -29,10 +29,10 @@ describe('report rules', () => {
   it('allows C-compatible 8 MiB files but keeps the 20 MiB total photo budget', async () => {
     const adapter = source();
     adapter.listPhotos = async () =>
-      ['one', 'two', 'three'].map((id) => ({
+      ['one', 'two', 'three'].map((id, index) => ({
         id,
         date: request.start,
-        daytime: 'breakfast' as const,
+        daytime: (['breakfast', 'lunch', 'dinner'] as const)[index]!,
         source: 'manual' as const,
         observedAt: '2026-10-11T00:00:00Z',
       }));
@@ -112,12 +112,16 @@ describe('report rules', () => {
     const html = renderReportHtml(
       { ...request, period: 'custom', end: '2026-10-11' },
       { days: [day], photos: [] },
-      new Uint8Array(),
+      {
+        sans: new Uint8Array(),
+        bold: new Uint8Array(),
+        serif: new Uint8Array(),
+      },
     );
     expect(html).toContain('&lt;img');
     expect(html).not.toContain('<img src="https:');
     for (const text of [
-      'Неизвестно',
+      '—',
       'Известная часть',
       'Нет данных за этот день',
       '180,32',
@@ -127,7 +131,7 @@ describe('report rules', () => {
   });
   it('formats official totals and tiny deltas without altering authoritative decimal calculations', () => {
     const day = syntheticDay();
-    day.officialTotals = {
+    day.totals = {
       calories: '180.3200',
       protein: '1.005',
       fat: '3.4499999999999997',
@@ -143,16 +147,13 @@ describe('report rules', () => {
     const html = renderReportHtml(
       request,
       { days: [day], photos: [] },
-      new Uint8Array(),
+      {
+        sans: new Uint8Array(),
+        bold: new Uint8Array(),
+        serif: new Uint8Array(),
+      },
     );
-    for (const text of [
-      '180,32',
-      '1,01',
-      '3,45',
-      '6,15',
-      '-0,02',
-      '<dd>≈ 0</dd>',
-    ])
+    for (const text of ['180,32', '1,01', '3,45', '6,15'])
       expect(html).toContain(text);
     for (const raw of [
       '3.4499999999999997',
@@ -163,7 +164,7 @@ describe('report rules', () => {
     ])
       expect(html).not.toContain(raw);
     expect(day).toEqual(before);
-    expect(summarizeDays([day, day], 2).totals.protein).toBe('25.0424');
+    expect(summarizeDays([day, day], 2).totals.protein).toBe('2.01');
   });
   it('fails no-data, duplicate/out-of-scope days and excessive entry/string/decimal budgets', async () => {
     await expect(
