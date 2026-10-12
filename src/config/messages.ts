@@ -66,3 +66,5 @@ export const ru = {
     },
   ],
 };
+
+export const workoutTitleMessages = { unnamed: 'Тренировка' } as const;

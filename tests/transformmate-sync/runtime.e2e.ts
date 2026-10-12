@@ -700,11 +700,11 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
   await page
     .getByRole('button', { name: 'Добавить тренировку', exact: true })
     .click();
-  const dialog = page.getByRole('dialog');
+  const dialog = page;
   await dialog
     .getByRole('button', { name: 'Добавить упражнение', exact: true })
     .click();
-  const picker = page.getByRole('dialog', { name: 'Добавить упражнение' });
+  const picker = page;
   await picker.getByLabel('Поиск упражнений TransformMate').fill('Demo');
   await picker
     .getByRole('button', { name: 'Demo exercise', exact: true })

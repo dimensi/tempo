@@ -1,11 +1,5 @@
 'use client';
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   Accordion,
   Alert,
@@ -27,18 +21,19 @@ import {
   workoutSessionSchema,
   type WorkoutExercise,
   type WorkoutPlan,
-  type WorkoutPlanInput,
   type WorkoutSession,
   type WorkoutSessionInput,
   type WorkoutsData,
   type PlannedWorkout,
 } from '@/contracts/workouts';
-import { PlanForm, SessionForm, emptyPlan, emptySession, today } from './forms';
+import { SessionForm, emptySession, today } from './forms';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { z } from 'zod';
+import { workoutTitle } from '@/lib/workout-title';
 import { DateNavigation } from '@/components/shared/date-navigation';
 import type { TransformMateSyncItem } from '@/contracts/transformmate';
 import { NativeWorkout } from './native-workout';
 import { actualSetForExercise } from './transformmate-exercises';
-import { copyPlanToDate } from './copy-plan';
 import {
   SyncSummary,
   WorkoutSync,
@@ -46,34 +41,14 @@ import {
 } from './transformmate-sync';
 import { workoutMessages as m } from './messages';
 
-type Editor =
-  | {
-      kind: 'plan';
-      initial: WorkoutPlanInput;
-      existing?: WorkoutPlan;
-      workoutId?: string;
-    }
-  | {
-      kind: 'session';
-      initial: WorkoutSessionInput;
-      existing?: WorkoutSession;
-      planId?: string;
-      plannedWorkoutId?: string;
-    };
+type Editor = {
+  kind: 'session';
+  initial: WorkoutSessionInput;
+  existing?: WorkoutSession;
+  planId?: string;
+  plannedWorkoutId?: string;
+};
 type Deletion = { kind: 'plans' | 'sessions'; id: string; revision: number };
-const planInput = ({
-  title,
-  description,
-  startsOn,
-  endsOn,
-  workouts,
-}: WorkoutPlan): WorkoutPlanInput => ({
-  title,
-  description,
-  startsOn,
-  endsOn,
-  workouts,
-});
 const sessionInput = ({
   title,
   date,
@@ -193,12 +168,12 @@ function SessionResult({
   return (
     <Stack data-testid={`session-${session.id}`}>
       <Group justify="space-between">
-        <Title order={3}>{session.title}</Title>
+        <Title order={3}>{workoutTitle(session.title, session.date)}</Title>
         <Badge>{m[session.status]}</Badge>
       </Group>
       <Text size="sm">
         {session.planSnapshot
-          ? `${m.snapshot}: ${session.planSnapshot.planTitle}`
+          ? `${m.snapshot}: ${workoutTitle(session.planSnapshot.planTitle, session.planSnapshot.workout.date)}`
           : m.independent}
       </Text>
       {session.planSnapshot && !comparisonShown && (
@@ -246,9 +221,16 @@ function ScopedWorkoutsDashboard({
   canLog: boolean;
   renderComments?: (sessionId: string) => ReactNode;
 }) {
-  const createKey = useRef<string | null>(null);
-  const [date, setDate] = useState(today);
-  const [copy, setCopy] = useState<WorkoutPlan | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedDate = z.iso.date().safeParse(searchParams.get('date'));
+  const date = selectedDate.success ? selectedDate.data : today();
+  const setDate = (value: string) =>
+    router.replace(`/workouts?date=${value}`, { scroll: false });
+  const [copy, setCopy] = useState<{
+    plan: WorkoutPlan;
+    workout: PlannedWorkout;
+  } | null>(null);
   const [copyDate, setCopyDate] = useState('');
   const [data, setData] = useState<WorkoutsData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -307,8 +289,6 @@ function ScopedWorkoutsDashboard({
     }
   }
   const open = (editor: Editor) => {
-    createKey.current =
-      editor.kind === 'plan' && !editor.existing ? crypto.randomUUID() : null;
     setEditorError(null);
     setEditor(editor);
   };
@@ -320,9 +300,6 @@ function ScopedWorkoutsDashboard({
         method,
         headers: {
           'Content-Type': 'application/json',
-          ...(path === '/plans' && method === 'POST' && createKey.current
-            ? { 'Idempotency-Key': createKey.current }
-            : {}),
         },
         body: JSON.stringify(body),
       });
@@ -372,12 +349,9 @@ function ScopedWorkoutsDashboard({
       ),
   );
   const editWorkout = (plan: WorkoutPlan, workout: PlannedWorkout) =>
-    open({
-      kind: 'plan',
-      initial: planInput(plan),
-      existing: plan,
-      workoutId: workout.id,
-    });
+    router.push(
+      `/workouts/plans/${plan.id}/edit?workout=${workout.id}&date=${date}`,
+    );
   if (sync.denied)
     return (
       <Alert color="red" role="alert">
@@ -411,12 +385,7 @@ function ScopedWorkoutsDashboard({
       <Group justify="space-between">
         <Button
           mih={44}
-          onClick={() => {
-            const initial = emptyPlan();
-            initial.startsOn = initial.endsOn = date;
-            initial.workouts[0]!.date = date;
-            open({ kind: 'plan', initial, workoutId: initial.workouts[0]!.id });
-          }}
+          onClick={() => router.push(`/workouts/new?date=${date}`)}
         >
           {m.newWorkout}
         </Button>
@@ -493,10 +462,12 @@ function ScopedWorkoutsDashboard({
           >
             <Stack>
               <Group justify="space-between">
-                <Title order={2}>{workout.title}</Title>
+                <Title order={2}>
+                  {workoutTitle(workout.title, workout.date)}
+                </Title>
                 <Badge>{item ? m.sync : m.localWorkout}</Badge>
               </Group>
-              <Text size="sm">{plan.title}</Text>
+              {plan.title && <Text size="sm">{plan.title}</Text>}
               {plan.description && (
                 <Text style={{ whiteSpace: 'pre-wrap' }}>
                   {plan.description}
@@ -529,8 +500,8 @@ function ScopedWorkoutsDashboard({
                   mih={44}
                   variant="default"
                   onClick={() => {
-                    setCopy(plan);
-                    setCopyDate(plan.startsOn);
+                    setCopy({ plan, workout });
+                    setCopyDate(workout.date);
                   }}
                 >
                   {m.copy}
@@ -549,11 +520,9 @@ function ScopedWorkoutsDashboard({
                           mih={44}
                           variant="default"
                           onClick={() =>
-                            open({
-                              kind: 'plan',
-                              initial: planInput(plan),
-                              existing: plan,
-                            })
+                            router.push(
+                              `/workouts/plans/${plan.id}/edit?date=${date}`,
+                            )
                           }
                         >
                           {m.editPlan}
@@ -612,7 +581,10 @@ function ScopedWorkoutsDashboard({
             <Title order={2}>{item.actual?.title}</Title>
             <Text>
               {m.publishedSnapshot}:{' '}
-              {(item.publishedSnapshot ?? item.planSnapshot).planTitle}
+              {workoutTitle(
+                (item.publishedSnapshot ?? item.planSnapshot).planTitle,
+                (item.publishedSnapshot ?? item.planSnapshot).workout.date,
+              )}
             </Text>
             <ExerciseTable
               exercises={
@@ -662,32 +634,13 @@ function ScopedWorkoutsDashboard({
         onClose={() => {
           if (!busy) setEditor(null);
         }}
-        title={editor?.kind === 'plan' ? m.workoutTitle : m.record}
+        title={m.record}
         size="lg"
         closeOnClickOutside={!busy}
         closeOnEscape={!busy}
         withCloseButton={!busy}
         closeButtonProps={{ 'aria-label': m.close, size: 44 }}
       >
-        {editor?.kind === 'plan' && (
-          <PlanForm
-            ownerId={ownerId}
-            workoutId={editor.workoutId}
-            initial={editor.initial}
-            busy={busy}
-            error={editorError}
-            onCancel={() => setEditor(null)}
-            onSave={(value) =>
-              void mutate(
-                editor.existing ? `/plans/${editor.existing.id}` : '/plans',
-                editor.existing ? 'PUT' : 'POST',
-                editor.existing
-                  ? { revision: editor.existing.revision, data: value }
-                  : value,
-              )
-            }
-          />
-        )}
         {editor?.kind === 'session' && (
           <SessionForm
             ownerId={ownerId}
@@ -738,10 +691,9 @@ function ScopedWorkoutsDashboard({
             }
             onClick={() => {
               if (copy) {
-                open({
-                  kind: 'plan',
-                  initial: copyPlanToDate(planInput(copy), copyDate),
-                });
+                router.push(
+                  `/workouts/new?copy=${copy.plan.id}&workout=${copy.workout.id}&date=${copyDate}&returnDate=${date}`,
+                );
                 setCopy(null);
               }
             }}

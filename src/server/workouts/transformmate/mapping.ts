@@ -1,3 +1,4 @@
+import { workoutTitle } from '@/lib/workout-title';
 import 'server-only';
 import { createHash } from 'node:crypto';
 import { trainingWriteSnapshot } from '@/server/transformmate/write-snapshot';
@@ -35,7 +36,7 @@ export function createProjection(
   marker: string,
 ): TrainingWriteBody {
   return {
-    name: workout.title,
+    name: workoutTitle(workout.title, workout.date),
     date: workout.date,
     description: marker,
     protocols: [
@@ -313,7 +314,7 @@ export function updateProjection(
   )
     throw new Error('Unsupported projection');
   const templates: ((typeof remote)[number] | undefined)[] = [];
-  fresh.name = desired.title;
+  fresh.name = workoutTitle(desired.title, desired.date);
   fresh.date = desired.date;
   fresh.protocols[0]!.workout_exercises = desired.exercises.map((e, i) => {
     if (!e.transformMate) throw new Error('Unsupported projection');
