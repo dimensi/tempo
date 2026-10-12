@@ -1,3 +1,5 @@
+import Database from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 import { test, expect, type Page, type Locator } from '@playwright/test';
 
 async function login(page: Page, email: string) {
@@ -41,13 +43,17 @@ test('measurement and actual-session comments compose after CRUD with real train
   });
   const trainer = await trainerContext.newPage();
   trainer.on('pageerror', (error) => errors.push(error.message));
-  const trainerId = await login(trainer, 'trainer@example.test');
-  const scope = { ownerId, trainerId };
-  expect((await page.request.post('/api/trainers', { data: scope })).ok()).toBe(
-    true,
-  );
+  const note = `Comment UI ${test.info().project.name} ${randomUUID()}`;
+  const db = new Database('.data/e2e.sqlite', { fileMustExist: true });
+  let trainerId: string | undefined;
+  let measurementId: string | undefined;
+  let workoutId: string | undefined;
   try {
-    const note = `Comment UI ${test.info().project.name}`;
+    trainerId = await login(trainer, 'trainer@example.test');
+    const scope = { ownerId, trainerId };
+    expect(
+      (await page.request.post('/api/trainers', { data: scope })).ok(),
+    ).toBe(true);
     await page.goto('/measurements');
     await page.getByLabel('Вес (кг)', { exact: true }).fill('72.125');
     await page.getByLabel('Заметка', { exact: true }).fill(note);
@@ -56,7 +62,7 @@ test('measurement and actual-session comments compose after CRUD with real train
     const measurements = await (
       await page.request.get(`/api/measurements?ownerId=${ownerId}`)
     ).json();
-    const measurementId = measurements.find(
+    measurementId = measurements.find(
       (row: { note: string }) => row.note === note,
     ).id as string;
     const measurementPanel = page.getByTestId(
@@ -82,7 +88,10 @@ test('measurement and actual-session comments compose after CRUD with real train
 
     await page.goto('/workouts');
     await page
-      .getByRole('button', { name: 'Записать тренировку', exact: true })
+      .getByRole('button', {
+        name: 'Записать выполненную тренировку',
+        exact: true,
+      })
       .click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Название тренировки').fill(note);
@@ -91,23 +100,57 @@ test('measurement and actual-session comments compose after CRUD with real train
       .getByRole('button', { name: 'Сохранить', exact: true })
       .click();
     await expect(dialog).not.toBeVisible();
-    await page.getByRole('tab', { name: 'История', exact: true }).click();
     const data = (
       await (await page.request.get(`/api/workouts?ownerId=${ownerId}`)).json()
     ).data;
-    const workoutId = data.sessions.find(
+    workoutId = data.sessions.find(
       (row: { title: string }) => row.title === note,
     ).id as string;
     await send(
       page.getByTestId(`session-${workoutId}`),
       'Owner workout comment',
     );
-    await page.getByRole('tab', { name: 'Планы', exact: true }).click();
+    const session = data.sessions.find(
+      (row: { id: string }) => row.id === workoutId,
+    );
+    const planned = await page.request.post(
+      `/api/workouts/plans?ownerId=${ownerId}`,
+      {
+        headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+        data: {
+          title: `${note} planned`,
+          description: 'Synthetic comment scope',
+          startsOn: session.date,
+          endsOn: session.date,
+          workouts: [
+            {
+              id: randomUUID(),
+              date: session.date,
+              title: 'Synthetic planned workout',
+              exercises: [
+                {
+                  name: 'Synthetic planned squat',
+                  sets: [{ reps: 8, weightKg: null }],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    );
+    expect(planned.status()).toBe(200);
+    const planId = (await planned.json()).data.id as string;
+    await page.reload();
+    const planCard = page.getByTestId(`plan-${planId}`);
+    await expect(planCard).toBeVisible();
+    await expect(
+      planCard.getByRole('heading', { name: 'Комментарии', exact: true }),
+    ).toHaveCount(0);
     await expect(
       page
-        .locator('[role=tabpanel]:visible')
-        .getByRole('heading', { name: 'Комментарии', exact: true }),
-    ).toHaveCount(0);
+        .getByTestId(`session-${workoutId}`)
+        .getByText('Owner workout comment', { exact: true }),
+    ).toBeVisible();
 
     for (const target of [
       {
@@ -126,10 +169,6 @@ test('measurement and actual-session comments compose after CRUD with real train
       },
     ]) {
       await trainer.goto(target.route);
-      if (target.type === 'workout')
-        await trainer
-          .getByRole('tab', { name: 'История', exact: true })
-          .click();
       const panel = trainer.getByTestId(target.testId);
       const root = panel.getByText(target.text, { exact: true }).locator('..');
       await expect(
@@ -252,11 +291,9 @@ test('measurement and actual-session comments compose after CRUD with real train
       page.getByTestId(`measurement-comments-${measurementId}`),
     ).toHaveCount(0);
     await page.goto('/workouts');
-    await page.getByRole('tab', { name: 'История', exact: true }).click();
     await page
       .getByTestId(`session-${workoutId}`)
-      .getByRole('button', { name: 'Удалить', exact: true })
-      .first()
+      .getByRole('button', { name: 'Удалить результат', exact: true })
       .click();
     await page
       .getByRole('dialog')
@@ -265,9 +302,52 @@ test('measurement and actual-session comments compose after CRUD with real train
     await expect(page.getByTestId(`session-${workoutId}`)).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
-    await page.request
-      .delete('/api/trainers', { data: scope, timeout: 5000 })
-      .catch(() => undefined);
-    await trainerContext.close();
+    // Disposable fixture-only cleanup survives UI timeout/context disposal and
+    // removes only this run's rows, including parents created before IDs were read.
+    try {
+      db.transaction(() => {
+        const measurements = db
+          .prepare('SELECT id FROM measurements WHERE owner_id=? AND note=?')
+          .all(ownerId, note) as { id: string }[];
+        const sessions = db
+          .prepare(
+            "SELECT id FROM workout_sessions WHERE owner_id=? AND json_extract(data,'$.title')=?",
+          )
+          .all(ownerId, note) as { id: string }[];
+        for (const id of new Set([
+          ...measurements.map((row) => row.id),
+          ...(measurementId ? [measurementId] : []),
+        ])) {
+          db.prepare(
+            "DELETE FROM comments WHERE owner_id=? AND target_type='measurement' AND target_id=?",
+          ).run(ownerId, id);
+          db.prepare('DELETE FROM measurements WHERE owner_id=? AND id=?').run(
+            ownerId,
+            id,
+          );
+        }
+        for (const id of new Set([
+          ...sessions.map((row) => row.id),
+          ...(workoutId ? [workoutId] : []),
+        ])) {
+          db.prepare(
+            "DELETE FROM comments WHERE owner_id=? AND target_type='workout' AND target_id=?",
+          ).run(ownerId, id);
+          db.prepare(
+            'DELETE FROM workout_sessions WHERE owner_id=? AND id=?',
+          ).run(ownerId, id);
+        }
+        db.prepare(
+          "DELETE FROM workout_plans WHERE owner_id=? AND json_extract(data,'$.title')=?",
+        ).run(ownerId, `${note} planned`);
+        if (trainerId)
+          db.prepare(
+            'DELETE FROM trainer_access WHERE owner_id=? AND trainer_id=?',
+          ).run(ownerId, trainerId);
+      })();
+    } finally {
+      db.close();
+      await trainerContext.close().catch(() => undefined);
+    }
   }
 });
