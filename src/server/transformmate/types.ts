@@ -42,3 +42,9 @@ export type TransformMateSetMetric =
   TransformMatePlanSet['set_metrics'][number];
 export type TransformMateMetricValue =
   TransformMateSetMetric['metric_values'][number];
+
+export type TransformMateProtocol =
+  TransformMateTrainingDetail['protocols'][number];
+export type TransformMateMetricsGroup =
+  TransformMatePlanMetrics | TransformMateFactMetrics;
+export type TransformMateSet = TransformMatePlanSet | TransformMateFactSet;

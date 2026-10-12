@@ -68,7 +68,7 @@ pnpm dev
 
 ## TransformMate API probe
 
-Локальный исследовательский GET-клиент. В `.env` один раз задайте Firebase
+Локальный исследовательский клиент. В `.env` один раз задайте Firebase
 credentials из первого SSO/Charles: `TRANSFORMMATE_FIREBASE_API_KEY` и
 `TRANSFORMMATE_FIREBASE_REFRESH_TOKEN`.
 
@@ -86,7 +86,9 @@ ID token обновляется автоматически; `TRANSFORMMATE_ID_TO
 [Кэш, rotation и диагностика](docs/architecture/transformmate-probe.md).
 
 Клиент имеет типизированные `getTrainings()` / `getTraining(id)` с runtime validation
-реального wire-контракта. Маппинга в WorkoutPlan/WorkoutSession и изменений БД нет.
+реального wire-контракта. CRUD/write методы используют отдельные DTO и подтверждённый APK + live probes PATCH contract.
+[Write contract, lifecycle и ограничения](docs/architecture/transformmate-write.md).
+Маппинга в WorkoutPlan/WorkoutSession и изменений БД нет.
 
 ## Развёртывание
 

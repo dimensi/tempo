@@ -39,19 +39,18 @@ const metrics = z.discriminatedUnion('type', [
   transformMateFactMetricsSchema,
 ]);
 
-// Unlike current fact, last_results lacks set id/order/is_done and full measure.
+// Historical results use reduced measure references and omit set id/order/is_done.
+const resultMetric = z.looseObject({
+  type: z.string(),
+  measure: z.looseObject({ id: remoteId }),
+  metric_values: z.array(metricValue),
+});
 const lastResults = z.looseObject({
   type: z.enum(['plan', 'fact']).optional(),
   sets: z
     .array(
       z.looseObject({
-        set_metrics: z.array(
-          z.looseObject({
-            type: z.string(),
-            measure: z.looseObject({ id: remoteId }),
-            metric_values: z.array(metricValue),
-          }),
-        ),
+        set_metrics: z.array(resultMetric),
       }),
     )
     .optional(),
@@ -66,7 +65,7 @@ export const transformMateWorkoutExerciseSchema = z.looseObject({
   videoreport_required: z.boolean(),
   exercise_metrics: z.array(z.looseObject({ id: remoteId, name: z.string() })),
   metrics: z.array(metrics),
-  best_result: z.record(z.string(), z.unknown()), // Only {} observed.
+  best_result: z.looseObject({ set_metrics: z.array(resultMetric).optional() }),
   last_results: lastResults,
   mediareports: z.array(z.unknown()),
   is_checked: z.boolean(),
