@@ -12,7 +12,7 @@ import {
 import { ReportError } from '@/server/pdf/errors';
 import { type ReportDataSource, type ReportDataset } from '@/server/pdf/source';
 import { renderReportHtml } from '@/server/pdf/template';
-import { renderReport } from '@/server/pdf/renderer';
+import { renderPdfReport } from '@/server/pdf/renderer';
 import { readReportFonts } from '@/server/pdf/fonts';
 import { selectReportPhotos } from '@/server/pdf/photos';
 import { photoPixels } from '@/server/pdf/images';
@@ -145,12 +145,9 @@ export async function generateReport(
   const html = renderReportHtml(request, dataset, await readReportFonts());
   if (Buffer.byteLength(html) > reportLimits.htmlBytes)
     throw new ReportError('OVERSIZED', 413);
-  const result = await renderReport(html, request.format, signal);
   signal.throwIfAborted();
-  if (
-    typeof result === 'string' &&
-    Buffer.byteLength(result) > reportLimits.htmlBytes
-  )
-    throw new ReportError('OVERSIZED', 413);
+  if (request.format === 'html') return html;
+  const result = await renderPdfReport(html, signal);
+  signal.throwIfAborted();
   return result;
 }

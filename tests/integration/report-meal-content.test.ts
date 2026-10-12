@@ -39,7 +39,7 @@ it('omits empty canonical meals in paginated HTML/PDF, retaining real entries, p
       start: day.date,
       end: day.date,
       period: 'daily' as const,
-      format: 'html' as const,
+      format: 'pdf' as const,
     };
     const empty = renderReportHtml(request, { days: [day], photos: [] }, fonts);
     await prepareReportPage(page, empty);
