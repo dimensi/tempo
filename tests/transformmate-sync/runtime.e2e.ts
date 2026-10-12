@@ -137,7 +137,11 @@ test('owner connects through masked settings, persists rotation, rejects wrong b
     ).status(),
   ).toBe(403);
   expect((await mutate('disconnect')).ok()).toBe(true);
+  const initialStatus = page.waitForResponse((response) =>
+    response.url().endsWith('/api/transformmate/status'),
+  );
   await page.goto('/settings#transformmate');
+  expect((await initialStatus).ok()).toBe(true);
   const connectionSection = page.locator('#transformmate');
   const apiKey = connectionSection.getByLabel('Firebase API key');
   const refreshToken = connectionSection.getByLabel('Firebase refresh token');
@@ -147,7 +151,11 @@ test('owner connects through masked settings, persists rotation, rejects wrong b
     connectionSection.getByRole('button', { name: 'Подключить', exact: true }),
   ).toBeEnabled();
   await apiKey.fill(credentials.apiKey);
+  await expect(apiKey).toBeEditable();
+  await expect(refreshToken).toBeEditable();
   await refreshToken.fill('synthetic-refresh-token-rejected');
+  await expect(apiKey).toHaveValue(credentials.apiKey);
+  await expect(refreshToken).toHaveValue('synthetic-refresh-token-rejected');
   const rejected = page.waitForResponse((r) =>
     r.url().endsWith('/api/transformmate/connect'),
   );
@@ -689,10 +697,16 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
   expect((await partial.body()).length).toBe(32);
   expect(partial.headers()['content-range']).toMatch(/^bytes 0-31\//);
   await page.goto('/workouts');
-  await page.getByRole('button', { name: 'Создать план', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Добавить тренировку', exact: true })
+    .click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Поиск упражнений TransformMate').fill('Demo');
   await dialog
+    .getByRole('button', { name: 'Добавить упражнение', exact: true })
+    .click();
+  const picker = page.getByRole('dialog', { name: 'Добавить упражнение' });
+  await picker.getByLabel('Поиск упражнений TransformMate').fill('Demo');
+  await picker
     .getByRole('button', { name: 'Demo exercise', exact: true })
     .click();
   await dialog
@@ -761,10 +775,14 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
     grant(owner, trainerId, true);
     expect((await trainer.request.head(video)).status()).toBe(200);
     await control(request, 'cachedauthdelay');
-    const inFlight = trainer.request.get(catalog);
-    await page.waitForTimeout(100);
+    // Catalog reads are cached; detail reads always reach the synthetic upstream.
+    const inFlight = trainer.request.get(catalog.replace('?', '/501?'));
+    await expect
+      .poll(async () => (await control(request)).activeReads)
+      .toBeGreaterThan(0);
     grant(owner, trainerId, false);
     expect((await inFlight).status()).toBe(403);
+    expect((await trainer.request.get(catalog)).status()).toBe(403);
     expect((await trainer.request.get(video)).status()).toBe(403);
     await request.post('http://127.0.0.1:3158/control', {
       data: { action: 'cachedauthdelay', delay: 0 },
@@ -893,15 +911,34 @@ test('saving creates once, idle updates once, and remote facts preserve initial 
     reps: 6,
   });
   await page.goto('/workouts');
-  const table = page.getByTestId(`plan-${plan.id}`).getByRole('table');
-  await expect(table).toContainText('12.5');
-  await expect(table).toContainText('15');
+  await page.getByRole('button', { name: 'Выбрать дату' }).click();
+  await page.getByRole('textbox', { name: 'Год', exact: true }).fill('2026');
+  await page
+    .getByRole('combobox', { name: 'Месяц', exact: true })
+    .selectOption('01');
+  await page
+    .getByRole('combobox', { name: 'День', exact: true })
+    .selectOption('02');
+  await page.getByRole('button', { name: 'Открыть дату', exact: true }).click();
+  await page.keyboard.press('Escape');
+  const card = page.getByTestId(`plan-${plan.id}`);
+  const table = card.getByRole('table');
+  await expect(table.getByRole('columnheader')).toHaveText([
+    'Подход',
+    'Запланировано',
+    'Выполнено',
+  ]);
+  await expect(
+    table.getByRole('row').nth(1).getByRole('cell').nth(1),
+  ).toHaveText('6 × 15 кг');
+  await expect(
+    table.getByRole('row').nth(1).getByRole('cell').nth(2),
+  ).toContainText('12.5');
+  await expect(
+    table.getByRole('row').nth(1).getByRole('cell').nth(2),
+  ).toContainText('7');
   await table.scrollIntoViewIfNeeded();
-  const viewport = page
-    .getByTestId(`plan-${plan.id}`)
-    .locator('.mantine-ScrollArea-viewport');
-  const mobile = test.info().project.name === 'mobile';
-  await expect(viewport).toHaveAttribute('tabindex', '0');
+  const viewport = card.locator('.mantine-ScrollArea-viewport');
   const viewportBounds = await viewport.boundingBox();
   expect(viewportBounds!.x).toBeGreaterThanOrEqual(0);
   expect(viewportBounds!.x + viewportBounds!.width).toBeLessThanOrEqual(
@@ -912,51 +949,16 @@ test('saving creates once, idle updates once, and remote facts preserve initial 
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
-  if (mobile) {
+  if (test.info().project.name === 'mobile') {
+    // The current three-column table fits the mobile viewport without horizontal scrolling.
     expect(
       await viewport.evaluate(
-        (element) => element.scrollWidth > element.clientWidth,
+        (element) => element.scrollWidth <= element.clientWidth,
       ),
     ).toBe(true);
-    const shortHeaders = table
-      .getByRole('columnheader')
-      .filter({ hasText: /^(Упражнение|Подход|Повторения|Вес, кг)$/ });
-    await expect(shortHeaders).toHaveCount(4);
-    for (const header of await shortHeaders.all()) {
-      expect(
-        await header.evaluate(
-          (element) => getComputedStyle(element).whiteSpace,
-        ),
-      ).toBe('nowrap');
-    }
-    await viewport.focus();
-    await expect(viewport).toBeFocused();
-    await viewport.evaluate((element) => {
-      element.scrollLeft = 0;
-    });
-    expect(await viewport.evaluate((element) => element.scrollLeft)).toBe(0);
-    await page.keyboard.press('ArrowRight');
-    await expect
-      .poll(() => viewport.evaluate((element) => element.scrollLeft))
-      .toBeGreaterThan(0);
-    await viewport.evaluate((element) => {
-      element.scrollLeft = element.scrollWidth;
-    });
-    await expect
-      .poll(() =>
-        viewport.evaluate((element) =>
-          Math.abs(
-            element.scrollLeft - (element.scrollWidth - element.clientWidth),
-          ),
-        ),
-      )
-      .toBeLessThanOrEqual(1);
     await page.screenshot({
       path: test.info().outputPath('synthetic-workout-results.png'),
       fullPage: false,
-    });
-    await viewport.evaluate((element) => {
-      element.scrollLeft = 0;
     });
   }
   await page.screenshot({
