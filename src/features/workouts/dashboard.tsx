@@ -35,6 +35,7 @@ import {
 } from '@/contracts/workouts';
 import { PlanForm, SessionForm, emptyPlan, emptySession } from './forms';
 import type { TransformMateSyncItem } from '@/contracts/transformmate';
+import { actualSetForExercise } from './transformmate-exercises';
 import { copyPlanToDate } from './copy-plan';
 import {
   SyncSummary,
@@ -114,14 +115,11 @@ function ExerciseTable({
                 {sync?.actual && (
                   <Table.Td style={{ overflowWrap: 'anywhere' }}>
                     {(() => {
-                      const actual = sync.actual?.exercises
-                        .find(
-                          (item) =>
-                            Boolean(exercise.transformMate?.occurrenceKey) &&
-                            item.occurrenceKey ===
-                              exercise.transformMate?.occurrenceKey,
-                        )
-                        ?.sets.find((item) => item.order === i + 1);
+                      const actual = actualSetForExercise(
+                        sync.actual,
+                        exercise,
+                        i + 1,
+                      );
                       return actual
                         ? `${actual.done ? m.done : m.notDone} · ${actual.metrics.map((metric) => `${metric.name}: ${metric.values.length ? metric.values.join(' / ') : '—'} ${metric.unit}`).join('; ')}`
                         : '—';

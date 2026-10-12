@@ -11,6 +11,7 @@ import {
   Textarea,
 } from '@mantine/core';
 import type { WorkoutExercise } from '@/contracts/workouts';
+import { selectCatalogExercise } from './transformmate-exercises';
 import { Catalog } from './catalog';
 import { workoutMessages as m } from './messages';
 
@@ -63,16 +64,7 @@ export function ExerciseEditor({
                 ownerId={ownerId}
                 exercise={exercise}
                 onSelect={(item) =>
-                  update(index, {
-                    ...exercise,
-                    name: item.name,
-                    transformMate: {
-                      exerciseId: item.id,
-                      occurrenceKey:
-                        exercise.transformMate?.occurrenceKey ??
-                        crypto.randomUUID(),
-                    },
-                  })
+                  update(index, selectCatalogExercise(exercise, item))
                 }
               />
             )}

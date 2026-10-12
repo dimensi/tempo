@@ -1,0 +1,38 @@
+import type {
+  TransformMateActual,
+  TransformMateCatalogItem,
+} from '@/contracts/transformmate';
+import type { WorkoutExercise } from '@/contracts/workouts';
+
+export function selectCatalogExercise(
+  exercise: WorkoutExercise,
+  item: TransformMateCatalogItem,
+): WorkoutExercise {
+  return {
+    ...exercise,
+    name: item.name,
+    transformMate: {
+      exerciseId: item.id,
+      occurrenceKey:
+        exercise.transformMate?.exerciseId === item.id
+          ? exercise.transformMate.occurrenceKey
+          : crypto.randomUUID(),
+    },
+  };
+}
+
+export function actualSetForExercise(
+  actual: TransformMateActual | null,
+  exercise: WorkoutExercise,
+  order: number,
+) {
+  const link = exercise.transformMate;
+  if (!link) return undefined;
+  return actual?.exercises
+    .find(
+      (item) =>
+        item.occurrenceKey === link.occurrenceKey &&
+        item.exerciseId === link.exerciseId,
+    )
+    ?.sets.find((set) => set.order === order);
+}
