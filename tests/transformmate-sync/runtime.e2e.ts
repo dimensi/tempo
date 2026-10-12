@@ -138,6 +138,26 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
   );
   await expect(dialog.locator('button.vjs-playback-rate')).toBeVisible();
   await expect(dialog.locator('.vjs-fullscreen-control')).toBeVisible();
+  for (const selector of [
+    'button.vjs-playback-rate',
+    '.vjs-fullscreen-control',
+    '.vjs-play-control',
+    '.vjs-progress-control',
+  ]) {
+    const bounds = await dialog.locator(selector).boundingBox();
+    expect(bounds!.width).toBeGreaterThanOrEqual(44);
+    expect(bounds!.height).toBeGreaterThanOrEqual(44);
+  }
+  await dialog.locator('button.vjs-playback-rate').click();
+  await dialog.getByRole('menuitemradio', { name: '2x', exact: true }).click();
+  expect(await player.evaluate((v: HTMLVideoElement) => v.playbackRate)).toBe(
+    2,
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
   await dialog.locator('.vjs-fullscreen-control').click();
   await expect
     .poll(() => page.evaluate(() => Boolean(document.fullscreenElement)))
@@ -148,7 +168,7 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
     .toBe(false);
   await page.screenshot({
     path: test.info().outputPath('synthetic-video.png'),
-    fullPage: true,
+    fullPage: false,
   });
   await dialog.getByRole('button', { name: 'Скрыть видео' }).click();
   await expect(player).toHaveCount(0);
