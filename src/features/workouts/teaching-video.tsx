@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Alert } from '@mantine/core';
+import { Alert, Group, Loader, Text } from '@mantine/core';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
 import styles from './teaching-video.module.css';
@@ -8,6 +8,7 @@ import { workoutMessages as m } from './messages';
 export function TeachingVideo({ src }: { src: string }) {
   const host = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
     if (!host.current) return;
     const element = document.createElement('video-js');
@@ -35,13 +36,26 @@ export function TeachingVideo({ src }: { src: string }) {
       playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
       sources: [{ src, type: 'video/mp4' }],
     });
-    player.on('error', () => setFailed(true));
+    player.on('loadstart', () => setLoading(true));
+    player.on('waiting', () => setLoading(true));
+    player.on('canplay', () => setLoading(false));
+    player.on('playing', () => setLoading(false));
+    player.on('error', () => {
+      setLoading(false);
+      setFailed(true);
+    });
     return () => {
       if (!player.isDisposed()) player.dispose();
     };
   }, [src]);
   return (
     <div>
+      {loading && !failed && (
+        <Group role="status" gap="xs">
+          <Loader size="sm" />
+          <Text size="sm">{m.videoLoading}</Text>
+        </Group>
+      )}
       {failed && (
         <Alert role="alert" color="red">
           {m.videoError}
