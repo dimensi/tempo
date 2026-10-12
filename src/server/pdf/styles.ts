@@ -77,10 +77,14 @@ h2{font-size:11pt;line-height:1.2;font-weight:700}
 .notes p+p{margin-top:1mm}
 .empty{font-size:8pt;color:var(--muted);margin-bottom:2mm}
 @media screen{body{background:#e8e8e2}#report-pages{width:max-content;margin:0 auto}.report-page{margin:0 auto 6mm}}
+@media print{body,#report-pages{width:210mm}.report-page{margin:0}}
+`;
+
+export const reportPreviewStyles = `
+.report-preview{font-family:Arial,system-ui,sans-serif}
 .report-preview #report-source{width:210mm;padding:6mm 11.3mm;margin:0 auto;background:var(--paper)}
 .report-preview .day-source+.day-source{border-top:.25mm solid var(--brand);margin-top:6mm;padding-top:6mm}
 .preview-header{display:flex;justify-content:space-between;align-items:baseline;gap:6mm;border-bottom:.25mm solid var(--brand);padding-bottom:2mm;margin-bottom:3mm}
-.preview-header h1{font-family:'Report Serif',serif;font-size:20pt;line-height:1.15;font-weight:400}
+.preview-header h1{font-family:inherit;font-size:20pt;line-height:1.15;font-weight:400}
 .preview-header span{font-size:9pt;color:var(--muted);text-align:right}
-@media print{body,#report-pages{width:210mm}.report-page{margin:0}}
 `;
