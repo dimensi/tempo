@@ -8,8 +8,10 @@ import {
   Stack,
   Text,
   TextInput,
+  Textarea,
 } from '@mantine/core';
 import type { WorkoutExercise } from '@/contracts/workouts';
+import { Catalog } from './catalog';
 import { workoutMessages as m } from './messages';
 
 export const emptyExercise = (): WorkoutExercise => ({
@@ -19,7 +21,9 @@ export const emptyExercise = (): WorkoutExercise => ({
 export function ExerciseEditor({
   value,
   onChange,
+  ownerId,
 }: {
+  ownerId?: string;
   value: WorkoutExercise[];
   onChange: (value: WorkoutExercise[]) => void;
 }) {
@@ -32,6 +36,7 @@ export function ExerciseEditor({
           <Stack>
             <TextInput
               label={`${m.exercise} ${index + 1}`}
+              readOnly={Boolean(exercise.transformMate)}
               value={exercise.name}
               required
               maxLength={160}
@@ -39,6 +44,80 @@ export function ExerciseEditor({
                 update(index, { ...exercise, name: event.currentTarget.value })
               }
             />
+            {ownerId && exercise.transformMate && (
+              <Button
+                variant="subtle"
+                mih={44}
+                onClick={() => {
+                  const { transformMate: link, ...manual } = exercise;
+                  void link;
+                  update(index, manual);
+                }}
+              >
+                {m.makeManual}
+              </Button>
+            )}
+            {ownerId && (
+              <Catalog
+                ownerId={ownerId}
+                exercise={exercise}
+                onSelect={(item) =>
+                  update(index, {
+                    ...exercise,
+                    name: item.name,
+                    transformMate: {
+                      exerciseId: item.id,
+                      occurrenceKey:
+                        exercise.transformMate?.occurrenceKey ??
+                        crypto.randomUUID(),
+                    },
+                  })
+                }
+              />
+            )}
+            <Textarea
+              label={m.exerciseComment}
+              maxLength={4000}
+              value={exercise.comment ?? ''}
+              onChange={(event) =>
+                update(index, {
+                  ...exercise,
+                  comment: event.currentTarget.value,
+                })
+              }
+            />
+            <Group grow>
+              <Button
+                mih={44}
+                variant="subtle"
+                disabled={index === 0}
+                onClick={() => {
+                  const next = [...value];
+                  [next[index - 1], next[index]] = [
+                    next[index]!,
+                    next[index - 1]!,
+                  ];
+                  onChange(next);
+                }}
+              >
+                {m.up}
+              </Button>
+              <Button
+                mih={44}
+                variant="subtle"
+                disabled={index === value.length - 1}
+                onClick={() => {
+                  const next = [...value];
+                  [next[index], next[index + 1]] = [
+                    next[index + 1]!,
+                    next[index]!,
+                  ];
+                  onChange(next);
+                }}
+              >
+                {m.down}
+              </Button>
+            </Group>
             {exercise.sets.map((set, setIndex) => (
               <Stack gap="xs" key={setIndex}>
                 <Text size="sm">

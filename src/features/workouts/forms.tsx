@@ -60,8 +60,10 @@ function Footer({ busy, onCancel }: Controls) {
 export function PlanForm({
   initial,
   onSave,
+  ownerId,
   ...controls
 }: Controls & {
+  ownerId: string;
   initial: WorkoutPlanInput;
   onSave: (value: WorkoutPlanInput) => void;
 }) {
@@ -82,6 +84,7 @@ export function PlanForm({
             {controls.error ?? m.validation}
           </Alert>
         )}
+        <Alert>{m.autoHint}</Alert>
         <TextInput
           label={m.planTitle}
           required
@@ -133,6 +136,38 @@ export function PlanForm({
                 <Title order={3}>
                   {m.planned} {index + 1}
                 </Title>
+                <Group grow>
+                  <Button
+                    mih={44}
+                    variant="subtle"
+                    disabled={index === 0}
+                    onClick={() => {
+                      const workouts = [...value.workouts];
+                      [workouts[index - 1], workouts[index]] = [
+                        workouts[index]!,
+                        workouts[index - 1]!,
+                      ];
+                      setValue({ ...value, workouts });
+                    }}
+                  >
+                    {m.up}
+                  </Button>
+                  <Button
+                    mih={44}
+                    variant="subtle"
+                    disabled={index === value.workouts.length - 1}
+                    onClick={() => {
+                      const workouts = [...value.workouts];
+                      [workouts[index], workouts[index + 1]] = [
+                        workouts[index + 1]!,
+                        workouts[index]!,
+                      ];
+                      setValue({ ...value, workouts });
+                    }}
+                  >
+                    {m.down}
+                  </Button>
+                </Group>
                 <TextInput
                   label={`${m.workoutTitle} ${index + 1}`}
                   required
@@ -154,6 +189,7 @@ export function PlanForm({
                   }
                 />
                 <ExerciseEditor
+                  ownerId={ownerId}
                   value={workout.exercises}
                   onChange={(exercises) => update({ exercises })}
                 />
