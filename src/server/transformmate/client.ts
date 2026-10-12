@@ -9,6 +9,7 @@ import {
   transformMateTrainingsSchema,
   transformMateTrainingDetailSchema,
 } from '@/server/transformmate/schemas';
+import { transformMateCatalogSchema } from '@/server/transformmate/catalog-schema';
 import { transformMateExerciseDetailSchema } from '@/server/transformmate/exercise-schema';
 import { trainingWriteSnapshot } from '@/server/transformmate/write-snapshot';
 import {
@@ -111,7 +112,38 @@ export function createTransformMateClient(options: {
         redirect: 'error',
         signal: AbortSignal.timeout(30_000),
       });
-      const text = await response.text();
+      const limit = 16 * 1024 * 1024;
+      const declaredLength = response.headers.get('content-length');
+      if (declaredLength && Number(declaredLength) > limit) {
+        await response.body?.cancel();
+        throw new Error();
+      }
+      const reader = response.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      if (reader) {
+        try {
+          while (true) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            size += chunk.value.byteLength;
+            if (size > limit) {
+              await reader.cancel();
+              throw new Error();
+            }
+            chunks.push(chunk.value);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      const text = new TextDecoder().decode(bytes);
       let body: unknown = redact(text);
       let isJson = false;
       try {
@@ -235,6 +267,7 @@ export function createTransformMateClient(options: {
     listTrainings: () =>
       validated('workouts/trainings/', transformMateTrainingsSchema),
     getTraining,
+    listExercises: () => validated('exercises/', transformMateCatalogSchema),
     getExercise: (id: number) => {
       if (!Number.isSafeInteger(id) || id <= 0)
         throw new Error('Invalid TransformMate exercise ID');
