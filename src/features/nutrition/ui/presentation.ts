@@ -1,4 +1,5 @@
-import type { NutritionEntry } from '@/contracts/nutrition';
+import Decimal from 'decimal.js';
+import type { NutritionEntry, NutritionTotals } from '@/contracts/nutrition';
 import { diaryMessages as m } from './messages';
 
 import { formatDecimal } from '@/lib/number-display';
@@ -33,4 +34,14 @@ export function entryAmounts(entry: NutritionEntry) {
       ? []
       : [[m.estimate, displayValue(entry.ingredientMassEstimateG, 'г')]]),
   ];
+}
+
+// Display significance only; normalization and stored decimal values remain unchanged.
+export function noticeableDifferences(delta: NutritionTotals) {
+  return (Object.keys(m.nutrients) as (keyof NutritionTotals)[]).filter(
+    (key) => {
+      const value = delta[key];
+      return value !== null && new Decimal(value).abs().gte('0.005');
+    },
+  );
 }

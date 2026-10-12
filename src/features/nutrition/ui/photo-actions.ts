@@ -1,4 +1,4 @@
-import type { MealKind, SafeMealPhotoView } from '@/contracts/nutrition';
+import type { SafeMealPhotoView } from '@/contracts/nutrition';
 import type { DiaryPhoto } from './diary-view';
 
 export function mealPhotoUrl(ownerId: string, id: string) {
@@ -25,14 +25,6 @@ export function createPhotoActions(ownerId: string, onUpdated: () => void) {
     onUpdated();
   }
   return {
-    upload: (date: string, daytime: MealKind, file: File) => {
-      const query = new URLSearchParams({ ownerId, date, daytime });
-      return request(`/api/nutrition/photos?${query}`, {
-        method: 'POST',
-        headers: { 'Content-Type': file.type },
-        body: file,
-      });
-    },
     remove: (id: string) =>
       request(mealPhotoUrl(ownerId, id), { method: 'DELETE' }),
   };

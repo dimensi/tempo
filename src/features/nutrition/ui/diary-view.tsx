@@ -7,7 +7,7 @@ import {
   Box,
   Button,
   Card,
-  FileButton,
+  Accordion,
   Group,
   Image,
   Modal,
@@ -18,13 +18,17 @@ import {
 } from '@mantine/core';
 import {
   meals,
-  type MealKind,
   type NutritionDay,
   type NutritionTotals,
   type SafeMealPhotoView,
 } from '@/contracts/nutrition';
 import { diaryMessages as m } from './messages';
-import { displayValue, displayIssue, entryAmounts } from './presentation';
+import {
+  displayValue,
+  displayIssue,
+  entryAmounts,
+  noticeableDifferences,
+} from './presentation';
 
 export interface DiaryPhoto extends SafeMealPhotoView {
   href: string;
@@ -38,7 +42,6 @@ export interface DiaryViewProps {
   navigationSlot?: ReactNode;
   // Coordinator supplies authorized operations; absent operations hide mutation controls.
   photoActions?: {
-    upload: (date: string, meal: MealKind, file: File) => Promise<void>;
     remove: (id: string) => Promise<void>;
   };
 }
@@ -58,9 +61,7 @@ function Totals({
       <SimpleGrid cols={{ base: 2, sm: 4 }}>
         {(Object.keys(m.nutrients) as (keyof NutritionTotals)[]).map((key) => (
           <Box key={key}>
-            <Text size="sm" c="dimmed">
-              {m.nutrients[key]}
-            </Text>
+            <Text size="sm">{m.nutrients[key]}</Text>
             <Text
               title={totals[key] ?? undefined}
               style={{ overflowWrap: 'anywhere' }}
@@ -74,6 +75,69 @@ function Totals({
           </Box>
         ))}
       </SimpleGrid>
+    </Stack>
+  );
+}
+
+function Summary({
+  totals,
+  knownTotals,
+  officialTotals,
+  delta,
+  showSource = false,
+}: {
+  totals: NutritionTotals;
+  knownTotals: NutritionTotals;
+  officialTotals: NutritionTotals;
+  delta: NutritionTotals;
+  showSource?: boolean;
+}) {
+  const differences = noticeableDifferences(delta);
+  return (
+    <Stack gap="sm">
+      <Totals totals={totals} label={m.totals} />
+      {showSource && <Text size="sm">{m.sourceNote}</Text>}
+      {Object.values(totals).some((value) => value === null) && (
+        <Alert color="yellow">{m.partial}</Alert>
+      )}
+      {differences.length > 0 && (
+        <Alert
+          color="yellow"
+          role="alert"
+          title={m.mismatch}
+          styles={{
+            title: { color: 'var(--mantine-color-text)' },
+            message: { color: 'var(--mantine-color-text)' },
+          }}
+        >
+          {differences.map((key) => (
+            <Text key={key} size="sm">
+              {m.nutrients[key]}:{' '}
+              {displayValue(
+                delta[key],
+                key === 'calories' ? 'ккал' : 'г',
+                'delta',
+              )}
+            </Text>
+          ))}
+        </Alert>
+      )}
+      <Accordion variant="default">
+        <Accordion.Item value="comparison">
+          <Accordion.Control>{m.comparison}</Accordion.Control>
+          <Accordion.Panel>
+            <Stack gap="md">
+              <Text size="sm">{m.knownNote}</Text>
+              <Totals totals={knownTotals} label={m.known} />
+              <Totals totals={officialTotals} label={m.official} />
+              <Totals totals={delta} label={m.delta} kind="delta" />
+              <Text size="sm" c="dimmed">
+                {m.roundingNote}
+              </Text>
+            </Stack>
+          </Accordion.Panel>
+        </Accordion.Item>
+      </Accordion>
     </Stack>
   );
 }
@@ -112,19 +176,8 @@ export function DiaryView({
       {!day ? (
         <Alert>{m.empty}</Alert>
       ) : (
-        <Card withBorder>
-          <Stack>
-            <Totals totals={day.totals} label={m.totals} />
-            {Object.values(day.totals).some((value) => value === null) && (
-              <Alert color="yellow">{m.partial}</Alert>
-            )}
-            <Totals totals={day.knownTotals} label={m.known} />
-            <Totals totals={day.officialTotals} label={m.official} />
-            <Totals totals={day.delta} label={m.delta} kind="delta" />
-            <Text size="sm" c="dimmed">
-              {m.roundingNote}
-            </Text>
-          </Stack>
+        <Card withBorder component="section" aria-label={m.daySummary}>
+          <Summary {...day} showSource />
         </Card>
       )}
       {error && (
@@ -134,6 +187,9 @@ export function DiaryView({
       )}
       {meals.map((kind) => {
         const meal = day?.meals.find((meal) => meal.kind === kind);
+        const mealPhotos = photos.filter(
+          (photo) => photo.date === date && photo.daytime === kind,
+        );
         return (
           <Card
             key={kind}
@@ -143,14 +199,11 @@ export function DiaryView({
           >
             <Stack>
               <Title order={2}>{m.meals[kind]}</Title>
-              {meal && (
-                <>
-                  <Totals totals={meal.totals} label={m.totals} />
-                  <Totals totals={meal.knownTotals} label={m.known} />
-                  <Totals totals={meal.officialTotals} label={m.official} />
-                  <Totals totals={meal.delta} label={m.delta} kind="delta" />
-                </>
-              )}
+              {meal &&
+                (meal.entries.length > 0 ||
+                  noticeableDifferences(meal.delta).length > 0) && (
+                  <Summary {...meal} />
+                )}
               {!meal?.entries.length && <Text c="dimmed">{m.noEntries}</Text>}
               {meal?.entries.map((entry) => (
                 <Card key={entry.id} withBorder>
@@ -161,7 +214,7 @@ export function DiaryView({
                       </Text>
                       {entry.kind === 'ai' && <Badge>{m.ai}</Badge>}
                     </Group>
-                    <Totals totals={entry.totals} label={m.totals} />
+                    <Totals totals={entry.totals} label={m.entryTotals} />
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
                       {entryAmounts(entry).map(([label, value]) => (
                         <Text
@@ -191,58 +244,34 @@ export function DiaryView({
                   </Stack>
                 </Card>
               ))}
-              <Text fw={600}>{m.photos}</Text>
+              {mealPhotos.length > 0 && <Text fw={600}>{m.photos}</Text>}
               <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                {photos
-                  .filter(
-                    (photo) => photo.date === date && photo.daytime === kind,
-                  )
-                  .map((photo) => (
-                    <Stack key={photo.id}>
-                      <Image
-                        src={photo.href}
-                        alt={`${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
-                        radius="md"
-                        h={220}
-                        fit="contain"
-                      />
-                      <Text size="sm">
-                        {photo.source === 'yazio' ? m.automatic : m.manual}
-                      </Text>
-                      {photo.source === 'manual' && photoActions && (
-                        <Button
-                          variant="light"
-                          color="red"
-                          mih={44}
-                          disabled={pending}
-                          onClick={() => setDeleting(photo.id)}
-                        >
-                          {m.remove}
-                        </Button>
-                      )}
-                    </Stack>
-                  ))}
+                {mealPhotos.map((photo) => (
+                  <Stack key={photo.id}>
+                    <Image
+                      src={photo.href}
+                      alt={`${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
+                      radius="md"
+                      h={220}
+                      fit="contain"
+                    />
+                    <Text size="sm">
+                      {photo.source === 'yazio' ? m.automatic : m.manual}
+                    </Text>
+                    {photo.source === 'manual' && photoActions && (
+                      <Button
+                        variant="light"
+                        color="red"
+                        mih={44}
+                        disabled={pending}
+                        onClick={() => setDeleting(photo.id)}
+                      >
+                        {m.remove}
+                      </Button>
+                    )}
+                  </Stack>
+                ))}
               </SimpleGrid>
-              {photoActions && (
-                <FileButton
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={(file) => {
-                    if (file)
-                      void mutate(() => photoActions.upload(date, kind, file));
-                  }}
-                >
-                  {(props) => (
-                    <Button
-                      {...props}
-                      variant="light"
-                      mih={44}
-                      disabled={pending}
-                    >
-                      {m.upload}
-                    </Button>
-                  )}
-                </FileButton>
-              )}
             </Stack>
           </Card>
         );
