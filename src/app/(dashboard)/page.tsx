@@ -6,7 +6,7 @@ export const metadata = { title: 'Обзор' };
 export default async function Page() {
   await requireSession();
   return (
-    <Stack gap={32} maw={1000} style={{ minWidth: 0 }}>
+    <Stack gap={32} style={{ minWidth: 0 }}>
       <Overview />
       <HealthOverviewSteps />
     </Stack>

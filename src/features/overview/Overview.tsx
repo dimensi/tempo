@@ -101,7 +101,7 @@ export function Overview() {
       ? data
       : null;
   return (
-    <Stack gap={32} maw={1000} className={classes.surface}>
+    <Stack gap={32} className={classes.surface}>
       <Stack gap={4}>
         <Title order={1}>{m.title}</Title>
         <Text c="dimmed">

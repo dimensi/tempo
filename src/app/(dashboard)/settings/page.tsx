@@ -28,7 +28,7 @@ export default async function Page() {
     listTrainers(requestHeaders, session.user.id),
   ]);
   return (
-    <Stack gap="xl" maw={960}>
+    <Stack gap="xl">
       <Stack gap="xs">
         <Title order={1}>{ru.sections[6]!.title}</Title>
         <Text c="dimmed">{ru.settings.description}</Text>
