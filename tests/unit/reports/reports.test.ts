@@ -105,7 +105,7 @@ describe('report rules', () => {
     expect(summarizeDays(days, 2).knownTotals.fat).toBe('27.3056');
     expect(summarizeDays(days, 3).totals.calories).toBeNull();
   });
-  it('escapes upstream markup, explicitly marks missing/unknown/partial values and keeps original entry decimals', () => {
+  it('escapes upstream markup and marks missing/unknown/partial values with rounded display decimals', () => {
     const day = syntheticDay();
     day.meals[0]!.entries[0]!.name =
       '<img src="https://evil.test" onerror="alert(1)">';
@@ -120,10 +120,50 @@ describe('report rules', () => {
       'Неизвестно',
       'Известная часть',
       'Нет данных за этот день',
-      '180.32',
-      '12.5212',
+      '180,32',
+      '12,52',
     ])
       expect(html).toContain(text);
+  });
+  it('formats official totals and tiny deltas without altering authoritative decimal calculations', () => {
+    const day = syntheticDay();
+    day.officialTotals = {
+      calories: '180.3200',
+      protein: '1.005',
+      fat: '3.4499999999999997',
+      carbs: '6.1499999999999995',
+    };
+    day.delta = {
+      calories: '3e-16',
+      protein: '-5e-16',
+      fat: null,
+      carbs: '-0.015',
+    };
+    const before = structuredClone(day);
+    const html = renderReportHtml(
+      request,
+      { days: [day], photos: [] },
+      new Uint8Array(),
+    );
+    for (const text of [
+      '180,32',
+      '1,01',
+      '3,45',
+      '6,15',
+      '-0,02',
+      '<dd>≈ 0</dd>',
+    ])
+      expect(html).toContain(text);
+    for (const raw of [
+      '3.4499999999999997',
+      '6.1499999999999995',
+      '3e-16',
+      '-5e-16',
+      '<dd>-0</dd>',
+    ])
+      expect(html).not.toContain(raw);
+    expect(day).toEqual(before);
+    expect(summarizeDays([day, day], 2).totals.protein).toBe('25.0424');
   });
   it('fails no-data, duplicate/out-of-scope days and excessive entry/string/decimal budgets', async () => {
     await expect(
