@@ -16,5 +16,16 @@ docker tag "$image_id" "$image_tag"
 mkdir release-artifact
 docker image save "$image_tag" | gzip > release-artifact/image.tar.gz
 archive_sha256=$(sha256sum release-artifact/image.tar.gz | cut -d ' ' -f 1)
-printf '{"revision":"%s","tree":"%s","imageTag":"%s","imageId":"%s","archiveSHA256":"%s"}\n' \
-  "$revision" "$tree" "$image_tag" "$image_id" "$archive_sha256" > release-artifact/manifest.json
+docker image inspect "$image_tag" | python3 -c '
+import json, sys
+image = json.load(sys.stdin)[0]
+revision, tree, image_tag, image_id, archive_sha256 = sys.argv[1:]
+config_fields = ("Env", "Entrypoint", "Cmd", "User", "WorkingDir", "ExposedPorts", "Labels")
+json.dump({
+    "revision": revision, "tree": tree, "imageTag": image_tag,
+    "imageId": image_id, "archiveSHA256": archive_sha256,
+    "rootFSDiffIDs": image["RootFS"]["Layers"],
+    "runtimeConfig": {field: image["Config"].get(field) for field in config_fields},
+}, sys.stdout, indent=2)
+print()
+' "$revision" "$tree" "$image_tag" "$image_id" "$archive_sha256" > release-artifact/manifest.json
