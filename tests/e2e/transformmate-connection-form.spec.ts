@@ -109,6 +109,27 @@ test('connection form clears synthetic credentials and confirms disconnect witho
   ).toBeVisible();
   await expect(key).toHaveCount(0);
   await expect(token).toHaveCount(0);
+  for (const name of ['Проверить подключение', 'Отключить']) {
+    const button = page.getByRole('button', { name, exact: true });
+    await expect(button).toBeVisible();
+    expect(
+      await button.evaluate((element) => {
+        const label = element.querySelector<HTMLElement>(
+          '.mantine-Button-label',
+        );
+        return Boolean(
+          label &&
+          label.scrollWidth <= label.clientWidth &&
+          element.getBoundingClientRect().height >= 44,
+        );
+      }),
+      `${name} must show its full label and provide a 44px touch target`,
+    ).toBe(true);
+  }
+  await page.screenshot({
+    path: test.info().outputPath('connection-configured.png'),
+    fullPage: true,
+  });
   await page.getByRole('button', { name: 'Проверить подключение' }).click();
   await expect(
     page.getByText('Подключение больше не действует.', { exact: false }),

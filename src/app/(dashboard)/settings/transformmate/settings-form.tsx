@@ -7,6 +7,7 @@ import {
   Group,
   Modal,
   PasswordInput,
+  SimpleGrid,
   Stack,
   Text,
   Title,
@@ -188,7 +189,7 @@ export function TransformMateSettingsForm({
               ? new Date(status.checkedAt).toLocaleString('ru-RU')
               : '—'}
           </Text>
-          <Group grow>
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <Button
               mih={44}
               variant="light"
@@ -205,7 +206,7 @@ export function TransformMateSettingsForm({
             >
               {m.disconnect}
             </Button>
-          </Group>
+          </SimpleGrid>
         </Stack>
       )}
       {!denied &&
