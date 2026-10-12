@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { browserToday } from './day-navigation-dates';
+import { browserToday } from '@/components/shared/date-navigation-dates';
 import { DayNavigation } from './day-navigation';
 import { diaryDateSchema, type SafeMealPhotoView } from '@/contracts/nutrition';
 import { DiaryView, type DiaryViewProps } from './diary-view';

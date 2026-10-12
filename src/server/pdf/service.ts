@@ -145,7 +145,7 @@ export async function generateReport(
   const html = renderReportHtml(request, dataset, await readReportFonts());
   if (Buffer.byteLength(html) > reportLimits.htmlBytes)
     throw new ReportError('OVERSIZED', 413);
-  const result = await renderReport(html, request.format);
+  const result = await renderReport(html, request.format, signal);
   signal.throwIfAborted();
   if (
     typeof result === 'string' &&
