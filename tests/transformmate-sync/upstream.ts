@@ -146,7 +146,20 @@ export async function startUpstream() {
       else if (control.action === 'cachedauthdelay')
         delay = control.delay ?? 500;
       else if (control.action === 'rotate') rotate = true;
-      else if (
+      else if (control.action === 'seednative') {
+        const id = nextId++;
+        const detail = trainingDetailFixture(true);
+        detail.id = id;
+        detail.name = 'Native phone workout';
+        detail.description = 'Created in TransformMate';
+        detail.protocols[0]!.workout_exercises.push({
+          ...structuredClone(detail.protocols[0]!.workout_exercises[0]!),
+          id: detail.protocols[0]!.workout_exercises[0]!.id + 1,
+          order: 2,
+          exercise: { id: 502, name: 'Second native exercise' },
+        });
+        trainings.set(id, detail);
+      } else if (
         ['setfact', 'unstartedfact', 'start', 'externaledit'].includes(
           control.action,
         )

@@ -5,6 +5,7 @@ import { authorize } from '@/server/auth/guards';
 import { getAccessibleOwnerId } from '@/server/access/owner';
 import { measurementRepository } from '@/server/measurements/repository';
 import { yazioHealthRepository } from '@/server/yazio/health-repository';
+import { ownerConfirmedYazioWeightUnit } from '@/contracts/yazio-weight-policy';
 import {
   healthRangeSchema,
   healthRangeDates,
@@ -79,8 +80,7 @@ export async function getWeightHistory(headers: Headers, input: unknown) {
     imported: imported.map((record) => ({
       measuredAt: record.measuredDate,
       rawValue: record.rawValue,
-      unit: null,
-      unitStatus: 'UNKNOWN',
+      ...ownerConfirmedYazioWeightUnit,
       source: 'YAZIO',
     })),
   });

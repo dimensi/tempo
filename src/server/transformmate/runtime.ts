@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash } from 'node:crypto';
 import { resolve, sep } from 'node:path';
 import { readServerEnv } from '@/server/env';
 import { createTransformMateClient, type TransformMateClient } from './client';
@@ -31,6 +32,29 @@ const clients = new Map<
     store: ReturnType<typeof configuredTransformMateStore>;
   }
 >();
+
+function accountScope(
+  ownerId: string,
+  binding: {
+    account: { id: number };
+    userId: string;
+    projectId: string;
+  },
+) {
+  const hash = createHash('sha256');
+  for (const value of [
+    ownerId,
+    String(binding.account.id),
+    binding.userId,
+    binding.projectId,
+  ]) {
+    const bytes = Buffer.from(value, 'utf8');
+    const length = Buffer.allocUnsafe(4);
+    length.writeUInt32BE(bytes.byteLength);
+    hash.update(length).update(bytes);
+  }
+  return hash.digest('hex');
+}
 export function invalidateTransformMateClient(ownerId: string) {
   clients.delete(ownerId);
 }
@@ -135,12 +159,31 @@ export async function getTransformMateConnectionFence(ownerId: string) {
   const entry = clients.get(ownerId);
   if (!entry || entry.client !== client)
     throw new TransformMateStaleConnectionError();
+  const bindingRevision = entry.store.bindingRevision();
   await entry.store.assertCurrent();
+  entry.store.assertBindingRevision(bindingRevision);
   if (clients.get(ownerId) !== entry)
     throw new TransformMateStaleConnectionError();
   return {
     client: entry.client,
     generation: entry.token.connectionId,
+    accountScope: accountScope(ownerId, entry.token),
     assertCurrent: () => entry.store.assertCurrent(),
+    assertBindingCurrent: () =>
+      entry.store.assertBindingRevision(bindingRevision),
+  };
+}
+
+/** Binding-only fence also exposes cached history while disconnected. */
+export async function getTransformMateBindingFence(ownerId: string) {
+  const store = configuredTransformMateStore(ownerId);
+  const bindingRevision = store.bindingRevision();
+  const state = await store.load();
+  store.assertBindingRevision(bindingRevision);
+  return {
+    configured: Boolean(state.token),
+    accountScope: state.binding ? accountScope(ownerId, state.binding) : null,
+    assertCurrent: () => store.assertLoadedCurrent(),
+    assertBindingCurrent: () => store.assertBindingRevision(bindingRevision),
   };
 }

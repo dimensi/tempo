@@ -207,6 +207,11 @@ export function fileTransformMateTokenStore(
         if (!current.token) throw new TransformMateStaleConnectionError();
       });
     },
+    async assertLoadedCurrent() {
+      return serialized(path, async () => {
+        assertGeneration(await read());
+      });
+    },
     async offlineBinding() {
       return serialized(path, async () => {
         const current = await read();
@@ -257,6 +262,13 @@ export function fileTransformMateTokenStore(
     },
     generation() {
       return expected;
+    },
+    bindingRevision() {
+      return transformMateOfflineBindingRevision(path);
+    },
+    assertBindingRevision(revision: number) {
+      if (transformMateOfflineBindingRevision(path) !== revision)
+        throw new TransformMateStaleConnectionError();
     },
   };
 }

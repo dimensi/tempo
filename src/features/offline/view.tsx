@@ -1,5 +1,10 @@
 'use client';
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+} from 'react';
 import Decimal from 'decimal.js';
 import {
   Accordion,
@@ -22,8 +27,9 @@ import type { NutritionTotals } from '@/contracts/nutrition';
 import { healthRangeDates } from '@/contracts/health';
 import { hasNutritionMealContent } from '@/lib/nutrition-meal-content';
 import { formatDecimal } from '@/lib/number-display';
-import { concealOfflineContent } from '@/lib/offline-device';
+import { revealOfflineContent } from '@/lib/offline-device';
 import { getOfflineController } from './controller';
+import { attachOfflineRefresh } from './refresh';
 import { offlineMessages as m } from './messages';
 import classes from './offline.module.css';
 
@@ -238,7 +244,7 @@ function Measurements({ snapshot }: { snapshot: OfflineSnapshot }) {
         </Table.ScrollContainer>
       )}
       <Title order={2}>{m.weight}</Title>
-      <Text>{m.unknownHelp}</Text>
+      <Text>{m.weightHelp}</Text>
       {snapshot.importedWeights.length === 0 ? (
         <Text>{m.empty}</Text>
       ) : (
@@ -256,8 +262,9 @@ function Measurements({ snapshot }: { snapshot: OfflineSnapshot }) {
                 <Table.Tr key={record.key}>
                   <Table.Td>{record.measuredDate}</Table.Td>
                   <Table.Td>
-                    {display(record.rawValue)}
-                    <Text>{m.unknown}</Text>
+                    {display(record.rawValue)}{' '}
+                    {record.rawValue !== null && m.kg}
+                    <Text>{m.ownerConfirmed}</Text>
                   </Table.Td>
                   <Table.Td>YAZIO</Table.Td>
                 </Table.Tr>
@@ -392,6 +399,77 @@ function Workouts({ snapshot }: { snapshot: OfflineSnapshot }) {
           </Stack>
         ))
       )}
+      <Title order={2}>{m.nativeHistory}</Title>
+      {snapshot.nativeTrainings.length === 0 ? (
+        <Text>{m.empty}</Text>
+      ) : (
+        snapshot.nativeTrainings.map((training) => (
+          <Stack key={training.key} className={classes.entry}>
+            <Title order={3}>
+              {training.date} · {training.title}
+            </Title>
+            <Badge variant="outline" style={badgeStyles}>
+              TransformMate
+            </Badge>
+            <Text>
+              {m.progress}: {training.progress}
+            </Text>
+            <Text>
+              {m.started}: {training.started ?? m.noData} · {m.finished}:{' '}
+              {training.finished ?? m.noData}
+            </Text>
+            <Text>
+              {m.fetchedAt}: {training.fetchedAt}
+            </Text>
+            <Text>
+              {m.remoteUpdated}: {training.remoteUpdatedAt}
+            </Text>
+            {training.exercises
+              .toSorted(
+                (a, b) =>
+                  a.protocolOrder - b.protocolOrder || a.order - b.order,
+              )
+              .map((exercise, index) => (
+                <Stack key={index} gap={4}>
+                  <Text fw={600}>
+                    {exercise.protocolOrder}.{exercise.order} · {exercise.name}
+                  </Text>
+                  {exercise.comment && <Text>{exercise.comment}</Text>}
+                  {exercise.metrics.map((group, index) => (
+                    <Stack key={index} gap={4}>
+                      <Text fw={600}>
+                        {group.type === 'plan' ? m.plans : m.actual}
+                      </Text>
+                      {group.sets
+                        .toSorted((a, b) => a.order - b.order)
+                        .map((set) => (
+                          <Stack key={set.order} gap={4}>
+                            <Text>
+                              {set.order}:{' '}
+                              {set.done === null
+                                ? m.noData
+                                : set.done
+                                  ? m.done
+                                  : m.notDone}
+                            </Text>
+                            {set.metrics.map((metric, index) => (
+                              <Text key={index}>
+                                {metric.name} ({metric.type}):{' '}
+                                {metric.values.length
+                                  ? metric.values.join(' / ')
+                                  : m.noData}{' '}
+                                {metric.unit}
+                              </Text>
+                            ))}
+                          </Stack>
+                        ))}
+                    </Stack>
+                  ))}
+                </Stack>
+              ))}
+          </Stack>
+        ))
+      )}
       <Title order={2}>{m.facts}</Title>
       {snapshot.transformMateFacts.length === 0 ? (
         <Text>{m.empty}</Text>
@@ -448,31 +526,15 @@ export function OfflineViewer() {
   );
   useEffect(() => {
     const stop = controller.listen();
-    const activate = () => {
-      void controller.activate();
-    };
-    const visible = () => {
-      if (document.visibilityState === 'visible') activate();
-    };
-    const hide = () => {
-      concealOfflineContent();
-      controller.invalidate();
-    };
-    activate();
-    window.addEventListener('online', activate);
-    window.addEventListener('focus', activate);
-    window.addEventListener('pageshow', activate);
-    window.addEventListener('pagehide', hide);
-    document.addEventListener('visibilitychange', visible);
+    const detach = attachOfflineRefresh(controller);
     return () => {
       stop();
-      window.removeEventListener('online', activate);
-      window.removeEventListener('focus', activate);
-      window.removeEventListener('pageshow', activate);
-      window.removeEventListener('pagehide', hide);
-      document.removeEventListener('visibilitychange', visible);
+      detach();
     };
   }, [controller]);
+  useLayoutEffect(() => {
+    if (state.bundle) revealOfflineContent(state.bundle.fence);
+  }, [state]);
   const bundle = state.bundle;
   const photoMap = new Map(
     state.photos.map((photo) => [photo.id, photo.bytes]),
@@ -509,10 +571,6 @@ export function OfflineViewer() {
                 </Text>
                 <Text>
                   {m.saved}: {new Date(bundle.savedAt).toLocaleString('ru-RU')}
-                </Text>
-                <Text>
-                  {m.until}:{' '}
-                  {new Date(bundle.expiresAt).toLocaleString('ru-RU')}
                 </Text>
                 <Text>
                   {m.photoCoverage}: {state.photos.length} /{' '}

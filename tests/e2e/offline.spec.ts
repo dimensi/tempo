@@ -19,7 +19,7 @@ async function inject(page: import('@playwright/test').Page) {
   await page.addScriptTag({ content: harness });
 }
 const call = (expression: string) => `window.offlineTest.${expression}`;
-test('native IDB preserves blobs, fences stale writes, and removes expired or rollback snapshots', async ({
+test('native IDB preserves blobs, fences stale writes, and retains expired local copies and rejects rollback snapshots', async ({
   page,
 }) => {
   await inject(page);
@@ -39,11 +39,112 @@ test('native IDB preserves blobs, fences stale writes, and removes expired or ro
   await page.evaluate(call('seed()'));
   expect(
     await page.evaluate(call('read(window.offlineTest.now + 600000)')),
-  ).toEqual({ present: false, photos: 0, enabled: false });
+  ).toEqual({ present: true, photos: 1, enabled: true });
   await page.evaluate(call('seed()'));
   expect(await page.evaluate(call('read(window.offlineTest.now - 1)'))).toEqual(
     { present: false, photos: 0, enabled: false },
   );
+});
+test('offline rolling calendar read prunes old records and photo blobs transactionally', async ({
+  page,
+  context,
+}) => {
+  await inject(page);
+  await page.evaluate(call('seed()'));
+  expect(await page.evaluate(call('commitOldPhoto()'))).toBe(0);
+  expect(await page.evaluate(call('rawCounts()'))).toEqual({
+    bundle: 1,
+    photos: 0,
+  });
+  await page.evaluate(call('seed()'));
+  await page.evaluate(call("alterNative('boundary')"));
+  await context.setOffline(true);
+  try {
+    expect(await page.evaluate(call('details()'))).toEqual({
+      enabled: true,
+      photos: 1,
+      collections: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    });
+    expect(
+      await page.evaluate(call('details(window.offlineTest.now+86400000)')),
+    ).toEqual({
+      enabled: true,
+      photos: 0,
+      collections: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    });
+    expect(await page.evaluate(call('rawCounts()'))).toEqual({
+      bundle: 1,
+      photos: 0,
+    });
+  } finally {
+    await context.setOffline(false);
+  }
+});
+test('old unknown-unit cache is physically cleared while device preference survives', async ({
+  page,
+}) => {
+  await inject(page);
+  await page.evaluate(call('seed()'));
+  await page.evaluate(call("alterNative('old-format')"));
+  expect(await page.evaluate(call('read()'))).toEqual({
+    present: false,
+    photos: 0,
+    enabled: true,
+  });
+  expect(await page.evaluate(call('rawCounts()'))).toEqual({
+    bundle: 0,
+    photos: 0,
+  });
+  expect(await page.evaluate(call('stale()'))).toBe(true);
+});
+test('pre-native cached snapshot and blobs clear while opt-in survives', async ({
+  page,
+}) => {
+  await inject(page);
+  await page.evaluate(call('seed()'));
+  await page.evaluate(call("alterNative('pre-native')"));
+  expect(await page.evaluate(call('read()'))).toEqual({
+    present: false,
+    photos: 0,
+    enabled: true,
+  });
+  expect(await page.evaluate(call('rawCounts()'))).toEqual({
+    bundle: 0,
+    photos: 0,
+  });
+  expect(await page.evaluate(call('stale()'))).toBe(true);
+});
+test('online controller schema upgrade preserves prior generation opt-in and refills only after identity verification', async ({
+  page,
+}) => {
+  await inject(page);
+  await page.evaluate(call('seed()'));
+  await page.evaluate(call("alterNative('pre-native')"));
+  expect(await page.evaluate(call('rawCounts()'))).toEqual({
+    bundle: 1,
+    photos: 1,
+  });
+  const result = await page.evaluate<{ requests: string[] }>(
+    call('upgradeOnline()'),
+  );
+  expect(result).toMatchObject({
+    enabled: true,
+    status: 'ready',
+    native: 1,
+    photos: 0,
+    generationAdvanced: true,
+    nativePublishes: [1],
+  });
+  expect(result.requests).toEqual([
+    '/api/offline/identity',
+    expect.stringMatching(/^\/api\/offline\/snapshot\?from=/),
+    '/api/offline/identity',
+  ]);
+  expect(await page.evaluate(call('rawCounts()'))).toEqual({
+    bundle: 1,
+    photos: 0,
+  });
+  expect(await page.evaluate(call('stale()'))).toBe(true);
 });
 test('two tabs hide private DOM and durably block storage before physical cleanup', async ({
   page,
@@ -69,7 +170,7 @@ test('two tabs hide private DOM and durably block storage before physical cleanu
   });
 });
 
-test('OWNER explicitly saves real API snapshot, offline read preserves zero and unknown unit; TRAINER is denied', async ({
+test('OWNER explicitly saves real API snapshot, offline read preserves zero and owner-confirmed weight units; TRAINER is denied', async ({
   page,
 }, info) => {
   const db = new Database('.data/e2e.sqlite');
@@ -122,22 +223,13 @@ test('OWNER explicitly saves real API snapshot, offline read preserves zero and 
     await expect(section).toContainText(
       'По умолчанию данные на устройстве не сохраняются',
     );
-    expect(
-      await section
-        .locator('input[type=date]')
-        .evaluateAll((inputs) =>
-          inputs.every(
-            (input) =>
-              input.getBoundingClientRect().height >= 44 &&
-              parseFloat(getComputedStyle(input).fontSize) >= 16,
-          ),
-        ),
-    ).toBe(true);
-    await section.locator('input[type=date]').nth(0).fill(date);
-    await section.locator('input[type=date]').nth(1).fill(date);
-    await section
-      .getByRole('button', { name: 'Включить и сохранить период', exact: true })
-      .click();
+    await expect(section.locator('input[type=date]')).toHaveCount(0);
+    const toggle = section.getByRole('switch', {
+      name: 'Доступно офлайн',
+      exact: true,
+    });
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
     await expect(
       section.getByRole('link', { name: 'Открыть сохранённые данные' }),
     ).toBeVisible({ timeout: 30000 });
@@ -154,7 +246,7 @@ test('OWNER explicitly saves real API snapshot, offline read preserves zero and 
       .getByRole('tab', { name: 'Локальные замеры', exact: true })
       .click();
     await expect(
-      page.getByText('Единица неизвестна', { exact: true }),
+      page.getByText('Килограммы подтверждены владельцем', { exact: true }),
     ).toBeVisible();
     await page.getByRole('tab', { name: 'Шаги', exact: true }).click();
     await expect(
@@ -212,7 +304,38 @@ test('OWNER explicitly saves real API snapshot, offline read preserves zero and 
           /^\/offline\/shell-.*\.html$/.test(path),
       ),
     ).toBe(true);
+    // Local retention is separate from live authorization: a downloaded copy
+    // remains offline, but the first reconnect denial clears it before display.
+    db.prepare('UPDATE session SET expires_at=0 WHERE user_id=?').run(owner.id);
+    await page.reload();
+    await expect(page.locator('[data-offline-private]')).toBeVisible();
+    await expect(
+      page.getByText('Без сети · сохранённые данные', { exact: true }),
+    ).toBeVisible();
+    const reconnectDenied = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/offline/identity') &&
+        response.status() === 401,
+    );
     await page.context().setOffline(false);
+    await page.reload();
+    await reconnectDenied;
+    await expect(page.locator('[data-offline-private]')).toHaveCount(0);
+    expect((await page.request.get('/api/offline/identity')).status()).toBe(
+      401,
+    );
+    await page.addScriptTag({ content: harness });
+    await expect
+      .poll(() => page.evaluate(call('read()')))
+      .toEqual({
+        present: false,
+        photos: 0,
+        enabled: false,
+      });
+    expect(await page.evaluate(call('rawCounts()'))).toEqual({
+      bundle: 0,
+      photos: 0,
+    });
     await signIn('trainer');
     await page.reload();
     await expect(page.locator('[data-offline-private]')).toHaveCount(0);
@@ -311,7 +434,7 @@ test('offline read-only view renders all synthetic stored sections without mutat
       page.getByText('Synthetic manual', { exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByText('Единица неизвестна', { exact: true }),
+      page.getByText('Килограммы подтверждены владельцем', { exact: true }),
     ).toBeVisible();
     await page.getByRole('tab', { name: 'Фотографии', exact: true }).click();
     const photo = page.locator('img[src^="blob:"]');
@@ -328,6 +451,23 @@ test('offline read-only view renders all synthetic stored sections without mutat
     await expect(
       page.getByText('Synthetic cached fact', { exact: false }),
     ).toBeVisible();
+    await expect(
+      page.getByText('Synthetic native history', { exact: false }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Duration (range): 01–03 мин', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Weight (number): 0 кг', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Missing (number): Нет данных сек', { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText('Факт', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('Состояние: idle', { exact: true }),
+    ).toBeVisible();
+    await expect(page.locator('video')).toHaveCount(0);
     await page.screenshot({
       path: info.outputPath('synthetic-offline-workouts.png'),
       fullPage: true,
@@ -379,19 +519,17 @@ test('delayed provider completion clears a sibling tab re-enabled during the pen
   expect(await sibling.evaluate(call('stale()'))).toBe(true);
 });
 
-test('same-generation fresh expiry is persisted in native IDB before offline reopen', async ({
+test('shorter live server expiry does not expire an already downloaded local copy', async ({
   page,
 }) => {
   await inject(page);
   await page.evaluate(call('seed()'));
   const baseline = Number(await page.evaluate(call('now')));
-  expect(await page.evaluate(call('shortenExpiry()'))).toBe(baseline + 1000);
+  // Genuine downloaded server metadata is preserved; no extended server authorization.
+  expect(await page.evaluate(call('shortenExpiry()'))).toBe(baseline + 600000);
   expect(
-    await page.evaluate(call('read(window.offlineTest.now+999)')),
-  ).toMatchObject({ present: true, photos: 1 });
-  expect(
-    await page.evaluate(call('read(window.offlineTest.now+1000)')),
-  ).toEqual({ present: false, photos: 0, enabled: false });
+    await page.evaluate(call('read(window.offlineTest.now+1200001)')),
+  ).toEqual({ present: true, photos: 1, enabled: true });
 });
 for (const unmount of [false, true]) {
   test(`actual provider form completion purges sibling cache during delayed POST${unmount ? ' after unmount' : ''}`, async ({

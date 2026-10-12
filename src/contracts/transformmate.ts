@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { plannedWorkoutSchema } from '@/contracts/workouts';
+import type {
+  TransformMateNativePage,
+  TransformMateNativeRefresh,
+} from '@/contracts/transformmate-native';
 
 const remoteId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const transformMateCatalogItemSchema = z.object({
@@ -109,4 +113,6 @@ export type TransformMateSyncItem = z.infer<typeof transformMateSyncItemSchema>;
 export interface TransformMateSyncData {
   configured: boolean;
   items: TransformMateSyncItem[];
+  nativePage: TransformMateNativePage;
+  nativeRefresh: TransformMateNativeRefresh;
 }

@@ -1,6 +1,7 @@
 # Manual measurements
 
 Public UI: `MeasurementsPanel`, `measurementMessages` from the feature entry.
+`MeasurementsPanel` receives the authorized `WeightHistory` projection. Its existing weight chart uses separate local/YAZIO series under the documented single-owner kg confirmation, retaining every same-day observation and nullable imported values. Other metrics and local CRUD are unchanged.
 Contract: `src/contracts/measurements.ts`; date-only ISO `measuredAt`, decimal strings (positive, at most three decimal places), metric-specific kg/cm, partial unique metric sets and nullable note.
 
 HTTP: GET/POST `/api/measurements?ownerId=…`, PUT/DELETE `/api/measurements/:id?ownerId=…`. Writes require owner permission; reads require owner identity or explicit trainer grant. All persistence queries include ownerId. PUT replaces the full partial metric set.

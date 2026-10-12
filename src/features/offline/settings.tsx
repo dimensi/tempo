@@ -1,22 +1,9 @@
 'use client';
-import { useState, useSyncExternalStore } from 'react';
-import {
-  Alert,
-  Anchor,
-  Button,
-  Group,
-  Stack,
-  Text,
-  TextInput,
-  Title,
-} from '@mantine/core';
-import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
+import { useLayoutEffect, useSyncExternalStore } from 'react';
+import { Alert, Anchor, Stack, Switch, Text, Title } from '@mantine/core';
+import { revealOfflineContent } from '@/lib/offline-device';
 import { getOfflineController } from './controller';
 import { offlineMessages as m } from './messages';
-const subscribeReady = () => () => {};
-const clientReady = () => true;
-const serverReady = () => false;
-
 export function OfflineSettings() {
   const controller = getOfflineController();
   const state = useSyncExternalStore(
@@ -24,27 +11,33 @@ export function OfflineSettings() {
     controller.getSnapshot,
     controller.getServerSnapshot,
   );
-  const ready = useSyncExternalStore(subscribeReady, clientReady, serverReady);
-  const today = ready
-    ? dateInTimezone(
-        new Date(),
-        Intl.DateTimeFormat().resolvedOptions().timeZone,
-      )
-    : '';
-  const [selection, setPeriod] = useState<{
-    from: string | null;
-    to: string | null;
-  }>({ from: null, to: null });
-  const period = {
-    from: selection.from ?? (today ? shiftDate(today, -6) : ''),
-    to: selection.to ?? today,
-  };
-  const busy = state.status === 'saving' || state.status === 'checking';
+  useLayoutEffect(() => {
+    if (state.bundle) revealOfflineContent(state.bundle.fence);
+  }, [state]);
   return (
     <section id="offline" tabIndex={-1} aria-label={m.title}>
       <Stack>
         <Title order={2}>{m.title}</Title>
+        <Switch
+          label={m.enabledLabel}
+          checked={state.enabled}
+          disabled={state.status === 'checking' && !state.enabled}
+          onChange={(event) => {
+            if (event.currentTarget.checked) void controller.save();
+            else void controller.disable();
+          }}
+          size="md"
+          styles={{
+            label: {
+              fontSize: 16,
+              minHeight: 44,
+              display: 'flex',
+              alignItems: 'center',
+            },
+          }}
+        />
         <Text>{m.description}</Text>
+        <Text>{m.background}</Text>
         <Text>{m.disclosure}</Text>
         {state.error && (
           <Alert color="red" role="alert">
@@ -58,8 +51,8 @@ export function OfflineSettings() {
               {state.bundle.snapshot.to}
             </Text>
             <Text>
-              {m.until}:{' '}
-              {new Date(state.bundle.expiresAt).toLocaleString('ru-RU')}
+              {m.checked}:{' '}
+              {new Date(state.bundle.savedAt).toLocaleString('ru-RU')}
             </Text>
             <Text>
               {m.photoCoverage}: {state.photos.length} /{' '}
@@ -81,74 +74,8 @@ export function OfflineSettings() {
             </Anchor>
           </Stack>
         ) : (
-          <Text>{m.off}</Text>
+          !state.enabled && <Text>{m.off}</Text>
         )}
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!ready || busy) return;
-            void controller.save(period);
-          }}
-        >
-          <Stack>
-            <Group align="end">
-              <TextInput
-                label={m.from}
-                type="date"
-                styles={{
-                  input: { fontSize: 16, minHeight: 44 },
-                  label: { fontSize: 16 },
-                }}
-                required
-                value={period.from}
-                disabled={!ready || busy}
-                onChange={(event) =>
-                  setPeriod({ ...period, from: event.currentTarget.value })
-                }
-                style={{ flex: '1 1 150px' }}
-              />
-              <TextInput
-                label={m.to}
-                type="date"
-                styles={{
-                  input: { fontSize: 16, minHeight: 44 },
-                  label: { fontSize: 16 },
-                }}
-                required
-                value={period.to}
-                disabled={!ready || busy}
-                onChange={(event) =>
-                  setPeriod({ ...period, to: event.currentTarget.value })
-                }
-                style={{ flex: '1 1 150px' }}
-              />
-            </Group>
-            <Text>{m.range}</Text>
-            <Group>
-              <Button
-                type="submit"
-                color="teal.9"
-                loading={state.status === 'saving'}
-                disabled={!ready || state.status === 'checking'}
-                mih={44}
-              >
-                {state.bundle ? m.refresh : m.enable}
-              </Button>
-              <Button
-                variant="outline"
-                style={{
-                  color: 'var(--mantine-color-text)',
-                  borderColor: 'var(--mantine-color-text)',
-                }}
-                mih={44}
-                disabled={!ready}
-                onClick={() => void controller.disable()}
-              >
-                {m.disable}
-              </Button>
-            </Group>
-          </Stack>
-        </form>
         {state.status === 'saving' && <Text role="status">{m.saving}</Text>}
         {state.status === 'checking' && <Text role="status">{m.checking}</Text>}
       </Stack>

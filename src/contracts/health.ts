@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { analyticsRangeSchema } from '@/contracts/analytics';
 import { nonnegativeDecimalSchema } from '@/contracts/nutrition';
+import { ownerConfirmedYazioWeightUnit } from '@/contracts/yazio-weight-policy';
 
 export const healthRangeSchema = analyticsRangeSchema;
 export type HealthRange = z.infer<typeof healthRangeSchema>;
@@ -47,8 +48,8 @@ export const weightHistorySchema = z
         .object({
           measuredAt: z.iso.date(),
           rawValue: nonnegativeDecimalSchema.nullable(),
-          unit: z.null(),
-          unitStatus: z.literal('UNKNOWN'),
+          unit: z.literal(ownerConfirmedYazioWeightUnit.unit),
+          unitStatus: z.literal(ownerConfirmedYazioWeightUnit.unitStatus),
           source: z.literal('YAZIO'),
         })
         .strict(),

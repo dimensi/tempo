@@ -12,24 +12,32 @@ import {
 } from '@/server/transformmate/token-store';
 const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
+  sessionRead: vi.fn(),
   client: vi.fn(),
   fence: vi.fn(),
+  binding: vi.fn(),
   configured: vi.fn(),
 }));
 vi.mock('server-only', () => ({}));
 vi.mock('@/server/auth', () => ({
-  getAuth: () => ({ api: { getSession: async () => state.session } }),
+  getAuth: () => ({ api: { getSession: () => state.sessionRead() } }),
 }));
 const database = openDatabase('file::memory:');
 vi.mock('@/server/db', () => ({ getDatabase: () => database }));
 vi.mock('@/server/transformmate/runtime', () => ({
   getTransformMateClient: state.client,
   getTransformMateConnectionFence: state.fence,
+  getTransformMateBindingFence: state.binding,
   isTransformMateConfigured: state.configured,
 }));
 const api = await import('@/server/workouts/transformmate/service');
 const workoutsApi = await import('@/server/workouts');
 const headers = new Headers();
+const nativeQuery = {
+  from: '2026-01-01',
+  to: '2026-01-31',
+  limit: 20,
+};
 const repository = workoutRepository(database.db);
 const input: WorkoutPlanInput = {
   title: 'Original plan',
@@ -73,8 +81,15 @@ beforeAll(() => {
       .run();
 });
 beforeEach(() => {
+  state.sessionRead.mockReset().mockImplementation(async () => state.session);
   state.client.mockReset().mockResolvedValue(null);
   state.fence.mockReset().mockResolvedValue(null);
+  state.binding.mockReset().mockResolvedValue({
+    configured: false,
+    accountScope: null,
+    assertCurrent: vi.fn(async () => {}),
+    assertBindingCurrent: vi.fn(),
+  });
   state.configured.mockReset().mockResolvedValue(false);
 });
 afterAll(() => database.sqlite.close());
@@ -82,12 +97,12 @@ afterAll(() => database.sqlite.close());
 it('requires a real owner-scoped grant for local-only list, refresh and saving links', async () => {
   const plan = repository.createPlan('owner', input);
   await expect(
-    api.listTransformMateSync(headers, 'owner'),
+    api.listTransformMateSync(headers, 'owner', nativeQuery),
   ).rejects.toMatchObject({ status: 401 });
   state.session = { user: { id: 'trainer', role: 'TRAINER' } };
   for (const run of [
-    () => api.listTransformMateSync(headers, 'owner'),
-    () => api.refreshTransformMateSync(headers, 'owner'),
+    () => api.listTransformMateSync(headers, 'owner', nativeQuery),
+    () => api.refreshTransformMateSync(headers, 'owner', nativeQuery),
     () => api.syncSavedPlan(headers, 'owner', plan),
   ])
     await expect(run()).rejects.toMatchObject({ status: 403 });
@@ -96,7 +111,7 @@ it('requires a real owner-scoped grant for local-only list, refresh and saving l
     .values({ trainerId: 'trainer', ownerId: 'owner', createdAt: new Date() })
     .run();
   await api.syncSavedPlan(headers, 'owner', plan);
-  const data = await api.listTransformMateSync(headers, 'owner');
+  const data = await api.listTransformMateSync(headers, 'owner', nativeQuery);
   expect(data.configured).toBe(false);
   expect(data.items).toHaveLength(1);
   expect(data.items[0]!.reason).toBe('not_configured');
@@ -105,20 +120,67 @@ it('requires a real owner-scoped grant for local-only list, refresh and saving l
     workout: input.workouts[0],
   });
   await expect(
-    api.listTransformMateSync(headers, 'other-owner'),
+    api.listTransformMateSync(headers, 'other-owner', nativeQuery),
   ).rejects.toMatchObject({ status: 403 });
   database.db.delete(trainerAccess).run();
   await expect(
-    api.listTransformMateSync(headers, 'owner'),
+    api.listTransformMateSync(headers, 'owner', nativeQuery),
   ).rejects.toMatchObject({ status: 403 });
   await expect(
-    api.refreshTransformMateSync(headers, 'owner'),
+    api.refreshTransformMateSync(headers, 'owner', nativeQuery),
   ).rejects.toMatchObject({ status: 403 });
   state.session = { user: { id: 'owner', role: 'OWNER' } };
   await expect(
-    api.listTransformMateSync(headers, 'other-owner'),
+    api.listTransformMateSync(headers, 'other-owner', nativeQuery),
   ).rejects.toMatchObject({ status: 403 });
 });
+
+it.each(['disconnect', 'reconnect'] as const)(
+  'does not release a stale native response after %s during final authorization',
+  async () => {
+    state.session = { user: { id: 'owner', role: 'OWNER' } };
+    let revision = 0;
+    const capturedRevision = revision;
+    let afterConnectionFence = false;
+    let heldFinalAccess = false;
+    let entered!: () => void;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    state.binding.mockResolvedValue({
+      configured: true,
+      accountScope: 'a'.repeat(64),
+      assertCurrent: vi.fn(async () => {
+        afterConnectionFence = true;
+      }),
+      assertBindingCurrent: vi.fn(() => {
+        if (revision !== capturedRevision)
+          throw new TransformMateStaleConnectionError();
+      }),
+    });
+    state.sessionRead.mockImplementation(async () => {
+      if (afterConnectionFence && !heldFinalAccess) {
+        heldFinalAccess = true;
+        entered();
+        await gate;
+      }
+      return state.session;
+    });
+
+    const operation = api.listTransformMateSync(headers, 'owner', nativeQuery);
+    await ready;
+    revision += 1;
+    release();
+
+    await expect(operation).rejects.toBeInstanceOf(
+      TransformMateStaleConnectionError,
+    );
+  },
+);
 it('retains latest unattempted link snapshots after local edits and deletion; list does no upstream read', async () => {
   state.session = { user: { id: 'owner', role: 'OWNER' } };
   const plan = repository.createPlan('owner', input);
@@ -130,7 +192,11 @@ it('retains latest unattempted link snapshots after local edits and deletion; li
   });
   await api.syncSavedPlan(headers, 'owner', updated);
   repository.deletePlan('owner', plan.id, updated.revision);
-  const data = await api.refreshTransformMateSync(headers, 'owner');
+  const data = await api.refreshTransformMateSync(
+    headers,
+    'owner',
+    nativeQuery,
+  );
   const link = data.items.find((item) => item.planId === plan.id)!;
   expect(link.planSnapshot.planTitle).toBe('Updated');
   expect(link.planSnapshot.workout.title).toBe('Changed workout');
@@ -283,9 +349,9 @@ it('preserves a permitted local save while encrypted storage is unavailable', as
   ).toBe('Local during outage');
   expect(state.client).not.toHaveBeenCalled();
   state.configured.mockRejectedValueOnce(new TransformMateStorageError());
-  expect((await api.listTransformMateSync(headers, 'owner')).configured).toBe(
-    false,
-  );
+  expect(
+    (await api.listTransformMateSync(headers, 'owner', nativeQuery)).configured,
+  ).toBe(false);
 });
 
 it('does not turn a stale connection into permission for a late local write', async () => {
@@ -339,6 +405,7 @@ for (const revoked of ['session', 'grant'] as const) {
       client: null,
       generation: 'synthetic-connection',
       assertCurrent,
+      assertBindingCurrent: vi.fn(),
     });
     const beforePlans = repository.list('owner');
     const beforeLinks = syncRepository(database.db).list('owner');

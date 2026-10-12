@@ -8,6 +8,7 @@ import {
   workoutPlanInputSchema,
   workoutSessionSchema,
 } from '@/contracts/workouts';
+import { transformMateNativeSnapshotSchema } from '@/contracts/transformmate-native';
 import { transformMateActualSchema } from '@/contracts/transformmate';
 import { OfflineError } from './errors';
 
@@ -59,7 +60,12 @@ export function offlineRepository(database = getDatabase()) {
         .get(ownerId) as { epoch: number } | undefined;
       return row?.epoch ?? 0;
     },
-    read(ownerId: string, from: string, to: string) {
+    read(
+      ownerId: string,
+      from: string,
+      to: string,
+      accountScope: string | null = null,
+    ) {
       remainingBytes = offlineLimits.payloadBytes;
       const args = [payloadLimit, ownerId, from, to];
       const diary = rows(
@@ -163,7 +169,25 @@ export function offlineRepository(database = getDatabase()) {
         checkedAt: row.checkedAt,
         actual: parseJson(row.payload, transformMateActualSchema),
       }));
+      const nativeTrainings =
+        accountScope === null
+          ? []
+          : rows(
+              'SELECT id,date,fetched_at AS fetchedAt,CASE WHEN length(CAST(snapshot AS BLOB)) <= ? THEN snapshot END AS payload FROM workout_transformmate_native WHERE owner_id=? AND account_scope=? AND date BETWEEN ? AND ? ORDER BY date,id',
+              [payloadLimit, ownerId, accountScope, from, to],
+              offlineLimits.nativeTrainings,
+              jsonRow.extend({ date: z.iso.date(), fetchedAt: stamp }),
+            ).map((row) => {
+              const snapshot = parseJson(
+                row.payload,
+                transformMateNativeSnapshotSchema,
+              );
+              if (snapshot.date !== row.date)
+                throw new OfflineError(503, 'OFFLINE_UNAVAILABLE');
+              return { id: row.id, ...snapshot, fetchedAt: row.fetchedAt };
+            });
       return {
+        nativeTrainings,
         diary,
         photos,
         measurements,

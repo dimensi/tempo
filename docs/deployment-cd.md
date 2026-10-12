@@ -1,0 +1,9 @@
+# Nutrition continuous deployment
+
+The Nutrition CD workflow uses the exact image artifact produced by successful main CI. It verifies the run and both jobs, revision, Git tree and archive hash, then refuses stale main immediately before submission. There is no second build or repeated full QA.
+
+Activation is deliberately off until NUTRITION_CD_ENABLED is true and the separately approved constrained host installation and secure NUTRITION_DEPLOY_KEY handoff are verified. Public repository variables are NUTRITION_DEPLOY_HOST, NUTRITION_DEPLOY_USER and NUTRITION_DEPLOY_KNOWN_HOSTS. The verified existing public SSH route uses port 2224; host checking is strict. Never commit or generically upload the private key.
+
+The dedicated account has no Docker-group membership or general sudo. Its key forces the fixed gate; only the root-owned deploy handler is sudo-allowed. The handler accepts bounded USTAR with two fixed files, validates the archive and image, serializes with verification/rollout.lock, uses protected backups, verifies exact revision/health/HTTPS and rolls back on failure. Failed-state data is preserved before restoring a matching backup. Docker root and a stolen deployment key retain broad release-authority risk.
+
+The Python guard tests use synthetic inputs and injected failures. An isolated Docker rollback rehearsal passed: original fixture DB, uploads, encrypted files, configuration and exact healthy image were restored, and failed-state backups were retained. Both fixture releases reused the same tested image; HTTPS failure was injected through a local shim. Migration-failure recovery and the first production CD run remain unverified. The reviewed host installer remains an operator handoff because existing sudo requires authentication. No self-hosted runner, firewall or VPN changes are needed.

@@ -16,7 +16,7 @@ export function WeightHistoryPanel({ history }: { history: WeightHistory }) {
       measuredAt: record.measuredAt,
       value: record.rawValue,
       source: record.source,
-      unit: m.unknownUnit,
+      unit: m.kg,
     })),
   ].sort((a, b) => a.measuredAt.localeCompare(b.measuredAt));
   return (
@@ -30,7 +30,7 @@ export function WeightHistoryPanel({ history }: { history: WeightHistory }) {
         <Group justify="space-between">
           <Title order={2}>{m.weight}</Title>
         </Group>
-        <Text>{m.unknownExplanation}</Text>
+        <Text>{m.ownerConfirmedKgExplanation}</Text>
         {rows.length === 0 ? (
           <Text>{m.emptyWeight}</Text>
         ) : (

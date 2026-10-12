@@ -1,3 +1,8 @@
+import { shiftDate } from '@/contracts/nutrition-sync-dates';
+import {
+  ownerConfirmedYazioWeightPolicyVersion,
+  ownerConfirmedYazioWeightUnit,
+} from '@/contracts/yazio-weight-policy';
 import {
   offlineSnapshotSchema,
   type OfflineSnapshot,
@@ -45,13 +50,14 @@ export function offlineFixture(now: number): OfflineSnapshot {
   };
   return offlineSnapshotSchema.parse({
     contractVersion: 1,
+    weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
     partition: 'A'.repeat(43),
     connectionGeneration: 'B'.repeat(43),
     role: 'OWNER',
     serverNow: new Date(now).toISOString(),
     expiresAt: new Date(now + 600000).toISOString(),
     sessionExpiresAt: new Date(now + 1200000).toISOString(),
-    from: date,
+    from: shiftDate(date, -14),
     to: date,
     diary: [day],
     photos: { availability: 'metadata-only', items: [] },
@@ -74,7 +80,7 @@ export function offlineFixture(now: number): OfflineSnapshot {
         providerDate: date,
         measuredDate: date,
         rawValue: null,
-        unit: null,
+        ...ownerConfirmedYazioWeightUnit,
         unitContext: 'lb',
         observedAt: new Date(now).toISOString(),
       },
@@ -110,6 +116,69 @@ export function offlineFixture(now: number): OfflineSnapshot {
           { name: 'Synthetic exercise', sets: [{ reps: 8, weightKg: 0 }] },
         ],
         planTitle: 'Synthetic programme',
+      },
+    ],
+    nativeTrainings: [
+      {
+        key: 'N'.repeat(43),
+        source: 'transformmate',
+        date,
+        title: 'Synthetic native history',
+        progress: 'idle',
+        started: null,
+        finished: null,
+        remoteUpdatedAt: new Date(now).toISOString(),
+        fetchedAt: new Date(now).toISOString(),
+        exercises: [
+          {
+            protocolOrder: 1,
+            order: 1,
+            name: 'Synthetic native movement',
+            comment: 'Synthetic native note',
+            metrics: [
+              {
+                type: 'plan',
+                sets: [
+                  {
+                    order: 1,
+                    done: null,
+                    metrics: [
+                      {
+                        name: 'Duration',
+                        unit: 'мин',
+                        type: 'range',
+                        values: ['01–03'],
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                type: 'fact',
+                sets: [
+                  {
+                    order: 1,
+                    done: false,
+                    metrics: [
+                      {
+                        name: 'Weight',
+                        unit: 'кг',
+                        type: 'number',
+                        values: ['0'],
+                      },
+                      {
+                        name: 'Missing',
+                        unit: 'сек',
+                        type: 'number',
+                        values: [],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
       },
     ],
     transformMateFacts: [

@@ -2,7 +2,13 @@ import 'server-only';
 import { z } from 'zod';
 import { transformMateMessages } from '@/server/transformmate/messages';
 import { authorize } from '@/server/auth/guards';
-import { getTransformMateClient } from '@/server/transformmate/runtime';
+import { getTransformMateConnectionFence } from '@/server/transformmate/runtime';
+import {
+  cachedCatalog,
+  catalogMatches,
+  rememberExerciseAliases,
+} from '@/server/transformmate/catalog-cache';
+import { TransformMateApiError } from '@/server/transformmate/errors';
 import { canPlanExercise } from '@/server/transformmate/catalog-schema';
 import {
   transformMateCatalogItemSchema,
@@ -34,13 +40,22 @@ export async function listExercises(
 ) {
   await requireCatalogAccess(headers, ownerId);
   const q = z.string().max(200).parse(query).trim().toLocaleLowerCase('ru');
-  const client = await getTransformMateClient(ownerId);
-  if (!client) throw new CatalogError(503);
+  const fence = await getTransformMateConnectionFence(ownerId);
+  if (!fence) throw new CatalogError(503);
+  const scope = {
+    ownerId,
+    generation: fence.generation,
+    locale: 'ru' as const,
+    client: fence.client,
+  };
   await requireCatalogAccess(headers, ownerId);
-  const result = await client.listExercises();
+  await fence.assertCurrent();
+  const result = await cachedCatalog(scope);
+  await fence.assertCurrent();
   await requireCatalogAccess(headers, ownerId);
-  return result.body
-    .filter((e) => !q || e.name.toLocaleLowerCase('ru').includes(q))
+  fence.assertBindingCurrent();
+  return result
+    .filter((e) => catalogMatches(scope, e.id, e.name, q))
     .slice(0, 50)
     .map((e) =>
       transformMateCatalogItemSchema.parse({
@@ -56,12 +71,23 @@ export async function getExercise(
   id: number,
 ) {
   await requireCatalogAccess(headers, ownerId);
-  const client = await getTransformMateClient(ownerId);
-  if (!client) throw new CatalogError(503);
+  const fence = await getTransformMateConnectionFence(ownerId);
+  if (!fence) throw new CatalogError(503);
   await requireCatalogAccess(headers, ownerId);
-  const result = await client.getExercise(id);
+  const result = await fence.client.getExercise(id);
+  await fence.assertCurrent();
   await requireCatalogAccess(headers, ownerId);
+  fence.assertBindingCurrent();
   if (result.body.id !== id) throw new CatalogError(502);
+  rememberExerciseAliases(
+    {
+      ownerId,
+      generation: fence.generation,
+      locale: 'ru',
+      client: fence.client,
+    },
+    result.body,
+  );
   return result.body;
 }
 export async function exerciseInfo(
@@ -91,9 +117,11 @@ export async function catalogResponse(operation: () => Promise<unknown>) {
         status:
           error instanceof CatalogError
             ? error.status
-            : error instanceof z.ZodError
-              ? 400
-              : 502,
+            : error instanceof TransformMateApiError && error.status === 429
+              ? 429
+              : error instanceof z.ZodError
+                ? 400
+                : 502,
         headers: { 'Cache-Control': 'private, no-store' },
       },
     );

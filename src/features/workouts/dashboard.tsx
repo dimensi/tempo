@@ -18,7 +18,6 @@ import {
   ScrollArea,
   Stack,
   Table,
-  Tabs,
   Text,
   TextInput,
   Title,
@@ -34,8 +33,10 @@ import {
   type WorkoutsData,
   type PlannedWorkout,
 } from '@/contracts/workouts';
-import { PlanForm, SessionForm, emptyPlan, emptySession } from './forms';
+import { PlanForm, SessionForm, emptyPlan, emptySession, today } from './forms';
+import { DateNavigation } from '@/components/shared/date-navigation';
 import type { TransformMateSyncItem } from '@/contracts/transformmate';
+import { NativeWorkout } from './native-workout';
 import { actualSetForExercise } from './transformmate-exercises';
 import { copyPlanToDate } from './copy-plan';
 import {
@@ -46,7 +47,12 @@ import {
 import { workoutMessages as m } from './messages';
 
 type Editor =
-  | { kind: 'plan'; initial: WorkoutPlanInput; existing?: WorkoutPlan }
+  | {
+      kind: 'plan';
+      initial: WorkoutPlanInput;
+      existing?: WorkoutPlan;
+      workoutId?: string;
+    }
   | {
       kind: 'session';
       initial: WorkoutSessionInput;
@@ -84,58 +90,151 @@ const sessionInput = ({
 function ExerciseTable({
   exercises,
   sync,
+  actual,
+  factOnly = false,
 }: {
   exercises: WorkoutExercise[];
   sync?: TransformMateSyncItem;
+  actual?: WorkoutExercise[];
+  factOnly?: boolean;
 }) {
   return (
-    <ScrollArea type="auto" viewportProps={{ tabIndex: 0 }}>
-      <Table
-        miw={sync?.actual ? 680 : 440}
-        styles={{ th: { whiteSpace: 'nowrap' } }}
-      >
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>{m.exercise}</Table.Th>
-            <Table.Th>{m.set}</Table.Th>
-            <Table.Th>{m.reps}</Table.Th>
-            <Table.Th>{m.weight}</Table.Th>
-            {sync?.actual && <Table.Th>{m.remoteActual}</Table.Th>}
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {exercises.flatMap((exercise, index) =>
-            exercise.sets.map((set, i) => (
-              <Table.Tr key={`${index}-${i}`}>
-                <Table.Td style={{ overflowWrap: 'anywhere' }}>
-                  {exercise.name}
-                  {exercise.comment && (
-                    <Text size="xs">{exercise.comment}</Text>
-                  )}
-                </Table.Td>
-                <Table.Td>{i + 1}</Table.Td>
-                <Table.Td>{set.reps}</Table.Td>
-                <Table.Td>{set.weightKg ?? '—'}</Table.Td>
-                {sync?.actual && (
-                  <Table.Td style={{ overflowWrap: 'anywhere' }}>
-                    {(() => {
-                      const actual = actualSetForExercise(
-                        sync.actual,
-                        exercise,
-                        i + 1,
-                      );
-                      return actual
-                        ? `${actual.done ? m.done : m.notDone} · ${actual.metrics.map((metric) => `${metric.name}: ${metric.values.length ? metric.values.join(' / ') : '—'} ${metric.unit}`).join('; ')}`
-                        : '—';
-                    })()}
-                  </Table.Td>
-                )}
-              </Table.Tr>
-            )),
-          )}
-        </Table.Tbody>
-      </Table>
-    </ScrollArea>
+    <Stack gap="md">
+      {exercises.map((exercise, index) => (
+        <Stack gap="xs" key={index}>
+          <Text fw={600}>{exercise.name}</Text>
+          {exercise.comment && <Text size="sm">{exercise.comment}</Text>}
+          <ScrollArea type="auto">
+            <Table miw={280} style={{ tableLayout: 'fixed' }}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th w={80}>{m.set}</Table.Th>
+                  <Table.Th>{factOnly ? m.reps : m.planned}</Table.Th>
+                  <Table.Th>{factOnly ? m.weight : m.actual}</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {exercise.sets.map((set, i) => {
+                  const matched = exercise.transformMate
+                    ? actual?.find(
+                        (entry) =>
+                          entry.transformMate?.occurrenceKey ===
+                          exercise.transformMate?.occurrenceKey,
+                      )
+                    : actual?.[index]?.name === exercise.name
+                      ? actual[index]
+                      : undefined;
+                  const result = matched?.sets[i];
+                  const remote = sync?.actual
+                    ? actualSetForExercise(sync.actual, exercise, i + 1)
+                    : undefined;
+                  const value = (entry: typeof set) =>
+                    `${entry.reps} × ${entry.weightKg ?? m.noWeight}${entry.weightKg === null ? '' : ' кг'}`;
+                  return (
+                    <Table.Tr key={i}>
+                      <Table.Td>{i + 1}</Table.Td>
+                      <Table.Td>
+                        {factOnly ? (
+                          set.reps
+                        ) : (
+                          <Text size="sm">{value(set)}</Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        {factOnly ? (
+                          (set.weightKg ?? '—')
+                        ) : result ? (
+                          <Text size="sm">{value(result)}</Text>
+                        ) : remote ? (
+                          <Stack gap={2}>
+                            <Text size="sm" fw={600}>
+                              {remote.done ? m.done : m.notDone}
+                            </Text>
+                            {remote.metrics.map((metric, metricIndex) => (
+                              <Text size="sm" key={metricIndex}>
+                                {metric.name}:{' '}
+                                {metric.values.length
+                                  ? metric.values.join(' / ')
+                                  : '—'}{' '}
+                                {metric.unit}
+                              </Text>
+                            ))}
+                          </Stack>
+                        ) : (
+                          '—'
+                        )}
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
+function SessionResult({
+  session,
+  canLog,
+  onEdit,
+  onDelete,
+  renderComments,
+  comparisonShown = false,
+}: {
+  session: WorkoutSession;
+  canLog: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  renderComments?: (sessionId: string) => ReactNode;
+  comparisonShown?: boolean;
+}) {
+  return (
+    <Stack data-testid={`session-${session.id}`}>
+      <Group justify="space-between">
+        <Title order={3}>{session.title}</Title>
+        <Badge>{m[session.status]}</Badge>
+      </Group>
+      <Text size="sm">
+        {session.planSnapshot
+          ? `${m.snapshot}: ${session.planSnapshot.planTitle}`
+          : m.independent}
+      </Text>
+      {session.planSnapshot && !comparisonShown && (
+        <ExerciseTable
+          exercises={session.planSnapshot.workout.exercises}
+          actual={session.exercises}
+        />
+      )}
+      {session.planSnapshot && (
+        <Accordion>
+          <Accordion.Item value="actual">
+            <Accordion.Control>{m.actualDetails}</Accordion.Control>
+            <Accordion.Panel>
+              <ExerciseTable exercises={session.exercises} factOnly />
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
+      )}
+      {!session.planSnapshot && (
+        <ExerciseTable exercises={session.exercises} factOnly />
+      )}
+      {session.note && (
+        <Text style={{ whiteSpace: 'pre-wrap' }}>{session.note}</Text>
+      )}
+      {canLog && (
+        <Group>
+          <Button mih={44} variant="light" onClick={onEdit}>
+            {m.editActual}
+          </Button>
+          <Button mih={44} variant="subtle" color="red" onClick={onDelete}>
+            {m.removeActual}
+          </Button>
+        </Group>
+      )}
+      {renderComments?.(session.id)}
+    </Stack>
   );
 }
 function ScopedWorkoutsDashboard({
@@ -148,6 +247,7 @@ function ScopedWorkoutsDashboard({
   renderComments?: (sessionId: string) => ReactNode;
 }) {
   const createKey = useRef<string | null>(null);
+  const [date, setDate] = useState(today);
   const [copy, setCopy] = useState<WorkoutPlan | null>(null);
   const [copyDate, setCopyDate] = useState('');
   const [data, setData] = useState<WorkoutsData | null>(null);
@@ -155,7 +255,7 @@ function ScopedWorkoutsDashboard({
   const [editorError, setEditorError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editor, setEditor] = useState<Editor | null>(null);
-  const sync = useTransformMateSync(ownerId, data);
+  const sync = useTransformMateSync(ownerId, data, date);
   const [deletion, setDeletion] = useState<Deletion | null>(null);
   const endpoint = useCallback(
     (path = '') =>
@@ -252,6 +352,32 @@ function ScopedWorkoutsDashboard({
       planId: plan.id,
       plannedWorkoutId: workout.id,
     });
+  const dayPlans =
+    data?.plans.flatMap((plan) =>
+      plan.workouts
+        .filter((workout) => workout.date === date)
+        .map((workout) => ({ plan, workout })),
+    ) ?? [];
+  const daySessions =
+    data?.sessions.filter((session) => session.date === date) ?? [];
+  const dayRemote = sync.items.filter(
+    (item) =>
+      item.actual?.date === date &&
+      !sync.nativePage.items.some(
+        (native) => native.remoteTrainingId === item.remoteTrainingId,
+      ) &&
+      !dayPlans.some(
+        ({ plan, workout }) =>
+          item.planId === plan.id && item.workoutId === workout.id,
+      ),
+  );
+  const editWorkout = (plan: WorkoutPlan, workout: PlannedWorkout) =>
+    open({
+      kind: 'plan',
+      initial: planInput(plan),
+      existing: plan,
+      workoutId: workout.id,
+    });
   if (sync.denied)
     return (
       <Alert color="red" role="alert">
@@ -277,241 +403,160 @@ function ScopedWorkoutsDashboard({
           <Text>{m.loading}</Text>
         </Group>
       )}
-      <Group>
+      <DateNavigation
+        date={date}
+        onSelect={setDate}
+        labels={m.dateNavigation}
+      />
+      <Group justify="space-between">
         <Button
           mih={44}
-          onClick={() => open({ kind: 'plan', initial: emptyPlan() })}
+          onClick={() => {
+            const initial = emptyPlan();
+            initial.startsOn = initial.endsOn = date;
+            initial.workouts[0]!.date = date;
+            open({ kind: 'plan', initial, workoutId: initial.workouts[0]!.id });
+          }}
         >
-          {m.newPlan}
+          {m.newWorkout}
         </Button>
         {canLog && (
           <Button
             mih={44}
-            variant="light"
-            onClick={() => open({ kind: 'session', initial: emptySession() })}
+            variant="subtle"
+            onClick={() =>
+              open({ kind: 'session', initial: { ...emptySession(), date } })
+            }
           >
-            {m.newSession}
+            {m.recordIndependent}
           </Button>
         )}
       </Group>
       <SyncSummary sync={sync} />
-      <Tabs defaultValue="plans">
-        <Tabs.List>
-          <Tabs.Tab value="plans" mih={44}>
-            {m.plans}
-          </Tabs.Tab>
-          <Tabs.Tab value="history" mih={44}>
-            {m.history}
-          </Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel value="plans" pt="md">
-          <Stack>
-            {data?.plans.length === 0 && <Text>{m.emptyPlans}</Text>}
-            {data?.plans.map((plan) => (
-              <Paper
-                withBorder
-                p="md"
-                key={plan.id}
-                data-testid={`plan-${plan.id}`}
-                style={{ overflowWrap: 'anywhere' }}
-              >
-                <Stack>
-                  <Title order={2}>{plan.title}</Title>
-                  <Text>
-                    {plan.startsOn} — {plan.endsOn}
-                  </Text>
-                  <Text style={{ whiteSpace: 'pre-wrap' }}>
-                    {plan.description}
-                  </Text>
-                  <Group>
-                    <Button
-                      mih={44}
-                      variant="default"
-                      onClick={() => {
-                        setCopy(plan);
-                        setCopyDate(plan.startsOn);
-                      }}
-                    >
-                      {m.copy}
-                    </Button>
-                    <Button
-                      mih={44}
-                      variant="light"
-                      onClick={() =>
-                        open({
-                          kind: 'plan',
-                          initial: planInput(plan),
-                          existing: plan,
-                        })
-                      }
-                    >
-                      {m.edit}
-                    </Button>
-                    <Button
-                      mih={44}
-                      color="red"
-                      variant="subtle"
-                      onClick={() => {
-                        setEditorError(null);
-                        setDeletion({
-                          kind: 'plans',
-                          id: plan.id,
-                          revision: plan.revision,
-                        });
-                      }}
-                    >
-                      {m.remove}
-                    </Button>
-                  </Group>
-                  {plan.workouts.map((workout) => (
-                    <Paper p="sm" withBorder key={workout.id}>
-                      <Stack>
-                        <Group justify="space-between">
-                          <Title order={3}>{workout.title}</Title>
-                          <Badge>{workout.date}</Badge>
-                        </Group>
-                        <ExerciseTable
-                          exercises={workout.exercises}
-                          sync={sync.items.find(
-                            (item) =>
-                              item.planId === plan.id &&
-                              item.workoutId === workout.id,
-                          )}
-                        />
-                        <WorkoutSync
-                          item={sync.items.find(
-                            (item) =>
-                              item.planId === plan.id &&
-                              item.workoutId === workout.id,
-                          )}
-                        />
-                        {canLog && (
-                          <Button
-                            mih={44}
-                            variant="light"
-                            onClick={() => record(plan, workout)}
-                          >
-                            {m.record}
-                          </Button>
-                        )}
-                      </Stack>
-                    </Paper>
-                  ))}
-                </Stack>
-              </Paper>
-            ))}
-          </Stack>
-        </Tabs.Panel>
-        <Tabs.Panel value="history" pt="md">
-          <Stack>
-            {data?.sessions.length === 0 &&
-              !sync.items.some((item) => item.actual) && (
-                <Text>{m.emptyHistory}</Text>
+      {data &&
+        !dayPlans.length &&
+        !daySessions.length &&
+        !dayRemote.length &&
+        !sync.nativePage.items.length &&
+        !sync.busy &&
+        !sync.error && (
+          <Paper withBorder p="lg">
+            <Stack gap="xs">
+              <Title order={2}>{m.emptyDay}</Title>
+              <Text>{m.emptyDayHint}</Text>
+            </Stack>
+          </Paper>
+        )}
+      {sync.nativePage.items
+        .filter(
+          (item) =>
+            item.date === date &&
+            !dayPlans.some(({ plan, workout }) =>
+              sync.items.some(
+                (entry) =>
+                  entry.planId === plan.id &&
+                  entry.workoutId === workout.id &&
+                  entry.remoteTrainingId === item.remoteTrainingId,
+              ),
+            ),
+        )
+        .map((item) => (
+          <NativeWorkout key={item.remoteTrainingId} item={item} />
+        ))}
+      {sync.nativePage.nextCursor && (
+        <Button
+          mih={44}
+          variant="default"
+          loading={sync.busy}
+          onClick={() => void sync.loadMore()}
+        >
+          {m.loadMore}
+        </Button>
+      )}
+      {dayPlans.map(({ plan, workout }) => {
+        const item = sync.items.find(
+          (item) => item.planId === plan.id && item.workoutId === workout.id,
+        );
+        const results = daySessions.filter(
+          (session) =>
+            session.planId === plan.id &&
+            session.plannedWorkoutId === workout.id,
+        );
+        const latestResult = results.at(-1);
+        return (
+          <Paper
+            withBorder
+            p="md"
+            key={workout.id}
+            data-testid={`plan-${plan.id}`}
+            style={{ overflowWrap: 'anywhere' }}
+          >
+            <Stack>
+              <Group justify="space-between">
+                <Title order={2}>{workout.title}</Title>
+                <Badge>{item ? m.sync : m.localWorkout}</Badge>
+              </Group>
+              <Text size="sm">{plan.title}</Text>
+              {plan.description && (
+                <Text style={{ whiteSpace: 'pre-wrap' }}>
+                  {plan.description}
+                </Text>
               )}
-            {sync.items
-              .filter((item) => item.actual)
-              .map((item) => (
-                <Paper withBorder p="md" key={item.id}>
-                  <Stack>
-                    <Title order={2}>{item.actual?.title}</Title>
-                    <Text>{item.actual?.date}</Text>
-                    <Text fw={600}>
-                      {item.publishedSnapshot
-                        ? m.publishedSnapshot
-                        : m.snapshot}
-                      :{' '}
-                      {(item.publishedSnapshot ?? item.planSnapshot).planTitle}
-                    </Text>
-                    <Text>
-                      {
-                        (item.publishedSnapshot ?? item.planSnapshot).workout
-                          .title
-                      }{' '}
-                      ·{' '}
-                      {
-                        (item.publishedSnapshot ?? item.planSnapshot).workout
-                          .date
-                      }
-                    </Text>
-                    {item.publishedSnapshot && (
-                      <Accordion>
-                        <Accordion.Item value="original">
-                          <Accordion.Control>{m.snapshot}</Accordion.Control>
-                          <Accordion.Panel>
-                            <Stack>
-                              <Text>
-                                {item.planSnapshot.planTitle} ·{' '}
-                                {item.planSnapshot.workout.title} ·{' '}
-                                {item.planSnapshot.workout.date}
-                              </Text>
-                              <ExerciseTable
-                                exercises={item.planSnapshot.workout.exercises}
-                              />
-                            </Stack>
-                          </Accordion.Panel>
-                        </Accordion.Item>
-                      </Accordion>
-                    )}
-                    <ExerciseTable
-                      exercises={
-                        (item.publishedSnapshot ?? item.planSnapshot).workout
-                          .exercises
-                      }
-                      sync={item}
-                    />
-                    <WorkoutSync item={item} />
-                  </Stack>
-                </Paper>
-              ))}
-            {data?.sessions
-              .slice()
-              .reverse()
-              .map((session) => (
-                <Paper
-                  p="md"
-                  withBorder
-                  key={session.id}
-                  data-testid={`session-${session.id}`}
-                  style={{ overflowWrap: 'anywhere' }}
+              <ExerciseTable
+                exercises={workout.exercises}
+                sync={item}
+                actual={latestResult?.exercises}
+              />
+              <WorkoutSync item={item} />
+              <Group>
+                <Button
+                  mih={44}
+                  variant="light"
+                  onClick={() => editWorkout(plan, workout)}
                 >
-                  <Stack>
-                    <Group justify="space-between">
-                      <Title order={2}>{session.title}</Title>
-                      <Badge>{m[session.status]}</Badge>
-                    </Group>
-                    <Text>{session.date}</Text>
-                    <Text>
-                      {session.planSnapshot
-                        ? `${m.snapshot}: ${session.planSnapshot.planTitle}`
-                        : m.independent}
-                    </Text>
-                    {session.planSnapshot && (
-                      <>
-                        <Text fw={600}>{m.planned}</Text>
-                        <ExerciseTable
-                          exercises={session.planSnapshot.workout.exercises}
-                        />
-                      </>
-                    )}
-                    <Text fw={600}>{m.actual}</Text>
-                    <ExerciseTable exercises={session.exercises} />
-                    <Text style={{ whiteSpace: 'pre-wrap' }}>
-                      {session.note}
-                    </Text>
-                    {canLog && (
+                  {m.editWorkout}
+                </Button>
+                {canLog && (
+                  <Button
+                    mih={44}
+                    variant="light"
+                    onClick={() => record(plan, workout)}
+                  >
+                    {m.record}
+                  </Button>
+                )}
+                <Button
+                  mih={44}
+                  variant="default"
+                  onClick={() => {
+                    setCopy(plan);
+                    setCopyDate(plan.startsOn);
+                  }}
+                >
+                  {m.copy}
+                </Button>
+              </Group>
+              <Accordion>
+                <Accordion.Item value="plan">
+                  <Accordion.Control>{m.managePlan}</Accordion.Control>
+                  <Accordion.Panel>
+                    <Stack>
+                      <Text>
+                        {plan.startsOn} — {plan.endsOn}
+                      </Text>
                       <Group>
                         <Button
                           mih={44}
-                          variant="light"
+                          variant="default"
                           onClick={() =>
                             open({
-                              kind: 'session',
-                              initial: sessionInput(session),
-                              existing: session,
+                              kind: 'plan',
+                              initial: planInput(plan),
+                              existing: plan,
                             })
                           }
                         >
-                          {m.edit}
+                          {m.editPlan}
                         </Button>
                         <Button
                           mih={44}
@@ -520,29 +565,104 @@ function ScopedWorkoutsDashboard({
                           onClick={() => {
                             setEditorError(null);
                             setDeletion({
-                              kind: 'sessions',
-                              id: session.id,
-                              revision: session.revision,
+                              kind: 'plans',
+                              id: plan.id,
+                              revision: plan.revision,
                             });
                           }}
                         >
-                          {m.remove}
+                          {m.removePlan}
                         </Button>
                       </Group>
-                    )}
-                    {renderComments?.(session.id)}
-                  </Stack>
-                </Paper>
+                    </Stack>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
+              {results.map((session) => (
+                <SessionResult
+                  key={session.id}
+                  session={session}
+                  comparisonShown={session.id === latestResult?.id}
+                  canLog={canLog}
+                  renderComments={renderComments}
+                  onEdit={() =>
+                    open({
+                      kind: 'session',
+                      initial: sessionInput(session),
+                      existing: session,
+                    })
+                  }
+                  onDelete={() => {
+                    setEditorError(null);
+                    setDeletion({
+                      kind: 'sessions',
+                      id: session.id,
+                      revision: session.revision,
+                    });
+                  }}
+                />
               ))}
+            </Stack>
+          </Paper>
+        );
+      })}
+      {dayRemote.map((item) => (
+        <Paper withBorder p="md" key={item.id}>
+          <Stack>
+            <Title order={2}>{item.actual?.title}</Title>
+            <Text>
+              {m.publishedSnapshot}:{' '}
+              {(item.publishedSnapshot ?? item.planSnapshot).planTitle}
+            </Text>
+            <ExerciseTable
+              exercises={
+                (item.publishedSnapshot ?? item.planSnapshot).workout.exercises
+              }
+              sync={item}
+            />
+            <WorkoutSync item={item} />
           </Stack>
-        </Tabs.Panel>
-      </Tabs>
+        </Paper>
+      ))}
+      {daySessions
+        .filter(
+          (session) =>
+            !dayPlans.some(
+              ({ plan, workout }) =>
+                session.planId === plan.id &&
+                session.plannedWorkoutId === workout.id,
+            ),
+        )
+        .map((session) => (
+          <Paper withBorder p="md" key={session.id}>
+            <SessionResult
+              session={session}
+              canLog={canLog}
+              renderComments={renderComments}
+              onEdit={() =>
+                open({
+                  kind: 'session',
+                  initial: sessionInput(session),
+                  existing: session,
+                })
+              }
+              onDelete={() => {
+                setEditorError(null);
+                setDeletion({
+                  kind: 'sessions',
+                  id: session.id,
+                  revision: session.revision,
+                });
+              }}
+            />
+          </Paper>
+        ))}
       <Modal
         opened={editor !== null}
         onClose={() => {
           if (!busy) setEditor(null);
         }}
-        title={editor?.kind === 'plan' ? m.plans : m.newSession}
+        title={editor?.kind === 'plan' ? m.workoutTitle : m.record}
         size="lg"
         closeOnClickOutside={!busy}
         closeOnEscape={!busy}
@@ -552,6 +672,7 @@ function ScopedWorkoutsDashboard({
         {editor?.kind === 'plan' && (
           <PlanForm
             ownerId={ownerId}
+            workoutId={editor.workoutId}
             initial={editor.initial}
             busy={busy}
             error={editorError}
@@ -569,6 +690,7 @@ function ScopedWorkoutsDashboard({
         )}
         {editor?.kind === 'session' && (
           <SessionForm
+            ownerId={ownerId}
             initial={editor.initial}
             busy={busy}
             error={editorError}

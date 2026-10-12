@@ -25,6 +25,7 @@ import { diaryMessages as m } from './messages';
 import { hasNutritionMealContent } from '@/lib/nutrition-meal-content';
 import classes from './diary-view.module.css';
 import { macroCalorieShares } from './macro-shares';
+import { PhotoViewerImage } from './photo-viewer-image';
 import {
   displayValue,
   displayIssue,
@@ -332,11 +333,10 @@ export function DiaryView({
         closeButtonProps={{ 'aria-label': m.closePhoto, size: 44 }}
       >
         {viewingPhoto && (
-          <Image
+          <PhotoViewerImage
+            key={viewingPhoto.id}
             src={viewingPhoto.href}
             alt={`${m.meals[viewingPhoto.daytime]} — ${viewingPhoto.source === 'yazio' ? m.automatic : m.manual}`}
-            className={classes.viewerImage}
-            fit="contain"
           />
         )}
       </Modal>

@@ -363,7 +363,7 @@ test('idle updates preserve occurrences while reordering, adding and removing ex
   await control(request, 'reset');
   const owner = await login(page);
   await connect(page);
-  const scope = `ownerId=${owner}`;
+  const scope = `ownerId=${owner}&from=2026-01-01&to=2026-01-31&limit=20`;
   const exercise = (comment: string, weightKg: number) => ({
     name: 'Demo exercise',
     comment,
@@ -531,7 +531,7 @@ test('uncertain idle PATCH never repeats or rolls back; committed responses veri
   await control(request, 'reset');
   const owner = await login(page);
   await connect(page);
-  const scope = `ownerId=${owner}`;
+  const scope = `ownerId=${owner}&from=2026-01-01&to=2026-01-31&limit=20`;
   let expectedPatches = 0;
   for (const failure of ['patchaftercommit', 'patchunknown']) {
     const data: WorkoutPlanInput = {
@@ -603,6 +603,52 @@ test('uncertain idle PATCH never repeats or rolls back; committed responses veri
   const counters = await control(request);
   expect(counters.posts).toHaveLength(2);
   expect(counters.patches).toHaveLength(2);
+  expect(counters.forbiddenWrites).toBe(0);
+});
+
+test('imports a phone-created workout read-only without echoing provider writes', async ({
+  page,
+  request,
+}) => {
+  await control(request, 'reset');
+  const owner = await login(page);
+  await connect(page);
+  const seeded = await control(request, 'seednative');
+  const remoteId = seeded.ids.at(-1)!;
+  const scope = `ownerId=${owner}&from=2026-01-01&to=2026-01-01&limit=20`;
+
+  const refreshed = await page.request.post(
+    `/api/workouts/transformmate?${scope}`,
+    { headers: { origin }, data: {} },
+  );
+  expect(refreshed.ok()).toBe(true);
+  const sync = (await refreshed.json()).data as TransformMateSyncData;
+  const native = sync.nativePage.items.find(
+    (item) => item.remoteTrainingId === remoteId,
+  )!;
+  expect(native).toMatchObject({
+    source: 'transformmate',
+    title: 'Native phone workout',
+    progress: 'done',
+    date: '2026-01-01',
+  });
+  expect(native.exercises).toHaveLength(2);
+  expect(native.exercises[0]!.metrics.map((metric) => metric.type)).toEqual([
+    'plan',
+    'fact',
+  ]);
+  expect(sync.nativeRefresh.status).toBe('fresh');
+
+  const cached = await page.request.get(`/api/workouts/transformmate?${scope}`);
+  expect(cached.ok()).toBe(true);
+  expect(
+    ((await cached.json()).data as TransformMateSyncData).nativePage.items.some(
+      (item) => item.remoteTrainingId === remoteId,
+    ),
+  ).toBe(true);
+  const counters = await control(request);
+  expect(counters.posts).toHaveLength(0);
+  expect(counters.patches).toHaveLength(0);
   expect(counters.forbiddenWrites).toBe(0);
 });
 test('real cookies protect safe catalog and private synthetic ranged video', async ({
@@ -737,7 +783,7 @@ test('saving creates once, idle updates once, and remote facts preserve initial 
   await control(request, 'reset');
   const owner = await login(page);
   await connect(page);
-  const scope = `ownerId=${owner}`;
+  const scope = `ownerId=${owner}&from=2026-01-01&to=2026-01-31&limit=20`;
   const data = {
     title: `Synthetic ${randomUUID()}`,
     description: '',
@@ -958,7 +1004,7 @@ test('ambiguous creates never repeat, recovery verifies committed writes and pre
   await control(request, 'reset');
   const owner = await login(page);
   await connect(page);
-  const scope = `ownerId=${owner}`;
+  const scope = `ownerId=${owner}&from=2026-01-01&to=2026-01-31&limit=20`;
   const makePlan = (linked: boolean) => ({
     title: `Synthetic ${randomUUID()}`,
     description: '',

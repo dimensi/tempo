@@ -139,9 +139,14 @@
   min-height: 44px;
   border-radius: var(--mantine-radius-md);
 }
+.viewerSurface {
+  overflow: hidden;
+  touch-action: none;
+  height: calc(100dvh - 148px);
+}
 .viewerImage {
   width: 100%;
-  height: calc(100dvh - 88px);
+  height: 100%;
   object-fit: contain;
-  touch-action: auto;
+  pointer-events: none;
 }

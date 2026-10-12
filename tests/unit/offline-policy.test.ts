@@ -8,6 +8,7 @@ import {
   type CacheMetadata,
   type CachedBundle,
 } from '@/lib/offline-device';
+import { ownerConfirmedYazioWeightPolicyVersion } from '@/contracts/yazio-weight-policy';
 const metadata: CacheMetadata = {
   ...initialMetadata(),
   enabled: true,
@@ -18,7 +19,8 @@ const metadata: CacheMetadata = {
   deviceEpoch: 'epoch-a',
 };
 const bundle: CachedBundle<null> = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
   fence: { partition: 'owner-a', generation: 3, deviceEpoch: 'epoch-a' },
   savedAt: 1000,
   expiresAt: 2000,
@@ -27,10 +29,10 @@ const bundle: CachedBundle<null> = {
   missingPhotos: [],
   photoBytes: 0,
 };
-it('defaults off and refuses foreign partitions, revoked generations and expired/rollback reads', () => {
+it('defaults off and refuses foreign partitions, revoked generations and clock rollback', () => {
   expect(matchesFence(initialMetadata(), bundle.fence)).toBe(false);
   expect(canReadBundle(metadata, bundle, 1500)).toBe(true);
-  for (const now of [999, 2000, NaN, Infinity])
+  for (const now of [999, NaN, Infinity])
     expect(canReadBundle(metadata, bundle, now)).toBe(false);
   expect(canReadBundle({ ...metadata, lastSeenAt: 1600 }, bundle, 1500)).toBe(
     false,
@@ -40,39 +42,28 @@ it('defaults off and refuses foreign partitions, revoked generations and expired
     canReadBundle({ ...metadata, partition: 'owner-b' }, bundle, 1500),
   ).toBe(false);
 });
-it('caps validity by 24h and session expiry and refuses oversized photo caches', () => {
+it('local eligibility does not grant or inherit server session expiry; quota and policy remain bounded', () => {
+  expect(canReadBundle(metadata, bundle, 1000 + 3 * 86400000)).toBe(true);
+  expect(bundle.expiresAt).toBe(2000);
+  expect(bundle.sessionExpiresAt).toBe(3000);
   expect(
     canReadBundle(
       metadata,
-      {
-        ...bundle,
-        expiresAt: bundle.savedAt + offlineDeviceLimits.lifetimeMs,
-        sessionExpiresAt:
-          bundle.savedAt + offlineDeviceLimits.lifetimeMs + 1000,
-        photoBytes: offlineDeviceLimits.photoBytes,
-      },
+      { ...bundle, photoBytes: offlineDeviceLimits.photoBytes },
       1500,
     ),
   ).toBe(true);
   expect(
     canReadBundle(
       metadata,
-      {
-        ...bundle,
-        expiresAt: bundle.savedAt + offlineDeviceLimits.lifetimeMs + 1,
-        sessionExpiresAt:
-          bundle.savedAt + offlineDeviceLimits.lifetimeMs + 1000,
-      },
+      { ...bundle, photoBytes: offlineDeviceLimits.photoBytes + 1 },
       1500,
     ),
   ).toBe(false);
   expect(
-    canReadBundle(metadata, { ...bundle, sessionExpiresAt: 1900 }, 1500),
-  ).toBe(false);
-  expect(
     canReadBundle(
       metadata,
-      { ...bundle, photoBytes: offlineDeviceLimits.photoBytes + 1 },
+      { ...bundle, weightPolicyVersion: 'unknown-unit/v0' },
       1500,
     ),
   ).toBe(false);

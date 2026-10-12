@@ -1,0 +1,5 @@
+#!/usr/bin/python3
+import os, re, sys
+match = re.fullmatch(r"nutrition-release ([0-9]{1,20}) ([0-9a-f]{40}) ([0-9a-f]{40}) ([0-9a-f]{64})", os.environ.get("SSH_ORIGINAL_COMMAND", ""))
+if not match: sys.exit("Unsupported deployment command")
+os.execv("/usr/bin/sudo", ["sudo", "-n", "/usr/local/libexec/nutrition-cd", *match.groups()])

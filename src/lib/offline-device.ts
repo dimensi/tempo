@@ -1,5 +1,13 @@
+import {
+  offlineSnapshotSchema,
+  type OfflineSnapshot,
+} from '@/contracts/offline';
+import {
+  offlineLocalWindow,
+  pruneOfflineSnapshot,
+} from '@/contracts/offline-retention';
+import { ownerConfirmedYazioWeightPolicyVersion } from '@/contracts/yazio-weight-policy';
 export const offlineDeviceLimits = {
-  lifetimeMs: 86400000,
   photoBytes: 50 * 1024 * 1024,
 } as const;
 export const offlineDeviceMessages = {
@@ -13,6 +21,7 @@ export interface CacheFence {
   deviceEpoch: string;
 }
 export interface CacheMetadata {
+  weightPolicyVersion: string;
   generation: number;
   partition: string | null;
   connectionGeneration: string | null;
@@ -21,7 +30,8 @@ export interface CacheMetadata {
   deviceEpoch: string | null;
 }
 export interface CachedBundle<T> {
-  schemaVersion: 1;
+  schemaVersion: 2;
+  weightPolicyVersion: string;
   fence: CacheFence;
   savedAt: number;
   expiresAt: number;
@@ -45,20 +55,12 @@ export function canReadBundle<T>(
 ) {
   return (
     matchesFence(metadata, bundle.fence) &&
-    bundle.schemaVersion === 1 &&
-    [
-      now,
-      bundle.savedAt,
-      bundle.expiresAt,
-      bundle.sessionExpiresAt,
-      metadata.lastSeenAt,
-    ].every(Number.isFinite) &&
+    bundle.schemaVersion === 2 &&
+    bundle.weightPolicyVersion === ownerConfirmedYazioWeightPolicyVersion &&
+    metadata.weightPolicyVersion === ownerConfirmedYazioWeightPolicyVersion &&
+    [now, bundle.savedAt, metadata.lastSeenAt].every(Number.isFinite) &&
     now >= metadata.lastSeenAt &&
     now >= bundle.savedAt &&
-    bundle.expiresAt > bundle.savedAt &&
-    bundle.expiresAt <= bundle.savedAt + offlineDeviceLimits.lifetimeMs &&
-    bundle.expiresAt <= bundle.sessionExpiresAt &&
-    now < bundle.expiresAt &&
     bundle.photoBytes >= 0 &&
     bundle.photoBytes <= offlineDeviceLimits.photoBytes
   );
@@ -68,6 +70,7 @@ export function nextMetadata(
   now: number,
 ): CacheMetadata {
   return {
+    weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
     generation: metadata.generation + 1,
     partition: null,
     connectionGeneration: null,
@@ -78,6 +81,7 @@ export function nextMetadata(
 }
 export function initialMetadata(): CacheMetadata {
   return {
+    weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
     generation: 0,
     partition: null,
     connectionGeneration: null,
@@ -137,6 +141,19 @@ export function concealOfflineContent() {
       '[data-offline-private]',
     ))
       node.hidden = true;
+}
+export function revealOfflineContent(fence: CacheFence) {
+  try {
+    const gate = readGate(browserGateStorage());
+    if (memoryBlocked || gate.disabled || gate.epoch !== fence.deviceEpoch)
+      return;
+    for (const node of document.querySelectorAll<HTMLElement>(
+      '[data-offline-private]',
+    ))
+      node.hidden = false;
+  } catch {
+    concealOfflineContent();
+  }
 }
 export function subscribeOfflineBlocked(listener: () => void) {
   const clear = () => {
@@ -315,9 +332,23 @@ export class OfflineStorage {
       const request = transaction.objectStore('metadata').get('current');
       request.onsuccess = () => {
         try {
+          let metadata: CacheMetadata = request.result ?? initialMetadata();
+          if (
+            metadata.weightPolicyVersion !==
+            ownerConfirmedYazioWeightPolicyVersion
+          ) {
+            metadata = {
+              ...metadata,
+              weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
+              generation: metadata.generation + 1,
+            };
+            transaction.objectStore('metadata').put(metadata, 'current');
+            transaction.objectStore('bundle').clear();
+            transaction.objectStore('photos').clear();
+          }
           action(
             transaction,
-            request.result ?? initialMetadata(),
+            metadata,
             (value) => {
               result = value;
             },
@@ -334,9 +365,17 @@ export class OfflineStorage {
     });
   }
   metadata() {
-    return this.transaction<CacheMetadata>((_tx, metadata, finish) =>
-      finish(metadata),
-    );
+    return this.transaction<CacheMetadata>((_tx, metadata, finish) => {
+      const gate = readGate(this.gateStorage);
+      finish({
+        ...metadata,
+        enabled:
+          metadata.enabled &&
+          !memoryBlocked &&
+          !gate.disabled &&
+          gate.epoch === metadata.deviceEpoch,
+      });
+    });
   }
   currentFence() {
     return this.transaction<CacheFence>((_tx, metadata, finish, fail) => {
@@ -401,7 +440,12 @@ export class OfflineStorage {
       });
     });
   }
-  commit<T>(bundle: CachedBundle<T>, photos: StoredPhoto[], now = Date.now()) {
+  commit(
+    bundle: CachedBundle<OfflineSnapshot>,
+    photos: StoredPhoto[],
+    now = Date.now(),
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+  ) {
     return this.transaction<void>((tx, metadata, finish, fail) => {
       const gate = readGate(this.gateStorage);
       if (
@@ -421,9 +465,21 @@ export class OfflineStorage {
         new Set(photos.map((photo) => photo.id)).size !== photos.length
       )
         return fail(new OfflineStorageError('quota'));
-      tx.objectStore('bundle').put(bundle, 'current');
+      const snapshot = pruneOfflineSnapshot(
+        offlineSnapshotSchema.parse(bundle.snapshot),
+        offlineLocalWindow(now, timezone),
+      );
+      const ids = new Set(snapshot.photos.items.map((photo) => photo.id));
+      const retained = photos.filter((photo) => ids.has(photo.id));
+      const nextBundle = {
+        ...bundle,
+        snapshot,
+        missingPhotos: bundle.missingPhotos.filter((id) => ids.has(id)),
+        photoBytes: retained.reduce((sum, photo) => sum + photo.bytes.size, 0),
+      };
+      tx.objectStore('bundle').put(nextBundle, 'current');
       tx.objectStore('photos').clear();
-      for (const photo of photos)
+      for (const photo of retained)
         tx.objectStore('photos').put(photo.bytes, photo.id);
       tx.objectStore('metadata').put(
         { ...metadata, lastSeenAt: now },
@@ -432,18 +488,56 @@ export class OfflineStorage {
       finish();
     });
   }
-  read<T>(now = Date.now()) {
+  read(
+    now = Date.now(),
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+  ) {
     return this.transaction<{
       metadata: CacheMetadata;
-      bundle: CachedBundle<T> | null;
+      bundle: CachedBundle<OfflineSnapshot> | null;
       photos: StoredPhoto[];
     }>((tx, metadata, finish, fail) => {
       const request = tx.objectStore('bundle').get('current');
       request.onsuccess = () => {
         try {
-          const bundle: CachedBundle<T> | undefined = request.result;
-          if (!bundle) return finish({ metadata, bundle: null, photos: [] });
+          let bundle: CachedBundle<OfflineSnapshot> | undefined =
+            request.result;
           const gate = readGate(this.gateStorage);
+          if (
+            memoryBlocked ||
+            gate.disabled ||
+            (metadata.enabled && gate.epoch !== metadata.deviceEpoch)
+          ) {
+            const next = nextMetadata(metadata, now);
+            tx.objectStore('metadata').put(next, 'current');
+            tx.objectStore('bundle').clear();
+            tx.objectStore('photos').clear();
+            return finish({ metadata: next, bundle: null, photos: [] });
+          }
+          if (!bundle) return finish({ metadata, bundle: null, photos: [] });
+          const parsed = offlineSnapshotSchema.safeParse(bundle.snapshot);
+          if (
+            bundle.schemaVersion !== 2 ||
+            bundle.weightPolicyVersion !==
+              ownerConfirmedYazioWeightPolicyVersion ||
+            !parsed.success
+          ) {
+            const next = { ...metadata, generation: metadata.generation + 1 };
+            tx.objectStore('metadata').put(next, 'current');
+            tx.objectStore('bundle').clear();
+            tx.objectStore('photos').clear();
+            return finish({ metadata: next, bundle: null, photos: [] });
+          }
+          const snapshot = pruneOfflineSnapshot(
+            parsed.data,
+            offlineLocalWindow(now, timezone),
+          );
+          const ids = new Set(snapshot.photos.items.map((photo) => photo.id));
+          bundle = {
+            ...bundle,
+            snapshot,
+            missingPhotos: bundle.missingPhotos.filter((id) => ids.has(id)),
+          };
           if (
             memoryBlocked ||
             gate.disabled ||
@@ -462,7 +556,12 @@ export class OfflineStorage {
             try {
               const current = cursor.result;
               if (current) {
-                photos.push({ id: String(current.key), bytes: current.value });
+                if (ids.has(String(current.key)))
+                  photos.push({
+                    id: String(current.key),
+                    bytes: current.value,
+                  });
+                else current.delete();
                 current.continue();
               } else {
                 const latestGate = readGate(this.gateStorage);
@@ -474,7 +573,15 @@ export class OfflineStorage {
                   return fail(new OfflineStorageError('fence'));
                 const next = { ...metadata, lastSeenAt: now };
                 tx.objectStore('metadata').put(next, 'current');
-                finish({ metadata: next, bundle, photos });
+                const retained = {
+                  ...bundle!,
+                  photoBytes: photos.reduce(
+                    (sum, photo) => sum + photo.bytes.size,
+                    0,
+                  ),
+                };
+                tx.objectStore('bundle').put(retained, 'current');
+                finish({ metadata: next, bundle: retained, photos });
               }
             } catch {
               fail(new OfflineStorageError('unavailable'));

@@ -1,0 +1,141 @@
+#!/usr/bin/python3
+import datetime, fcntl, importlib.util, json, os, pathlib, re, subprocess, sys, tempfile, time, select
+
+PROJECT = pathlib.Path("/opt/compose/yazio-dashboard")
+MAX_ARCHIVE = 1024 * 1024 * 1024
+
+def parse_args(args):
+    if len(args) != 4: raise ValueError("Unsupported arguments")
+    run, revision, tree, digest = args
+    if not re.fullmatch(r"[0-9]{1,20}", run): raise ValueError("Invalid run")
+    if not all(re.fullmatch(r"[0-9a-f]{40}", x) for x in (revision, tree)): raise ValueError("Invalid Git object")
+    if not re.fullmatch(r"[0-9a-f]{64}", digest): raise ValueError("Invalid digest")
+    return run, revision, tree, digest
+
+class BoundedReader:
+    def __init__(self, stream, deadline_seconds=600):
+        self.stream = stream
+        self.remaining = MAX_ARCHIVE + 65536 + 32768
+        self.deadline = time.monotonic() + deadline_seconds
+        try: self.fd = stream.fileno()
+        except (AttributeError, OSError): self.fd = None
+
+    def optional(self, count):
+        seconds = self.deadline - time.monotonic()
+        if seconds <= 0: raise ValueError("Upload deadline exceeded")
+        if count > self.remaining: raise ValueError("Total stream limit exceeded")
+        if self.fd is not None:
+            if not select.select([self.fd], [], [], seconds)[0]: raise ValueError("Upload deadline exceeded")
+            chunk = os.read(self.fd, count)
+        else: chunk = self.stream.read(count)
+        if time.monotonic() >= self.deadline: raise ValueError("Upload deadline exceeded")
+        self.remaining -= len(chunk)
+        return chunk
+
+    def exact(self, count):
+        if count > self.remaining: raise ValueError("Total stream limit exceeded")
+        chunks = []
+        while count:
+            seconds = self.deadline - time.monotonic()
+            if seconds <= 0: raise ValueError("Upload deadline exceeded")
+            if self.fd is not None:
+                if not select.select([self.fd], [], [], seconds)[0]: raise ValueError("Upload deadline exceeded")
+                chunk = os.read(self.fd, min(count, 1048576))
+            else: chunk = self.stream.read(min(count, 1048576))
+            if time.monotonic() >= self.deadline: raise ValueError("Upload deadline exceeded")
+            if not chunk: raise ValueError("Truncated stream")
+            count -= len(chunk); self.remaining -= len(chunk); chunks.append(chunk)
+        return b"".join(chunks)
+
+def octal(field):
+    value = field.rstrip(b"\0 ")
+    if not re.fullmatch(rb"[0-7]{1,11}", value): raise ValueError("Unsupported numeric encoding")
+    return int(value, 8)
+
+def receive(stream, target, deadline_seconds=600):
+    reader = BoundedReader(stream, deadline_seconds)
+    seen = set()
+    for _ in range(2):
+        header = reader.exact(512)
+        # Reject metadata extensions before any payload or generic archive parser runs.
+        if header[156:157] not in (b"0", b"\0"): raise ValueError("Only regular USTAR members allowed")
+        if header[257:265] != b"ustar\x0000" or header[345:500].strip(b"\0"):
+            raise ValueError("Only short-name USTAR allowed")
+        expected = octal(header[148:156])
+        if sum(header[:148]) + 8 * 32 + sum(header[156:]) != expected:
+            raise ValueError("Header checksum mismatch")
+        name = header[:100].rstrip(b"\0").decode("ascii")
+        if name not in ("manifest.json", "image.tar.gz") or name in seen:
+            raise ValueError("Unsupported archive member")
+        size = octal(header[124:136])
+        limit = 65536 if name == "manifest.json" else MAX_ARCHIVE
+        if not 0 < size <= limit: raise ValueError("Archive member size rejected")
+        seen.add(name)
+        with (target / name).open("xb") as output:
+            remaining = size
+            while remaining:
+                chunk = reader.exact(min(1048576, remaining)); output.write(chunk); remaining -= len(chunk)
+        padding = reader.exact((-size) % 512)
+        if padding.strip(b"\0"): raise ValueError("Nonzero member padding")
+    if seen != {"manifest.json", "image.tar.gz"} or reader.exact(1024).strip(b"\0"):
+        raise ValueError("Missing end blocks or extra members")
+    trailing = 0
+    while True:
+        chunk = reader.optional(512)
+        if not chunk: break
+        trailing += len(chunk)
+        if chunk.strip(b"\0") or trailing > 32768: raise ValueError("Excess trailing archive data")
+
+def main():
+    run, revision, tree, digest = parse_args(sys.argv[1:])
+    os.umask(0o077)
+    if os.geteuid() != 0: raise ValueError("Root-owned wrapper required")
+    with (PROJECT / "verification/rollout.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        receipt_path = PROJECT / "verification/cd-last-run.json"
+        if receipt_path.exists() and int(json.loads(receipt_path.read_text())["run"]) > int(run):
+            raise ValueError("Older CD run refused")
+        incoming = PROJECT / "verification/ci-incoming"
+        if incoming.is_symlink(): raise ValueError("Invalid staging path")
+        incoming.mkdir(mode=0o700, exist_ok=True)
+        if incoming.stat().st_uid != 0 or incoming.stat().st_mode & 0o077: raise ValueError("Unprotected staging directory")
+        # Protected artifacts remain available for diagnosis or operator rollback.
+        stage = pathlib.Path(tempfile.mkdtemp(prefix=revision + ".", dir=incoming))
+        receive(sys.stdin.buffer, stage)
+        spec = importlib.util.spec_from_file_location("verify", "/usr/local/libexec/nutrition-ci-verify.py")
+        verify = importlib.util.module_from_spec(spec); spec.loader.exec_module(verify)
+        manifest = json.loads((stage / "manifest.json").read_text())
+        if manifest["archiveSHA256"] != digest: raise ValueError("Requested digest mismatch")
+        verify.verify_manifest(manifest, revision, tree, stage / "image.tar.gz")
+        image = manifest["imageTag"]
+        existing = subprocess.run(["docker", "image", "inspect", image], capture_output=True)
+        if existing.returncode == 0:
+            verify.verify_image(manifest, json.loads(existing.stdout)[0])
+        else:
+            unpack = subprocess.Popen(["gunzip", "-c", str(stage / "image.tar.gz")], stdout=subprocess.PIPE)
+            loaded = subprocess.run(["docker", "load"], stdin=unpack.stdout, stdout=subprocess.DEVNULL)
+            unpack.stdout.close()
+            if unpack.wait() or loaded.returncode: raise ValueError("Image load failed")
+        checked = verify.verify_image(manifest, json.loads(subprocess.check_output(["docker", "image", "inspect", image]))[0])
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + run
+        env = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "CD_BACKUP_STAMP": stamp}
+        rollout = subprocess.run(["/usr/local/libexec/nutrition-upgrade-ci-release", revision], env=env, capture_output=True)
+        if rollout.returncode: raise ValueError("Deployment failed; fixed rollback attempted; operator attention required")
+        # Final container identity check after the helper's Docker-health + HTTPS checks.
+        compose = ["docker", "compose", "-p", "nutrition", "--env-file", str(PROJECT / "runtime.env"), "-f", str(PROJECT / "compose.yaml"), "-f", str(PROJECT / "compose.home.yaml")]
+        container = subprocess.check_output(compose + ["ps", "-q", "app"], text=True).strip()
+        live = json.loads(subprocess.check_output(["docker", "inspect", container]))[0]
+        if live["Config"]["Image"] != image or live["State"]["Health"]["Status"] != "healthy":
+            raise ValueError("Live image identity mismatch; operator attention required")
+        if live["Config"]["Labels"].get("org.opencontainers.image.revision") != revision:
+            raise ValueError("Live revision mismatch; operator attention required")
+        checked.update(run=run, tree=tree, archiveSHA256=digest, backupStamp=stamp, healthy=True)
+        temporary = receipt_path.with_suffix(".tmp"); temporary.write_text(json.dumps(checked) + "\n"); temporary.replace(receipt_path)
+        print(json.dumps(checked))
+
+if __name__ == "__main__":
+    try: main()
+    except Exception as error:
+        # Never echo arbitrary received fields, runtime environment or image configuration.
+        print("Nutrition CD failed: " + type(error).__name__, file=sys.stderr)
+        sys.exit(1)
