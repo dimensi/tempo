@@ -1,9 +1,11 @@
 'use client';
+import { useState } from 'react';
 import {
   Button,
   Group,
   NumberInput,
   Paper,
+  Modal,
   SimpleGrid,
   Stack,
   Text,
@@ -28,6 +30,7 @@ export function ExerciseEditor({
   value: WorkoutExercise[];
   onChange: (value: WorkoutExercise[]) => void;
 }) {
+  const [adding, setAdding] = useState<number | 'new' | null>(null);
   const update = (index: number, exercise: WorkoutExercise) =>
     onChange(value.map((item, i) => (i === index ? exercise : item)));
   return (
@@ -58,8 +61,9 @@ export function ExerciseEditor({
                 {m.makeManual}
               </Button>
             )}
-            {ownerId && (
+            {ownerId && exercise.transformMate && (
               <Catalog
+                searchable={false}
                 key={`${ownerId}-${exercise.transformMate?.occurrenceKey ?? index}-${exercise.transformMate?.exerciseId ?? 'manual'}`}
                 ownerId={ownerId}
                 exercise={exercise}
@@ -67,6 +71,15 @@ export function ExerciseEditor({
                   update(index, selectCatalogExercise(exercise, item))
                 }
               />
+            )}
+            {ownerId && (
+              <Button
+                variant="subtle"
+                mih={44}
+                onClick={() => setAdding(index)}
+              >
+                {m.chooseExercise}
+              </Button>
             )}
             <Textarea
               label={m.exerciseComment}
@@ -207,10 +220,50 @@ export function ExerciseEditor({
         mih={44}
         variant="light"
         disabled={value.length >= 50}
-        onClick={() => onChange([...value, emptyExercise()])}
+        onClick={() =>
+          ownerId ? setAdding('new') : onChange([...value, emptyExercise()])
+        }
       >
         {m.addExercise}
       </Button>
+      <Modal
+        opened={adding !== null}
+        onClose={() => setAdding(null)}
+        title={m.addExercise}
+        closeButtonProps={{ 'aria-label': m.close, size: 44 }}
+      >
+        <Stack>
+          {ownerId && (
+            <Catalog
+              ownerId={ownerId}
+              exercise={emptyExercise()}
+              onSelect={(item) => {
+                const exercises =
+                  value.length === 1 && !value[0]!.name.trim() ? [] : value;
+                if (typeof adding === 'number')
+                  update(adding, selectCatalogExercise(value[adding]!, item));
+                else
+                  onChange([
+                    ...exercises,
+                    selectCatalogExercise(emptyExercise(), item),
+                  ]);
+                setAdding(null);
+              }}
+            />
+          )}
+          <Button
+            variant="default"
+            mih={44}
+            onClick={() => {
+              if (typeof adding !== 'number')
+                onChange([...value, emptyExercise()]);
+              setAdding(null);
+            }}
+          >
+            {m.addManual}
+          </Button>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }

@@ -15,10 +15,12 @@ export function Catalog({
   ownerId,
   exercise,
   onSelect,
+  searchable = true,
 }: {
   ownerId: string;
   exercise: WorkoutExercise;
   onSelect: (item: TransformMateCatalogItem) => void;
+  searchable?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<TransformMateCatalogItem[]>([]);
@@ -84,15 +86,17 @@ export function Catalog({
       <Text size="sm" c="var(--mantine-color-text)">
         {selected ? m.linked : m.manual}
       </Text>
-      <TextInput
-        label={m.catalog}
-        value={query}
-        onChange={(event) => {
-          setQuery(event.currentTarget.value);
-          setItems([]);
-          setState(event.currentTarget.value.trim() ? 'loading' : 'idle');
-        }}
-      />
+      {searchable && (
+        <TextInput
+          label={m.catalog}
+          value={query}
+          onChange={(event) => {
+            setQuery(event.currentTarget.value);
+            setItems([]);
+            setState(event.currentTarget.value.trim() ? 'loading' : 'idle');
+          }}
+        />
+      )}
       {state === 'loading' && <Loader size="sm" aria-label={m.loading} />}
       {state === 'error' && (
         <Alert color="red" role="alert">

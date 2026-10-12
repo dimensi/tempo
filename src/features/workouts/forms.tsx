@@ -61,9 +61,11 @@ export function PlanForm({
   initial,
   onSave,
   ownerId,
+  workoutId,
   ...controls
 }: Controls & {
   ownerId: string;
+  workoutId?: string;
   initial: WorkoutPlanInput;
   onSave: (value: WorkoutPlanInput) => void;
 }) {
@@ -85,44 +87,49 @@ export function PlanForm({
           </Alert>
         )}
         <Alert>{m.autoHint}</Alert>
-        <TextInput
-          label={m.planTitle}
-          required
-          maxLength={160}
-          value={value.title}
-          onChange={(event) =>
-            setValue({ ...value, title: event.currentTarget.value })
-          }
-        />
-        <Textarea
-          label={m.descriptionLabel}
-          maxLength={4000}
-          value={value.description}
-          onChange={(event) =>
-            setValue({ ...value, description: event.currentTarget.value })
-          }
-        />
-        <SimpleGrid cols={{ base: 1, sm: 2 }}>
-          <TextInput
-            type="date"
-            label={m.startsOn}
-            required
-            value={value.startsOn}
-            onChange={(event) =>
-              setValue({ ...value, startsOn: event.currentTarget.value })
-            }
-          />
-          <TextInput
-            type="date"
-            label={m.endsOn}
-            required
-            value={value.endsOn}
-            onChange={(event) =>
-              setValue({ ...value, endsOn: event.currentTarget.value })
-            }
-          />
-        </SimpleGrid>
+        {!workoutId && (
+          <>
+            <TextInput
+              label={m.planTitle}
+              required
+              maxLength={160}
+              value={value.title}
+              onChange={(event) =>
+                setValue({ ...value, title: event.currentTarget.value })
+              }
+            />
+            <Textarea
+              label={m.descriptionLabel}
+              maxLength={4000}
+              value={value.description}
+              onChange={(event) =>
+                setValue({ ...value, description: event.currentTarget.value })
+              }
+            />
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <TextInput
+                type="date"
+                label={m.startsOn}
+                required
+                value={value.startsOn}
+                onChange={(event) =>
+                  setValue({ ...value, startsOn: event.currentTarget.value })
+                }
+              />
+              <TextInput
+                type="date"
+                label={m.endsOn}
+                required
+                value={value.endsOn}
+                onChange={(event) =>
+                  setValue({ ...value, endsOn: event.currentTarget.value })
+                }
+              />
+            </SimpleGrid>
+          </>
+        )}
         {value.workouts.map((workout, index) => {
+          if (workoutId && workout.id !== workoutId) return null;
           const update = (change: Partial<typeof workout>) =>
             setValue({
               ...value,
@@ -136,46 +143,57 @@ export function PlanForm({
                 <Title order={3}>
                   {m.planned} {index + 1}
                 </Title>
-                <Group grow>
-                  <Button
-                    mih={44}
-                    variant="subtle"
-                    disabled={index === 0}
-                    onClick={() => {
-                      const workouts = [...value.workouts];
-                      [workouts[index - 1], workouts[index]] = [
-                        workouts[index]!,
-                        workouts[index - 1]!,
-                      ];
-                      setValue({ ...value, workouts });
-                    }}
-                  >
-                    {m.up}
-                  </Button>
-                  <Button
-                    mih={44}
-                    variant="subtle"
-                    disabled={index === value.workouts.length - 1}
-                    onClick={() => {
-                      const workouts = [...value.workouts];
-                      [workouts[index], workouts[index + 1]] = [
-                        workouts[index + 1]!,
-                        workouts[index]!,
-                      ];
-                      setValue({ ...value, workouts });
-                    }}
-                  >
-                    {m.down}
-                  </Button>
-                </Group>
+                {!workoutId && (
+                  <Group grow>
+                    <Button
+                      mih={44}
+                      variant="subtle"
+                      disabled={index === 0}
+                      onClick={() => {
+                        const workouts = [...value.workouts];
+                        [workouts[index - 1], workouts[index]] = [
+                          workouts[index]!,
+                          workouts[index - 1]!,
+                        ];
+                        setValue({ ...value, workouts });
+                      }}
+                    >
+                      {m.up}
+                    </Button>
+                    <Button
+                      mih={44}
+                      variant="subtle"
+                      disabled={index === value.workouts.length - 1}
+                      onClick={() => {
+                        const workouts = [...value.workouts];
+                        [workouts[index], workouts[index + 1]] = [
+                          workouts[index + 1]!,
+                          workouts[index]!,
+                        ];
+                        setValue({ ...value, workouts });
+                      }}
+                    >
+                      {m.down}
+                    </Button>
+                  </Group>
+                )}
                 <TextInput
                   label={`${m.workoutTitle} ${index + 1}`}
                   required
                   maxLength={160}
                   value={workout.title}
-                  onChange={(event) =>
-                    update({ title: event.currentTarget.value })
-                  }
+                  onChange={(event) => {
+                    const title = event.currentTarget.value;
+                    if (workoutId && !initial.title)
+                      setValue({
+                        ...value,
+                        title,
+                        workouts: value.workouts.map((item, i) =>
+                          i === index ? { ...item, title } : item,
+                        ),
+                      });
+                    else update({ title });
+                  }}
                 />
                 <TextInput
                   label={`${m.date} ${index + 1}`}
@@ -211,27 +229,29 @@ export function PlanForm({
             </Paper>
           );
         })}
-        <Button
-          mih={44}
-          variant="light"
-          disabled={value.workouts.length >= 100}
-          onClick={() =>
-            setValue({
-              ...value,
-              workouts: [
-                ...value.workouts,
-                {
-                  id: crypto.randomUUID(),
-                  date: value.startsOn,
-                  title: '',
-                  exercises: [emptyExercise()],
-                },
-              ],
-            })
-          }
-        >
-          {m.addWorkout}
-        </Button>
+        {!workoutId && (
+          <Button
+            mih={44}
+            variant="light"
+            disabled={value.workouts.length >= 100}
+            onClick={() =>
+              setValue({
+                ...value,
+                workouts: [
+                  ...value.workouts,
+                  {
+                    id: crypto.randomUUID(),
+                    date: value.startsOn,
+                    title: '',
+                    exercises: [emptyExercise()],
+                  },
+                ],
+              })
+            }
+          >
+            {m.addWorkout}
+          </Button>
+        )}
         <Footer {...controls} />
       </Stack>
     </form>
@@ -240,8 +260,10 @@ export function PlanForm({
 export function SessionForm({
   initial,
   onSave,
+  ownerId,
   ...controls
 }: Controls & {
+  ownerId: string;
   initial: WorkoutSessionInput;
   onSave: (value: WorkoutSessionInput) => void;
 }) {
@@ -296,6 +318,7 @@ export function SessionForm({
           }}
         />
         <ExerciseEditor
+          ownerId={ownerId}
           value={value.exercises}
           onChange={(exercises) => setValue({ ...value, exercises })}
         />

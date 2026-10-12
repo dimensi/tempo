@@ -13,6 +13,7 @@ export const workoutMessages = {
   video: 'Показать обучающее видео',
   hideVideo: 'Скрыть видео',
   videoError: 'Видео недоступно. Закройте и попробуйте снова.',
+  videoLoading: 'Загрузка видео…',
   up: 'Выше',
   down: 'Ниже',
   copy: 'Копировать на новые даты',
@@ -31,7 +32,32 @@ export const workoutMessages = {
   notDone: 'Не выполнен',
   title: 'Тренировки',
   description:
-    'Планы и фактические результаты хранятся отдельно. Изменение плана не меняет историю.',
+    'Выберите день и тренировку. План показывает, что предстоит выполнить, факт — сохранённые результаты подходов.',
+  newWorkout: 'Добавить тренировку',
+  recordIndependent: 'Записать выполненную тренировку',
+  editWorkout: 'Изменить тренировку',
+  editPlan: 'Изменить весь план',
+  removePlan: 'Удалить весь план',
+  editActual: 'Изменить результат',
+  removeActual: 'Удалить результат',
+  managePlan: 'Все дни этого плана',
+  localWorkout: 'Сохранена здесь',
+  emptyDay: 'На этот день тренировок нет',
+  emptyDayHint:
+    'Добавьте тренировку с упражнениями и подходами или запишите уже выполненную.',
+  dateNavigation: {
+    year: 'Год',
+    month: 'Месяц',
+    day: 'День',
+    open: 'Открыть дату',
+    loadingDay: 'Загрузка дня',
+    dayNavigation: 'Дни тренировок',
+    jumpDate: 'Выбрать дату',
+    today: 'Сегодня',
+    previousWeek: 'Предыдущая неделя',
+    nextWeek: 'Следующая неделя',
+    openedDay: 'Открытый день',
+  },
   plans: 'Планы',
   history: 'История',
   newPlan: 'Создать план',
@@ -53,6 +79,8 @@ export const workoutMessages = {
   weight: 'Вес, кг',
   addWorkout: 'Добавить тренировку',
   addExercise: 'Добавить упражнение',
+  addManual: 'Ввести упражнение вручную',
+  chooseExercise: 'Выбрать из каталога',
   addSet: 'Добавить подход',
   removeWorkout: 'Удалить тренировку из плана',
   removeExercise: 'Удалить упражнение',
@@ -90,6 +118,16 @@ export const workoutMessages = {
   trainerHint: 'Вы можете редактировать планы. Результаты записывает владелец.',
   planned: 'Запланировано',
   actual: 'Выполнено',
+  actualDetails: 'Все сохранённые результаты',
+  nativeReadonly:
+    'План и факт из TransformMate. Результаты доступны для просмотра.',
+  nativeEmptySets: 'В TransformMate пока нет подходов.',
+  nativeFetched: 'Данные получены',
+  nativeError:
+    'Не удалось обновить тренировки TransformMate. Сохранённые данные доступны; повторите проверку.',
+  nativeReconnect:
+    'Подключение TransformMate нужно обновить в настройках. Сохранённые тренировки доступны.',
+  loadMore: 'Показать ещё тренировки',
 } as const;
 
 export const transformMateStatuses = {

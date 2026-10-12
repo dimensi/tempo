@@ -7,11 +7,32 @@ import {
   type TransformMateSyncItem,
 } from '@/contracts/transformmate';
 import {
+  transformMateNativePageSchema,
+  transformMateNativeRefreshSchema,
+  type TransformMateNativePage,
+  type TransformMateNativeRefresh,
+} from '@/contracts/transformmate-native';
+import {
   workoutMessages as m,
   transformMateStatuses as statuses,
   transformMateReasons as reasons,
 } from './messages';
-export function useTransformMateSync(ownerId: string, version: unknown) {
+export function useTransformMateSync(
+  ownerId: string,
+  version: unknown,
+  date: string,
+) {
+  const [nativePage, setNativePage] = useState<TransformMateNativePage>({
+    items: [],
+    nextCursor: null,
+  });
+  const [nativeRefresh, setNativeRefresh] =
+    useState<TransformMateNativeRefresh>({
+      status: 'idle',
+      checkedAt: null,
+      errorCode: null,
+    });
+  const lastAutomatic = useRef(0);
   const [items, setItems] = useState<TransformMateSyncItem[]>([]);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [denied, setDenied] = useState(false);
@@ -20,15 +41,20 @@ export function useTransformMateSync(ownerId: string, version: unknown) {
   const inflight = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const refresh = useCallback(
-    async (method = 'POST') => {
-      if (inflight.current) return;
+    async (method = 'POST', cursor?: string, automatic = false) => {
+      if (
+        inflight.current ||
+        (automatic && Date.now() - lastAutomatic.current < 60_000)
+      )
+        return;
+      if (automatic) lastAutomatic.current = Date.now();
       const controller = new AbortController();
       inflight.current = controller;
       const current = generation.current;
       setBusy(true);
       try {
         const response = await fetch(
-          `/api/workouts/transformmate?ownerId=${encodeURIComponent(ownerId)}`,
+          `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20', ...(cursor ? { cursor } : {}) })}`,
           { method, cache: 'no-store', signal: controller.signal },
         );
         if (!response.ok) {
@@ -39,6 +65,7 @@ export function useTransformMateSync(ownerId: string, version: unknown) {
           ) {
             setItems([]);
             setConfigured(null);
+            setNativePage({ items: [], nextCursor: null });
             setDenied(true);
           }
           throw new Error();
@@ -48,10 +75,30 @@ export function useTransformMateSync(ownerId: string, version: unknown) {
           .object({
             configured: z.boolean(),
             items: z.array(transformMateSyncItemSchema),
+            nativePage: transformMateNativePageSchema,
+            nativeRefresh: transformMateNativeRefreshSchema,
           })
           .parse(result.data);
         if (!controller.signal.aborted && current === generation.current) {
           setItems(parsed.items);
+          setNativePage((previous) =>
+            cursor
+              ? {
+                  items: [
+                    ...previous.items,
+                    ...parsed.nativePage.items.filter(
+                      (item) =>
+                        !previous.items.some(
+                          (entry) =>
+                            entry.remoteTrainingId === item.remoteTrainingId,
+                        ),
+                    ),
+                  ],
+                  nextCursor: parsed.nativePage.nextCursor,
+                }
+              : parsed.nativePage,
+          );
+          setNativeRefresh(parsed.nativeRefresh);
           setConfigured(parsed.configured);
           setError(false);
           setDenied(false);
@@ -66,7 +113,7 @@ export function useTransformMateSync(ownerId: string, version: unknown) {
         }
       }
     },
-    [ownerId],
+    [ownerId, date],
   );
   useEffect(() => {
     const effectGeneration = ++generation.current;
@@ -74,11 +121,15 @@ export function useTransformMateSync(ownerId: string, version: unknown) {
     inflight.current = null;
     void Promise.resolve().then(async () => {
       if (generation.current !== effectGeneration) return;
+      setNativePage({ items: [], nextCursor: null });
+      setNativeRefresh({ status: 'idle', checkedAt: null, errorCode: null });
       await refresh('GET');
-      if (generation.current === effectGeneration) await refresh();
+      if (generation.current === effectGeneration)
+        await refresh('POST', undefined, true);
     });
     const visible = () => {
-      if (document.visibilityState === 'visible') void refresh();
+      if (document.visibilityState === 'visible')
+        void refresh('POST', undefined, true);
     };
     window.addEventListener('focus', visible);
     document.addEventListener('visibilitychange', visible);
@@ -92,7 +143,18 @@ export function useTransformMateSync(ownerId: string, version: unknown) {
       document.removeEventListener('visibilitychange', visible);
     };
   }, [refresh, version]);
-  return { items, configured, error, busy, refresh, denied };
+  return {
+    items,
+    nativePage,
+    nativeRefresh,
+    configured,
+    error,
+    busy,
+    refresh,
+    denied,
+    loadMore: () =>
+      nativePage.nextCursor && refresh('GET', nativePage.nextCursor),
+  };
 }
 export function SyncSummary({
   sync,
@@ -102,6 +164,20 @@ export function SyncSummary({
   return (
     <Stack gap="xs">
       {sync.configured === false && <Alert>{m.notConfigured}</Alert>}
+      {(sync.nativeRefresh.status === 'error' ||
+        sync.nativeRefresh.status === 'unavailable') && (
+        <Alert color="orange" role="alert">
+          {sync.nativeRefresh.errorCode === 'reauth_required'
+            ? m.nativeReconnect
+            : m.nativeError}
+        </Alert>
+      )}
+      {sync.nativeRefresh.checkedAt && (
+        <Text size="sm">
+          {m.checked}:{' '}
+          {new Date(sync.nativeRefresh.checkedAt).toLocaleString('ru-RU')}
+        </Text>
+      )}
       {sync.error && (
         <Alert color="red" role="alert">
           {m.syncError}

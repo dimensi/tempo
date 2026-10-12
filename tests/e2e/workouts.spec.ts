@@ -62,14 +62,13 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
   const id = await ownerId(page);
   const title = `План ${test.info().project.name} ${Date.now()}`;
   await page.goto('/workouts');
-  await page.getByRole('button', { name: 'Создать план', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Добавить тренировку', exact: true })
+    .click();
   const dialog = page.getByRole('dialog');
   await dialog
-    .getByRole('textbox', { name: 'Название плана', exact: true })
-    .fill(title);
-  await dialog
     .getByRole('textbox', { name: 'Название тренировки 1', exact: true })
-    .fill('Силовая');
+    .fill(title);
   await dialog
     .getByRole('textbox', { name: 'Упражнение 1', exact: true })
     .fill('Приседание');
@@ -79,6 +78,32 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
   const plan = (await workouts(page, id)).plans.find(
     (value) => value.title === title,
   )!;
+  const nextDay = new Date(`${plan.endsOn}T12:00:00Z`);
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+  const otherWorkout = {
+    id: crypto.randomUUID(),
+    date: nextDay.toISOString().slice(0, 10),
+    title: 'Другой день',
+    exercises: [{ name: 'Жим', sets: [{ reps: 8, weightKg: 20 }] }],
+  };
+  const extended = await page.request.put(
+    `/api/workouts/plans/${plan.id}?ownerId=${id}`,
+    {
+      headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+      data: {
+        revision: plan.revision,
+        data: {
+          title: plan.title,
+          description: plan.description,
+          startsOn: plan.startsOn,
+          endsOn: otherWorkout.date,
+          workouts: [...plan.workouts, otherWorkout],
+        },
+      },
+    },
+  );
+  expect(extended.ok()).toBe(true);
+  await page.reload();
   const card = page.getByTestId(`plan-${plan.id}`);
   await card.getByRole('button', { name: 'Записать результат' }).click();
   await dialog.getByLabel('Вес, кг 1.1', { exact: true }).fill('35');
@@ -91,20 +116,29 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
     (value) => value.planId === plan.id,
   )!;
   await card
-    .getByRole('button', { name: 'Редактировать', exact: true })
+    .getByRole('button', { name: 'Изменить тренировку', exact: true })
     .click();
   await dialog
-    .getByRole('textbox', { name: 'Название плана', exact: true })
+    .getByRole('textbox', { name: 'Название тренировки 1', exact: true })
     .fill(`${title} изменён`);
   await dialog.getByLabel('Вес, кг 1.1', { exact: true }).fill('60');
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await card.getByRole('button', { name: 'Удалить', exact: true }).click();
+  const editedPlan = (await workouts(page, id)).plans.find(
+    (value) => value.id === plan.id,
+  )!;
+  expect(
+    editedPlan.workouts.find((workout) => workout.id === otherWorkout.id),
+  ).toEqual(otherWorkout);
+  await card.getByRole('button', { name: 'Все дни этого плана' }).click();
+  await card
+    .getByRole('button', { name: 'Удалить весь план', exact: true })
+    .click();
   await dialog
     .getByRole('button', { name: 'Подтвердить удаление', exact: true })
     .click();
   await expect(dialog).not.toBeVisible();
-  await page.getByRole('tab', { name: 'История' }).click();
+  await expect(page.getByRole('tab', { name: 'История' })).toHaveCount(0);
   const history = page.getByTestId(`session-${session.id}`);
   await expect(history).toContainText(title);
   await expect(history).toContainText('Фактическая нагрузка');
@@ -151,10 +185,13 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
       .run(trainerId.id, id, Date.now());
     await trainer.goto('/workouts');
     await expect(
-      trainer.getByRole('button', { name: 'Создать план', exact: true }),
+      trainer.getByRole('button', { name: 'Добавить тренировку', exact: true }),
     ).toBeVisible();
     await expect(
-      trainer.getByRole('button', { name: 'Записать тренировку', exact: true }),
+      trainer.getByRole('button', {
+        name: 'Записать выполненную тренировку',
+        exact: true,
+      }),
     ).toHaveCount(0);
     const input = {
       title: 'План тренера',
