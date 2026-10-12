@@ -197,7 +197,10 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
     .getByRole('button', { name: 'Добавить тренировку', exact: true })
     .click();
   const dialog = page;
-  const copyDialog = page.getByRole('dialog');
+  const copyDialog = page.getByRole('dialog', {
+    name: 'Копировать на другую дату',
+    exact: true,
+  });
   const title = `Каталог ${test.info().project.name} ${Date.now()}`;
   await dialog
     .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
@@ -275,6 +278,35 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
       plan.workouts[0]?.title === title,
   );
   expect(original.workouts[0].exercises[0].transformMate.exerciseId).toBe(7);
+  // A neighbouring plan represents data left by another case or a failed retry.
+  const origin = `http://localhost:${process.env.E2E_PORT ?? 3100}`;
+  const neighbourResponse = await page.request.post(
+    `/api/workouts/plans?ownerId=${owner}`,
+    {
+      headers: { origin },
+      data: {
+        title: `${title} соседний план`,
+        description: '',
+        startsOn: '2026-03-29',
+        endsOn: '2026-03-29',
+        workouts: [
+          {
+            id: crypto.randomUUID(),
+            date: '2026-03-29',
+            title: `${title} соседняя тренировка`,
+            exercises: [
+              {
+                name: 'Ручное упражнение',
+                sets: [{ reps: 8, weightKg: null }],
+              },
+            ],
+          },
+        ],
+      },
+    },
+  );
+  expect(neighbourResponse.ok()).toBe(true);
+  const neighbour = (await neighbourResponse.json()).data;
   syncItems = [
     {
       id: crypto.randomUUID(),
@@ -360,22 +392,49 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
     ),
   ).toBe(true);
   await page.goto('/workouts?date=2026-03-29');
-  await page.getByRole('button', { name: 'Все дни этого плана' }).click();
-  await page
-    .getByTestId(`plan-${original.id}`)
+  const originalCard = page.getByTestId(`plan-${original.id}`);
+  await originalCard
+    .getByRole('button', { name: 'Все дни этого плана' })
+    .click();
+  const planPanel = originalCard.getByRole('region', {
+    name: 'Все дни этого плана',
+    exact: true,
+  });
+  // Element stability alone misses scrolling inside the height-animated panel.
+  await expect(planPanel).toHaveCSS('overflow', 'visible');
+  await originalCard
     .getByRole('button', { name: 'Удалить весь план', exact: true })
     .click();
-  await dialog
+  const deleteDialog = page.getByRole('dialog', {
+    name: 'Подтвердить удаление',
+    exact: true,
+  });
+  await expect(deleteDialog).toBeVisible();
+  const deleted = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'DELETE' &&
+      new URL(response.url()).pathname === `/api/workouts/plans/${original.id}`,
+  );
+  await deleteDialog
     .getByRole('button', { name: 'Подтвердить удаление', exact: true })
     .click();
-  await expect(page).toHaveURL(/\/workouts\?date=/);
+  expect((await deleted).ok()).toBe(true);
+  await expect(deleteDialog).not.toBeVisible();
+  await expect(originalCard).toHaveCount(0);
+  await expect(page.getByTestId(`plan-${neighbour.id}`)).toBeVisible();
   await expect(page.getByRole('tab', { name: 'История' })).toHaveCount(0);
   await expect(
     page.getByText('Ноги TransformMate', { exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByText('Вес: 42 кг', { exact: false }).first(),
-  ).toBeVisible();
+  await expect(page.getByText('Вес: 42 кг', { exact: true })).toBeVisible();
+  const cleanup = await page.request.delete(
+    `/api/workouts/plans/${neighbour.id}?ownerId=${owner}`,
+    {
+      headers: { origin },
+      data: { revision: neighbour.revision },
+    },
+  );
+  expect(cleanup.ok()).toBe(true);
   await page.evaluate(() => {
     (document.activeElement as HTMLElement)?.blur();
     window.scrollTo(0, 0);
