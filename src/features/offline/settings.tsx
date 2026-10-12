@@ -68,7 +68,15 @@ export function OfflineSettings() {
             {state.bundle.missingPhotos.length > 0 && (
               <Text>{m.partialPhotos}</Text>
             )}
-            <Anchor href="/offline/index.html" c="var(--mantine-color-text)">
+            <Anchor
+              href="/offline/index.html"
+              c="var(--mantine-color-text)"
+              style={{
+                minHeight: 44,
+                display: 'inline-flex',
+                alignItems: 'center',
+              }}
+            >
               {m.open}
             </Anchor>
           </Stack>
