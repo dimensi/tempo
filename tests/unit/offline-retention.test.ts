@@ -68,6 +68,10 @@ describe('offline local calendar retention', () => {
       ...snapshot.workoutSessions[0]!,
       date,
     }));
+    snapshot.nativeTrainings = dates.map((date) => ({
+      ...snapshot.nativeTrainings[0]!,
+      date,
+    }));
     snapshot.transformMateFacts = dates.map((date) => ({
       ...snapshot.transformMateFacts[0]!,
       date,
@@ -83,6 +87,7 @@ describe('offline local calendar retention', () => {
       result.plannedWorkouts,
       result.workoutSessions,
       result.transformMateFacts,
+      result.nativeTrainings,
     ])
       expect(collection.map((r) => r.date)).toEqual([
         '2026-09-28',

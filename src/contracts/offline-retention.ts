@@ -31,6 +31,9 @@ export function pruneOfflineSnapshot(
     workoutSessions: snapshot.workoutSessions.filter((record) =>
       within(record.date),
     ),
+    nativeTrainings: snapshot.nativeTrainings.filter((record) =>
+      within(record.date),
+    ),
     transformMateFacts: snapshot.transformMateFacts.filter((record) =>
       within(record.date),
     ),

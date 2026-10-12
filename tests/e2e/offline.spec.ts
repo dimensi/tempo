@@ -63,14 +63,14 @@ test('offline rolling calendar read prunes old records and photo blobs transacti
     expect(await page.evaluate(call('details()'))).toEqual({
       enabled: true,
       photos: 1,
-      collections: [1, 1, 1, 1, 1, 1, 1, 1],
+      collections: [1, 1, 1, 1, 1, 1, 1, 1, 1],
     });
     expect(
       await page.evaluate(call('details(window.offlineTest.now+86400000)')),
     ).toEqual({
       enabled: true,
       photos: 0,
-      collections: [0, 0, 0, 0, 0, 0, 0, 0],
+      collections: [0, 0, 0, 0, 0, 0, 0, 0, 0],
     });
     expect(await page.evaluate(call('rawCounts()'))).toEqual({
       bundle: 1,
@@ -86,6 +86,23 @@ test('old unknown-unit cache is physically cleared while device preference survi
   await inject(page);
   await page.evaluate(call('seed()'));
   await page.evaluate(call("alterNative('old-format')"));
+  expect(await page.evaluate(call('read()'))).toEqual({
+    present: false,
+    photos: 0,
+    enabled: true,
+  });
+  expect(await page.evaluate(call('rawCounts()'))).toEqual({
+    bundle: 0,
+    photos: 0,
+  });
+  expect(await page.evaluate(call('stale()'))).toBe(true);
+});
+test('pre-native cached snapshot and blobs clear while opt-in survives', async ({
+  page,
+}) => {
+  await inject(page);
+  await page.evaluate(call('seed()'));
+  await page.evaluate(call("alterNative('pre-native')"));
   expect(await page.evaluate(call('read()'))).toEqual({
     present: false,
     photos: 0,
@@ -402,6 +419,23 @@ test('offline read-only view renders all synthetic stored sections without mutat
     await expect(
       page.getByText('Synthetic cached fact', { exact: false }),
     ).toBeVisible();
+    await expect(
+      page.getByText('Synthetic native history', { exact: false }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Duration (range): 01–03 мин', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Weight (number): 0 кг', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Missing (number): Нет данных сек', { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText('Факт', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('Состояние: idle', { exact: true }),
+    ).toBeVisible();
+    await expect(page.locator('video')).toHaveCount(0);
     await page.screenshot({
       path: info.outputPath('synthetic-offline-workouts.png'),
       fullPage: true,

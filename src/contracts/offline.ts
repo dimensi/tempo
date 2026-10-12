@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { transformMateNativeItemSchema } from './transformmate-native';
 import {
   ownerConfirmedYazioWeightPolicyVersion,
   ownerConfirmedYazioWeightUnit,
@@ -21,12 +22,52 @@ export const offlineLimits = {
   plans: 200,
   sessions: 300,
   transformMateFacts: 300,
+  nativeTrainings: 300,
   payloadBytes: 4 * 1024 * 1024,
 } as const;
 const opaque = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const date = z.iso.date();
 const timestamp = z.iso.datetime();
 const decimal = nonnegativeDecimalSchema.nullable();
+const nativeExercise = transformMateNativeItemSchema.shape.exercises.element;
+export const offlineNativeTrainingSchema = transformMateNativeItemSchema
+  .omit({ remoteTrainingId: true })
+  .extend({
+    key: opaque,
+    exercises: z
+      .array(
+        nativeExercise
+          .omit({ protocolId: true, remoteExerciseId: true, exerciseId: true })
+          .extend({
+            metrics: z
+              .array(
+                nativeExercise.shape.metrics.element
+                  .extend({
+                    sets: z
+                      .array(
+                        nativeExercise.shape.metrics.element.shape.sets.element
+                          .extend({
+                            metrics: z
+                              .array(
+                                nativeExercise.shape.metrics.element.shape.sets.element.shape.metrics.element
+                                  .omit({ key: true })
+                                  .strict(),
+                              )
+                              .max(50),
+                          })
+                          .strict(),
+                      )
+                      .max(100),
+                  })
+                  .strict(),
+              )
+              .max(10),
+          })
+          .strict(),
+      )
+      .max(100),
+  })
+  .strict();
 export const offlinePeriodSchema = z
   .object({ from: date, to: date })
   .strict()
@@ -203,6 +244,9 @@ export const offlineSnapshotSchema = offlineIdentitySchema
           .strict(),
       )
       .max(offlineLimits.sessions),
+    nativeTrainings: z
+      .array(offlineNativeTrainingSchema)
+      .max(offlineLimits.nativeTrainings),
     transformMateFacts: z
       .array(
         z

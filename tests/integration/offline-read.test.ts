@@ -6,6 +6,8 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { hashPassword } from 'better-auth/crypto';
 import { openDatabase } from '@/server/db/connection';
 import { user, account, trainerAccess } from '@/server/db/schema';
+import { nativeFixture } from '../offline/native-fixture';
+import { getTransformMateBindingFence } from '@/server/transformmate/runtime';
 import { syntheticDay } from '../unit/reports/fixtures';
 vi.mock('server-only', () => ({}));
 const database = openDatabase('file::memory:');
@@ -508,4 +510,140 @@ it('post-read revocation refuses photo bytes and expired sessions cannot obtain 
   expect((await identityGET(request(ownerHeaders, 'identity'))).status).toBe(
     401,
   );
+});
+
+async function seedNativeHistory() {
+  ownerHeaders = await login(ownerId);
+  const store = fileTransformMateTokenStore(
+    join(directory, 'missing-tm.json'),
+    ownerId,
+    'offline-only-synthetic-secret-at-least-32-characters',
+  );
+  await store.load();
+  await store.save({
+    connectionId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    apiKey: 'SYNTHETIC_PRIVATE_API',
+    refreshToken: 'SYNTHETIC_PRIVATE_REFRESH',
+    userId: 'SYNTHETIC_PRIVATE_USER',
+    projectId: 'SYNTHETIC_PRIVATE_PROJECT',
+    account: { id: 42, name: null, email: null },
+    checkedAt: '2026-10-12T12:00:00Z',
+  });
+  const binding = await getTransformMateBindingFence(ownerId);
+  const insert = database.sqlite.prepare(
+    'INSERT OR REPLACE INTO workout_transformmate_native(id,owner_id,account_scope,remote_training_id,date,snapshot,fetched_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
+  );
+  for (const [id, owner, scope, date, remote] of [
+    ['native-current', ownerId, binding.accountScope, '2026-10-12', 101],
+    [
+      'native-other-account',
+      ownerId,
+      'PRIVATE_OTHER_ACCOUNT',
+      '2026-10-12',
+      102,
+    ],
+    ['native-other-owner', 'trainer', binding.accountScope, '2026-10-12', 103],
+    ['native-old-day', ownerId, binding.accountScope, '2026-09-27', 104],
+  ] as const) {
+    insert.run(
+      id,
+      owner,
+      scope,
+      remote,
+      date,
+      JSON.stringify(nativeFixture(date, remote)),
+      '2026-10-12T12:00:00Z',
+      '2026-10-12T12:00:00Z',
+      '2026-10-12T12:00:00Z',
+    );
+  }
+  return { store, binding };
+}
+it('native offline history is owner/current-account/day bounded, disconnected-readable, local-only and strips remote identities', async () => {
+  const { store, binding } = await seedNativeHistory();
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockRejectedValue(new Error('No upstream'));
+  database.db
+    .insert(trainerAccess)
+    .values({ trainerId: 'trainer', ownerId, createdAt: new Date() })
+    .run();
+  expect((await snapshotGET(request(trainerHeaders))).status).toBe(403);
+  try {
+    for (const disconnected of [false, true]) {
+      if (disconnected) await store.disconnect();
+      const response = await snapshotGET(request(ownerHeaders));
+      expect(response.status).toBe(200);
+      const snapshot = offlineSnapshotSchema.parse(await response.json());
+      expect(snapshot.nativeTrainings).toHaveLength(1);
+      expect(snapshot.nativeTrainings[0]).toMatchObject({
+        title: 'Synthetic native phone',
+        progress: 'idle',
+        started: null,
+        finished: null,
+        exercises: [
+          {
+            metrics: [
+              {
+                type: 'plan',
+                sets: [
+                  { done: null, metrics: [{ values: ['01–03'], unit: 'мин' }] },
+                ],
+              },
+              {
+                type: 'fact',
+                sets: [
+                  { done: false, metrics: [{ values: ['0'], unit: 'кг' }] },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      const serialized = JSON.stringify(snapshot.nativeTrainings);
+      for (const forbidden of [
+        'native-current',
+        'remoteTrainingId',
+        'protocolId',
+        'remoteExerciseId',
+        'exerciseId',
+        'accountScope',
+        binding.accountScope!,
+        'PRIVATE_OTHER_ACCOUNT',
+        'SYNTHETIC_PRIVATE',
+      ])
+        expect(serialized).not.toContain(forbidden);
+      expect(snapshot.nativeTrainings[0]?.fetchedAt).toBe(
+        '2026-10-12T12:00:00Z',
+      );
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  } finally {
+    database.sqlite.prepare('DELETE FROM workout_transformmate_native').run();
+  }
+});
+it('native snapshot final disconnect and revoked permission after binding await fail closed', async () => {
+  const { store } = await seedNativeHistory();
+  const original = guards.authorize;
+  try {
+    let count = 0;
+    vi.spyOn(guards, 'authorize').mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (++count === 12) await store.disconnect();
+      return result;
+    });
+    expect((await snapshotGET(request(ownerHeaders))).status).toBe(409);
+    vi.restoreAllMocks();
+    count = 0;
+    vi.spyOn(guards, 'authorize').mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (++count === 12) return { ok: false as const, status: 403 };
+      return result;
+    });
+    const denied = await snapshotGET(request(ownerHeaders));
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({ error: 'OFFLINE_ACCESS_DENIED' });
+  } finally {
+    database.sqlite.prepare('DELETE FROM workout_transformmate_native').run();
+  }
 });

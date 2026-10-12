@@ -399,6 +399,77 @@ function Workouts({ snapshot }: { snapshot: OfflineSnapshot }) {
           </Stack>
         ))
       )}
+      <Title order={2}>{m.nativeHistory}</Title>
+      {snapshot.nativeTrainings.length === 0 ? (
+        <Text>{m.empty}</Text>
+      ) : (
+        snapshot.nativeTrainings.map((training) => (
+          <Stack key={training.key} className={classes.entry}>
+            <Title order={3}>
+              {training.date} · {training.title}
+            </Title>
+            <Badge variant="outline" style={badgeStyles}>
+              TransformMate
+            </Badge>
+            <Text>
+              {m.progress}: {training.progress}
+            </Text>
+            <Text>
+              {m.started}: {training.started ?? m.noData} · {m.finished}:{' '}
+              {training.finished ?? m.noData}
+            </Text>
+            <Text>
+              {m.fetchedAt}: {training.fetchedAt}
+            </Text>
+            <Text>
+              {m.remoteUpdated}: {training.remoteUpdatedAt}
+            </Text>
+            {training.exercises
+              .toSorted(
+                (a, b) =>
+                  a.protocolOrder - b.protocolOrder || a.order - b.order,
+              )
+              .map((exercise, index) => (
+                <Stack key={index} gap={4}>
+                  <Text fw={600}>
+                    {exercise.protocolOrder}.{exercise.order} · {exercise.name}
+                  </Text>
+                  {exercise.comment && <Text>{exercise.comment}</Text>}
+                  {exercise.metrics.map((group, index) => (
+                    <Stack key={index} gap={4}>
+                      <Text fw={600}>
+                        {group.type === 'plan' ? m.plans : m.actual}
+                      </Text>
+                      {group.sets
+                        .toSorted((a, b) => a.order - b.order)
+                        .map((set) => (
+                          <Stack key={set.order} gap={4}>
+                            <Text>
+                              {set.order}:{' '}
+                              {set.done === null
+                                ? m.noData
+                                : set.done
+                                  ? m.done
+                                  : m.notDone}
+                            </Text>
+                            {set.metrics.map((metric, index) => (
+                              <Text key={index}>
+                                {metric.name} ({metric.type}):{' '}
+                                {metric.values.length
+                                  ? metric.values.join(' / ')
+                                  : m.noData}{' '}
+                                {metric.unit}
+                              </Text>
+                            ))}
+                          </Stack>
+                        ))}
+                    </Stack>
+                  ))}
+                </Stack>
+              ))}
+          </Stack>
+        ))
+      )}
       <Title order={2}>{m.facts}</Title>
       {snapshot.transformMateFacts.length === 0 ? (
         <Text>{m.empty}</Text>

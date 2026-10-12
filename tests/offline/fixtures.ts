@@ -118,6 +118,69 @@ export function offlineFixture(now: number): OfflineSnapshot {
         planTitle: 'Synthetic programme',
       },
     ],
+    nativeTrainings: [
+      {
+        key: 'N'.repeat(43),
+        source: 'transformmate',
+        date,
+        title: 'Synthetic native history',
+        progress: 'idle',
+        started: null,
+        finished: null,
+        remoteUpdatedAt: new Date(now).toISOString(),
+        fetchedAt: new Date(now).toISOString(),
+        exercises: [
+          {
+            protocolOrder: 1,
+            order: 1,
+            name: 'Synthetic native movement',
+            comment: 'Synthetic native note',
+            metrics: [
+              {
+                type: 'plan',
+                sets: [
+                  {
+                    order: 1,
+                    done: null,
+                    metrics: [
+                      {
+                        name: 'Duration',
+                        unit: 'мин',
+                        type: 'range',
+                        values: ['01–03'],
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                type: 'fact',
+                sets: [
+                  {
+                    order: 1,
+                    done: false,
+                    metrics: [
+                      {
+                        name: 'Weight',
+                        unit: 'кг',
+                        type: 'number',
+                        values: ['0'],
+                      },
+                      {
+                        name: 'Missing',
+                        unit: 'сек',
+                        type: 'number',
+                        values: [],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
     transformMateFacts: [
       {
         key: 'H'.repeat(43),

@@ -1,3 +1,4 @@
+import { nativeFixture } from '../offline/native-fixture';
 import { expect, test, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { openDatabase } from '@/server/db/connection';
@@ -84,6 +85,67 @@ test('oversized per-row JSON and combined raw payload budget fail without partia
     expect(() => repo.read('owner', '2026-10-10', '2026-10-12')).toThrowError(
       expect.objectContaining({ status: 413, code: 'OFFLINE_LIMIT_EXCEEDED' }),
     );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('native history probes N+1 only in current owner/account/date and rejects oversized rows', () => {
+  const { sqlite, repo } = fixture();
+  try {
+    const insert = sqlite.prepare(
+      'INSERT INTO workout_transformmate_native(id,owner_id,account_scope,remote_training_id,date,snapshot,fetched_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
+    );
+    const add = (
+      id: string,
+      owner: string,
+      scope: string,
+      date: string,
+      remote: number,
+      payload = JSON.stringify(nativeFixture(date, remote)),
+    ) =>
+      insert.run(
+        id,
+        owner,
+        scope,
+        remote,
+        date,
+        payload,
+        '2026-10-12T12:00:00Z',
+        '2026-10-12T12:00:00Z',
+        '2026-10-12T12:00:00Z',
+      );
+    add('current', 'owner', 'scope', '2026-10-12', 1);
+    add('other', 'other', 'scope', '2026-10-12', 2);
+    add('account', 'owner', 'other-scope', '2026-10-12', 3);
+    add('old', 'owner', 'scope', '2026-09-27', 4);
+    expect(
+      repo
+        .read('owner', '2026-09-28', '2026-10-12', 'scope')
+        .nativeTrainings.map((row) => row.id),
+    ).toEqual(['current']);
+    expect(
+      repo.read('owner', '2026-09-28', '2026-10-12', null).nativeTrainings,
+    ).toEqual([]);
+    sqlite.transaction(() => {
+      for (let i = 5; i <= 305; i++)
+        add('overflow' + i, 'owner', 'scope', '2026-10-11', i);
+    })();
+    expect(() =>
+      repo.read('owner', '2026-10-11', '2026-10-12', 'scope'),
+    ).toThrowError(expect.objectContaining({ status: 413 }));
+    sqlite.prepare('DELETE FROM workout_transformmate_native').run();
+    add(
+      'huge',
+      'owner',
+      'scope',
+      '2026-10-12',
+      1,
+      ' '.repeat(2 * 1024 * 1024 + 1),
+    );
+    expect(() =>
+      repo.read('owner', '2026-10-12', '2026-10-12', 'scope'),
+    ).toThrowError(expect.objectContaining({ status: 413 }));
   } finally {
     sqlite.close();
   }

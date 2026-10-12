@@ -13,6 +13,8 @@ import {
   readTransformMateOfflineBinding,
   transformMateOfflineBindingRevision,
 } from '@/server/transformmate/token-store';
+import { getTransformMateBindingFence } from '@/server/transformmate/runtime';
+import { TransformMateStaleConnectionError } from '@/server/transformmate/token-store';
 import { readImage } from '@/server/nutrition/images';
 import {
   offlineIdentitySchema,
@@ -95,6 +97,14 @@ async function identityContext(headers: Headers, session: Session) {
     session.user.id,
     secret,
   );
+  const nativeBinding = await getTransformMateBindingFence(session.user.id);
+  try {
+    await nativeBinding.assertCurrent();
+  } catch (error) {
+    if (error instanceof TransformMateStaleConnectionError)
+      throw new OfflineError(409, 'OFFLINE_CONNECTION_CHANGED');
+    throw error;
+  }
   session = await guard(headers, session);
   const repo = offlineRepository();
   const epoch = repo.generation(session.user.id);
@@ -110,6 +120,7 @@ async function identityContext(headers: Headers, session: Session) {
       epoch,
       tm.configured,
       tm.connectionId,
+      nativeBinding.accountScope,
     ]),
     role: 'OWNER',
     serverNow: new Date(now).toISOString(),
@@ -125,6 +136,7 @@ async function identityContext(headers: Headers, session: Session) {
     epoch,
     path,
     tmRevision: tm.revision,
+    nativeBinding,
     session,
   };
   assertRelease(context);
@@ -135,9 +147,17 @@ function assertRelease(context: {
   epoch: number;
   path: string;
   tmRevision: number;
+  nativeBinding: Awaited<ReturnType<typeof getTransformMateBindingFence>>;
   session: Session;
 }) {
   checkSession(context.session);
+  try {
+    context.nativeBinding.assertBindingCurrent();
+  } catch (error) {
+    if (error instanceof TransformMateStaleConnectionError)
+      throw new OfflineError(409, 'OFFLINE_CONNECTION_CHANGED');
+    throw error;
+  }
   if (
     context.repo.generation(context.session.user.id) !== context.epoch ||
     transformMateOfflineBindingRevision(context.path) !== context.tmRevision
@@ -168,7 +188,12 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
   const context = await identityContext(headers, session);
   session = context.session;
   const { from, to } = period.data;
-  const rows = context.repo.read(session.user.id, from, to);
+  const rows = context.repo.read(
+    session.user.id,
+    from,
+    to,
+    context.nativeBinding.accountScope,
+  );
   session = await guard(headers, session);
   const after = await identityContext(headers, session);
   if (
@@ -258,6 +283,36 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
       status: session.status,
       exercises: session.exercises.map(exercise),
       planTitle: session.planSnapshot?.planTitle ?? null,
+    })),
+    nativeTrainings: rows.nativeTrainings.map((training) => ({
+      key: key('tm-native', training.id),
+      source: training.source,
+      date: training.date,
+      title: training.title,
+      progress: training.progress,
+      started: training.started,
+      finished: training.finished,
+      remoteUpdatedAt: training.remoteUpdatedAt,
+      fetchedAt: training.fetchedAt,
+      exercises: training.exercises.map((exercise) => ({
+        protocolOrder: exercise.protocolOrder,
+        order: exercise.order,
+        name: exercise.name,
+        comment: exercise.comment,
+        metrics: exercise.metrics.map((group) => ({
+          type: group.type,
+          sets: group.sets.map((set) => ({
+            order: set.order,
+            done: set.done,
+            metrics: set.metrics.map((metric) => ({
+              name: metric.name,
+              unit: metric.unit,
+              type: metric.type,
+              values: metric.values,
+            })),
+          })),
+        })),
+      })),
     })),
     transformMateFacts: rows.transformMateFacts.map(
       ({ id, checkedAt, actual }) => ({

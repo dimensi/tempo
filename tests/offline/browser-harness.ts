@@ -140,7 +140,7 @@ Object.assign(window, {
       await storage.commit(bundle, cached.photos, now, 'UTC');
       return (await storage.read(now, 'UTC')).photos.length;
     },
-    async alterNative(mode: 'old-format' | 'boundary') {
+    async alterNative(mode: 'old-format' | 'pre-native' | 'boundary') {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open('yazio-offline-read-v1', 1);
         request.onsuccess = () => resolve(request.result);
@@ -164,6 +164,8 @@ Object.assign(window, {
               delete value.weightPolicyVersion;
               tx.objectStore('metadata').put(value, 'current');
             };
+          } else if (mode === 'pre-native') {
+            delete bundle.snapshot.nativeTrainings;
           } else {
             const date = bundle.snapshot.from;
             for (const item of bundle.snapshot.photos.items) item.date = date;
@@ -173,6 +175,7 @@ Object.assign(window, {
               'plannedWorkouts',
               'workoutSessions',
               'transformMateFacts',
+              'nativeTrainings',
             ])
               for (const item of bundle.snapshot[key]) item.date = date;
             for (const item of bundle.snapshot.measurements)
@@ -218,6 +221,7 @@ Object.assign(window, {
               snapshot.plannedWorkouts.length,
               snapshot.workoutSessions.length,
               snapshot.transformMateFacts.length,
+              snapshot.nativeTrainings.length,
             ]
           : null,
       };
