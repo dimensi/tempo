@@ -1,4 +1,39 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+async function login(page: Page) {
+  await page.goto('/login');
+  await page.getByLabel('Электронная почта').fill('owner@example.test');
+  await page
+    .getByRole('textbox', { name: 'Пароль', exact: true })
+    .fill('Test-only-password-12345');
+  const submit = async () => {
+    const response = page.waitForResponse((value) =>
+      value.url().endsWith('/api/auth/sign-in/email'),
+    );
+    await page.getByRole('button', { name: 'Войти', exact: true }).click();
+    return response;
+  };
+  let response = await submit();
+  if (response.status() === 429) {
+    const seconds = Number(
+      response.headers()['x-retry-after'] ??
+        response.headers()['retry-after'] ??
+        10,
+    );
+    expect(
+      Number.isFinite(seconds) && seconds >= 0,
+      'Sign-in rate limit must include a valid numeric retry interval',
+    ).toBe(true);
+    await page.waitForTimeout((seconds + 1) * 1000);
+    response = await submit();
+  }
+  expect(
+    response.status(),
+    `Sign-in failed with HTTP ${response.status()}`,
+  ).toBe(200);
+  await expect(page).toHaveURL('/');
+}
+
 test('catalog selection persists links and copy makes a fresh dated plan using real login', async ({
   page,
 }) => {
@@ -67,13 +102,7 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
       return route.fulfill({ status: 404 });
     },
   );
-  await page.goto('/login');
-  await page.getByLabel('Электронная почта').fill('owner@example.test');
-  await page
-    .getByRole('textbox', { name: 'Пароль', exact: true })
-    .fill('Test-only-password-12345');
-  await page.getByRole('button', { name: 'Войти', exact: true }).click();
-  await expect(page).toHaveURL('/');
+  await login(page);
   const owner = (await (await page.request.get('/api/auth/get-session')).json())
     .user.id;
   await page.goto('/workouts');
