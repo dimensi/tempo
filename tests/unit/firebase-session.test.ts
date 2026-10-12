@@ -97,7 +97,13 @@ describe('Firebase session', () => {
     const firebase = session(request, onRefreshToken);
     await firebase.getIdToken();
     expect(firebase.getRefreshToken()).toBe(refreshed);
-    expect(onRefreshToken).toHaveBeenCalledWith(refreshed);
+    expect(onRefreshToken).toHaveBeenCalledWith(
+      refreshed,
+      expect.objectContaining({
+        userId: 'firebase-user',
+        projectId: 'firebase-project',
+      }),
+    );
     expect(firebase.getSessionInfo()?.refreshTokenRotated).toBe(true);
     await firebase.getIdToken({ forceRefresh: true });
     expect(
@@ -234,7 +240,9 @@ describe('Firebase session', () => {
   it('protects inspection and sanitizes a failing persistence callback', async () => {
     const request = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(response(payload({ refresh_token: refreshed })));
+      .mockImplementation(async () =>
+        response(payload({ refresh_token: refreshed })),
+      );
     const firebase = session(request, () => {
       throw new Error(refreshed);
     });
@@ -245,4 +253,27 @@ describe('Firebase session', () => {
       expect(JSON.stringify(firebase)).not.toContain(secret);
     }
   });
+});
+
+it('does not cache ID token or rotate locally when persistence fails', async () => {
+  const request = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async () =>
+      response(payload({ refresh_token: refreshed })),
+    );
+  const callback = vi.fn().mockRejectedValue(new Error('synthetic failure'));
+  const firebase = session(request, callback);
+  await expect(firebase.getIdToken()).rejects.toMatchObject({
+    code: 'PERSISTENCE_CALLBACK_FAILED',
+  });
+  expect(firebase.getRefreshToken()).toBe(refreshToken);
+  expect(firebase.getSessionInfo()).toBeNull();
+  await expect(firebase.getIdToken()).rejects.toMatchObject({
+    code: 'PERSISTENCE_CALLBACK_FAILED',
+  });
+  expect(request).toHaveBeenCalledTimes(2);
+  for (const call of request.mock.calls)
+    expect(
+      new URLSearchParams(String(call[1]?.body)).get('refresh_token'),
+    ).toBe(refreshToken);
 });

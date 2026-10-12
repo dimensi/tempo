@@ -22,14 +22,20 @@ export class FirebaseSession implements TransformMateTokenProvider {
   #info: FirebaseSessionInfo | null = null;
   #pending: Promise<string> | undefined;
   #fetch: typeof fetch;
-  #onRefreshToken?: (token: string) => Promise<void> | void;
+  #onRefreshToken?: (
+    token: string,
+    info: FirebaseSessionInfo,
+  ) => Promise<void> | void;
   #redactor: ReturnType<typeof createSecretRedactor>;
 
   constructor(options: {
     firebaseApiKey: string;
     refreshToken: string;
     fetch?: typeof fetch;
-    onRefreshToken?: (newRefreshToken: string) => Promise<void> | void;
+    onRefreshToken?: (
+      newRefreshToken: string,
+      info: FirebaseSessionInfo,
+    ) => Promise<void> | void;
   }) {
     if (!options.firebaseApiKey.trim() || !options.refreshToken.trim()) {
       throw new FirebaseRefreshError('MISSING_CONFIGURATION', null);
@@ -140,27 +146,32 @@ export class FirebaseSession implements TransformMateTokenProvider {
     const rotated =
       typeof payload.refresh_token === 'string' &&
       payload.refresh_token !== this.#refreshToken;
+    const nextRefreshToken =
+      typeof payload.refresh_token === 'string'
+        ? payload.refresh_token
+        : this.#refreshToken;
     this.#redactor.add(payload.id_token);
-    if (typeof payload.refresh_token === 'string') {
-      this.#refreshToken = payload.refresh_token;
-      this.#redactor.add(this.#refreshToken);
-    }
-    this.#idToken = payload.id_token;
-    this.#info = {
+    this.#redactor.add(nextRefreshToken);
+    const nextInfo: FirebaseSessionInfo = {
       expiresIn,
       expiresAt,
-      userId: this.redact(payload.user_id),
-      projectId: this.redact(payload.project_id),
+      userId: payload.user_id,
+      projectId: payload.project_id,
       refreshTokenRotated:
         rotated || (this.#info?.refreshTokenRotated ?? false),
     };
+    // Persistence is part of refresh before publishing rotated credentials.
+    // A rejected callback must never publish an ID token or advance local credentials.
     if (rotated && this.#onRefreshToken) {
       try {
-        await this.#onRefreshToken(this.#refreshToken);
+        await this.#onRefreshToken(nextRefreshToken, nextInfo);
       } catch {
         throw new FirebaseRefreshError('PERSISTENCE_CALLBACK_FAILED', null);
       }
     }
+    this.#refreshToken = nextRefreshToken;
+    this.#idToken = payload.id_token;
+    this.#info = nextInfo;
     return this.#idToken;
   }
 }
