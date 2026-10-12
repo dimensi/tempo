@@ -9,7 +9,8 @@ import {
   revisionSchema,
 } from '@/contracts/workouts';
 import { workoutRepository, WorkoutError } from './repository';
-import { syncSavedPlan } from './transformmate/service';
+import { saveAndSyncWorkoutPlan } from './transformmate/service';
+import { serializeOwner } from './transformmate/engine';
 
 export class WorkoutAccessError extends Error {
   constructor(public status: number) {
@@ -40,13 +41,12 @@ export async function createWorkoutPlan(
   input: unknown,
   requestId?: string,
 ) {
-  const plan = (await access(headers, ownerId, 'workouts:plan')).createPlan(
-    ownerId,
-    workoutPlanInputSchema.parse(input),
-    requestId === undefined ? undefined : z.uuid().parse(requestId),
+  const repository = await access(headers, ownerId, 'workouts:plan');
+  const data = workoutPlanInputSchema.parse(input);
+  const key = requestId === undefined ? undefined : z.uuid().parse(requestId);
+  return saveAndSyncWorkoutPlan(headers, ownerId, () =>
+    repository.createPlan(ownerId, data, key),
   );
-  await syncSavedPlan(headers, ownerId, plan);
-  return plan;
 }
 export async function updateWorkoutPlan(
   headers: Headers,
@@ -55,14 +55,13 @@ export async function updateWorkoutPlan(
   revision: unknown,
   input: unknown,
 ) {
-  const plan = (await access(headers, ownerId, 'workouts:plan')).updatePlan(
-    ownerId,
-    ownerSchema.parse(id),
-    revisionSchema.parse(revision),
-    workoutPlanInputSchema.parse(input),
+  const repository = await access(headers, ownerId, 'workouts:plan');
+  const planId = ownerSchema.parse(id);
+  const expectedRevision = revisionSchema.parse(revision);
+  const data = workoutPlanInputSchema.parse(input);
+  return saveAndSyncWorkoutPlan(headers, ownerId, () =>
+    repository.updatePlan(ownerId, planId, expectedRevision, data),
   );
-  await syncSavedPlan(headers, ownerId, plan);
-  return plan;
 }
 export async function deleteWorkoutPlan(
   headers: Headers,
@@ -70,10 +69,12 @@ export async function deleteWorkoutPlan(
   id: string,
   revision: unknown,
 ) {
-  return (await access(headers, ownerId, 'workouts:plan')).deletePlan(
-    ownerId,
-    ownerSchema.parse(id),
-    revisionSchema.parse(revision),
+  return serializeOwner(ownerId, async () =>
+    (await access(headers, ownerId, 'workouts:plan')).deletePlan(
+      ownerId,
+      ownerSchema.parse(id),
+      revisionSchema.parse(revision),
+    ),
   );
 }
 export async function createWorkoutSession(

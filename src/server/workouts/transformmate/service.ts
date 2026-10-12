@@ -29,6 +29,48 @@ function context(headers: Headers, ownerId: string) {
   const plans = () => workoutRepository(db).list(ownerId).plans;
   return { access, repository, plans };
 }
+async function publishSavedPlan(
+  contextValue: ReturnType<typeof context>,
+  ownerId: string,
+  plan: WorkoutPlan,
+) {
+  // Only the current owner-scoped persisted plan can authorize a new durable link.
+  const current = contextValue
+    .plans()
+    .find(
+      (p) =>
+        p.id === plan.id &&
+        p.ownerId === ownerId &&
+        p.revision === plan.revision,
+    );
+  if (!current) return;
+  contextValue.repository.ensure(ownerId, current);
+  const engine = syncEngine({
+    ...contextValue,
+    client: getTransformMateClient(),
+  });
+  for (const link of contextValue.repository
+    .list(ownerId)
+    .filter((l) => l.planId === plan.id))
+    await engine.process(link);
+  await contextValue.access('workouts:plan');
+}
+
+/** Keep local save/reconciliation and upstream claims in one owner queue; HTTP stays outside SQL. */
+export async function saveAndSyncWorkoutPlan(
+  headers: Headers,
+  ownerId: string,
+  save: () => WorkoutPlan,
+): Promise<WorkoutPlan> {
+  return serializeOwner(ownerId, async () => {
+    const contextValue = context(headers, ownerId);
+    await contextValue.access('workouts:plan');
+    const plan = save();
+    await publishSavedPlan(contextValue, ownerId, plan);
+    return plan;
+  });
+}
+
 export async function syncSavedPlan(
   headers: Headers,
   ownerId: string,
@@ -37,26 +79,7 @@ export async function syncSavedPlan(
   await serializeOwner(ownerId, async () => {
     const contextValue = context(headers, ownerId);
     await contextValue.access('workouts:plan');
-    // Only the current owner-scoped persisted plan can authorize a new durable link.
-    const current = contextValue
-      .plans()
-      .find(
-        (p) =>
-          p.id === plan.id &&
-          p.ownerId === ownerId &&
-          p.revision === plan.revision,
-      );
-    if (!current) return;
-    contextValue.repository.ensure(ownerId, current);
-    const engine = syncEngine({
-      ...contextValue,
-      client: getTransformMateClient(),
-    });
-    for (const link of contextValue.repository
-      .list(ownerId)
-      .filter((l) => l.planId === plan.id))
-      await engine.process(link);
-    await contextValue.access('workouts:plan');
+    await publishSavedPlan(contextValue, ownerId, plan);
   });
 }
 export async function listTransformMateSync(

@@ -1,5 +1,14 @@
 # TransformMate workout integration
 
+**Acceptance gap:** automatic publication currently covers first creation only. Editing an already
+published, even unstarted and otherwise unchanged remote workout stays local with a conflict.
+This is not complete save-to-sync behavior or full bidirectional sync. A guarded update requires
+verified upstream atomic conditional-write support; GET/compare/PATCH alone cannot close the race.
+The minimal proof uses a separately authorized disposable training: stale writes must reject after
+an external edit/start, and planned/actual data must remain unchanged on rejection. Only after that
+proof can the baseline, fresh ownership/idle/fact checks, atomic precondition and post-write
+verification be connected to save. No such real write probe is authorized overnight.
+
 The workout editor keeps manual plans and sessions and adds catalog exercises with a local
 occurrence UUID and optional exercise comment. Dates, array order, repetitions and nullable kg
 remain explicit. Every linked exercise must support the verified weight/reps straight metrics.
@@ -16,8 +25,12 @@ unique indexes enforce one link per owner/plan/workout and one remote ID per own
 deletion keeps links, immutable original plan snapshots and imported actual results. Deleting the
 owner removes their records. Orphan history still requires the current owner or trainer grant.
 
-Plan data and initial publication intents commit in one short SQLite transaction. HTTP starts
-after commit. A client-supplied UUID `Idempotency-Key` on plan creation uses the plan row itself as
+Plan data and initial/reconciled publication intents commit in one short SQLite transaction.
+While `attempted=false` and the remote ID is null, edits replace the pending snapshot under
+revision CAS, including plans saved while credentials were absent. The snapshot freezes at the
+durable attempt claim. Create/update/delete and sync claims share the owner queue; plan permission
+is checked again after waiting, before local persistence. HTTP starts after commit.
+A client-supplied UUID `Idempotency-Key` on plan creation uses the plan row itself as
 a durable receipt: a matching validated payload hash returns the same plan, a changed or foreign
 payload returns 409. Request JSON is limited to 8 MiB before parsing; provider JSON to 16 MiB.
 
@@ -91,6 +104,19 @@ or installation was performed. Activation requires a separate approved secure op
 `/opt/compose/yazio-dashboard/runtime.env`; retain its private permissions and existing stack,
 volumes, YAZIO credentials/scheduler and server-local routing. Deployment stays in the main
 coordinator's single rollout queue. Mock tests do not establish live synchronization.
+
+### User-only credential setup
+
+The owner performs this later; the agent does not read, copy or send the values on their behalf.
+Open a trusted SSH terminal on `home-server`, enter `/opt/compose/yazio-dashboard`, set `umask 077`
+and edit `runtime.env` with a terminal editor. Add the existing values under the exact names
+`TRANSFORMMATE_FIREBASE_API_KEY` and `TRANSFORMMATE_FIREBASE_REFRESH_TOKEN`. Keep all existing
+configuration, especially Better Auth/YAZIO, intact. Do not paste credentials into chat, shell
+commands/history, logs, commits or screenshots. After saving, run `chmod 600 runtime.env`, close
+the editor and report only that configuration is ready. The main coordinator then controls the
+reviewed release's single rollout; the owner checks a genuinely intended new workout through UI.
+This step does not resolve the published-edit acceptance gap and does not authorize extra real
+write/delete probes.
 
 Dedicated tests use real Better Auth cookies, owner/trainer grants and a migrated disposable local
 SQLite database. A strictly test-only preload intercepts fixed provider hosts to a loopback

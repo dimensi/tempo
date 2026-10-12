@@ -4,6 +4,7 @@ import { openDatabase } from '@/server/db/connection';
 import { user, trainerAccess } from '@/server/db/schema';
 import { workoutRepository } from '@/server/workouts/repository';
 import { syncRepository } from '@/server/workouts/transformmate/repository';
+import { serializeOwner } from '@/server/workouts/transformmate/engine';
 import type { WorkoutPlanInput } from '@/contracts/workouts';
 const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
@@ -19,6 +20,7 @@ vi.mock('@/server/transformmate/runtime', () => ({
   isTransformMateConfigured: () => false,
 }));
 const api = await import('@/server/workouts/transformmate/service');
+const workoutsApi = await import('@/server/workouts');
 const headers = new Headers();
 const repository = workoutRepository(database.db);
 const input: WorkoutPlanInput = {
@@ -183,4 +185,75 @@ it('plan transactions reconcile pending intents but preserve every attempted sna
   expect(
     links.list('owner').find((l) => l.planId === plan.id)!.state.planTitle,
   ).toBe('Latest before attempt');
+});
+
+it('serializes competing plan saves and only commits the current local revision to a pending intent', async () => {
+  state.session = { user: { id: 'owner', role: 'OWNER' } };
+  const plan = await workoutsApi.createWorkoutPlan(headers, 'owner', input);
+  const first = {
+    ...input,
+    title: 'First queued edit',
+    workouts: [{ ...input.workouts[0]!, title: 'Latest queued workout' }],
+  };
+  const second = { ...input, title: 'Stale concurrent edit' };
+  const results = await Promise.allSettled([
+    workoutsApi.updateWorkoutPlan(
+      headers,
+      'owner',
+      plan.id,
+      plan.revision,
+      first,
+    ),
+    workoutsApi.updateWorkoutPlan(
+      headers,
+      'owner',
+      plan.id,
+      plan.revision,
+      second,
+    ),
+  ]);
+  expect(results[0]).toMatchObject({
+    status: 'fulfilled',
+    value: { title: first.title, revision: 2 },
+  });
+  expect(results[1]).toMatchObject({
+    status: 'rejected',
+    reason: { status: 409 },
+  });
+  const current = syncRepository(database.db)
+    .list('owner')
+    .find((link) => link.planId === plan.id)!;
+  expect(current.state.planTitle).toBe(first.title);
+  expect(current.state.workout.title).toBe('Latest queued workout');
+  expect(current.state.attempted).toBe(false);
+  expect(current.remoteTrainingId).toBeNull();
+});
+
+it('rechecks plan permission after waiting in the owner queue before any local save', async () => {
+  state.session = { user: { id: 'owner', role: 'OWNER' } };
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const blocker = serializeOwner('owner', async () => {
+    started();
+    await gate;
+  });
+  await ready;
+  let saved = false;
+  const before = repository.list('owner');
+  const operation = api.saveAndSyncWorkoutPlan(headers, 'owner', () => {
+    saved = true;
+    return repository.createPlan('owner', input);
+  });
+  state.session = null;
+  release();
+  await expect(operation).rejects.toMatchObject({ status: 401 });
+  await blocker;
+  expect(saved).toBe(false);
+  expect(repository.list('owner')).toEqual(before);
 });

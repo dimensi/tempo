@@ -213,7 +213,7 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
     },
   ];
   await page
-    .getByRole('button', { name: 'Проверить / повторить отправку' })
+    .getByRole('button', { name: 'Обновить статус и результаты' })
     .click();
   await expect(page.getByTestId(`plan-${original.id}`)).toContainText(
     'Изменения сохранены здесь.',
