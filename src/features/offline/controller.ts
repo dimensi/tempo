@@ -43,6 +43,7 @@ export class OfflineController {
   private pending?: AbortController;
   private flight?: Promise<void>;
   private flightRevision = -1;
+  private flightOnline = false;
   private optedIn = false;
   private lastVerifiedAt = 0;
   private lastRefreshAttempt = Number.NEGATIVE_INFINITY;
@@ -157,20 +158,27 @@ export class OfflineController {
     }
   }
   activate(online = navigator.onLine, force = false): Promise<void> {
-    if (this.flight && this.flightRevision === this.revision)
+    if (
+      this.flight &&
+      this.flightRevision === this.revision &&
+      (!online || this.flightOnline)
+    )
       return this.flight;
+    const elapsed = this.now() - this.lastVerifiedAt;
     const window = offlineLocalWindow(this.now(), this.timezone());
     if (
       !force &&
       online &&
       this.state.status === 'ready' &&
       this.state.bundle?.snapshot.to === window.to &&
-      this.now() - this.lastVerifiedAt < 30000
+      elapsed >= 0 &&
+      elapsed < 30000
     )
       return Promise.resolve();
     const work = this.load(online);
     this.flight = work;
     this.flightRevision = this.revision;
+    this.flightOnline = online;
     return work.finally(() => {
       if (this.flight === work) this.flight = undefined;
     });
@@ -296,6 +304,7 @@ export class OfflineController {
     })();
     this.flight = work;
     this.flightRevision = operation.revision;
+    this.flightOnline = true;
     return work.finally(() => {
       if (this.flight === work) this.flight = undefined;
     });

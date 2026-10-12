@@ -6,6 +6,7 @@ vi.mock('@/lib/offline-device', async (importOriginal) => ({
 import { OfflineController } from '@/features/offline/controller';
 import {
   initialMetadata,
+  nextMetadata,
   purgeOfflineDevice,
   canReadBundle,
   type OfflineStorage,
@@ -50,8 +51,15 @@ function storage() {
       generation: metadata.generation,
       deviceEpoch: 'epoch',
     }),
-    read: async (time = now, timezone = 'UTC') => {
-      if (bundle && !canReadBundle(metadata, bundle, time)) bundle = null;
+    purge: async () => {
+      bundle = null;
+      metadata = nextMetadata(metadata, now);
+    },
+    read: vi.fn(async (time = now, timezone = 'UTC') => {
+      if (bundle && !canReadBundle(metadata, bundle, time)) {
+        bundle = null;
+        metadata = nextMetadata(metadata, time);
+      }
       if (bundle)
         bundle = {
           ...bundle,
@@ -61,7 +69,7 @@ function storage() {
           ),
         };
       return { metadata, bundle, photos: [] };
-    },
+    }),
   };
 }
 function identity() {
@@ -252,4 +260,67 @@ it('failed live verification hides cache and preserves copied data; failed backg
   expect(background.getSnapshot().bundle?.weightPolicyVersion).toBe(
     ownerConfirmedYazioWeightPolicyVersion,
   );
+});
+
+it('ready same-calendar clock rollback bypasses fast path and clears the guarded copy', async () => {
+  const persistence = storage();
+  let clock = now;
+  const reader = controller(
+    persistence,
+    fetcher() as typeof fetch,
+    () => clock,
+  );
+  await reader.save();
+  expect(reader.getSnapshot().status).toBe('ready');
+  persistence.read.mockClear();
+  clock = now - 1;
+  await reader.activate(true);
+  expect(persistence.read).toHaveBeenCalledWith(clock, 'UTC');
+  expect(reader.getSnapshot().bundle).toBeNull();
+  expect((await persistence.metadata()).enabled).toBe(false);
+  await reader.activate(true);
+  expect(reader.getSnapshot().bundle).toBeNull();
+  expect(persistence.read).toHaveBeenCalledTimes(2);
+});
+it('online identity denial supersedes a deferred unverified offline read without any private publish', async () => {
+  const persistence = storage();
+  await controller(persistence, fetcher() as typeof fetch).save();
+  const staleCopy = await persistence.read();
+  let release!: (value: typeof staleCopy) => void;
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  persistence.read.mockImplementationOnce(() => {
+    entered();
+    return new Promise((resolve) => {
+      release = resolve;
+    });
+  });
+  vi.mocked(purgeOfflineDevice).mockImplementationOnce(async () => {
+    await persistence.purge();
+  });
+  const request = vi.fn(async () => new Response('{}', { status: 401 }));
+  const reader = controller(persistence, request as typeof fetch);
+  const privatePublishes: OfflineSnapshot[] = [];
+  reader.subscribe(() => {
+    const bundle = reader.getSnapshot().bundle;
+    if (bundle) privatePublishes.push(bundle.snapshot);
+  });
+  const offline = reader.activate(false);
+  await started;
+  await reader.activate(true, true);
+  expect(request).toHaveBeenCalledOnce();
+  expect(purgeOfflineDevice).toHaveBeenCalledOnce();
+  expect((await persistence.metadata()).enabled).toBe(false);
+  release(staleCopy);
+  await offline;
+  expect(privatePublishes).toEqual([]);
+  expect(reader.getSnapshot()).toMatchObject({
+    bundle: null,
+    photos: [],
+    enabled: false,
+    error: 'denied',
+  });
+  expect((await persistence.read()).bundle).toBeNull();
 });
