@@ -102,3 +102,67 @@ observed endpoints. This is a compatibility observation, not a guarantee about m
 or future API policy. Refresh requests to Firebase retain their existing independent headers.
 
 [Client setup and writes](transformmate-write.md) · [Firebase auth/probes](transformmate-probe.md).
+
+## Catalog filters and muscle groups
+
+`listExercises(filters?: TransformMateExerciseFilters)` requests the full short catalog
+from `GET /exercises/` and returns `RawResponse<TransformMateExerciseSummary[]>`.
+`listExercisePage(input?: TransformMateExercisePageInput)` requests one page from
+`GET /exercises/temporary_exercises/` and returns `RawResponse<TransformMateExercisePage>`:
+`{ count, next, previous, results }`. Pagination links are data only: the client never
+follows them or sends credentials to a URL from the response.
+
+`listMuscleGroups()` requests `GET /exercises/muscle_groups/` and returns
+`RawResponse<TransformMateMuscleGroup[]>`. Each group contains `id`, `name`, nullable
+`image`, numeric `muscles[]` IDs, and `common_muscle_group: { id, name }`.
+These are three different identifier collections; the exercise query uses **names**.
+
+| Client input       | Query parameter     | Format                                  |
+| ------------------ | ------------------- | --------------------------------------- |
+| commonMuscleGroup  | common_muscle_group | One exact group name, e.g. Ноги         |
+| muscleGroups       | muscle_group        | Exact subgroup names joined with commas |
+| search             | search              | Plain search text, URL encoded          |
+| limit (page only)  | limit               | Integer 1–50; server caps pages at 50   |
+| offset (page only) | offset              | Nonnegative integer                     |
+
+Numeric group IDs are not filter values: muscle_group=13 returns no results, while
+muscle_group=Квадрицепс works. Use the names returned by the dictionary in the same locale.
+Multiple muscle_group names form a union; common_muscle_group is exposed as a single
+name because a comma-separated list of common groups did not work in the live probe.
+Combining common_muscle_group and muscle_group narrows results using both conditions.
+Unknown names can legitimately return an empty result. Empty arrays/search strings omit
+the corresponding parameter. Commas inside individual names and unknown input properties
+are rejected before HTTP; URLSearchParams encodes Cyrillic, spaces and query delimiters.
+
+```ts
+const { body: groups } = await client.listMuscleGroups();
+const selected = groups.find((group) => group.name === 'Квадрицепс');
+if (selected) {
+  const { body: exercises } = await client.listExercises({
+    muscleGroups: [selected.name],
+  });
+  const { body: page } = await client.listExercisePage({
+    commonMuscleGroup: selected.common_muscle_group.name,
+    muscleGroups: [selected.name],
+    search: 'Разгибание',
+    limit: 20,
+    offset: 0,
+  });
+}
+```
+
+The short result projection has typed `id`, `name` and `metrics` (`id`, `key`), as used
+by the catalog service. Use getExercise(id) for the full description, muscles and videos.
+No UI or database filtering behavior is changed by these new client operations.
+
+Read-only verification: 18 dictionary groups; quadriceps 169 results, hamstrings 66,
+combined subgroups 212, common group Ноги 224. Search Разгибание with quadriceps returned
+2; limit=2&offset=2 returned IDs 324/86, matching positions 3/4 of the full filtered list.
+Counts are an observation, not constants or test fixtures. Raw responses remain ignored
+under .tmp/tm-filter-*.json; no production payloads are committed.
+
+APK evidence: ExercisesBloc._getFilters (0xd6fa74) uses the filter type as query key and
+joins values with ',' at 0xd6fb30. PhysicalRepositoryImpl.exercises (0xd024fc) requests
+/exercises/temporary_exercises/ (GET 0xd025c4); search is added as query key at 0xd0258c.
+Its muscleGroups method requests /exercises/muscle_groups/ (0xd6d23c). Live requests
+confirmed both the paginated and full-catalog routes accept the same name-based filters.

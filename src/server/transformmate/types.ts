@@ -1,4 +1,9 @@
 import type {
+  transformMateMuscleGroupSchema,
+  transformMateExercisePageSchema,
+} from '@/server/transformmate/exercise-filters';
+import type { transformMateCatalogSchema } from '@/server/transformmate/catalog-schema';
+import type {
   transformMateExerciseDetailSchema,
   transformMateExerciseVideoSchema,
 } from '@/server/transformmate/exercise-schema';
@@ -61,3 +66,17 @@ export type TransformMateExerciseDetail = z.infer<
 export type TransformMateExerciseVideo = z.infer<
   typeof transformMateExerciseVideoSchema
 >;
+
+export type TransformMateMuscleGroup = z.infer<
+  typeof transformMateMuscleGroupSchema
+>;
+export type TransformMateExercisePage = z.infer<
+  typeof transformMateExercisePageSchema
+>;
+export type TransformMateExerciseSummary = z.infer<
+  typeof transformMateCatalogSchema
+>[number];
+export type {
+  TransformMateExerciseFilters,
+  TransformMateExercisePageInput,
+} from '@/server/transformmate/exercise-filters';

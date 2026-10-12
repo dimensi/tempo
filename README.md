@@ -88,7 +88,7 @@ ID token обновляется автоматически; `TRANSFORMMATE_ID_TO
 Клиент имеет типизированные `getTrainings()` / `getTraining(id)` с runtime validation
 реального wire-контракта. CRUD/write методы используют отдельные DTO и подтверждённый APK + live probes PATCH contract.
 [Write contract, lifecycle и ограничения](docs/architecture/transformmate-write.md).
-[Exercise detail, видео и заголовки клиента](docs/architecture/transformmate-exercises.md).
+[Каталог с фильтрами групп мышц, справочник, exercise detail, видео и заголовки клиента](docs/architecture/transformmate-exercises.md).
 Редактор тренировок использует каталог и автоматически отправляет новые связанные планы;
 фактические результаты сохраняются отдельно от ручной истории. Безопасные ограничения,
 статусы и настройка описаны в [интеграции TransformMate](docs/architecture/transformmate-integration.md).

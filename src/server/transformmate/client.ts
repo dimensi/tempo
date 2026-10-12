@@ -1,3 +1,11 @@
+import {
+  exerciseQuery,
+  parseExerciseFilters,
+  transformMateExercisePageSchema,
+  transformMateMuscleGroupsSchema,
+  type TransformMateExerciseFilters,
+  type TransformMateExercisePageInput,
+} from '@/server/transformmate/exercise-filters';
 import 'server-only';
 import {
   FirebaseRefreshError,
@@ -280,7 +288,22 @@ export function createTransformMateClient(options: {
     listTrainings: () =>
       validated('workouts/trainings/', transformMateTrainingsSchema),
     getTraining,
-    listExercises: () => validated('exercises/', transformMateCatalogSchema),
+    listExercises: (filters: TransformMateExerciseFilters = {}) => {
+      const input = parseExerciseFilters(filters);
+      return validated(
+        `exercises/${exerciseQuery(input)}`,
+        transformMateCatalogSchema,
+      );
+    },
+    listExercisePage: (filters: TransformMateExercisePageInput = {}) => {
+      const input = parseExerciseFilters(filters, true);
+      return validated(
+        `exercises/temporary_exercises/${exerciseQuery(input)}`,
+        transformMateExercisePageSchema,
+      );
+    },
+    listMuscleGroups: () =>
+      validated('exercises/muscle_groups/', transformMateMuscleGroupsSchema),
     getExercise: (id: number) => {
       if (!Number.isSafeInteger(id) || id <= 0)
         throw new Error('Invalid TransformMate exercise ID');
