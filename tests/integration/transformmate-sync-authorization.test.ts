@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, expect, it, vi } from 'vitest';
+import { beforeAll, afterAll, beforeEach, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { openDatabase } from '@/server/db/connection';
 import { user, trainerAccess } from '@/server/db/schema';
@@ -6,8 +6,15 @@ import { workoutRepository } from '@/server/workouts/repository';
 import { syncRepository } from '@/server/workouts/transformmate/repository';
 import { serializeOwner } from '@/server/workouts/transformmate/engine';
 import type { WorkoutPlanInput } from '@/contracts/workouts';
+import {
+  TransformMateStorageError,
+  TransformMateStaleConnectionError,
+} from '@/server/transformmate/token-store';
 const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
+  client: vi.fn(),
+  fence: vi.fn(),
+  configured: vi.fn(),
 }));
 vi.mock('server-only', () => ({}));
 vi.mock('@/server/auth', () => ({
@@ -16,9 +23,9 @@ vi.mock('@/server/auth', () => ({
 const database = openDatabase('file::memory:');
 vi.mock('@/server/db', () => ({ getDatabase: () => database }));
 vi.mock('@/server/transformmate/runtime', () => ({
-  getTransformMateClient: async () => null,
-  getTransformMateConnectionFence: async () => null,
-  isTransformMateConfigured: async () => false,
+  getTransformMateClient: state.client,
+  getTransformMateConnectionFence: state.fence,
+  isTransformMateConfigured: state.configured,
 }));
 const api = await import('@/server/workouts/transformmate/service');
 const workoutsApi = await import('@/server/workouts');
@@ -65,7 +72,13 @@ beforeAll(() => {
       })
       .run();
 });
+beforeEach(() => {
+  state.client.mockReset().mockResolvedValue(null);
+  state.fence.mockReset().mockResolvedValue(null);
+  state.configured.mockReset().mockResolvedValue(false);
+});
 afterAll(() => database.sqlite.close());
+
 it('requires a real owner-scoped grant for local-only list, refresh and saving links', async () => {
   const plan = repository.createPlan('owner', input);
   await expect(
@@ -257,4 +270,45 @@ it('rechecks plan permission after waiting in the owner queue before any local s
   await blocker;
   expect(saved).toBe(false);
   expect(repository.list('owner')).toEqual(before);
+});
+
+it('preserves a permitted local save while encrypted storage is unavailable', async () => {
+  state.session = { user: { id: 'owner', role: 'OWNER' } };
+  state.fence.mockRejectedValueOnce(new TransformMateStorageError());
+  const plan = await api.saveAndSyncWorkoutPlan(headers, 'owner', () =>
+    repository.createPlan('owner', { ...input, title: 'Local during outage' }),
+  );
+  expect(
+    repository.list('owner').plans.find((p) => p.id === plan.id)?.title,
+  ).toBe('Local during outage');
+  expect(state.client).not.toHaveBeenCalled();
+  state.configured.mockRejectedValueOnce(new TransformMateStorageError());
+  expect((await api.listTransformMateSync(headers, 'owner')).configured).toBe(
+    false,
+  );
+});
+
+it('does not turn a stale connection into permission for a late local write', async () => {
+  state.session = { user: { id: 'owner', role: 'OWNER' } };
+  state.fence.mockRejectedValueOnce(new TransformMateStaleConnectionError());
+  const save = vi.fn(() => repository.createPlan('owner', input));
+  await expect(
+    api.saveAndSyncWorkoutPlan(headers, 'owner', save),
+  ).rejects.toBeInstanceOf(TransformMateStaleConnectionError);
+  expect(save).not.toHaveBeenCalled();
+});
+
+it('rechecks authorization before falling back from a failed storage read', async () => {
+  state.session = { user: { id: 'owner', role: 'OWNER' } };
+  state.fence.mockImplementationOnce(async () => {
+    state.session = null;
+    throw new TransformMateStorageError();
+  });
+  const save = vi.fn(() => repository.createPlan('owner', input));
+  await expect(
+    api.saveAndSyncWorkoutPlan(headers, 'owner', save),
+  ).rejects.toMatchObject({
+    status: 401,
+  });
+  expect(save).not.toHaveBeenCalled();
 });

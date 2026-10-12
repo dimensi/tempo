@@ -4,6 +4,7 @@ import { WorkoutAccessError, WorkoutError } from './index';
 import { workoutMessages as m } from '@/features/workouts';
 import { hasTrustedOrigin } from '@/server/auth/origin';
 import { SyncAccessError } from './transformmate/service';
+import { TransformMateStaleConnectionError } from '@/server/transformmate/token-store';
 export const workoutUpdateBody = z
   .object({ revision: z.unknown(), data: z.unknown() })
   .strict();
@@ -64,9 +65,11 @@ export async function workoutResponse(operation: () => Promise<unknown>) {
       error instanceof WorkoutError ||
       error instanceof SyncAccessError
         ? error.status
-        : error instanceof ZodError || error instanceof SyntaxError
-          ? 400
-          : 500;
+        : error instanceof TransformMateStaleConnectionError
+          ? 409
+          : error instanceof ZodError || error instanceof SyntaxError
+            ? 400
+            : 500;
     const message =
       status === 409
         ? m.conflict

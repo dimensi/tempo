@@ -11,6 +11,7 @@ import {
   getTransformMateConnectionFence,
 } from '@/server/transformmate/runtime';
 import { workoutRepository } from '@/server/workouts/repository';
+import { TransformMateStorageError } from '@/server/transformmate/token-store';
 import { syncRepository } from './repository';
 import { serializeOwner, syncEngine } from './engine';
 
@@ -35,17 +36,29 @@ async function loadEngine(
   ownerId: string,
 ) {
   await contextValue.access('workouts:read');
-  const fence = await getTransformMateConnectionFence(ownerId);
-  await contextValue.access('workouts:read');
-  const client = await getTransformMateClient(ownerId);
-  await contextValue.access('workouts:read');
-  await fence?.assertCurrent();
-  return {
-    ...contextValue,
-    client,
-    checkConnection: fence?.assertCurrent,
-    connectionId: fence?.generation,
-  };
+  try {
+    const fence = await getTransformMateConnectionFence(ownerId);
+    await contextValue.access('workouts:read');
+    const client = await getTransformMateClient(ownerId);
+    await contextValue.access('workouts:read');
+    await fence?.assertCurrent();
+    return {
+      ...contextValue,
+      client,
+      checkConnection: fence?.assertCurrent,
+      connectionId: fence?.generation,
+    };
+  } catch (error) {
+    await contextValue.access('workouts:read');
+    if (!(error instanceof TransformMateStorageError)) throw error;
+    // A broken connection must not prevent a permitted local save. Stale epochs still reject.
+    return {
+      ...contextValue,
+      client: null,
+      checkConnection: undefined,
+      connectionId: undefined,
+    };
+  }
 }
 async function publishSavedPlan(
   contextValue: Awaited<ReturnType<typeof loadEngine>>,
@@ -130,7 +143,7 @@ export async function listTransformMateSync(
         : {}),
       ...(link.state.updateAttempt
         ? {
-            updateAttemptSummary: {
+            updateAttempt: {
               id: link.state.updateAttempt.id,
               phase: link.state.updateAttempt.phase,
               createdAt: link.state.updateAttempt.createdAt,
@@ -145,7 +158,12 @@ export async function listTransformMateSync(
     }),
   );
   await access('workouts:read');
-  const configured = await isTransformMateConfigured(ownerId);
+  let configured = false;
+  try {
+    configured = await isTransformMateConfigured(ownerId);
+  } catch (error) {
+    if (!(error instanceof TransformMateStorageError)) throw error;
+  }
   await access('workouts:read');
   return { configured, items };
 }
