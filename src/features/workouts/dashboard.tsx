@@ -181,12 +181,14 @@ function SessionResult({
   onEdit,
   onDelete,
   renderComments,
+  comparisonShown = false,
 }: {
   session: WorkoutSession;
   canLog: boolean;
   onEdit: () => void;
   onDelete: () => void;
   renderComments?: (sessionId: string) => ReactNode;
+  comparisonShown?: boolean;
 }) {
   return (
     <Stack data-testid={`session-${session.id}`}>
@@ -199,7 +201,7 @@ function SessionResult({
           ? `${m.snapshot}: ${session.planSnapshot.planTitle}`
           : m.independent}
       </Text>
-      {session.planSnapshot && (
+      {session.planSnapshot && !comparisonShown && (
         <ExerciseTable
           exercises={session.planSnapshot.workout.exercises}
           actual={session.exercises}
@@ -480,6 +482,7 @@ function ScopedWorkoutsDashboard({
             session.planId === plan.id &&
             session.plannedWorkoutId === workout.id,
         );
+        const latestResult = results.at(-1);
         return (
           <Paper
             withBorder
@@ -499,7 +502,11 @@ function ScopedWorkoutsDashboard({
                   {plan.description}
                 </Text>
               )}
-              <ExerciseTable exercises={workout.exercises} sync={item} />
+              <ExerciseTable
+                exercises={workout.exercises}
+                sync={item}
+                actual={latestResult?.exercises}
+              />
               <WorkoutSync item={item} />
               <Group>
                 <Button
@@ -575,6 +582,7 @@ function ScopedWorkoutsDashboard({
                 <SessionResult
                   key={session.id}
                   session={session}
+                  comparisonShown={session.id === latestResult?.id}
                   canLog={canLog}
                   renderComments={renderComments}
                   onEdit={() =>

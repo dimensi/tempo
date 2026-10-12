@@ -255,8 +255,17 @@ export function ExerciseEditor({
             variant="default"
             mih={44}
             onClick={() => {
-              if (typeof adding !== 'number')
+              if (typeof adding === 'number') {
+                const manual = { ...value[adding]! };
+                delete manual.transformMate;
+                onChange(
+                  value.map((exercise, index) =>
+                    index === adding ? { ...manual, name: '' } : exercise,
+                  ),
+                );
+              } else {
                 onChange([...value, emptyExercise()]);
+              }
               setAdding(null);
             }}
           >
