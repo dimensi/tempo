@@ -1,11 +1,20 @@
 import type { NutritionEntry } from '@/contracts/nutrition';
 import { diaryMessages as m } from './messages';
 
-// Keep decimal strings exact: rounding can conceal summary residuals.
-export function displayValue(value: string | null, unit = '') {
-  return value === null
+import { formatDecimal } from '@/lib/number-display';
+
+export function displayValue(
+  value: string | null,
+  unit = '',
+  kind: 'value' | 'delta' = 'value',
+) {
+  const formatted = formatDecimal(value, { kind });
+  return formatted === null
     ? m.unknown
-    : `${value.replace('.', ',')}${unit ? ` ${unit}` : ''}`;
+    : `${formatted}${unit ? ` ${unit}` : ''}`;
+}
+export function displayIssue(issue: string): string {
+  return m.massIssues[issue as keyof typeof m.massIssues] ?? issue;
 }
 export function entryAmounts(entry: NutritionEntry) {
   return [

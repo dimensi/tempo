@@ -73,7 +73,7 @@ test('real diary photos and comments persist; trainer is read-only and revoked U
   await expect(
     page.getByText('Синтетический обед', { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText('123,456789 ккал').first()).toBeVisible();
+  await expect(page.getByText('123,46 ккал').first()).toBeVisible();
   const lunch = page.getByRole('region', { name: 'Обед', exact: true });
   const chooser = page.waitForEvent('filechooser');
   const uploaded = page.waitForResponse(

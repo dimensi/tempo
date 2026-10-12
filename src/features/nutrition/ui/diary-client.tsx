@@ -1,7 +1,10 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import type { SafeMealPhotoView } from '@/contracts/nutrition';
+import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { browserToday } from './day-navigation-dates';
+import { DayNavigation } from './day-navigation';
+import { diaryDateSchema, type SafeMealPhotoView } from '@/contracts/nutrition';
 import { DiaryView, type DiaryViewProps } from './diary-view';
 import { createPhotoActions, diaryPhotos } from './photo-actions';
 
@@ -21,9 +24,22 @@ export function DiaryClient({
   ...props
 }: DiaryClientProps) {
   const router = useRouter();
+  const params = useSearchParams();
+  const hasDate =
+    params.getAll('date').length === 1 &&
+    diaryDateSchema.safeParse(params.get('date')).success;
+  useEffect(() => {
+    if (!hasDate) {
+      router.replace(`/diary?date=${browserToday()}`, { scroll: false });
+    }
+  }, [hasDate, router]);
+  // A date-less server request defaults to UTC. Do not flash that day's content
+  // before the browser has resolved its own calendar date.
+  if (!hasDate) return null;
   return (
     <DiaryView
       {...props}
+      navigationSlot={<DayNavigation key={props.date} date={props.date} />}
       photos={diaryPhotos(ownerId, photos)}
       photoActions={
         canWrite
