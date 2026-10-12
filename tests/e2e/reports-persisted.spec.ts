@@ -217,9 +217,11 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect(text).toContain('6,15');
     expect(text).not.toContain('3e-16');
     expect(text).not.toContain('-5e-16');
-    expect(
-      execFileSync('pdfimages', ['-list', path], { encoding: 'utf8' }),
-    ).toMatch(/image\s+450\s+225/);
+    const embeddedImages = execFileSync('pdfimages', ['-list', path], {
+      encoding: 'utf8',
+    });
+    const crop = embeddedImages.match(/image\s+(\d+)\s+(\d+)/)!;
+    expect(Math.abs(Number(crop[1]) - Number(crop[2]))).toBeLessThanOrEqual(1);
     const signIn = () =>
       context.request.post(`${origin}/api/auth/sign-in/email`, {
         headers: { origin },

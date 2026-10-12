@@ -45,6 +45,12 @@ export function macroShares(totals: NutritionTotals) {
       .reduce((sum, value) => sum.plus(value), new Exact(0))
       .toString(),
     tenths,
+    widths: weights.map((weight) =>
+      weight
+        .times(100)
+        .dividedBy(weights.reduce((sum, item) => sum.plus(item), new Exact(0)))
+        .toString(),
+    ),
   };
 }
 
@@ -63,6 +69,14 @@ export function mealShares(day: NutritionDay) {
       percentages?.map((value, index) =>
         values[index] === null ? null : value,
       ) ?? null,
+    widths:
+      percentages === null
+        ? null
+        : weights.map((weight, index) =>
+            values[index] === null
+              ? null
+              : weight.times(100).dividedBy(total).toString(),
+          ),
     recordedOnly:
       values.some((value) => value === null) ||
       dayCalories === null ||

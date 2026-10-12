@@ -227,3 +227,27 @@ describe('report rules', () => {
     expect(await withReportSlot(async () => 1)).toBe(1);
   });
 });
+
+it('preserves source quantity, serving and zero consumed portions without deriving missing mass', () => {
+  const day = syntheticDay();
+  const entry = day.meals[0]!.entries[0]!;
+  Object.assign(entry, {
+    massG: null,
+    volumeMl: null,
+    amount: '0.5',
+    serving: 'package',
+    servingQuantity: '0.75',
+    consumedPortions: '0',
+  });
+  const before = structuredClone(day);
+  const html = renderReportHtml(
+    request,
+    { days: [day], photos: [] },
+    { sans: new Uint8Array(), bold: new Uint8Array(), serif: new Uint8Array() },
+  );
+  expect(html).toContain('Количество: 0,5');
+  expect(html).toContain('упаковка × 0,75');
+  expect(html).toContain('0 порций');
+  expect(html).toContain('масса не указана');
+  expect(day).toEqual(before);
+});

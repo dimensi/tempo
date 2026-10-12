@@ -22,7 +22,7 @@ afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-it('renders the specified three-page summary and six records, then measures photos, continuation, oversized records and calendar-day pages', async () => {
+it('renders the specified one-page compact day and six records, then measures photos, continuation, oversized records and calendar-day pages', async () => {
   const browser = await chromium.launch();
   try {
     const maker = await browser.newPage();
@@ -120,7 +120,7 @@ it('renders the specified three-page summary and six records, then measures phot
         name: 'canonical',
         days: [baseline],
         photos: canonicalPhotos,
-        expected: 3,
+        expected: 1,
       },
       { name: 'no-photos', days: [baseline], photos: [] },
       { name: 'empty', days: [empty], photos: [] },
@@ -189,6 +189,67 @@ it('renders the specified three-page summary and six records, then measures phot
           0,
         ),
       );
+      const geometry = await page.evaluate(() => ({
+        images: Array.from(document.images).map((image) => ({
+          width: image.getBoundingClientRect().width,
+          height: image.getBoundingClientRect().height,
+          fit: getComputedStyle(image).objectFit,
+          position: getComputedStyle(image).objectPosition,
+        })),
+        emptyMedia: Array.from(
+          document.querySelectorAll('.meal-media:empty'),
+        ).map((node) => node.getBoundingClientRect().height),
+        columns: Array.from(
+          document.querySelectorAll('.entry:not(.entry-fragment)'),
+        ).map((entry) =>
+          Array.from(entry.querySelectorAll('.nutrient-value')).map(
+            (number) => number.getBoundingClientRect().right,
+          ),
+        ),
+      }));
+      for (const image of geometry.images)
+        expect(image).toEqual({
+          width: 120,
+          height: 120,
+          fit: 'cover',
+          position: '50% 50%',
+        });
+      expect(geometry.emptyMedia.every((height) => height === 0)).toBe(true);
+      for (const columns of geometry.columns)
+        columns.forEach((right, index) =>
+          expect(right).toBeCloseTo(geometry.columns[0]![index]!, 1),
+        );
+      expect(await page.locator('.meal-heading .meal-total').count()).toBe(
+        scenario.days.length * 16,
+      );
+      expect(await page.locator('.report-page:has(.meal-block)').count()).toBe(
+        await page.locator('.table-header').count(),
+      );
+      expect(
+        await page.locator('.nutrient-label,.meal-summary-table').count(),
+      ).toBe(0);
+      const names = await page.locator('.entry').evaluateAll((records) => {
+        const grouped: Record<string, string> = {};
+        for (const record of records) {
+          const id = (record as HTMLElement).dataset.entryId!;
+          grouped[id] =
+            (grouped[id] ?? '') +
+            record.querySelector('.entry-name')!.textContent!;
+        }
+        return grouped;
+      });
+      for (const day of scenario.days)
+        for (const meal of day.meals)
+          for (const entry of meal.entries)
+            expect(names[entry.id]).toBe(entry.name);
+      expect(await page.locator('.entry > .nutrient-value').count()).toBe(
+        scenario.days.reduce(
+          (n, day) =>
+            n +
+            day.meals.reduce((sum, meal) => sum + meal.entries.length * 4, 0),
+          0,
+        ),
+      );
       if (scenario.name === 'canonical') {
         const bar = page.locator('.macro-bar');
         const measurements = await bar.evaluate((node) => ({
@@ -198,10 +259,23 @@ it('renders the specified three-page summary and six records, then measures phot
             (segment) => segment.getBoundingClientRect().width,
           ),
         }));
-        expect(measurements.height).toBeCloseTo((5.6 * 96) / 25.4, 0);
+        expect(measurements.height).toBeCloseTo((3.2 * 96) / 25.4, 0);
         expect(
           measurements.segments.reduce((sum, width) => sum + width, 0),
         ).toBeCloseTo(measurements.width, 0);
+        expect(
+          await bar
+            .locator('.segment')
+            .evaluateAll((segments) =>
+              segments.map((node) =>
+                Number.parseFloat((node as HTMLElement).style.width),
+              ),
+            ),
+        ).toEqual(
+          [98.75 * 4, 76.55 * 9, 83.7 * 4].map((energy) =>
+            expect.closeTo((energy / 1418.75) * 100, 4),
+          ),
+        );
         expect(
           measurements.segments.map(
             (width) => (width / measurements.width) * 100,
@@ -214,7 +288,6 @@ it('renders the specified three-page summary and six records, then measures phot
           ]),
         );
         expect(await page.locator('.energy-share').allTextContents()).toEqual([
-          '—',
           '27,8%',
           '48,6%',
           '23,6%',
@@ -226,16 +299,22 @@ it('renders the specified three-page summary and six records, then measures phot
           '—',
           '—',
           '—',
-          '—',
         ]);
       }
       if (scenario.name === 'many-records') {
         expect(
           await page.locator('.meal-heading h2').allTextContents(),
         ).toContain('Завтрак · продолжение');
-        expect(count).toBeGreaterThan(3);
+        expect(count).toBeGreaterThan(1);
       }
       if (scenario.name === 'oversized-record') {
+        expect(
+          await page
+            .locator('[data-entry-id="synthetic-2026-10-11-0-0"]')
+            .first()
+            .locator('.nutrient-value')
+            .count(),
+        ).toBe(4);
         expect(
           (
             await page
@@ -245,7 +324,7 @@ it('renders the specified three-page summary and six records, then measures phot
         ).toBe('Ш'.repeat(1500));
       }
       if (scenario.name === 'no-photos')
-        expect(await page.locator('.meal-body--with-photo').count()).toBe(0);
+        expect(await page.locator('img').count()).toBe(0);
       if (scenario.name === 'exif-orientation')
         expect(
           await page
@@ -281,7 +360,7 @@ it('renders the specified three-page summary and six records, then measures phot
       if (scenario.name === 'empty') expect(text).toContain('Нет записей');
       else {
         expect(text).toContain('00:00:00');
-        expect(text).toContain('масса не указана');
+        expect(text.replace(/\s+/g, ' ')).toContain('масса не указана');
       }
       const allText = text.split('\f').filter((content) => content.trim());
       expect(allText.length).toBe(count);
@@ -292,13 +371,13 @@ it('renders the specified three-page summary and six records, then measures phot
       for (const match of bbox.matchAll(
         /<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)"/g,
       )) {
-        expect(Number(match[1])).toBeGreaterThanOrEqual(40);
-        expect(Number(match[3])).toBeLessThanOrEqual(556);
-        expect(Number(match[4])).toBeLessThanOrEqual(824);
+        expect(Number(match[1])).toBeGreaterThanOrEqual(30);
+        expect(Number(match[3])).toBeLessThanOrEqual(565);
+        expect(Number(match[4])).toBeLessThanOrEqual(830);
         expect(
-          Number(match[4]) <= 50 ||
-            (Number(match[2]) >= 69 && Number(match[4]) <= 774) ||
-            Number(match[2]) >= 790,
+          Number(match[4]) <= 61 ||
+            (Number(match[2]) >= 66 && Number(match[4]) <= 784) ||
+            Number(match[2]) >= 795,
           `${scenario.name}: ${match[0]}`,
         ).toBe(true);
       }
