@@ -48,6 +48,34 @@ Verify migrations, health, login/logout and owner/trainer feature access through
 
 For disposable image validation, build `docker build -t nutrition-foundation .`, then run `bash scripts/docker-smoke.sh`. Host tools `pdfinfo`, `pdffonts` and `pdftotext` are required. The script owns a separate `nutrition-smoke` project/volumes and verifies owner CLI, Secure cookies, restart persistence, online backup/restore, persistent uploads and synthetic Cyrillic PDF rendering with embedded fonts. Its volume cleanup must never target production.
 
+## Reuse the CI-tested image
+
+Successful main-push Docker jobs retain `nutrition-release-<full Git SHA>` for
+seven days. The immutable GitHub artifact contains `image.tar.gz` and
+`manifest.json` (revision, Git tree, image tag/ID and archive SHA-256). The image
+is exported after disposable Docker smoke succeeds, with OCI revision/tree
+labels; PR jobs never export release images. Release approval also requires the
+`checks` job to pass on that same main SHA. Do not use an artifact from a run
+whose other checks failed or are still running.
+
+Using existing GitHub CLI authentication, download the selected successful
+main-push run in one command (replace the run ID and full SHA):
+
+```sh
+gh run download RUN_ID --repo dimensi/yazio-dashboard --name nutrition-release-FULL_SHA --dir release-artifact
+```
+
+Confirm the run's event is `push`, branch is `main`, head SHA matches the manifest
+and both CI jobs passed. Verify `archiveSHA256` against `sha256sum image.tar.gz`,
+then transfer this directory using the existing `ssh home-server` / `scp`
+connection. On the server, `gunzip -c image.tar.gz | docker load` imports the
+already tested image without rebuilding. Inspect the loaded manifest `imageTag`
+and require its image ID and OCI revision/tree labels to equal the manifest.
+Pin that exact tag in the operator's Compose image override, retaining the prior
+image, configuration and volumes. Follow the backup, approved recreation and
+HTTPS acceptance steps above; no duplicate build or full suite is needed on the
+server. No registry publication or new credentials are involved.
+
 ## Consistent backup and rollback
 
 Use SQLite online backup, which includes committed WAL state, rather than copying a live `.sqlite` alone:
