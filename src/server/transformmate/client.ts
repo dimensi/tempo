@@ -278,12 +278,17 @@ export function createTransformMateClient(options: {
         throw new Error('Invalid TransformMate exercise ID');
       return validated(`exercises/${id}/`, transformMateExerciseDetailSchema);
     },
-    createTraining: (input: CreateTrainingInput) =>
+    createTraining: (
+      input: CreateTrainingInput,
+      beforeSend?: () => Promise<void>,
+    ) =>
       validated(
         'workouts/trainings/',
         mutationResponseSchema,
         'POST',
         parseWriteInput(createTrainingInputSchema, input),
+        false,
+        beforeSend,
       ),
     /** Caller owns durable intent and fresh guard. Never replay this PATCH, including on 401. */
     updateTrainingOnce: async (

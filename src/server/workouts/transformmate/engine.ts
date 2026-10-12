@@ -484,6 +484,7 @@ export function syncEngine(options: SyncEngineOptions) {
       await save(link, { status: 'conflict', reason: 'plan_changed' });
       return;
     }
+    const planRevision = currentPlan(link)?.revision;
     const body = createProjection(workout, link.state.marker);
     // Claim before HTTP. A crash here deliberately becomes unknown, never another POST.
     const claimed = await save(link, {
@@ -497,7 +498,25 @@ export function syncEngine(options: SyncEngineOptions) {
     await access('workouts:plan');
     if (!currentWorkout(link) || changed(link)) return;
     try {
-      const result = await client.createTraining(body);
+      const result = await client.createTraining(body, async () => {
+        await access('workouts:plan');
+        const latest = repository
+          .list(link.ownerId)
+          .find((row) => row.id === link.id);
+        const current = currentPlan(link);
+        if (
+          !latest ||
+          latest.revision !== link.revision ||
+          !latest.state.attempted ||
+          latest.remoteTrainingId !== null ||
+          latest.state.expected !== link.state.expected ||
+          !current ||
+          current.revision !== planRevision ||
+          !currentWorkout(link) ||
+          changed(link)
+        )
+          throw new Error('Create intent changed');
+      });
       await access('workouts:plan');
       const next = await save(link, {}, result.body.id);
       if (next) await verify(next);

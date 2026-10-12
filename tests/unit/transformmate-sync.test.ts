@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createTransformMateClient } from '@/server/transformmate/client';
 import { openDatabase } from '@/server/db/connection';
 import { syncRepository } from '@/server/workouts/transformmate/repository';
 import {
@@ -1147,6 +1148,119 @@ describe('durable TransformMate sync', () => {
     expect(s.link().state.reason).toBe('remote_started');
     expect(s.link().state.actual!.exercises[0]!.sets[0]!.done).toBe(true);
     expect(s.client.updateTrainingOnce).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    'a single POST 401 committed=%s is recovered only with reads, never auth replay',
+    async (committed) => {
+      const s = setup();
+      let posts = 0;
+      const provider = {
+        getIdToken: vi.fn(async (options?: { forceRefresh?: boolean }) => {
+          void options;
+          return 'synthetic-token';
+        }),
+      };
+      const request = vi
+        .fn<typeof fetch>()
+        .mockImplementation(async (url, init) => {
+          if (init?.method === 'POST') {
+            posts++;
+            if (committed)
+              s.detail = remote(
+                createTrainingInputSchema.parse(JSON.parse(String(init.body))),
+              );
+            return new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+              status: 401,
+              headers: { 'content-type': 'application/json' },
+            });
+          }
+          const path = new URL(String(url)).pathname;
+          const body = path.includes('/exercises/')
+            ? s.catalog
+            : path.endsWith('/trainings/')
+              ? committed
+                ? [
+                    {
+                      ...trainingSummaryFixture(),
+                      description: s.detail.description,
+                    },
+                  ]
+                : []
+              : s.detail;
+          return new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        });
+      const client = createTransformMateClient({
+        baseUrl: 'https://example.test/ipt/api/v1',
+        tokenProvider: provider,
+        fetch: request,
+      });
+      const run = () =>
+        syncEngine({
+          repository: s.repository,
+          client,
+          access: s.access,
+          plans: () => [s.plan],
+        }).process(s.link());
+      await run();
+      await run();
+      await run();
+      expect(posts).toBe(1);
+      expect(s.link().state.status).toBe(committed ? 'synced' : 'unknown');
+      expect(s.link().state.attempted).toBe(true);
+      expect(
+        provider.getIdToken.mock.calls.some(
+          ([options]) => options?.forceRefresh,
+        ),
+      ).toBe(false);
+      expect(
+        request.mock.calls.filter((call) => call[1]?.method === 'POST'),
+      ).toHaveLength(1);
+    },
+  );
+  it('create token acquisition is followed by final authorization before any POST', async () => {
+    const s = setup();
+    let tokens = 0;
+    let revoked = false;
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(s.catalog), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const client = createTransformMateClient({
+      baseUrl: 'https://example.test/ipt/api/v1',
+      tokenProvider: {
+        getIdToken: async () => {
+          tokens++;
+          if (tokens === 2) {
+            expect(s.link().state.attempted).toBe(true);
+            revoked = true;
+          }
+          return 'synthetic-token';
+        },
+      },
+      fetch: request,
+    });
+    s.access.mockImplementation(async () => {
+      if (revoked) throw new Error('Access revoked');
+    });
+    await expect(
+      syncEngine({
+        repository: s.repository,
+        client,
+        access: s.access,
+        plans: () => [s.plan],
+      }).process(s.link()),
+    ).rejects.toThrow('Access revoked');
+    expect(
+      request.mock.calls.filter((call) => call[1]?.method === 'POST'),
+    ).toHaveLength(0);
+    expect(s.link().state.status).toBe('unknown');
+    expect(s.link().state.actual).toBeNull();
   });
   it('serializes owner work while releasing a failed queue', async () => {
     const calls: number[] = [];
