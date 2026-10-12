@@ -9,6 +9,11 @@ export async function prepareReportPage(page: Page, html: string) {
   await page.setContent(html, { waitUntil: 'load', timeout: 15000 });
   await page.emulateMedia({ media: 'print' });
   await page.evaluate(async () => {
+    await Promise.all([
+      document.fonts.load('12px "Report Sans"', 'Дневник питания'),
+      document.fonts.load('700 12px "Report Sans"', 'Дневник питания'),
+      document.fonts.load('12px "Report Serif"', 'Дневник питания'),
+    ]);
     await document.fonts.ready;
     if (
       !document.fonts.check('12px "Report Sans"', 'Дневник питания') ||
@@ -40,9 +45,6 @@ export async function prepareReportPage(page: Page, html: string) {
       image.src = canvas.toDataURL(jpeg ? 'image/jpeg' : 'image/png', 0.9);
       image.width = canvas.width;
       image.height = canvas.height;
-      const physicalScale = Math.min(60.3 / canvas.width, 85 / canvas.height);
-      image.style.width = `${canvas.width * physicalScale}mm`;
-      image.style.height = `${canvas.height * physicalScale}mm`;
       await image.decode();
     }
   });

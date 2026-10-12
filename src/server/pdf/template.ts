@@ -2,6 +2,7 @@ import 'server-only';
 import { formatDecimal } from '@/lib/number-display';
 import {
   meals,
+  type NutritionDay,
   type NutritionEntry,
   type NutritionTotals,
 } from '@/contracts/nutrition';
@@ -59,13 +60,13 @@ export function diaryDateLabel(date: string): string {
 }
 function totals(values: NutritionTotals, known?: NutritionTotals): string {
   const shares = macroShares(values);
-  return `<section class="summary-block"><div class="section-title-row"><h2>${m.diaryTotals}</h2><span class="share-caption">${m.energyShare}</span></div>${macroChart(values)}<div class="daily-totals">${keys.map((key, index) => `<div class="summary-row" data-nutrient="${key}"><span>${names[key]}</span><strong class="summary-value number numeric">${value(values[key])}</strong><span class="summary-unit">${key === 'calories' ? m.kcal : m.grams}</span><span class="energy-share number numeric">${index === 0 || shares === null ? m.unavailable : percentage(shares.tenths[index - 1]!)}</span>${values[key] === null && known?.[key] !== null && known?.[key] !== undefined ? `<small class="partial">${m.partial}: ${value(known[key])} ${key === 'calories' ? m.kcal : m.grams}</small>` : ''}</div>`).join('')}</div><p class="small-note">${m.macroExplanation}${shares ? ` ${m.macroEnergy}: ${value(shares.energy)} ${m.kcal}.` : ''}</p></section>`;
+  return `<section class="summary-block daily-totals">${keys.map((key, index) => `<div class="total-column" data-nutrient="${key}"><p class="total-label">${names[key]}</p><strong class="summary-value number"><span class="numeric">${value(values[key])}</span> <span class="summary-unit">${key === 'calories' ? m.kcal : m.grams}</span></strong><p class="total-caption">${index === 0 ? m.totalDay : `<span class="energy-share number numeric">${shares === null ? m.unavailable : percentage(shares.tenths[index - 1]!)}</span> ${m.macroEnergyShare}`}</p>${values[key] === null && known?.[key] !== null && known?.[key] !== undefined ? `<p class="partial">${m.partial}: ${value(known[key])} ${key === 'calories' ? m.kcal : m.grams}</p>` : ''}</div>`).join('')}</section>`;
 }
-function macroChart(values: NutritionTotals): string {
+function charts(values: NutritionTotals, day?: NutritionDay): string {
   const shares = macroShares(values);
-  if (shares === null) return '';
+  const distribution = day ? mealShares(day) : null;
   const macroKeys = ['protein', 'fat', 'carbs'] as const;
-  return `<div class="bar macro-bar" role="img" aria-label="${m.macroRatio}: ${shares.tenths.map(percentage).join(' · ')}">${macroKeys.map((key, index) => `<span class="segment" data-nutrient="${key}" style="width:${shares.tenths[index]! / 10}%"></span>`).join('')}</div>`;
+  return `<section class="summary-block charts"><div class="chart"><h2>${m.macroRatio}</h2>${shares ? `<div class="bar macro-bar" role="img" aria-label="${m.macroRatio}">${macroKeys.map((key, index) => `<span class="segment" data-nutrient="${key}" style="width:${shares.widths[index]}%"></span>`).join('')}</div>` : ''}<div class="legend">${macroKeys.map((key, index) => `<span class="legend-item" data-nutrient="${key}"><i class="marker"></i>${names[key]} <span class="numeric">${shares ? percentage(shares.tenths[index]!) : m.unavailable}</span></span>`).join('')}</div></div>${day ? `<div class="chart"><h2>${m.distribution}</h2>${distribution?.widths ? `<div class="bar meal-bar" role="img" aria-label="${m.distribution}">${meals.map((kind, index) => `<span class="segment" data-meal="${kind}" style="width:${distribution.widths![index] ?? 0}%"></span>`).join('')}</div>` : ''}<div class="legend legend--meals">${meals.map((kind, index) => `<span class="legend-item" data-meal="${kind}"><i class="marker"></i>${m[kind]} <span class="numeric">${distribution?.percentages?.[index] === null || distribution?.percentages?.[index] === undefined ? m.unavailable : `${distribution.percentages[index]}%`}</span></span>`).join('')}</div>${distribution?.recordedOnly ? `<p class="small-note">${m.recordedCalorieShare}</p>` : ''}</div>` : ''}</section>`;
 }
 function entryMetadata(entry: NutritionEntry): string {
   const parts = [entry.diaryDateTime.slice(11)];
@@ -76,28 +77,32 @@ function entryMetadata(entry: NutritionEntry): string {
   );
   if (entry.volumeMl !== null)
     parts.push(`${formatDecimal(entry.volumeMl)} ${m.millilitres}`);
-  if (entry.baseUnit === 'package' || entry.serving === 'package')
-    parts.push(m.package);
+  if (entry.amount !== null && entry.massG === null && entry.volumeMl === null)
+    parts.push(`${m.quantity}: ${formatDecimal(entry.amount)}`);
+  const serving =
+    entry.baseUnit === 'package' || entry.serving === 'package'
+      ? m.package
+      : entry.serving && /^[\p{L} -]+$/u.test(entry.serving)
+        ? entry.serving
+        : null;
+  if (serving || entry.servingQuantity !== null)
+    parts.push(
+      `${serving ?? m.sourceServing}${entry.servingQuantity === null ? '' : ` × ${formatDecimal(entry.servingQuantity)}`}`,
+    );
   if (entry.consumedPortions !== null)
     parts.push(`${formatDecimal(entry.consumedPortions)} ${m.portions}`);
-  if (
-    entry.serving &&
-    /^[\p{L} -]+$/u.test(entry.serving) &&
-    entry.serving !== 'package'
-  )
-    parts.push(entry.serving);
   return parts.map(escapeHtml).join(' · ');
 }
 function food(entry: NutritionEntry): string {
-  return `<article class="entry" data-entry-id="${escapeHtml(entry.id)}"><div class="entry-name">${escapeHtml(entry.name)}</div><p class="entry-meta">${entryMetadata(entry)}</p><div class="nutrients">${keys.map((key) => `<div class="nutrient" data-nutrient="${key}"><div class="nutrient-label">${labels[key]}</div><div class="nutrient-value number numeric">${value(entry.totals[key])}</div></div>`).join('')}</div>${entry.issues.length ? `<p class="entry-issues">${m.entryIssue}</p>` : ''}</article>`;
+  return `<article class="entry" data-entry-id="${escapeHtml(entry.id)}"><div class="entry-info"><div class="entry-name">${escapeHtml(entry.name)}</div><p class="entry-meta">${entryMetadata(entry)}</p>${entry.issues.length ? `<p class="entry-issues">${m.entryIssue}</p>` : ''}</div>${keys.map((key) => `<div class="nutrient-value number numeric" data-nutrient="${key}">${value(entry.totals[key])}</div>`).join('')}</article>`;
 }
-function introduction(title: string, subtitle: string): string {
-  return `<div class="intro"><h1>${title}</h1><p class="subtitle">${escapeHtml(subtitle)}</p></div>`;
+function columnHeaders(): string {
+  return `<div class="table-header"><span class="heading-space"></span>${keys.map((key) => `<span data-nutrient="${key}">${labels[key]}</span>`).join('')}</div>`;
 }
-function explanation(fetchedAt?: string): string {
-  return `<section class="summary-block"><div class="explanation"><strong>${m.howToRead}</strong><p>${m.displayExplanation}</p><p>${m.noGoals}</p></div>${fetchedAt ? `<p class="source-updated">${m.updated}: ${escapeHtml(new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(fetchedAt)))} UTC</p>` : ''}</section>`;
+function notes(values: NutritionTotals, fetchedAt?: string): string {
+  const shares = macroShares(values);
+  return `<section class="notes"><p>${m.macroExplanation}${shares ? ` ${m.macroEnergy}: ${value(shares.energy)} ${m.kcal}.` : ''} ${m.compactNotes}</p>${fetchedAt ? `<p>${m.updated}: ${escapeHtml(new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(fetchedAt)))} UTC.</p>` : ''}</section>`;
 }
-
 export function renderReportHtml(
   request: ReportRequest,
   dataset: ReportDataset,
@@ -109,36 +114,30 @@ export function renderReportHtml(
   const overview =
     dates.length === 1
       ? ''
-      : `<section class="day-source" data-overview="true" data-header="${escapeHtml(`${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)}`)}" data-footer="${m.summary}"><div class="day-summary">${introduction(m.periodTitle, `${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)} · ${m.completeness}: ${summary.availableDays} / ${summary.expectedDays}`)}${totals(summary.totals, summary.knownTotals)}${explanation()}</div></section>`;
+      : `<section class="day-source" data-overview="true" data-title="${m.periodTitle}" data-header="${escapeHtml(`${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)}`)}" data-footer="${m.summary}"><div class="day-start"><p class="counts">${m.completeness}: ${summary.availableDays} / ${summary.expectedDays}</p>${totals(summary.totals, summary.knownTotals)}${charts(summary.totals)}</div><div class="day-meals"></div>${notes(summary.totals)}</section>`;
   const sections = dates
-    .map((date, index) => {
+    .map((date) => {
       const day = dataset.days.find((candidate) => candidate.date === date);
       const dayTotals = day?.totals ?? unknownTotals;
-      const distribution = day ? mealShares(day) : null;
-      const mealTable = day
-        ? `<section class="summary-block meal-distribution"><h2>${m.distribution}</h2>${distribution?.percentages ? `<div class="bar meal-bar" role="img" aria-label="${m.distribution}">${meals.map((kind, mealIndex) => `<span class="segment" data-meal="${kind}" style="width:${distribution.percentages![mealIndex] ?? 0}%"></span>`).join('')}</div><p class="small-note">${distribution.recordedOnly ? m.recordedCalorieShare : m.dayCalorieShare}</p>` : `<p class="small-note">${m.noCalorieDistribution}</p>`}<div class="meal-summary-table"><div class="meal-summary-row meal-summary-head"><span></span><span></span>${keys.map((key) => `<span class="number" data-nutrient="${key}">${labels[key]}</span>`).join('')}</div>${meals
-            .map((kind, mealIndex) => {
-              const meal = day.meals.find(
-                (candidate) => candidate.kind === kind,
-              )!;
-              const share = distribution?.percentages?.[mealIndex];
-              return `<div class="meal-summary-row" data-meal="${kind}"><span class="meal-summary-name"><span class="meal-marker"></span>${m[kind]}</span><span class="meal-share numeric">${share === null || share === undefined ? m.unavailable : `${share}%`}</span>${keys.map((key) => `<span class="number numeric" data-nutrient="${key}">${value(meal.totals[key])}</span>`).join('')}</div>`;
-            })
-            .join('')}</div></section>`
-        : '';
+      const photos = dataset.photos.filter((photo) => photo.date === date);
+      const entries =
+        day?.meals.reduce((sum, meal) => sum + meal.entries.length, 0) ?? 0;
+      const mealsWithData =
+        day?.meals.filter(
+          (meal) =>
+            meal.entries.length ||
+            photos.some((photo) => photo.daytime === meal.kind),
+        ).length ?? photos.length;
       const details = meals
         .map((kind) => {
           const meal = day?.meals.find((candidate) => candidate.kind === kind);
-          const photo = dataset.photos.find(
-            (candidate) =>
-              candidate.date === date && candidate.daytime === kind,
-          );
-          if (!meal?.entries.length && !photo) return '';
-          return `<section class="meal-block" data-meal="${kind}" data-name="${m[kind]}"><div class="meal-heading"><h2>${m[kind]}</h2><span class="meal-calories numeric">${value(meal?.totals.calories ?? null)} ${m.kcal}</span></div><div class="meal-body${photo ? ' meal-body--with-photo' : ''}">${photo ? `<figure class="meal-photo"><img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}"></figure>` : ''}<div class="entries">${meal?.entries.length ? meal.entries.map(food).join('') : `<p class="empty">${m.empty}</p>`}</div></div></section>`;
+          const photo = photos.find((candidate) => candidate.daytime === kind);
+          if (!meal && !photo) return '';
+          return `<section class="meal-block" data-meal="${kind}" data-name="${m[kind]}"><div class="meal-heading"><h2>${m[kind]}</h2>${keys.map((key) => `<span class="meal-total number numeric" data-nutrient="${key}">${value(meal?.totals[key] ?? null)}</span>`).join('')}</div><div class="meal-body"><figure class="meal-media">${photo ? `<img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}">` : ''}</figure><div class="meal-entries">${meal?.entries.map(food).join('') ?? ''}</div></div></section>`;
         })
         .join('');
-      return `<section class="day-source" data-date="${date}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}"><div class="day-summary">${introduction(m.dayTitle, `${diaryDateLabel(date)}${dates.length > 1 ? ` · ${index + 1} / ${dates.length}` : ''}`)}${day ? (day.meals.every((meal) => meal.entries.length === 0) ? `<section class="summary-block empty">${m.empty}</section>` : '') : `<section class="summary-block empty">${m.missing}</section>`}${totals(dayTotals, day?.knownTotals)}${mealTable}${explanation(day?.fetchedAt)}</div><div class="day-details">${details}</div><section class="notes"><h2>${m.notesTitle}</h2><p>${m.notesText}</p></section></section>`;
+      return `<section class="day-source" data-date="${date}" data-title="${m.diary}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}"><div class="day-start"><p class="counts">${m.mealCount}: ${mealsWithData} · ${m.entryCount}: ${entries} · ${m.photoCount}: ${photos.length}</p>${!day ? `<p class="empty">${m.missing}</p>` : entries === 0 ? `<p class="empty">${m.empty}</p>` : ''}${totals(dayTotals, day?.knownTotals)}${charts(dayTotals, day)}</div><div class="day-meals">${columnHeaders()}${details}</div>${notes(dayTotals, day?.fetchedAt)}</section>`;
     })
     .join('');
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${reportCsp}"><title>${m.diary}</title>${fontFaces}</head><body><main id="report-source" data-title="${m.detailsTitle}" data-subtitle="${m.detailsSubtitle}" data-continued="${m.continued}" data-brand="${m.diary}" data-details-footer="${m.detailsFooter}">${overview}${sections}</main></body></html>`;
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${reportCsp}"><title>${m.diary}</title>${fontFaces}</head><body><main id="report-source" data-continued="${m.continued}">${overview}${sections}</main></body></html>`;
 }

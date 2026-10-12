@@ -28,9 +28,13 @@ Playwright is a production dependency and an external server package. Chromium m
 
 DejaVu 2.37 Sans regular/bold and Serif regular are bundled in `fonts/`, including the upstream license. No host font fallback or `PDF_FONT_PATH` is used. Font files and license are statically read for standalone tracing, each bounded to 2 MiB. No public report files or persistent browser process.
 
-The macro strip sits immediately below «Итоги дневника». Only the totals table shows percentages. Shares use calculated macro energy (4/9/4), separately from diary calories; largest remainders distribute tenths of a percent to exactly 100%. Missing, invalid or zero-energy macros hide the strip and show `—`. Source values remain unchanged.
+The compact daily layout uses 11.3 mm side margins, a 20 pt serif heading, four horizontal totals, two equal chart panels with 3.2 mm strips and one shared food table. The canonical four-meal, six-record, three-photo fixture fits one A4 without scaling or reducing individual font sizes. Period reports retain their aggregate overview and start each calendar day on a new page.
 
-One photo is selected per owner/calendar date/meal: the single YAZIO photo takes priority; otherwise the newest manual photo is used, with a stable ID tie-break. Existing stored photos are unchanged. Multiple upstream photos for one meal are invalid. Photos are never cropped and appear only on the first meal fragment. Pagination measures loaded content, splits long meals between entries and splits an oversized title only when a single record cannot fit a full page. It never shrinks fonts or clips overflow.
+Macro shares use calculated 4/9/4 energy, separately from diary calories. Diagram widths use unrounded decimal ratios; largest remainders distribute displayed tenths of a percent to exactly 100%. Missing, invalid or zero-energy macros hide the strip and show `—`. Source values remain unchanged, including source quantities, servings and zero consumed portions.
+
+One photo is selected per owner/calendar date/meal: the single YAZIO photo takes priority; otherwise the newest manual photo is used, with a stable ID tie-break. Existing stored photos are unchanged. Multiple upstream photos for one meal are invalid. Each thumbnail is a 31.75 mm square with centered `object-fit: cover`, preserving source orientation and proportions. Empty media cells keep their width but have zero height and no placeholder.
+
+Pagination loads all three fonts explicitly before measuring, decodes photos, keeps a meal intact when it fits a fresh page and splits oversized meals between entries. Continuations repeat the meal name and column labels, preserve the empty photo column and show neither the photo nor meal totals again. A single oversized title may continue across pages; its metadata and nutrients appear once, with numeric values at the first title line. Numeric column widths are measured without shrinking fonts; text is never clipped.
 
 CI installs the locked Chromium before Vitest and includes Poppler (`poppler-utils` on Debian; `poppler` on Homebrew), because the report integration test generates PDFs and inspects extracted Cyrillic, embedding, A4 geometry, image dimensions, every pages nonblank content and text clipping. No silent skip for missing runtime/tools.
 
@@ -46,4 +50,4 @@ The report form keeps controls disabled until hydration, so cold navigation cann
 
 Remaining integration limitation: source C must bound snapshot reads before JSON parsing; the report service validates the received data after those reads.
 
-`pdf-redesign.test.ts` verifies a three-page six-record synthetic example, no/four photos, long meals, an oversized title, large numbers, unknown/zero macros, real EXIF orientation and multiple dates. It checks real PDF text geometry and nonblank pages; `PDF_VERIFICATION_DIR` saves synthetic PDFs and selected page rasters for visual review.
+`pdf-redesign.test.ts` verifies a one-page six-record synthetic example, no/four photos, long meals, an oversized title, large numbers, unknown/zero macros, real EXIF orientation and multiple dates. It checks real PDF text geometry and nonblank pages; `PDF_VERIFICATION_DIR` saves synthetic PDFs and selected page rasters for visual review.

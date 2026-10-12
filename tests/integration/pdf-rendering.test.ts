@@ -16,7 +16,7 @@ const directory = await mkdtemp(join(tmpdir(), 'yazio-pdf-tests-'));
 afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
 });
-it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, correct image aspect and complete unclipped text on every page', async () => {
+it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, square image crop with preserved source aspect and complete unclipped text on every page', async () => {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -110,9 +110,13 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
         expect(
           content.replace(/\d+\s*\/\s*\d+/g, '').trim().length,
         ).toBeGreaterThan(20);
-      expect(
-        execFileSync('pdfimages', ['-list', filename], { encoding: 'utf8' }),
-      ).toMatch(/image\s+450\s+225/);
+      const embeddedImages = execFileSync('pdfimages', ['-list', filename], {
+        encoding: 'utf8',
+      });
+      const crop = embeddedImages.match(/image\s+(\d+)\s+(\d+)/)!;
+      expect(Math.abs(Number(crop[1]) - Number(crop[2]))).toBeLessThanOrEqual(
+        1,
+      );
       const bbox = execFileSync('pdftotext', ['-bbox', filename, '-'], {
         encoding: 'utf8',
       });
@@ -131,7 +135,7 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
               .replace(/^>/, ''),
           )
         )
-          expect(Number(match[4])).toBeLessThanOrEqual(774);
+          expect(Number(match[4])).toBeLessThanOrEqual(784);
       }
       if (process.env.PDF_VERIFICATION_DIR && period === 'daily') {
         await writeFile(
@@ -184,7 +188,7 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, corr
         (image as HTMLImageElement).naturalWidth /
         (image as HTMLImageElement).naturalHeight,
     }));
-    expect(image).toEqual({ fit: 'contain', ratio: 2 });
+    expect(image).toEqual({ fit: 'cover', ratio: 2 });
     await preview.emulateMedia({ media: 'screen' });
     if (process.env.PDF_VERIFICATION_DIR)
       await preview.screenshot({
