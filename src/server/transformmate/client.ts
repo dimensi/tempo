@@ -200,7 +200,10 @@ export function createTransformMateClient(options: {
     const parsed = schema.safeParse(response.body);
     if (!response.isJson || !parsed.success) {
       // Do not expose payload values or validation issues in errors.
-      throw new TransformMateResponseError(path, response.status);
+      throw new TransformMateResponseError(
+        path.split('?')[0]!,
+        response.status,
+      );
     }
     return { ...response, body: parsed.data };
   }
