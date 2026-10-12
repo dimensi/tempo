@@ -35,6 +35,13 @@ function setup() {
 }
 const query = { from: '2026-01-01', to: '2026-01-31', limit: 50 };
 describe('native readonly importer', () => {
+  it('rejects unbounded date windows before provider reads', async () => {
+    const { service, client } = setup();
+    await expect(
+      service.refresh({ from: '2025-01-01', to: '2026-12-31', limit: 20 }),
+    ).rejects.toThrow();
+    expect(client.getTrainings).not.toHaveBeenCalled();
+  });
   it('deduplicates provider IDs and coalesces refresh without write methods', async () => {
     const { service, client, repository } = setup();
     client.getTrainings.mockResolvedValue({

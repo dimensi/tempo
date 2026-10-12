@@ -17,12 +17,26 @@ workouts, without a separate confirmation. Copying a plan shifts calendar dates,
 workout/occurrence IDs and copies planned sets/comments only. Recurring plans and uploaded videos
 are outside this change.
 
+The dashboard uses one day-oriented workout stream rather than separate plan/history modes. Each
+workout shows ordered exercises and planned/performed sets together; TransformMate is a source and
+sync status on the workout, not a different editing mode. OWNER can record local facts, while a
+granted TRAINER can prepare plans. Provider-native workouts are read-only cards and expose no
+start, finish or fact mutation controls.
+
 ## Persistence and recovery
 
 Migration `0005_ambitious_whirlwind` adds only `workout_transformmate_links`. Owner FK and scoped
 unique indexes enforce one link per owner/plan/workout and one remote ID per owner. Local plan
 deletion keeps links, immutable original plan snapshots and imported actual results. Deleting the
 owner removes their records. Orphan history still requires the current owner or trainer grant.
+
+Migration `0007_third_ultragirl` adds only `workout_transformmate_native`. It stores a bounded,
+validated read-only projection with a stable opaque account scope, provider training ID, local
+revision and freshness timestamps. Owner/account/provider uniqueness prevents duplicate cards;
+date indexing supports local filtering and cursor pagination. Switching provider accounts retains
+old rows but excludes them from the active scope. Disconnect keeps the last account binding so
+cached history remains readable under normal owner/trainer authorization. Missing or incomplete
+provider listings never delete cached history, and owner deletion cascades it.
 
 Plan data and initial/reconciled publication intents commit in one short SQLite transaction.
 While `attempted=false` and the remote ID is null, edits replace the pending snapshot under
@@ -83,14 +97,25 @@ UI additionally checks catalog exercise ID and local occurrence key before placi
 a planned set. Unknown/range/empty values are retained without invented numeric results. Manual
 sessions and their original snapshots are unchanged.
 
-`GET /api/workouts/transformmate?ownerId=…` reads the scoped local status/results. Same-origin POST
-refreshes provider results and verifies ambiguous attempts; eligible never-attempted intents can
-publish under current plan permission. The visible dashboard refreshes on load, focus and every
-60 seconds; there is no recurring workout creation or new background scheduler.
+`GET /api/workouts/transformmate?ownerId=…&from=…&to=…&limit=…` reads scoped local linked and
+provider-native history. Cursor pagination is local; the upstream SDK exposes one complete summary
+array rather than verified date/page parameters. Same-origin POST first refreshes linked results
+and verifies ambiguous attempts, then reads at most 20 native details for the requested page.
+Native records never create a local plan/link/intent and never enter the provider write engine.
+Eligible never-attempted local intents can still publish under current plan permission. The visible
+dashboard coalesces load/focus/visibility/60-second refreshes; there is no recurring workout
+creation or new background scheduler.
 
 ## Catalog and video
 
 Owner/granted trainer routes return safe catalog and detail DTOs. Search returns at most 50 items.
+The complete short catalog is cached for five minutes per owner connection and locale, with one
+in-flight request shared by concurrent searches. Typing filters the local index; it does not issue
+a provider request for every 250 ms input change. HTTP 429 establishes a bounded cooldown using a
+parsed Retry-After value, while failures remain explicit instead of becoming an empty result.
+The verified short payload guarantees name/metrics only. Alternative names are searchable after
+that exercise detail has been requested during the current cache lifetime; no bulk detail or video
+prefetch is used, and unsupported group fields are not invented.
 The server checks detailed straight-metric capability before publication. Provider responses and
 media URLs never reach the browser. Read-only verification found 1 098 catalog items and direct
 MP4 variants at the exact HTTPS host `kinescopecdn.net`. Anonymous HEAD returned 200 video/mp4

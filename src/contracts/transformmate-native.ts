@@ -90,7 +90,16 @@ export const transformMateNativeQuerySchema = z
     cursor: z.string().max(256).optional(),
     limit: z.coerce.number().int().min(1).max(50).default(20),
   })
-  .refine((value) => value.from <= value.to, { message: 'Invalid date range' });
+  .refine((value) => value.from <= value.to, {
+    message: 'Invalid date range',
+  })
+  .refine(
+    (value) =>
+      Date.parse(`${value.to}T00:00:00Z`) -
+        Date.parse(`${value.from}T00:00:00Z`) <=
+      366 * 24 * 60 * 60 * 1000,
+    { message: 'Date range is too large' },
+  );
 export type TransformMateNativeQuery = z.infer<
   typeof transformMateNativeQuerySchema
 >;
