@@ -1,3 +1,4 @@
+'use client';
 import { Badge, Group, Paper, Stack, Table, Text, Title } from '@mantine/core';
 import type { WeightHistory } from '@/contracts/health';
 import { formatDecimal } from '@/lib/number-display';
@@ -35,12 +36,16 @@ export function WeightHistoryPanel({ history }: { history: WeightHistory }) {
         ) : (
           <Table.ScrollContainer minWidth={300}>
             <Table style={{ fontSize: 16 }}>
-              <Table.Caption>{m.unknownUnit}</Table.Caption>
+              <Table.Caption
+                style={{ fontSize: 16, color: 'var(--mantine-color-text)' }}
+              >
+                {m.weight}: {history.range.from} — {history.range.to}
+              </Table.Caption>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>{m.date}</Table.Th>
                   <Table.Th>{m.value}</Table.Th>
-                  <Table.Th>{m.source}</Table.Th>
+                  <Table.Th style={{ width: 100 }}>{m.source}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -52,7 +57,24 @@ export function WeightHistoryPanel({ history }: { history: WeightHistory }) {
                       <Text>{record.unit}</Text>
                     </Table.Td>
                     <Table.Td>
-                      <Badge size="lg" variant="outline">
+                      <Badge
+                        size="lg"
+                        variant="outline"
+                        styles={{
+                          label: {
+                            flexShrink: 0,
+                            overflow: 'visible',
+                            textOverflow: 'clip',
+                          },
+                        }}
+                        style={{
+                          fontSize: 16,
+                          textTransform: 'none',
+                          maxWidth: 'none',
+                          color: 'var(--mantine-color-text)',
+                          borderColor: 'var(--mantine-color-text)',
+                        }}
+                      >
                         {record.source === 'LOCAL' ? m.local : 'YAZIO'}
                       </Badge>
                     </Table.Td>
