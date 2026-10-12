@@ -1,0 +1,69 @@
+'use client';
+import { useEffect, useState } from 'react';
+import { Alert, Skeleton } from '@mantine/core';
+import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
+import { stepsSummarySchema, type StepsSummary } from '@/contracts/health';
+import { StepsPanel } from './steps-panel';
+import { healthMessages as m } from './messages';
+
+export function HealthOverviewSteps() {
+  const [resource, setResource] = useState<{
+    data: StepsSummary | null;
+    error: number | null;
+  }>({ data: null, error: null });
+  useEffect(() => {
+    let controller: AbortController;
+    let timer: ReturnType<typeof setTimeout>;
+    function refresh() {
+      controller?.abort();
+      controller = new AbortController();
+      const active = controller;
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const today = dateInTimezone(new Date(), timezone);
+      const range = { from: shiftDate(today, -6), to: today };
+      setResource({ data: null, error: null });
+      fetch(`/api/health/steps?from=${range.from}&to=${range.to}`, {
+        signal: active.signal,
+        cache: 'no-store',
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(String(response.status));
+          const data = stepsSummarySchema.parse(await response.json());
+          if (data.range.from !== range.from || data.range.to !== range.to)
+            throw new Error('500');
+          if (!active.signal.aborted) setResource({ data, error: null });
+        })
+        .catch((error) => {
+          if (!active.signal.aborted)
+            setResource({ data: null, error: Number(error.message) || 500 });
+        });
+      clearTimeout(timer);
+      const midnight = new Date();
+      midnight.setHours(24, 0, 0, 50);
+      timer = setTimeout(refresh, midnight.getTime() - Date.now());
+    }
+    function visible() {
+      if (document.visibilityState === 'visible') refresh();
+    }
+    refresh();
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, []);
+  if (resource.error)
+    return (
+      <Alert color={resource.error === 403 ? 'orange' : 'red'} role="alert">
+        {resource.error === 403 ? m.forbidden : m.unavailable}
+      </Alert>
+    );
+  return resource.data ? (
+    <StepsPanel summary={resource.data} compact />
+  ) : (
+    <Skeleton height={240} aria-label={m.loading} />
+  );
+}
