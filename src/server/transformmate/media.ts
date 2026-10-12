@@ -36,7 +36,7 @@ export async function streamExerciseVideo(
         headers: range ? { Range: range } : {},
         redirect: 'error',
         cache: 'no-store',
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.any([request.signal, AbortSignal.timeout(30000)]),
       });
     } catch {
       throw new CatalogError(502);
@@ -55,11 +55,40 @@ export async function streamExerciseVideo(
       await upstream.body?.cancel();
       throw new CatalogError(502);
     }
+    const contentRange = upstream.headers.get('content-range');
+    if (upstream.status === 206) {
+      const match = contentRange?.match(
+        /^bytes ([0-9]{1,16})-([0-9]{1,16})\/([0-9]{1,16})$/,
+      );
+      const [start, end, total] = match?.slice(1).map(Number) ?? [];
+      if (
+        !range ||
+        !match ||
+        ![start, end, total].every(Number.isSafeInteger) ||
+        start! > end! ||
+        end! >= total!
+      ) {
+        await upstream.body?.cancel();
+        throw new CatalogError(502);
+      }
+    }
     const headers = new Headers(privateHeaders);
-    if (upstream.status !== 416) headers.set('Content-Type', 'video/mp4');
-    for (const key of ['content-length', 'content-range', 'accept-ranges']) {
-      const value = upstream.headers.get(key);
-      if (value && /^[a-zA-Z0-9 */=.-]+$/.test(value)) headers.set(key, value);
+    if (upstream.status === 416) {
+      const match = contentRange?.match(/^bytes \*\/([0-9]{1,16})$/);
+      if (match && Number.isSafeInteger(Number(match[1])))
+        headers.set('Content-Range', contentRange!);
+    } else {
+      headers.set('Content-Type', 'video/mp4');
+      const length = upstream.headers.get('content-length');
+      if (
+        length &&
+        /^[0-9]{1,16}$/.test(length) &&
+        Number.isSafeInteger(Number(length))
+      )
+        headers.set('Content-Length', length);
+      if (upstream.status === 206) headers.set('Content-Range', contentRange!);
+      if (upstream.headers.get('accept-ranges') === 'bytes')
+        headers.set('Accept-Ranges', 'bytes');
     }
     if (request.method === 'HEAD' || upstream.status === 416)
       await upstream.body?.cancel();

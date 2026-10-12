@@ -9,7 +9,11 @@ vi.mock('@/server/auth/guards', () => ({ authorize: mocks.authorize }));
 vi.mock('@/server/transformmate/runtime', () => ({
   getTransformMateClient: () => mocks,
 }));
-import { listExercises, exerciseInfo } from '@/server/transformmate/catalog';
+import {
+  listExercises,
+  exerciseInfo,
+  catalogResponse,
+} from '@/server/transformmate/catalog';
 import {
   streamExerciseVideo,
   selectMediaUrl,
@@ -228,5 +232,118 @@ describe('bounded upstream JSON', () => {
     );
     expect(cancel).toHaveBeenCalledOnce();
     expect(sent).toBeLessThanOrEqual(18);
+  });
+});
+
+describe('bounded search and localized errors', () => {
+  it('limits matched results to 50', async () => {
+    mocks.listExercises.mockResolvedValue({
+      body: Array.from({ length: 70 }, (_, id) => ({
+        id: id + 1,
+        name: 'Squat',
+        metrics: [],
+      })),
+    });
+    expect(await listExercises(new Headers(), 'owner', 'squ')).toHaveLength(50);
+  });
+  it('uses a Russian error without upstream details', async () => {
+    const response = await catalogResponse(async () => {
+      throw new Error(signed);
+    });
+    expect(await response.json()).toEqual({
+      error: 'Не удалось загрузить данные TransformMate. Попробуйте позже.',
+    });
+  });
+});
+describe('range response validation and cancellation', () => {
+  it.each([
+    null,
+    'bytes */30',
+    'bytes 5-2/30',
+    'bytes 0-30/30',
+    'bytes 0-2/*',
+    'bytes 0-2/9007199254740992',
+  ])('rejects invalid 206 range %s', async (contentRange) => {
+    const headers = new Headers({ 'Content-Type': 'video/mp4' });
+    if (contentRange) headers.set('Content-Range', contentRange);
+    const upstream = vi
+      .fn()
+      .mockResolvedValue(new Response('abc', { status: 206, headers }));
+    expect(
+      (
+        await streamExerciseVideo(
+          new Request('https://app.test/video?ownerId=owner', {
+            headers: { Range: 'bytes=0-2' },
+          }),
+          '501',
+          upstream,
+        )
+      ).status,
+    ).toBe(502);
+  });
+  it('rejects unsolicited 206 responses', async () => {
+    const upstream = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('abc', {
+          status: 206,
+          headers: {
+            'Content-Type': 'video/mp4',
+            'Content-Range': 'bytes 0-2/30',
+          },
+        }),
+      );
+    expect(
+      (
+        await streamExerciseVideo(
+          new Request('https://app.test/video?ownerId=owner'),
+          '501',
+          upstream,
+        )
+      ).status,
+    ).toBe(502);
+  });
+  it('strips upstream error-body length on 416', async () => {
+    const upstream = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('error payload', {
+          status: 416,
+          headers: {
+            'Content-Length': '13',
+            'Content-Range': 'bytes */30',
+            'Content-Type': 'text/plain',
+          },
+        }),
+      );
+    const response = await streamExerciseVideo(
+      new Request('https://app.test/video?ownerId=owner', {
+        headers: { Range: 'bytes=50-' },
+      }),
+      '501',
+      upstream,
+    );
+    expect(response.status).toBe(416);
+    expect(response.body).toBeNull();
+    expect(response.headers.has('content-length')).toBe(false);
+    expect(response.headers.get('content-range')).toBe('bytes */30');
+    expect(response.headers.has('content-type')).toBe(false);
+  });
+  it('forwards client abort to upstream fetch', async () => {
+    const abort = new AbortController();
+    let signal: AbortSignal | undefined;
+    const upstream = vi.fn().mockImplementation(async (_url, init) => {
+      signal = init.signal;
+      abort.abort();
+      return new Response(null, { headers: { 'Content-Type': 'video/mp4' } });
+    });
+    await streamExerciseVideo(
+      new Request('https://app.test/video?ownerId=owner', {
+        signal: abort.signal,
+      }),
+      '501',
+      upstream,
+    );
+    expect(signal?.aborted).toBe(true);
   });
 });

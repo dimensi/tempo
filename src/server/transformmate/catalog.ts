@@ -1,5 +1,6 @@
 import 'server-only';
 import { z } from 'zod';
+import { transformMateMessages } from '@/server/transformmate/messages';
 import { authorize } from '@/server/auth/guards';
 import { getTransformMateClient } from '@/server/transformmate/runtime';
 import { canPlanExercise } from '@/server/transformmate/catalog-schema';
@@ -39,6 +40,7 @@ export async function listExercises(
   await requireCatalogAccess(headers, ownerId);
   return result.body
     .filter((e) => !q || e.name.toLocaleLowerCase('ru').includes(q))
+    .slice(0, 50)
     .map((e) =>
       transformMateCatalogItemSchema.parse({
         id: e.id,
@@ -82,7 +84,7 @@ export async function catalogResponse(operation: () => Promise<unknown>) {
     );
   } catch (error) {
     return Response.json(
-      { error: 'TransformMate unavailable' },
+      { error: transformMateMessages.unavailable },
       {
         status:
           error instanceof CatalogError
