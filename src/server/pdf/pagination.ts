@@ -121,10 +121,13 @@ export async function paginateReport(page: Page): Promise<void> {
       const media = document.createElement('figure');
       media.className = 'meal-media';
       const photo = first ? meal.querySelector('img') : null;
-      if (photo) media.append(copy(photo));
+      if (photo) {
+        media.append(copy(photo));
+        body.append(media);
+      }
       const entries = document.createElement('div');
       entries.className = 'meal-entries';
-      body.append(media, entries);
+      body.append(entries);
       block.append(heading, body);
       return { block, entries };
     }
