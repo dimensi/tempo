@@ -1,3 +1,4 @@
+import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { nutritionDaySchema } from '@/contracts/nutrition';
@@ -23,8 +24,7 @@ async function login(page: Page, role: 'owner' | 'trainer') {
     await new Promise((resolve) => setTimeout(resolve, (seconds + 1) * 1000));
   }
   await expect(page).toHaveURL('/');
-  return (await (await page.request.get('/api/auth/get-session')).json()).user
-    .id as string;
+  return (await getSessionWith429Retry(page.request)).user.id;
 }
 
 test('selected-day owner refresh deduplicates, separates photo warnings and ignores late navigation; trainer cannot refresh', async ({

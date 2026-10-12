@@ -1,3 +1,4 @@
+import { getSignedOutSessionWith429Retry } from './auth-session';
 import Database from 'better-sqlite3';
 import { test, expect, type Response } from '@playwright/test';
 import { build } from 'esbuild';
@@ -402,9 +403,7 @@ test('physical storage failure never prevents sign-in or sign-out and leaves dur
         JSON.parse(localStorage.getItem('yazio.offline.block.v1')!).disabled,
     ),
   ).toBe(true);
-  expect(
-    await (await page.request.get('/api/auth/get-session')).json(),
-  ).toBeNull();
+  expect(await getSignedOutSessionWith429Retry(page.request)).toBeNull();
 });
 test('offline read-only view renders all synthetic stored sections without mutation controls', async ({
   page,

@@ -1,3 +1,4 @@
+import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
 
 async function login(page: Page, role: 'owner' | 'trainer', origin: string) {
@@ -20,8 +21,7 @@ async function login(page: Page, role: 'owner' | 'trainer', origin: string) {
     response = await signIn();
   }
   expect(response.ok()).toBe(true);
-  return (await (await page.request.get('/api/auth/get-session')).json()).user
-    .id as string;
+  return (await getSessionWith429Retry(page.request)).user.id;
 }
 
 test('owner denial explains access and retains the complete draft', async ({
