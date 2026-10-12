@@ -1,4 +1,4 @@
-# Питание и движение
+# Темпо
 
 Original application identity: an open plate/orbit, an ascending leaf and a lime
 motion accent. This is independent branding, not the YAZIO identity.

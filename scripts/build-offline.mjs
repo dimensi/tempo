@@ -1,4 +1,5 @@
 import { build } from 'esbuild';
+import { ru } from '../src/config/messages.ts';
 import { createHash } from 'node:crypto';
 import {
   mkdir,
@@ -36,6 +37,6 @@ const files = (await readdir(directory)).sort();
 const js = files.find((file) => file.endsWith('.js'));
 const css = files.find((file) => file.endsWith('.css'));
 if (!js || !css) throw new Error('Offline assets missing');
-const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Offline-чтение · Питание и движение</title><link rel="stylesheet" href="/offline/assets/${css}"></head><body><div id="offline-root"></div><script type="module" src="/offline/assets/${js}"></script></body></html>`;
+const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Offline-чтение · ${ru.appName}</title><link rel="stylesheet" href="/offline/assets/${css}"></head><body><div id="offline-root"></div><script type="module" src="/offline/assets/${js}"></script></body></html>`;
 await writeFile(`${root}/index.html`, html);
 console.info(`Offline reader: ${files.length} static assets`);
