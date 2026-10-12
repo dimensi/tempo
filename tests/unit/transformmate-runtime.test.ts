@@ -14,6 +14,7 @@ vi.mock('@/server/env', () => ({
 }));
 import {
   configuredTransformMateStore,
+  getTransformMateBindingFence,
   getTransformMateClient,
   getTransformMateConnectionFence,
   invalidateTransformMateClient,
@@ -212,4 +213,35 @@ it('returns a coherent client/fence pair when a disconnected owner connects', as
   expect(connection?.client).toBe(await getTransformMateClient('owner'));
   await connection!.client.getMe();
   await connection!.assertCurrent();
+});
+
+it('keeps a stable opaque account scope across token rotation and disconnect', async () => {
+  const store = await connected();
+  const connectedBinding = await getTransformMateBindingFence('owner');
+  const connection = await getTransformMateConnectionFence('owner');
+  expect(connectedBinding.accountScope).toMatch(/^[a-f0-9]{64}$/);
+  expect(connection?.accountScope).toBe(connectedBinding.accountScope);
+
+  const current = (await store.load()).token!;
+  await store.save({ ...current, refreshToken: 'rotated-token' });
+  expect((await getTransformMateBindingFence('owner')).accountScope).toBe(
+    connectedBinding.accountScope,
+  );
+
+  await store.load();
+  await store.disconnect();
+  const disconnected = await getTransformMateBindingFence('owner');
+  expect(disconnected).toMatchObject({
+    configured: false,
+    accountScope: connectedBinding.accountScope,
+  });
+  await disconnected.assertCurrent();
+});
+
+it('fences cached account history when the encrypted binding changes', async () => {
+  const store = await connected();
+  const binding = await getTransformMateBindingFence('owner');
+  await store.load();
+  await store.disconnect();
+  await expect(binding.assertCurrent()).rejects.toThrow('connection changed');
 });

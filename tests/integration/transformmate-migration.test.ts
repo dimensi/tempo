@@ -126,6 +126,36 @@ it.each(['fresh', 'existing'] as const)(
       link('pending1', 'pending1', null);
       link('pending2', 'pending2', null);
       expect(() => link('foreign-owner', 'foreign', null, 'missing')).toThrow();
+      const native = sql.prepare(
+        'INSERT INTO workout_transformmate_native(id,owner_id,account_scope,remote_training_id,date,revision,snapshot,fetched_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      );
+      const nativeRow = (
+        id: string,
+        scope: string,
+        remoteId: number,
+        revision = 1,
+      ) =>
+        native.run(
+          id,
+          'owner',
+          scope,
+          remoteId,
+          '2026-10-12',
+          revision,
+          '{}',
+          '2026-10-12T00:00:00.000Z',
+          '2026-10-12T00:00:00.000Z',
+          '2026-10-12T00:00:00.000Z',
+        );
+      nativeRow('native1', 'a'.repeat(64), 777);
+      expect(() =>
+        nativeRow('duplicate-native', 'a'.repeat(64), 777),
+      ).toThrow();
+      nativeRow('other-account', 'b'.repeat(64), 777);
+      expect(() => nativeRow('invalid-remote', 'a'.repeat(64), 0)).toThrow();
+      expect(() =>
+        nativeRow('invalid-revision', 'a'.repeat(64), 778, 0),
+      ).toThrow();
       sql.prepare('DELETE FROM workout_plans WHERE id=?').run('plan');
       expect(
         sql
@@ -135,12 +165,22 @@ it.each(['fresh', 'existing'] as const)(
       expect(sql.prepare('SELECT data FROM workout_sessions').get()).toEqual({
         data: session,
       });
+      expect(
+        sql
+          .prepare('SELECT count(*) AS count FROM workout_transformmate_native')
+          .get(),
+      ).toEqual({ count: 2 });
       expect(sql.pragma('foreign_key_check')).toEqual([]);
       expect(sql.pragma('integrity_check', { simple: true })).toBe('ok');
       sql.prepare('DELETE FROM user WHERE id=?').run('owner');
       expect(
         sql
           .prepare('SELECT count(*) AS count FROM workout_transformmate_links')
+          .get(),
+      ).toEqual({ count: 0 });
+      expect(
+        sql
+          .prepare('SELECT count(*) AS count FROM workout_transformmate_native')
           .get(),
       ).toEqual({ count: 0 });
     } finally {
