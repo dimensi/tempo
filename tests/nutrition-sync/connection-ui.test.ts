@@ -550,3 +550,371 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     });
   }
 }, 120000);
+
+it.each(['desktop', 'mobile'])(
+  'real owner saves six body fields, pulls without echo, resolves lost POST and outage, and retains real trainer denials (%s)',
+  async (surface) => {
+    const { writeFile } = await import('node:fs/promises');
+    const controlPath = './.data/e2e-yazio-body-control.json',
+      statePath = './.data/e2e-yazio-body-state.json';
+    const env: NodeJS.ProcessEnv = {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      TMPDIR: process.env.TMPDIR,
+      NODE_ENV: 'development',
+      DATABASE_URL: 'file:./.data/e2e.sqlite',
+      BETTER_AUTH_URL: origin,
+      BETTER_AUTH_SECRET: 'offline-production-synthetic-secret-1234567890',
+      YAZIO_TOKEN_FILE: tokenPath,
+      UPLOADS_DIR: './.data/e2e-nutrition-uploads',
+      DEMO_MODE: 'false',
+    };
+    await unlink(tokenPath).catch(() => {});
+    execFileSync('pnpm', ['exec', 'tsx', 'scripts/prepare-e2e.ts'], {
+      env,
+      stdio: 'pipe',
+    });
+    const control = {
+      runId: 'six-body-fields',
+      mode: 'healthy',
+      version: 1,
+      remoteUpdates: {} as Record<string, number>,
+    };
+    const setControl = () => writeFile(controlPath, JSON.stringify(control));
+    await setControl();
+    let server: ChildProcess | undefined, browser: Browser | undefined;
+    try {
+      server = spawn(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          'tests/offline/production-runner.ts',
+          'nutrition-connection',
+        ],
+        { env, stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      server.stdout!.resume();
+      server.stderr!.resume();
+      let ready = false;
+      for (let index = 0; index < 120; index++) {
+        if (server.exitCode !== null)
+          throw new Error('Synthetic body production server exited');
+        if (await readyResponse()) {
+          ready = true;
+          break;
+        }
+        await delay(500);
+      }
+      expect(ready).toBe(true);
+      browser = await chromium.launch({
+        args: ['--ignore-certificate-errors'],
+      });
+      const owner = await browser.newPage({
+        ignoreHTTPSErrors: true,
+        serviceWorkers: 'block',
+        timezoneId: 'UTC',
+        ...(surface === 'mobile'
+          ? {
+              viewport: { width: 390, height: 844 },
+              isMobile: true,
+              hasTouch: true,
+            }
+          : {}),
+      });
+      await owner.goto(origin + '/login');
+      await owner.getByLabel('Электронная почта').fill('owner@example.test');
+      await owner
+        .getByRole('textbox', { name: 'Пароль', exact: true })
+        .fill('Test-only-password-12345');
+      await owner.getByRole('button', { name: 'Войти', exact: true }).click();
+      await owner.waitForURL(origin + '/');
+      const ownerId = JSON.parse(
+        execFileSync(
+          process.execPath,
+          [
+            '--conditions=react-server',
+            '--import',
+            'tsx',
+            'tests/nutrition-sync/e2e-fixture.ts',
+            'grant',
+          ],
+          { env, encoding: 'utf8' },
+        ),
+      ).ownerId as string;
+      const today = await owner.evaluate(() =>
+        new Intl.DateTimeFormat('sv-SE').format(new Date()),
+      );
+      const scope = `ownerId=${encodeURIComponent(ownerId)}`;
+      const historical = await owner.request.post(
+        origin + '/api/measurements?' + scope,
+        {
+          headers: { origin },
+          data: {
+            measuredAt: '2026-01-01',
+            values: [{ metric: 'weight', value: '75', unit: 'kg' }],
+            note: 'Historical local only',
+          },
+        },
+      );
+      expect(historical.status()).toBe(201);
+      const connected = await owner.request.post(
+        origin + '/api/yazio/connect',
+        {
+          headers: { origin },
+          data: {
+            email: 'synthetic-yazio@example.test',
+            password,
+            timezone: 'UTC',
+            initialFrom: today,
+          },
+        },
+      );
+      expect(connected.ok()).toBe(true);
+      const state = async () =>
+        JSON.parse(await readFile(statePath, 'utf8')) as {
+          creates: number;
+          updates: number;
+          entries: Record<
+            string,
+            { id: string; value: number; date: string }[]
+          >;
+        };
+      expect((await state()).creates).toBe(0);
+      await owner.goto(origin + '/measurements');
+      const main = owner.getByRole('main');
+      const measurementDate = owner.getByRole('main').getByLabel('Дата замера');
+      await measurementDate.waitFor();
+      expect(await measurementDate.count()).toBe(1);
+      await measurementDate.fill(today);
+      for (const [label, value] of [
+        ['Вес (кг)', '80.5'],
+        ['Талия (см)', '90'],
+        ['Грудь (см)', '100'],
+        ['Бёдра (см)', '95'],
+        ['Бедро (см)', '55'],
+        ['Бицепс (обхват плеча) (см)', '35'],
+        ['Шея (см)', '40'],
+      ]) {
+        const field = main.getByLabel(label!, { exact: true });
+        expect(await field.count()).toBe(1);
+        await field.fill(value!);
+      }
+      await main
+        .getByLabel('Заметка', { exact: true })
+        .fill('Keep neck and note');
+      await main
+        .getByRole('button', { name: 'Сохранить', exact: true })
+        .click();
+      const records = async () =>
+        (await (
+          await owner.request.get(origin + '/api/measurements?' + scope)
+        ).json()) as {
+          id: string;
+          measuredAt: string;
+          note: string | null;
+          values: { metric: string; value: string }[];
+          sync: { metric: string; state: string }[];
+        }[];
+      await expect
+        .poll(
+          async () =>
+            (await records())
+              .find((row) => row.note === 'Keep neck and note')
+              ?.sync.filter((s) => s.state === 'synced').length,
+          { timeout: 15000 },
+        )
+        .toBe(6);
+      let saved = (await records()).find(
+        (row) => row.note === 'Keep neck and note',
+      )!;
+      expect(saved.values).toHaveLength(7);
+      expect((await state()).creates).toBe(6);
+      expect(Object.keys((await state()).entries).sort()).toEqual(
+        [
+          'circumference.arm',
+          'circumference.chest',
+          'circumference.hip',
+          'circumference.thigh',
+          'circumference.waist',
+          'weight',
+        ].sort(),
+      );
+      const weightId = (await state()).entries.weight![0]!.id;
+      control.version++;
+      control.remoteUpdates = { [weightId]: 79.5 };
+      await setControl();
+      expect(
+        (
+          await owner.request.post(origin + '/api/yazio/sync', {
+            headers: { origin },
+            data: { mode: 'period', from: today, timezone: 'UTC' },
+          })
+        ).ok(),
+      ).toBe(true);
+      saved = (await records()).find((row) => row.id === saved.id)!;
+      expect(saved.values.find((v) => v.metric === 'weight')?.value).toBe(
+        '79.5',
+      );
+      expect(saved.values.find((v) => v.metric === 'neck')?.value).toBe('40');
+      expect(saved.note).toBe('Keep neck and note');
+      expect((await state()).creates).toBe(6);
+      expect((await state()).updates).toBe(0);
+      control.mode = 'post_lost';
+      await setControl();
+      const lost = await owner.request.post(
+        origin + '/api/measurements?' + scope,
+        {
+          headers: { origin },
+          data: {
+            measuredAt: today,
+            values: [{ metric: 'waist', value: '91', unit: 'cm' }],
+            note: 'Lost POST',
+          },
+        },
+      );
+      const lostId = (await lost.json()).id as string;
+      await expect
+        .poll(
+          async () =>
+            (await records()).find((row) => row.id === lostId)?.sync[0]?.state,
+          { timeout: 15000 },
+        )
+        .toBe('uncertain');
+      const before = (await state()).creates;
+      control.mode = 'healthy';
+      await setControl();
+      expect(
+        (
+          await owner.request.post(
+            origin + `/api/measurements/${lostId}/retry?` + scope,
+            { headers: { origin } },
+          )
+        ).ok(),
+      ).toBe(true);
+      await expect
+        .poll(
+          async () =>
+            (await records()).find((row) => row.id === lostId)?.sync[0]?.state,
+          { timeout: 15000 },
+        )
+        .toBe('synced');
+      expect((await state()).creates).toBe(before);
+      control.mode = 'outage';
+      await setControl();
+      const changed = {
+        measuredAt: today,
+        values: saved.values.map((v) => ({
+          ...v,
+          unit: v.metric === 'weight' ? 'kg' : 'cm',
+          value: v.metric === 'weight' ? '81' : v.value,
+        })),
+        note: saved.note,
+      };
+      expect(
+        (
+          await owner.request.put(
+            origin + `/api/measurements/${saved.id}?` + scope,
+            { headers: { origin }, data: changed },
+          )
+        ).ok(),
+      ).toBe(true);
+      await expect
+        .poll(
+          async () =>
+            (await records())
+              .find((row) => row.id === saved.id)
+              ?.sync.find((s) => s.metric === 'weight')?.state,
+          { timeout: 15000 },
+        )
+        .toBe('failed');
+      control.mode = 'healthy';
+      await setControl();
+      await owner.goto(origin + '/measurements');
+      await main
+        .getByRole('row')
+        .filter({ hasText: 'Keep neck and note' })
+        .getByRole('button', { name: 'Повторить отправку', exact: true })
+        .click();
+      await expect
+        .poll(
+          async () =>
+            (await records())
+              .find((row) => row.id === saved.id)
+              ?.sync.find((s) => s.metric === 'weight')?.state,
+          { timeout: 15000 },
+        )
+        .toBe('synced');
+      expect((await state()).updates).toBe(1);
+      const trainer = await browser.newPage({
+        ignoreHTTPSErrors: true,
+        serviceWorkers: 'block',
+      });
+      await trainer.goto(origin + '/login');
+      await trainer
+        .getByLabel('Электронная почта')
+        .fill('trainer@example.test');
+      await trainer
+        .getByRole('textbox', { name: 'Пароль', exact: true })
+        .fill('Test-only-password-12345');
+      await trainer.getByRole('button', { name: 'Войти', exact: true }).click();
+      await trainer.waitForURL(origin + '/');
+      expect(
+        (
+          await trainer.request.get(origin + '/api/measurements?' + scope)
+        ).status(),
+      ).toBe(200);
+      expect(
+        (
+          await trainer.request.post(
+            origin + `/api/measurements/${saved.id}/retry?` + scope,
+            { headers: { origin } },
+          )
+        ).status(),
+      ).toBe(403);
+      expect(
+        (
+          await trainer.request.post(origin + '/api/measurements?' + scope, {
+            headers: { origin },
+            data: changed,
+          })
+        ).status(),
+      ).toBe(403);
+      execFileSync(
+        process.execPath,
+        [
+          '--conditions=react-server',
+          '--import',
+          'tsx',
+          'tests/nutrition-sync/e2e-fixture.ts',
+          'revoke',
+        ],
+        { env, stdio: 'pipe' },
+      );
+      expect(
+        (
+          await trainer.request.get(origin + '/api/measurements?' + scope)
+        ).status(),
+      ).toBe(403);
+      expect(
+        (
+          await trainer.request.get(origin + '/api/measurements/sync?' + scope)
+        ).status(),
+      ).toBe(403);
+    } finally {
+      await browser?.close();
+      if (server && server.exitCode === null) {
+        server.kill('SIGTERM');
+        await new Promise<void>((resolve) =>
+          server!.once('exit', () => resolve()),
+        );
+      }
+      await Promise.all(
+        [tokenPath, controlPath, statePath].map((path) =>
+          unlink(path).catch(() => {}),
+        ),
+      );
+    }
+  },
+  120000,
+);

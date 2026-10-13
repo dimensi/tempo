@@ -15,6 +15,7 @@ it('compares the prior available metric and rounds decimal changes', () => {
     measuredAt,
     values: [{ metric: 'weight', value, unit: 'kg' }],
     note: null,
+    sync: [],
   });
   const old = make('a', '2026-10-01', '70.1');
   const current = make('b', '2026-10-11', '70.2');

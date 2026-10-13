@@ -2,6 +2,7 @@ import { beforeAll, afterAll, afterEach, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { hashPassword } from 'better-auth/crypto';
 import { openDatabase } from '@/server/db/connection';
+import { yazioBodyLinks } from '@/server/db/schema/yazio-body';
 import { user, account, trainerAccess } from '@/server/db/schema';
 vi.mock('server-only', () => ({}));
 const database = openDatabase('file::memory:');
@@ -459,4 +460,54 @@ it('API accepts dates only, rejects duplicate/invalid/unbounded input and disabl
       expect(invalid.headers.get('cache-control')).toBe('no-store');
     }
   }
+});
+
+it('counts a mirrored linked UUID once and retains an unrelated imported weight', async () => {
+  const local = measurementPersistence.measurementRepository().create('owner', {
+    measuredAt: '2026-10-11',
+    values: [{ metric: 'weight', value: '160.125', unit: 'kg' }],
+    note: 'Mirrored',
+  });
+  database.db
+    .insert(yazioBodyLinks)
+    .values({
+      id: 'dedup-link',
+      ownerId: 'owner',
+      epoch: 1,
+      providerId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      measurementId: local.id,
+      metric: 'weight',
+      providerDateTime: '2026-10-11 23:30:00',
+      syncedValue: '160.125',
+      remoteValue: '160.125',
+    })
+    .run();
+  persistence.yazioHealthRepository().upsert(
+    'owner',
+    {
+      weights: [
+        {
+          source: 'yazio',
+          externalId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+          providerDate: '2026-10-11',
+          measuredDate: '2026-10-11',
+          rawValue: '155.25',
+          unit: null,
+          unitContext: null,
+          upstreamSource: null,
+          gateway: null,
+        },
+      ],
+      dailySteps: [],
+    },
+    '2026-10-12T12:00:00Z',
+  );
+  const history = await getWeightHistory(ownerHeaders, range);
+  expect(history.local.filter((row) => row.value === '160.125')).toHaveLength(
+    1,
+  );
+  expect(history.imported.some((row) => row.rawValue === '160.125')).toBe(
+    false,
+  );
+  expect(history.imported.some((row) => row.rawValue === '155.25')).toBe(true);
 });

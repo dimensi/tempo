@@ -3,6 +3,9 @@ import Decimal from 'decimal.js';
 import { getAuth } from '@/server/auth';
 import { authorize } from '@/server/auth/guards';
 import { getAccessibleOwnerId } from '@/server/access/owner';
+import { yazioBodyLinks } from '@/server/db/schema/yazio-body';
+import { getDatabase } from '@/server/db';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { measurementRepository } from '@/server/measurements/repository';
 import { yazioHealthRepository } from '@/server/yazio/health-repository';
 import { ownerConfirmedYazioWeightUnit } from '@/contracts/yazio-weight-policy';
@@ -60,7 +63,23 @@ export async function getStepsSummary(headers: Headers, input: unknown) {
 }
 export async function getWeightHistory(headers: Headers, input: unknown) {
   const { ownerId, range } = await selectScope(headers, input);
-  const imported = yazioHealthRepository().weights(ownerId, range);
+  const linkedIds = new Set(
+    getDatabase()
+      .db.select({ id: yazioBodyLinks.providerId })
+      .from(yazioBodyLinks)
+      .where(
+        and(
+          eq(yazioBodyLinks.ownerId, ownerId),
+          eq(yazioBodyLinks.metric, 'weight'),
+          isNotNull(yazioBodyLinks.measurementId),
+        ),
+      )
+      .all()
+      .map((l) => l.id),
+  );
+  const imported = yazioHealthRepository()
+    .weights(ownerId, range)
+    .filter((record) => !linkedIds.has(record.externalId));
   const measurements = measurementRepository().listPeriod(ownerId, range);
   await check(headers, ownerId);
   return weightHistorySchema.parse({

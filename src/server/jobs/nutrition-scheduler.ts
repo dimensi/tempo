@@ -1,4 +1,5 @@
 import 'server-only';
+import { runBodySync } from '@/server/yazio/body-runtime';
 import { randomUUID } from 'node:crypto';
 import { resolve, sep } from 'node:path';
 import { and, eq, gt, lte, or, isNull, sql } from 'drizzle-orm';
@@ -71,6 +72,7 @@ export interface NutritionSchedulerDependencies {
   store: (ownerId: string) => YazioTokenStore;
   source?: (store: YazioTokenStore) => Promise<NutritionUpstream>;
   repository?: NutritionRepository;
+  bodySync?: (ownerId: string, dates: string[], epoch: number) => Promise<void>;
   healthRepository?: Pick<ReturnType<typeof yazioHealthRepository>, 'upsert'>;
   images?: { fetch: typeof fetchCdnImage; store: typeof storeImage };
 }
@@ -420,6 +422,10 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         new Date(now()).toISOString(),
       );
       assertCurrent();
+      await deps
+        .bodySync?.(ownerId, periodDates(period), acquired.epoch)
+        .catch(() => {});
+      assertCurrent();
       return { ...result, health };
     } catch (error) {
       const code =
@@ -529,6 +535,8 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
 function runtimeScheduler() {
   return createNutritionScheduler({
     database: getDatabase(),
+    bodySync: (ownerId, dates, epoch) =>
+      runBodySync(ownerId, dates, undefined, epoch),
     automaticEnabled: () =>
       !!globalScheduler.nutritionSchedulerTimer &&
       readServerEnv().ENABLE_NUTRITION_SCHEDULER === 'true' &&
@@ -585,6 +593,12 @@ export function startNutritionScheduler() {
     return;
   // Registration only installs a timer; it does not read tokens or call upstream.
   globalScheduler.nutritionSchedulerTimer = setInterval(() => {
+    for (const { ownerId } of getDatabase()
+      .db.select({ ownerId: nutritionSchedule.ownerId })
+      .from(nutritionSchedule)
+      .where(eq(nutritionSchedule.enabled, true))
+      .all())
+      void runBodySync(ownerId).catch(() => {});
     void runtimeScheduler()
       .tick()
       .catch(() => {});

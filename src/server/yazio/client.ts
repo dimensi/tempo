@@ -24,7 +24,7 @@ export class YazioIntegrationError extends Error {
     );
   }
 }
-export async function createYazioClient(store: YazioTokenStore) {
+export async function createYazioAuth(store: YazioTokenStore) {
   const token = await store.load();
   if (!token) throw new YazioIntegrationError('NOT_CONFIGURED');
   let persistence = Promise.resolve();
@@ -56,7 +56,10 @@ export async function createYazioClient(store: YazioTokenStore) {
       inFlight = undefined;
     }));
   };
-  return new Yazio(auth);
+  return auth;
+}
+export async function createYazioClient(store: YazioTokenStore) {
+  return new Yazio(await createYazioAuth(store));
 }
 export async function yazioRequest<T>(operation: () => Promise<T>): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
