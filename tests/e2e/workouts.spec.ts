@@ -876,3 +876,134 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
     ),
   ).toHaveLength(1);
 });
+
+test('retained planned and actual editors hide cached drafts before real access revalidation and denial', async ({
+  browser,
+}) => {
+  test.skip(
+    test.info().project.name !== 'desktop',
+    'Retained access lifecycle is viewport independent.',
+  );
+  const baseURL = `http://localhost:${process.env.E2E_PORT ?? 3100}`;
+  for (const kind of ['planned', 'actual'] as const) {
+    const context = await browser.newContext({ baseURL });
+    const page = await context.newPage();
+    const database = new Database('.data/e2e.sqlite', { fileMustExist: true });
+    let release = () => {};
+    let currentSession: string | undefined;
+    try {
+      await login(page);
+      const id = await ownerId(page);
+      currentSession = (
+        await (await page.request.get('/api/auth/get-session')).json()
+      ).session.id as string;
+      const date = '2026-10-20';
+      await page.goto(`/workouts?date=${date}`);
+      await page
+        .getByRole('button', { name: 'Добавить тренировку', exact: true })
+        .click();
+      if (kind === 'actual') {
+        await page.getByText('Уже выполнена', { exact: true }).click();
+        await expect(page).toHaveURL(
+          `/workouts/sessions/new?date=${date}&returnDate=${date}`,
+        );
+      } else await expect(page).toHaveURL(`/workouts/new?date=${date}`);
+      await page
+        .getByLabel('Название (необязательно)')
+        .fill(`Private ${kind} draft`);
+      await expect(
+        page.getByText(workoutMessages.draftSaved, { exact: true }),
+      ).toBeVisible();
+      await page
+        .getByRole('button', { name: workoutMessages.back, exact: true })
+        .click();
+      await expect(page).toHaveURL(`/workouts?date=${date}`);
+      await expect(
+        page.getByRole('heading', {
+          name: workoutMessages.emptyDay,
+          exact: true,
+        }),
+      ).toBeVisible();
+      let started!: () => void;
+      const probeStarted = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route('**/api/workouts?*', async (route) => {
+        started();
+        await gate;
+        await route.continue();
+      });
+      await page.goBack();
+      await probeStarted;
+      // This is the retained client page, before denial or any server-page redirect.
+      await expect(
+        page.getByRole('textbox', {
+          name: 'Название (необязательно)',
+          exact: true,
+        }),
+      ).toHaveCount(0);
+      expect(
+        await page.evaluate(
+          () =>
+            Object.keys(sessionStorage).filter((key) =>
+              key.startsWith('workout-draft:'),
+            ).length,
+        ),
+      ).toBe(1);
+      const response = page.waitForResponse(
+        (value) =>
+          value.url().includes('/api/workouts?') &&
+          value.request().method() === 'GET',
+      );
+      expect(
+        database
+          .prepare('UPDATE session SET expires_at = 0 WHERE id = ?')
+          .run(currentSession).changes,
+      ).toBe(1);
+      release();
+      expect((await response).status()).toBe(401);
+      await expect(
+        page.locator('#main-content').getByRole('alert'),
+      ).toContainText(workoutMessages.noAccess);
+      await expect(
+        page.getByRole('textbox', {
+          name: 'Название (необязательно)',
+          exact: true,
+        }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole('button', { name: 'Сохранить', exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByText(workoutMessages.draftSaved, { exact: true }),
+      ).toHaveCount(0);
+      expect(
+        await page.evaluate(
+          () =>
+            Object.keys(sessionStorage).filter((key) =>
+              key.startsWith('workout-draft:'),
+            ).length,
+        ),
+      ).toBe(0);
+      expect(
+        (
+          await page.request.post(
+            `/api/workouts/${kind === 'actual' ? 'sessions' : 'plans'}?ownerId=${id}`,
+            { headers: { origin: baseURL }, data: {} },
+          )
+        ).status(),
+      ).toBe(401);
+    } finally {
+      release();
+      if (currentSession)
+        database
+          .prepare('DELETE FROM session WHERE id = ?')
+          .run(currentSession);
+      database.close();
+      await context.close();
+    }
+  }
+});

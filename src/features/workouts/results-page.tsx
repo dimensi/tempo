@@ -111,6 +111,10 @@ export function WorkoutResultsPage({
         if (controller.signal.aborted) return;
         if (response.status === 401 || response.status === 403) {
           clearWorkoutDraft(key);
+          setReady(false);
+          setStored(false);
+          persisted.current = false;
+          dirty.current = false;
           throw new Error(m.noAccess);
         }
         if (!response.ok) throw new Error(m.loadError);
@@ -144,6 +148,9 @@ export function WorkoutResultsPage({
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
+      // A retained route must revalidate before showing its previous fields.
+      setReady(false);
+      setError(null);
       mounted.current = false;
       generation.current += 1;
       controller.abort();
