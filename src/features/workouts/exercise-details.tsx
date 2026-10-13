@@ -6,6 +6,7 @@ import {
   type TransformMateExerciseInfo,
 } from '@/contracts/transformmate';
 import { TeachingVideo } from './teaching-video';
+import { useExercisePreview } from './exercise-preview';
 import { workoutMessages as m } from './messages';
 
 function LoadedExerciseDetails({
@@ -37,7 +38,8 @@ function LoadedExerciseDetails({
       });
     return () => controller.abort();
   }, [ownerId, exerciseId]);
-  if (failed)
+  const preview = useExercisePreview(ownerId, info);
+  if (failed || preview?.denied)
     return (
       <Alert color="red" role="alert">
         {m.catalogError}
@@ -50,12 +52,7 @@ function LoadedExerciseDetails({
         <TeachingVideo
           compact={compactVideo}
           key={`${ownerId}-${exerciseId}`}
-          poster={
-            info.preview.coverage === 'absent'
-              ? undefined
-              : (info.preview.path ??
-                `/api/workouts/transformmate/exercises/${exerciseId}/preview?ownerId=${encodeURIComponent(ownerId)}`)
-          }
+          poster={preview?.src}
           src={`/api/workouts/transformmate/exercises/${exerciseId}/video?ownerId=${encodeURIComponent(ownerId)}`}
         />
       )}

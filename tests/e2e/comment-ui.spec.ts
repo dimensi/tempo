@@ -1,3 +1,4 @@
+import { testOrigin } from '../ci/origin';
 import { getSessionWith429Retry } from './auth-session';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -6,7 +7,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test';
 async function login(page: Page, email: string) {
   const signin = () =>
     page.request.post('/api/auth/sign-in/email', {
-      headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+      headers: { origin: testOrigin },
       data: { email, password: 'Test-only-password-12345' },
     });
   let result = await signin();
@@ -38,6 +39,7 @@ test('measurement and actual-session comments compose after CRUD with real train
   page.on('pageerror', (error) => errors.push(error.message));
   const ownerId = await login(page, 'owner@example.test');
   const trainerContext = await browser.newContext({
+    ignoreHTTPSErrors: true,
     baseURL,
     viewport: page.viewportSize(),
   });
@@ -128,7 +130,7 @@ test('measurement and actual-session comments compose after CRUD with real train
     const planned = await page.request.post(
       `/api/workouts/plans?ownerId=${ownerId}`,
       {
-        headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+        headers: { origin: testOrigin },
         data: {
           title: `${note} planned`,
           description: 'Synthetic comment scope',

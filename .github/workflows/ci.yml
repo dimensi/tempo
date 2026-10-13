@@ -2,6 +2,13 @@ name: CI
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Exhaustive production regression (manual only)
+        required: true
+        type: choice
+        options: [full]
 permissions:
   contents: read
 jobs:
@@ -9,40 +16,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Select authoritative changed areas
+        env:
+          CI_BEFORE: ${{ github.event.before }}
+          CI_MODE: ${{ github.event_name == 'workflow_dispatch' && 'full' || 'selected' }}
+        run: node scripts/ci/select.mjs
+      - run: pnpm test:ci:selection
       - run: pnpm format:check
       - name: Verify constrained CD protocol and recovery guards
         run: python3 scripts/cd/test-cd-candidates.py
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm exec playwright install --with-deps chromium
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-dejavu-core poppler-utils
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - run: pnpm test
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - run: pnpm build
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      - run: pnpm test:e2e
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      - run: pnpm test:e2e --config tests/offline/production.config.ts
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      - run: pnpm test:e2e --config tests/nutrition-sync/e2e.config.ts
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      - run: pnpm test:e2e --config tests/transformmate-sync/e2e.config.ts
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Mandatory production smoke and selected or manual-full area gates
+        run: pnpm test:ci:browsers
       - uses: actions/upload-artifact@v4
-        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: always()
         with:
           name: e2e-results
           path: test-results/
   docker:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

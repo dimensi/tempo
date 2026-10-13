@@ -1,14 +1,14 @@
 # Synthetic TransformMate runtime E2E
 
-Run from this checkout, serially with other E2E commands because the repository requires `.data/e2e.sqlite`:
+After pnpm build once, run from this checkout, serially with other E2E commands because the repository requires `.data/e2e.sqlite`:
 
 ```sh
 pnpm exec playwright test -c tests/transformmate-sync/e2e.config.ts
 ```
 
-The suite runs Desktop Chrome and iPhone 13 Chromium with one worker. It starts a loopback-only synthetic upstream on 3158, migrates the disposable database and creates real Better Auth users, then starts Next development on 3157. No authentication guard is mocked. `.e2e.ts` keeps these files out of normal unit and browser suites.
+The suite runs Desktop Chrome and iPhone 13 Chromium with one worker. It starts a loopback-only synthetic upstream on 3158, migrates the disposable database and creates real Better Auth users, then starts the already-built standalone Next production app through localhost HTTPS3160→3161. No authentication guard is mocked. `.e2e.ts` keeps these files out of normal unit and browser suites.
 
-The runner refuses local `.env` files and supplies a minimal environment with an exact synthetic auth secret and `TRANSFORMMATE_TOKEN_FILE=./.data/e2e-transformmate-token.json`. It resets only that checkout's synthetic encrypted file alongside the disposable database. Provider credentials come from the real Settings form or authenticated connection API; environment credential fallback is forbidden. Only the Next child receives the fetch preload. It intercepts the production TransformMate, Firebase and allowed Kinescope origins, redirects them to the local stub, and refuses every other external fetch. Firebase requests must match an exact synthetic key and refresh-token allowlist before forwarding. The preload refuses production mode, legacy provider credential environment variables, and any mismatched URL/database/store/secret configuration. There is no production environment override or provider endpoint added to application code.
+The runner refuses local `.env` files and supplies a minimal environment with an exact synthetic auth secret and `TRANSFORMMATE_TOKEN_FILE=./.data/e2e-transformmate-token.json`. It resets only that checkout's synthetic encrypted file alongside the disposable database. Provider credentials come from the real Settings form or authenticated connection API; environment credential fallback is forbidden. Only the Next child receives the fetch preload. It intercepts the production TransformMate, Firebase and allowed Kinescope origins, redirects them to the local stub, and refuses every other external fetch. Firebase requests must match an exact synthetic key and refresh-token allowlist before forwarding. The preload requires production mode with an explicit synthetic test marker; it refuses legacy provider credential environment variables and any mismatched URL/database/store/secret configuration. There is no production environment override or provider endpoint added to application code.
 
 `synthetic.mp4` is a generated five-second H.264 test asset. Browser tests exercise real private-route playback, paused initialization, seeking, playback rate controls, fullscreen control presence, catalog safe DTOs, anonymous/foreign-owner denial and granted/revoked trainer access. Device screenshots are written into Playwright's ignored output directory. Chromium mobile emulation does not verify physical iOS Safari fullscreen behavior.
 

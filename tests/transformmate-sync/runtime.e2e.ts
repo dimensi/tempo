@@ -1,3 +1,4 @@
+import { testOrigin } from '../ci/origin';
 import { getSessionWith429Retry } from '../e2e/auth-session';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
@@ -12,7 +13,7 @@ import type { WorkoutPlan, WorkoutPlanInput } from '@/contracts/workouts';
 import type { TransformMateSyncData } from '@/contracts/transformmate';
 import { transformMateConnectionStatusSchema } from '@/contracts/transformmate-connection';
 
-const origin = 'http://localhost:3157';
+const origin = testOrigin;
 async function control(
   request: APIRequestContext,
   action?: string,
@@ -286,7 +287,7 @@ test('owner connects through masked settings, persists rotation, rejects wrong b
   expect(wrong.status()).toBe(409);
   expect(await wrong.json()).toMatchObject({ errorCode: 'account_mismatch' });
   expect(readFileSync(tokenFile, 'utf8')).toBe(beforeWrongAccount);
-  const context = await browser.newContext();
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
     const trainer = await context.newPage();
     const trainerId = await login(trainer, 'trainer');
@@ -781,7 +782,7 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
     .getByRole('button', { name: 'Удалить черновик', exact: true })
     .click();
   await expect(player).toHaveCount(0);
-  const context = await browser.newContext();
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
   let grantedTrainerId: string | null = null;
   try {
     const trainer = await context.newPage();

@@ -80,10 +80,19 @@ const catalogRichFields = {
   publicationCapability: transformMatePublicationCapabilitySchema,
   snippet: z.string().max(500).nullable(),
   preview: z.discriminatedUnion('coverage', [
-    z.object({ coverage: z.literal('unknown'), path: z.null() }),
-    z.object({ coverage: z.literal('absent'), path: z.null() }),
+    z.object({
+      coverage: z.literal('unknown'),
+      path: z.null(),
+      revision: z.string().regex(/^[a-f0-9]{64}$/),
+    }),
+    z.object({
+      coverage: z.literal('absent'),
+      path: z.null(),
+      revision: z.string().regex(/^[a-f0-9]{64}$/),
+    }),
     z.object({
       coverage: z.literal('available'),
+      revision: z.string().regex(/^[a-f0-9]{64}$/),
       // A private app route only; upstream URLs never enter the browser DTO.
       path: privatePreviewPath,
     }),

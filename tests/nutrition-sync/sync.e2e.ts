@@ -1,3 +1,4 @@
+import { testOrigin } from '../ci/origin';
 import { execFileSync } from 'node:child_process';
 import { test, expect, type Page } from '@playwright/test';
 import {
@@ -7,7 +8,7 @@ import {
 } from '@/contracts/nutrition';
 import type { SyncStatus } from '@/contracts/nutrition-sync';
 
-const origin = 'http://localhost:3135';
+const origin = testOrigin;
 const date = '2026-01-01';
 const png = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aKxkAAAAASUVORK5CYII=',

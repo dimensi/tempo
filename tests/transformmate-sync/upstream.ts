@@ -8,8 +8,9 @@ import type { TrainingWriteBody } from '@/server/transformmate/write-inputs';
 import { exerciseDetailFixture } from '../fixtures/transformmate-exercise';
 
 type Detail = ReturnType<typeof trainingDetailFixture>;
-const exercise = () => {
+const exercise = (previewImage?: string) => {
   const e = exerciseDetailFixture();
+  if (previewImage) e.image = previewImage;
   e.metrics = [3, 4].map((id) => ({
     id,
     name: id === 3 ? 'Weight' : 'Reps',
@@ -97,6 +98,10 @@ export async function startUpstream() {
     delay = 0,
     rotate = false;
   let firebaseTokens: string[] = [];
+  let previewImage: string | undefined;
+  let previewReads = 0,
+    previewActiveReads = 0,
+    previewDelay = 0;
   const state = () => ({
     posts,
     patches,
@@ -104,6 +109,8 @@ export async function startUpstream() {
     reads,
     activeReads,
     firebaseTokens,
+    previewReads,
+    previewActiveReads,
     ids: [...trainings.keys()],
     trainings: [...trainings.values()],
   });
@@ -134,6 +141,10 @@ export async function startUpstream() {
         delay = 0;
         rotate = false;
         firebaseTokens = [];
+        previewImage = undefined;
+        previewReads = 0;
+        previewActiveReads = 0;
+        previewDelay = 0;
       } else if (
         [
           'failaftercommit',
@@ -146,6 +157,14 @@ export async function startUpstream() {
       else if (control.action === 'cachedauthdelay')
         delay = control.delay ?? 500;
       else if (control.action === 'rotate') rotate = true;
+      else if (control.action === 'previewold')
+        previewImage =
+          'https://transformmate.pht.space/synthetic-preview/old.png';
+      else if (control.action === 'previewnew')
+        previewImage =
+          'https://transformmate.pht.space/synthetic-preview/new.png';
+      else if (control.action === 'previewdelay')
+        previewDelay = control.delay ?? 500;
       else if (control.action === 'seednative') {
         const id = nextId++;
         const detail = trainingDetailFixture(true);
@@ -251,6 +270,32 @@ export async function startUpstream() {
       );
     }
     if (
+      [
+        '/transformmate/synthetic-preview/old.png',
+        '/transformmate/synthetic-preview/new.png',
+      ].includes(url.pathname) &&
+      url.search === ''
+    ) {
+      previewReads++;
+      previewActiveReads++;
+      if (previewDelay)
+        await new Promise((resolve) => setTimeout(resolve, previewDelay));
+      previewActiveReads--;
+      if (url.pathname.endsWith('/old.png')) {
+        res.writeHead(404);
+        return res.end();
+      }
+      const png = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aKxkAAAAASUVORK5CYII=',
+        'base64',
+      );
+      res.writeHead(200, {
+        'Content-Type': 'image/png',
+        'Content-Length': png.length,
+      });
+      return res.end(png);
+    }
+    if (
       !['JWT synthetic-id-token', 'JWT synthetic-id-token-other'].includes(
         req.headers.authorization ?? '',
       )
@@ -289,10 +334,14 @@ export async function startUpstream() {
         count: 1,
         next: null,
         previous: null,
-        results: [exercise()],
+        results: [exercise(previewImage)],
       });
     if (path === '/exercises/' || path === '/exercises/501/')
-      return json(path === '/exercises/' ? [exercise()] : exercise());
+      return json(
+        path === '/exercises/'
+          ? [exercise(previewImage)]
+          : exercise(previewImage),
+      );
     if (path === '/workouts/trainings/' && req.method === 'POST') {
       const body = JSON.parse(text) as TrainingWriteBody;
       posts.push(body);

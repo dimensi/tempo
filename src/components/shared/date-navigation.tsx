@@ -20,6 +20,7 @@ import {
 } from '@tabler/icons-react';
 import { shiftDate } from '@/contracts/nutrition-sync-dates';
 import { browserToday, weekDates } from './date-navigation-dates';
+import classes from '@/components/shared/date-navigation.module.css';
 
 function DateJump({
   date,
@@ -233,9 +234,11 @@ export function DateNavigation({
       </Group>
       <Group wrap="nowrap" gap={4}>
         <Box
+          className={classes.days}
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+            gap: 4,
             flex: 1,
             minWidth: 0,
             touchAction: 'pan-y',

@@ -20,7 +20,9 @@
     "auth:create-user": "tsx scripts/create-user.ts",
     "transformmate:probe": "node --conditions=react-server --import tsx scripts/transformmate-probe.ts",
     "transformmate:auth-probe": "node --conditions=react-server --import tsx scripts/transformmate-auth-probe.ts",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "test:ci:selection": "node --test tests/ci/*.test.mjs",
+    "test:ci:browsers": "node scripts/ci/browser-gates.mjs"
   },
   "keywords": [],
   "author": "",

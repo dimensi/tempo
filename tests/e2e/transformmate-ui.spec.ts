@@ -1,3 +1,4 @@
+import { testOrigin } from '../ci/origin';
 import { richCatalogFields } from '../fixtures/workout-catalog';
 import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
@@ -473,7 +474,7 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
   ).toBeVisible();
 
   // A neighbouring plan represents data left by another case or a failed retry.
-  const origin = `http://localhost:${process.env.E2E_PORT ?? 3100}`;
+  const origin = testOrigin;
   const neighbourResponse = await page.request.post(
     `/api/workouts/plans?ownerId=${owner}`,
     {

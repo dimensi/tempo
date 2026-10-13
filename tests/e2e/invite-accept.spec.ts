@@ -50,6 +50,7 @@ test('synthetic invite UI accepts eight plain characters and explains unavailabl
     return token;
   };
   const context = await browser.newContext({
+    ignoreHTTPSErrors: true,
     baseURL,
     viewport: page.viewportSize(),
   });

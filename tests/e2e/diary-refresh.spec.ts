@@ -155,7 +155,7 @@ test('selected-day owner refresh deduplicates, separates photo warnings and igno
   ).toHaveCount(0);
   expect(requests).toBe(2);
 
-  const trainerContext = await browser.newContext();
+  const trainerContext = await browser.newContext({ ignoreHTTPSErrors: true });
   const trainer = await trainerContext.newPage();
   try {
     const trainerId = await login(trainer, 'trainer');

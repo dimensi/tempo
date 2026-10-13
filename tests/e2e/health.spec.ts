@@ -1,3 +1,4 @@
+import { testOrigin } from '../ci/origin';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import Database from 'better-sqlite3';
 import {
@@ -11,7 +12,7 @@ const today = () => dateInTimezone(new Date(), timezone);
 async function login(request: APIRequestContext, role: 'owner' | 'trainer') {
   const signIn = () =>
     request.post('/api/auth/sign-in/email', {
-      headers: { origin: `http://localhost:${process.env.E2E_PORT ?? '3100'}` },
+      headers: { origin: testOrigin },
       data: {
         email: `${role}@example.test`,
         password: 'Test-only-password-12345',

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { ExercisePreview } from './exercise-preview';
 import {
   Alert,
   Combobox,
@@ -10,7 +11,6 @@ import {
   Select,
   MultiSelect,
   Text,
-  Image,
   Stack,
   TextInput,
   useCombobox,
@@ -347,24 +347,7 @@ export function Catalog({
                   style={{ minHeight: 44, whiteSpace: 'normal' }}
                 >
                   <Group wrap="nowrap" gap="sm">
-                    {(item.preview.coverage === 'available' ||
-                      (item.preview.coverage === 'unknown' &&
-                        item.detailCoverage === 'available')) && (
-                      <Image
-                        src={
-                          item.preview.path ??
-                          `/api/workouts/transformmate/exercises/${item.id}/preview?ownerId=${encodeURIComponent(ownerId)}`
-                        }
-                        alt=""
-                        loading="lazy"
-                        w={44}
-                        h={44}
-                        radius="sm"
-                        onError={(event) => {
-                          event.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    )}
+                    <ExercisePreview ownerId={ownerId} item={item} />
                     <Stack gap={2} style={{ minWidth: 0 }}>
                       <Text size="sm">{item.name}</Text>
                       {item.snippet && (

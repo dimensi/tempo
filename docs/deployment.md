@@ -52,8 +52,8 @@ For disposable image validation, build `docker build -t nutrition-foundation .`,
 
 PRs use review and targeted local checks; GitHub CI does not run on PRs or
 feature-branch pushes. Formatting, lint, type checks, full unit/integration tests,
-production build, all four E2E suites (general, production offline, nutrition sync
-and TransformMate sync), and Docker build/smoke run once on the main-push
+production build, mandatory production smoke, selected area gates,
+and Docker build/smoke run once on the main-push
 workflow. Production stays on its previous stable image until that entire main
 workflow completes successfully. A failed or incomplete main workflow blocks
 deployment, even if the Docker job has already uploaded an artifact. Local
@@ -114,3 +114,13 @@ The approved encrypted path `/app/data/yazio-token.json` is already active from 
 [Nutrition scheduler](nutrition-scheduler.md) describes the production-only runtime timer and durable lease. `ENABLE_NUTRITION_SCHEDULER` defaults to false; keep it disabled until connect/import/disconnect hooks, common manual-sync service, status UI and exact-head checks are integrated. The coordinator can then explicitly deploy and verify the true flag. Registration alone proves no live account synchronization; observe a real user's accepted connection separately. Hourly work runs on the server and refreshes the last seven dates in the saved timezone, including today. Selected historical data is loaded manually. Restart recovery, sanitized failure state and bounded retries are persisted; no separate cron/worker/key is installed.
 
 Connect/import starts selected-history backfill within the server handler after encrypted save. Closing the browser does not cancel an initiated job; process restart recovery remains as described in the scheduler guide. Hourly refresh uses the saved initial history date as a lower bound within the last seven local dates. The account card displays only safe verified SDK metadata or a neutral YAZIO fallback, never the app OWNER profile.
+
+## Production CI gates
+
+Automatic CI runs only on push to main. Static checks, unit/integration, selector/provider-fixture guard tests and existing CD recovery checks remain mandatory. One standalone browser-test artifact is built before the mandatory desktop/mobile smoke: real login/logout, diary, workout create/save/read, offline cold read, owner/trainer boundaries, synchronous private photo concealment and the actual refill/purge lock race. Browser families run serial isolated production processes over localhost HTTPS with one worker and zero global retries. No suite invokes dev or rebuilds Next. Docker independently builds and smoke-tests the release image, including PDF/backup/restore; this is a separate build from the browser artifact.
+
+Known feature paths select nutrition, workouts, measurements, analytics, reports, comments or offline gates. Nutrition/workout/provider paths include provider integration. Auth, DB, contracts, shared code, dependencies, CI/config, unclassified paths and missing/empty/rewritten diff history conservatively select all targeted areas with a reported reason. Docs-only changes retain smoke. Targeted general cases are listed in scripts/ci/browser-gates.mjs; targeted selection does not claim exhaustive coverage. Full regression is manual workflow_dispatch only and executes all existing general, offline, nutrition and TransformMate cases plus the preserved YAZIO browser integration. No schedule exists.
+
+After one pnpm build, use pnpm test:ci:selection, then node scripts/ci/select.mjs (CI_BEFORE and optional CI_MODE=full), then pnpm test:ci:browsers. Individual configs permit focused diagnosis using the same artifact. The YAZIO browser integration previously embedded in the unit phase now uses tests/ci/yazio.config.ts in the selected provider gate and manual full mode; all configured/unconfigured restart assertions remain. Fixture preloads require exact disposable DB/origin/secret/token paths and block real external traffic.
+
+ci-selection.json records mode/areas/reason; ci-browser-evidence.json and JSON test reports record actual family times, test counts and serial process starts. Failed or zero-test stages fail CI. Manual full cannot export a release artifact or automatically enter CD. CD independently verifies an authoritative successful push-main run, checks and Docker jobs, exact SHA/tree and tested image/archive. Manual CD recovery must reference such an authoritative push run.

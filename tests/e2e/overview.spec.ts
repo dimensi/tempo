@@ -198,7 +198,10 @@ test('real overview shows empty, partial and populated data with local dates and
   const trainerId = trainers.find(
     (t: { email: string }) => t.email === 'trainer@example.test',
   ).id;
-  const trainerContext = await browser.newContext({ timezoneId: timezone });
+  const trainerContext = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    timezoneId: timezone,
+  });
   const trainerPage = await trainerContext.newPage();
   await login(trainerPage, 'trainer');
   // Owner id is obtained from the actual signed-in session, never supplied to overview.

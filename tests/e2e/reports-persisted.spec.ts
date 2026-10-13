@@ -110,7 +110,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
   );
   expect(uploaded.status()).toBe(201);
   const photo = await uploaded.json();
-  const context = await browser.newContext();
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
   let trainerId: string | undefined;
   try {
     await page.goto('/reports');

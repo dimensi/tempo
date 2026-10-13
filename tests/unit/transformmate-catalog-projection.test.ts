@@ -62,12 +62,22 @@ it('projects no URL/passthrough secrets and distinguishes unknown preview from a
   expect(projected).not.toHaveProperty('secret');
   expect(projected).not.toHaveProperty('video_link');
   const summary = { id: base.id, name: base.name, metrics: [] };
-  const item = catalogItem(summary, at, projected, at);
-  expect(item.preview).toEqual({ coverage: 'unknown', path: null });
+  const item = catalogItem(summary, at, projected, at, {
+    ownerId: 'owner',
+    accountScope: 'account',
+    generation: 'epoch',
+    locale: 'ru',
+  });
+  expect(item.preview).toMatchObject({ coverage: 'unknown', path: null });
+  expect(item.preview.revision).toMatch(/^[a-f0-9]{64}$/);
   expect(JSON.stringify(item)).not.toContain('https://');
   expect(
-    catalogItem(summary, at, { ...projected, image: null }, at).preview
-      .coverage,
+    catalogItem(summary, at, { ...projected, image: null }, at, {
+      ownerId: 'owner',
+      accountScope: 'account',
+      generation: 'epoch',
+      locale: 'ru',
+    }).preview.coverage,
   ).toBe('absent');
   for (const path of [
     'https://evil.test/x',
@@ -78,7 +88,11 @@ it('projects no URL/passthrough secrets and distinguishes unknown preview from a
     expect(
       transformMateCatalogItemSchema.safeParse({
         ...item,
-        preview: { coverage: 'available', path },
+        preview: {
+          coverage: 'available',
+          path,
+          revision: item.preview.revision,
+        },
       }).success,
     ).toBe(false);
   expect(
@@ -86,6 +100,7 @@ it('projects no URL/passthrough secrets and distinguishes unknown preview from a
       ...item,
       preview: {
         coverage: 'available',
+        revision: item.preview.revision,
         path: '/api/workouts/transformmate/exercises/501/preview?ownerId=owner%20one',
       },
     }).success,
@@ -166,4 +181,37 @@ it('publishes only explicit scalar straight values, omitting null weights despit
     { type: 'straight', measure: 3, metric_values: [{ value: '12.5' }] },
     { type: 'straight', measure: 4, metric_values: [{ value: '10' }] },
   ]);
+});
+
+it('changes opaque preview revision on provider scope, generation and image changes', () => {
+  const detail = projectDetail(exerciseDetailFixture());
+  const summary = { id: detail.id, name: detail.name, metrics: [] };
+  const scope = {
+    ownerId: 'owner',
+    accountScope: 'private-account',
+    generation: 'epoch',
+    locale: 'ru' as const,
+  };
+  const original = catalogItem(summary, at, detail, at, scope).preview.revision;
+  for (const changed of [
+    { ...scope, generation: 'new-epoch' },
+    { ...scope, accountScope: 'new-account' },
+  ])
+    expect(
+      catalogItem(summary, at, detail, at, changed).preview.revision,
+    ).not.toBe(original);
+  expect(
+    catalogItem(
+      summary,
+      at,
+      { ...detail, image: 'https://transformmate.pht.space/new.png' },
+      at,
+      scope,
+    ).preview.revision,
+  ).not.toBe(original);
+  expect(
+    catalogItem(summary, at, detail, '2026-10-13T00:00:00Z', scope).preview
+      .revision,
+  ).toBe(original);
+  expect(original).not.toContain(scope.accountScope);
 });

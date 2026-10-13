@@ -107,12 +107,15 @@ export async function streamExercisePreview(
       if (!url) throw new CatalogError(404);
       if (url.href === previousUrl) {
         await markUnknown();
-        throw new CatalogError(502);
+        throw new CatalogError(
+          [404, 410].includes(upstream.status) ? 404 : 502,
+        );
       }
       upstream = await fetchImage(url);
     }
     try {
       await scope.assertCurrent();
+      if ([404, 410].includes(upstream.status)) throw new CatalogError(404);
       const type =
         upstream.headers.get('content-type')?.split(';')[0]?.trim() ?? '';
       const declared = upstream.headers.get('content-length');
