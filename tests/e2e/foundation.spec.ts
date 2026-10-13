@@ -84,7 +84,17 @@ test('owner shell, all pages, theme persistence, mobile overflow and logout', as
   await page
     .getByRole('link', { name: 'Дневник питания', exact: true })
     .click();
-  await expect(page).toHaveURL('/diary');
+  const browserDate = await page.evaluate(() =>
+    new Intl.DateTimeFormat('sv-SE', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date()),
+  );
+  await expect(page).toHaveURL(`/diary?date=${browserDate}`);
+  await expect(
+    page.getByRole('heading', { name: 'Дневник питания', exact: true }),
+  ).toBeVisible();
   if (await navigationToggle.isVisible())
     await expect(navigationToggle).toHaveAttribute('aria-expanded', 'false');
   const original = await page
