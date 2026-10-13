@@ -44,6 +44,7 @@ export async function EditorPage({
   return (
     <WorkoutEditorPage
       key={`${session.user.id}:${ownerId}:${plan?.id ?? 'new'}:${plan?.revision ?? 0}:${workoutId ?? ''}:${date}:${copyId ?? ''}`}
+      canLog={session.user.role === 'OWNER'}
       userId={session.user.id}
       ownerId={ownerId}
       date={date}

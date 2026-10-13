@@ -10,8 +10,16 @@ import {
   workoutPlanSchema,
 } from '@/contracts/workouts';
 import { PlanForm, emptyPlan } from './forms';
+import {
+  clearWorkoutDraft,
+  clearWorkoutDrafts,
+  readWorkoutDraft,
+  storeWorkoutDraft,
+} from './draft-storage';
+import { WorkoutCreateChoice } from './create-choice';
 import { copyPlanToDate } from './copy-plan';
 import { workoutMessages as m } from './messages';
+import classes from './workout-ui.module.css';
 
 const draftExercise = z
   .object({
@@ -19,7 +27,7 @@ const draftExercise = z
     comment: z.string().max(4000).optional(),
     transformMate: z
       .object({
-        exerciseId: z.number().int().positive(),
+        exerciseId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
         occurrenceKey: z.uuid(),
       })
       .strict()
@@ -58,10 +66,6 @@ const draftValue = z
       .max(100),
   })
   .strict();
-const draftSchema = z
-  .object({ savedAt: z.number(), requestId: z.uuid(), value: draftValue })
-  .strict();
-const lifetime = 12 * 60 * 60 * 1000;
 export function WorkoutEditorPage({
   userId,
   ownerId,
@@ -71,6 +75,7 @@ export function WorkoutEditorPage({
   workoutId,
   copying,
   returnToView = false,
+  canLog = false,
 }: {
   userId: string;
   ownerId: string;
@@ -80,6 +85,7 @@ export function WorkoutEditorPage({
   workoutId?: string;
   copying: boolean;
   returnToView?: boolean;
+  canLog?: boolean;
 }) {
   const router = useRouter();
   const identity = `${userId}:${ownerId}`;
@@ -114,73 +120,52 @@ export function WorkoutEditorPage({
   const [cancel, setCancel] = useState(false);
   const requestId = useRef('');
   const mounted = useRef(false);
+  const generation = useRef(0);
+  const pendingPath = useRef<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const dirty = useRef(false);
   const persisted = useRef(false);
   const [stored, setStored] = useState(false);
   useEffect(() => {
     mounted.current = true;
+    generation.current += 1;
     let alive = true;
     void fetch(`/api/workouts?ownerId=${encodeURIComponent(ownerId)}`, {
       cache: 'no-store',
     })
       .then((response) => {
-        if (!response.ok) throw new Error(m.noAccess);
+        if (!alive) return;
+        if (response.status === 401 || response.status === 403) {
+          clearWorkoutDraft(key);
+          setReady(false);
+          setStored(false);
+          persisted.current = false;
+          dirty.current = false;
+          throw new Error(m.noAccess);
+        }
+        if (!response.ok) throw new Error(m.loadError);
         if (!alive) return;
         requestId.current = crypto.randomUUID();
-        try {
-          for (const item of Object.keys(sessionStorage)) {
-            if (!item.startsWith('workout-draft:')) continue;
-            const raw = sessionStorage.getItem(item);
-            const data =
-              raw && raw.length <= 256_000
-                ? draftSchema.safeParse(JSON.parse(raw))
-                : null;
-            if (
-              !item.startsWith(`workout-draft:${identity}:`) ||
-              !data?.success ||
-              data.data.savedAt > Date.now() ||
-              Date.now() - data.data.savedAt >= lifetime
-            )
-              sessionStorage.removeItem(item);
-          }
-          const stored = sessionStorage.getItem(key);
-          if (stored && stored.length <= 256_000) {
-            const parsed = draftSchema.safeParse(JSON.parse(stored));
-            if (
-              parsed.success &&
-              Date.now() >= parsed.data.savedAt &&
-              Date.now() - parsed.data.savedAt < lifetime
-            ) {
-              setDraft(parsed.data.value);
-              setStored(true);
-              persisted.current = true;
-              requestId.current = parsed.data.requestId;
-              dirty.current = true;
-            } else sessionStorage.removeItem(key);
-          }
-        } catch {
-          /* Storage can be disabled; editing remains available. */
+        const restored = readWorkoutDraft(key, identity, draftValue);
+        if (restored) {
+          setDraft(restored.value);
+          setStored(true);
+          persisted.current = true;
+          requestId.current = restored.requestId;
+          dirty.current = true;
         }
         setReady(true);
       })
-      .catch(() => {
+      .catch((cause) => {
         if (!alive) return;
-        try {
-          sessionStorage.removeItem(key);
-        } catch {
-          /* Storage unavailable. */
-        }
-        setError(m.noAccess);
+        setError(
+          cause instanceof Error && cause.message === m.noAccess
+            ? m.noAccess
+            : m.loadError,
+        );
       });
     const unsubscribe = subscribeOfflineBlocked(() => {
-      dirty.current = false;
-      try {
-        for (const item of Object.keys(sessionStorage))
-          if (item.startsWith('workout-draft:'))
-            sessionStorage.removeItem(item);
-      } catch {
-        /* Storage unavailable. */
-      }
+      clearWorkoutDrafts();
       setStored(false);
       persisted.current = false;
     });
@@ -189,12 +174,16 @@ export function WorkoutEditorPage({
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
+      // A retained route must revalidate before showing its previous fields.
+      setReady(false);
+      setError(null);
       mounted.current = false;
+      generation.current += 1;
       alive = false;
       unsubscribe();
       window.removeEventListener('beforeunload', beforeUnload);
     };
-  }, [key, identity, ownerId]);
+  }, [key, identity, ownerId, attempt]);
   const leave = (destination = returnDate) => {
     dirty.current = false;
     try {
@@ -212,36 +201,11 @@ export function WorkoutEditorPage({
   const change = (value: WorkoutPlanInput) => {
     dirty.current = true;
     setDraft(value);
-    try {
-      const serialized = JSON.stringify({
-        savedAt: Date.now(),
-        requestId: requestId.current,
-        value,
-      });
-      if (serialized.length > 256_000) {
-        sessionStorage.removeItem(key);
-        setStored(false);
-        persisted.current = false;
-        return;
-      }
-      const others = Object.keys(sessionStorage).filter(
-        (item) => item.startsWith('workout-draft:') && item !== key,
-      );
-      const oldest = others.sort(
-        (a, b) =>
-          JSON.parse(sessionStorage.getItem(a)!).savedAt -
-          JSON.parse(sessionStorage.getItem(b)!).savedAt,
-      );
-      while (oldest.length >= 8) sessionStorage.removeItem(oldest.shift()!);
-      sessionStorage.setItem(key, serialized);
-      setStored(true);
-      persisted.current = true;
-    } catch {
-      setStored(false);
-      persisted.current = false;
-    }
+    persisted.current = storeWorkoutDraft(key, requestId.current, value);
+    setStored(persisted.current);
   };
   const save = async (value: WorkoutPlanInput) => {
+    const current = generation.current;
     setBusy(true);
     setError(null);
     try {
@@ -259,6 +223,7 @@ export function WorkoutEditorPage({
           ),
         },
       );
+      if (!mounted.current || current !== generation.current) return;
       if (!response.ok) {
         if (response.status === 403 || response.status === 401) {
           if (mounted.current) setReady(false);
@@ -281,6 +246,7 @@ export function WorkoutEditorPage({
       const savedWorkout =
         saved.workouts.find((item) => item.id === workoutId) ??
         saved.workouts[0]!;
+      if (!mounted.current || current !== generation.current) return;
       dirty.current = false;
       try {
         sessionStorage.removeItem(key);
@@ -292,14 +258,14 @@ export function WorkoutEditorPage({
           `/workouts/plans/${saved.id}/workouts/${savedWorkout.id}?date=${savedWorkout.date}`,
         );
     } catch (cause) {
-      if (mounted.current)
+      if (mounted.current && current === generation.current)
         setError(cause instanceof Error ? cause.message : m.error);
     } finally {
-      if (mounted.current) setBusy(false);
+      if (mounted.current && current === generation.current) setBusy(false);
     }
   };
   return (
-    <Stack w="100%">
+    <Stack className={classes.content} w="100%">
       <Group justify="space-between">
         <Title order={1}>
           {plan && !copying ? m.editWorkout : m.newWorkout}
@@ -308,13 +274,17 @@ export function WorkoutEditorPage({
           mih={44}
           variant="subtle"
           disabled={busy}
-          onClick={() =>
+          onClick={() => {
+            if (dirty.current && !persisted.current) {
+              setCancel(true);
+              return;
+            }
             router.push(
               returnToView && plan && workoutId
                 ? `/workouts/plans/${plan.id}/workouts/${workoutId}?date=${returnDate}`
                 : `/workouts?date=${returnDate}`,
-            )
-          }
+            );
+          }}
         >
           {m.back}
         </Button>
@@ -322,7 +292,38 @@ export function WorkoutEditorPage({
       {error && (
         <Alert role="alert" color="red">
           {error}
+          {!ready && error !== m.noAccess && (
+            <Button
+              mih={44}
+              variant="subtle"
+              onClick={() => {
+                setError(null);
+                setAttempt(attempt + 1);
+              }}
+            >
+              {m.refresh}
+            </Button>
+          )}
         </Alert>
+      )}
+      {ready && !plan && !copying && (
+        <WorkoutCreateChoice
+          kind="planned"
+          date={
+            z.iso.date().safeParse(draft.workouts[0]?.date).success
+              ? draft.workouts[0]!.date
+              : date
+          }
+          returnDate={returnDate}
+          canLog={canLog}
+          busy={busy}
+          onNavigate={(path) => {
+            if (dirty.current && !persisted.current) {
+              pendingPath.current = path;
+              setCancel(true);
+            } else router.push(path);
+          }}
+        />
       )}
       {ready && (
         <PlanForm
@@ -345,15 +346,35 @@ export function WorkoutEditorPage({
       )}
       <Modal
         opened={cancel}
-        onClose={() => setCancel(false)}
+        onClose={() => {
+          pendingPath.current = null;
+          setCancel(false);
+        }}
         title={m.discardQuestion}
         closeButtonProps={{ 'aria-label': m.close, size: 44 }}
       >
         <Group>
-          <Button mih={44} variant="default" onClick={() => setCancel(false)}>
+          <Button
+            mih={44}
+            variant="default"
+            onClick={() => {
+              pendingPath.current = null;
+              setCancel(false);
+            }}
+          >
             {m.keepEditing}
           </Button>
-          <Button mih={44} color="red" onClick={() => leave()}>
+          <Button
+            mih={44}
+            color="red"
+            onClick={() => {
+              if (pendingPath.current) {
+                clearWorkoutDraft(key);
+                dirty.current = false;
+                router.push(pendingPath.current);
+              } else leave();
+            }}
+          >
             {m.discard}
           </Button>
         </Group>

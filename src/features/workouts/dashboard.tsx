@@ -7,8 +7,9 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  ActionIcon,
+  Tooltip,
   Alert,
-  Badge,
   Button,
   Group,
   Loader,
@@ -24,11 +25,10 @@ import {
   workoutSessionSchema,
   type WorkoutPlan,
   type WorkoutSession,
-  type WorkoutSessionInput,
   type WorkoutsData,
   type PlannedWorkout,
 } from '@/contracts/workouts';
-import { SessionForm, emptySession, today } from './forms';
+import { today } from './forms';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { z } from 'zod';
 import { workoutTitle } from '@/lib/workout-title';
@@ -50,30 +50,12 @@ import {
   useTransformMateSync,
 } from './transformmate-sync';
 import { workoutMessages as m } from './messages';
+import classes from './workout-ui.module.css';
 
-type Editor = {
-  kind: 'session';
-  initial: WorkoutSessionInput;
-  existing?: WorkoutSession;
-  planId?: string;
-  plannedWorkoutId?: string;
-};
 type Deletion = { kind: 'plans' | 'sessions'; id: string; revision: number };
-const sessionInput = ({
-  title,
-  date,
-  exercises,
-  note,
-  status,
-}: WorkoutSession): WorkoutSessionInput => ({
-  title,
-  date,
-  exercises,
-  note,
-  status,
-});
 function SessionResult({
   session,
+  date,
   canLog,
   onEdit,
   onDelete,
@@ -81,6 +63,7 @@ function SessionResult({
   comparisonShown = false,
 }: {
   session: WorkoutSession;
+  date: string;
   canLog: boolean;
   onEdit: () => void;
   onDelete: () => void;
@@ -91,7 +74,9 @@ function SessionResult({
     <Stack data-testid={`session-${session.id}`}>
       <Group justify="space-between">
         <Title order={3}>{workoutTitle(session.title, session.date)}</Title>
-        <Badge>{m[session.status]}</Badge>
+        <Text size="sm" c="dimmed">
+          {m[session.status]}
+        </Text>
       </Group>
       <Text size="sm">
         {session.planSnapshot
@@ -104,12 +89,6 @@ function SessionResult({
           actual={session.exercises}
         />
       )}
-      {session.planSnapshot && (
-        <Stack gap="xs">
-          <Text fw={600}>{m.actualDetails}</Text>
-          <ExerciseTable exercises={session.exercises} factOnly />
-        </Stack>
-      )}
       {!session.planSnapshot && (
         <ExerciseTable exercises={session.exercises} factOnly />
       )}
@@ -118,7 +97,7 @@ function SessionResult({
       )}
       <Button
         component={Link}
-        href={`/workouts/sessions/${session.id}?date=${session.date}`}
+        href={`/workouts/sessions/${session.id}?date=${date}`}
         variant="subtle"
         size="compact-sm"
         mih={44}
@@ -128,27 +107,27 @@ function SessionResult({
       </Button>
       {canLog && (
         <Group gap="xs">
-          <Button
-            mih={44}
-            size="compact-sm"
-            variant="subtle"
-            leftSection={<IconPencil size={16} />}
-            aria-label={m.editActual}
-            onClick={onEdit}
-          >
-            {m.editShort}
-          </Button>
-          <Button
-            mih={44}
-            size="compact-sm"
-            variant="subtle"
-            color="red"
-            leftSection={<IconTrash size={16} />}
-            aria-label={m.removeActual}
-            onClick={onDelete}
-          >
-            {m.deleteShort}
-          </Button>
+          <Tooltip label={m.editActual}>
+            <ActionIcon
+              size={44}
+              variant="subtle"
+              aria-label={m.editActual}
+              onClick={onEdit}
+            >
+              <IconPencil size={16} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label={m.removeActual}>
+            <ActionIcon
+              size={44}
+              variant="subtle"
+              color="red"
+              aria-label={m.removeActual}
+              onClick={onDelete}
+            >
+              <IconTrash size={16} />
+            </ActionIcon>
+          </Tooltip>
         </Group>
       )}
       {renderComments?.(session.id)}
@@ -179,7 +158,6 @@ function ScopedWorkoutsDashboard({
   const [error, setError] = useState<string | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [editor, setEditor] = useState<Editor | null>(null);
   const sync = useTransformMateSync(ownerId, data, date);
   const [deletion, setDeletion] = useState<Deletion | null>(null);
   const endpoint = useCallback(
@@ -231,10 +209,6 @@ function ScopedWorkoutsDashboard({
       setError(error instanceof Error ? error.message : m.loadError);
     }
   }
-  const open = (editor: Editor) => {
-    setEditorError(null);
-    setEditor(editor);
-  };
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -258,13 +232,8 @@ function ScopedWorkoutsDashboard({
         throw new Error(result.error ?? m.error);
       }
       if (!mounted.current) return;
-      setEditor(null);
       setDeletion(null);
-      if (method !== 'DELETE') {
-        const result = await response.json();
-        const saved = workoutSessionSchema.parse(result.data);
-        router.push(`/workouts/sessions/${saved.id}?date=${saved.date}`);
-      } else await load();
+      await load();
     } catch (error) {
       if (mounted.current)
         setEditorError(error instanceof Error ? error.message : m.error);
@@ -273,18 +242,11 @@ function ScopedWorkoutsDashboard({
     }
   }
   const record = (plan: WorkoutPlan, workout: PlannedWorkout) =>
-    open({
-      kind: 'session',
-      initial: {
-        title: workout.title,
-        date: workout.date,
-        exercises: structuredClone(workout.exercises),
-        status: 'completed',
-        note: '',
-      },
-      planId: plan.id,
-      plannedWorkoutId: workout.id,
-    });
+    router.push(
+      `/workouts/plans/${plan.id}/workouts/${workout.id}/results?date=${date}`,
+    );
+  const editSession = (session: WorkoutSession) =>
+    router.push(`/workouts/sessions/${session.id}/edit?date=${date}`);
   const dayPlans =
     data?.plans.flatMap((plan) =>
       plan.workouts
@@ -315,9 +277,19 @@ function ScopedWorkoutsDashboard({
       </Alert>
     );
   return (
-    <Stack style={{ minWidth: 0 }}>
-      <Title order={1}>{m.title}</Title>
-      <Text c="var(--mantine-color-text)">{m.description}</Text>
+    <Stack className={classes.content} style={{ minWidth: 0 }}>
+      <Group justify="space-between">
+        <Title order={1} size="h2">
+          {m.title}
+        </Title>
+        <Button
+          mih={44}
+          size="compact-sm"
+          onClick={() => router.push(`/workouts/new?date=${date}`)}
+        >
+          {m.newWorkout}
+        </Button>
+      </Group>
       {!canLog && <Alert>{m.trainerHint}</Alert>}
       {error && (
         <Alert color="red" role="alert">
@@ -338,25 +310,6 @@ function ScopedWorkoutsDashboard({
         onSelect={setDate}
         labels={m.dateNavigation}
       />
-      <Group justify="space-between">
-        <Button
-          mih={44}
-          onClick={() => router.push(`/workouts/new?date=${date}`)}
-        >
-          {m.newWorkout}
-        </Button>
-        {canLog && (
-          <Button
-            mih={44}
-            variant="subtle"
-            onClick={() =>
-              open({ kind: 'session', initial: { ...emptySession(), date } })
-            }
-          >
-            {m.recordIndependent}
-          </Button>
-        )}
-      </Group>
       <SyncSummary sync={sync} />
       {data &&
         !dayPlans.length &&
@@ -414,7 +367,7 @@ function ScopedWorkoutsDashboard({
         const item = sync.items.find(
           (item) => item.planId === plan.id && item.workoutId === workout.id,
         );
-        const results = daySessions.filter(
+        const results = data!.sessions.filter(
           (session) =>
             session.planId === plan.id &&
             session.plannedWorkoutId === workout.id,
@@ -433,9 +386,9 @@ function ScopedWorkoutsDashboard({
                 <Title order={2}>
                   {workoutTitle(workout.title, workout.date)}
                 </Title>
-                <Badge color="gray" variant="outline">
+                <Text size="sm" c="dimmed">
                   {m.localSource}
-                </Badge>
+                </Text>
               </Group>
               {plan.title && <Text size="sm">{plan.title}</Text>}
               {plan.description && (
@@ -453,93 +406,92 @@ function ScopedWorkoutsDashboard({
                 <Button
                   component={Link}
                   href={`/workouts/plans/${plan.id}/workouts/${workout.id}?date=${date}`}
+                  variant={canLog ? 'subtle' : 'filled'}
                   size="compact-sm"
                   mih={44}
                   leftSection={<IconArrowRight size={16} />}
                 >
                   {m.view}
                 </Button>
-                <Button
-                  variant="subtle"
-                  size="compact-sm"
-                  mih={44}
-                  leftSection={<IconPencil size={16} />}
-                  aria-label={m.editWorkout}
-                  onClick={() => editWorkout(plan, workout)}
-                >
-                  {m.editShort}
-                </Button>
+                <Tooltip label={m.editWorkout}>
+                  <ActionIcon
+                    variant="subtle"
+                    size={44}
+                    aria-label={m.editWorkout}
+                    onClick={() => editWorkout(plan, workout)}
+                  >
+                    <IconPencil size={16} />
+                  </ActionIcon>
+                </Tooltip>
                 {canLog && (
                   <Button
-                    variant="subtle"
                     size="compact-sm"
                     mih={44}
                     leftSection={<IconClipboardCheck size={16} />}
-                    aria-label={m.record}
-                    onClick={() => record(plan, workout)}
+                    aria-label={latestResult ? m.editActual : m.record}
+                    onClick={() =>
+                      latestResult
+                        ? editSession(latestResult)
+                        : record(plan, workout)
+                    }
                   >
-                    {m.recordShort}
+                    {latestResult ? m.editActual : m.record}
                   </Button>
                 )}
-                <Button
-                  variant="subtle"
-                  size="compact-sm"
-                  mih={44}
-                  leftSection={<IconCopy size={16} />}
-                  aria-label={m.copy}
-                  onClick={() => {
-                    setCopy({ plan, workout });
-                    setCopyDate(workout.date);
-                  }}
-                >
-                  {m.copyShort}
-                </Button>
-                {plan.workouts.length > 1 && (
-                  <Button
-                    component={Link}
-                    href={`/workouts/plans/${plan.id}/edit?date=${date}`}
+                <Tooltip label={m.copy}>
+                  <ActionIcon
                     variant="subtle"
-                    size="compact-sm"
-                    mih={44}
-                    leftSection={<IconCalendar size={16} />}
-                    aria-label={m.editPlan}
+                    size={44}
+                    aria-label={m.copy}
+                    onClick={() => {
+                      setCopy({ plan, workout });
+                      setCopyDate(workout.date);
+                    }}
                   >
-                    {m.planShort}
-                  </Button>
+                    <IconCopy size={16} />
+                  </ActionIcon>
+                </Tooltip>
+                {plan.workouts.length > 1 && (
+                  <Tooltip label={m.editPlan}>
+                    <ActionIcon
+                      component={Link}
+                      href={`/workouts/plans/${plan.id}/edit?date=${date}`}
+                      variant="subtle"
+                      size={44}
+                      aria-label={m.editPlan}
+                    >
+                      <IconCalendar size={16} />
+                    </ActionIcon>
+                  </Tooltip>
                 )}
-                <Button
-                  variant="subtle"
-                  color="red"
-                  size="compact-sm"
-                  mih={44}
-                  leftSection={<IconTrash size={16} />}
-                  aria-label={m.removePlan}
-                  onClick={() => {
-                    setEditorError(null);
-                    setDeletion({
-                      kind: 'plans',
-                      id: plan.id,
-                      revision: plan.revision,
-                    });
-                  }}
-                >
-                  {m.deleteShort}
-                </Button>
+                <Tooltip label={m.removePlan}>
+                  <ActionIcon
+                    variant="subtle"
+                    color="red"
+                    size={44}
+                    aria-label={m.removePlan}
+                    onClick={() => {
+                      setEditorError(null);
+                      setDeletion({
+                        kind: 'plans',
+                        id: plan.id,
+                        revision: plan.revision,
+                      });
+                    }}
+                  >
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Tooltip>
               </Group>
               {results.map((session) => (
                 <SessionResult
                   key={session.id}
                   session={session}
+                  date={date}
                   comparisonShown={session.id === latestResult?.id}
                   canLog={canLog}
                   renderComments={renderComments}
-                  onEdit={() =>
-                    open({
-                      kind: 'session',
-                      initial: sessionInput(session),
-                      existing: session,
-                    })
-                  }
+                  onEdit={() => editSession(session)}
                   onDelete={() => {
                     setEditorError(null);
                     setDeletion({
@@ -600,15 +552,10 @@ function ScopedWorkoutsDashboard({
           <Paper withBorder p="md" key={session.id}>
             <SessionResult
               session={session}
+              date={date}
               canLog={canLog}
               renderComments={renderComments}
-              onEdit={() =>
-                open({
-                  kind: 'session',
-                  initial: sessionInput(session),
-                  existing: session,
-                })
-              }
+              onEdit={() => editSession(session)}
               onDelete={() => {
                 setEditorError(null);
                 setDeletion({
@@ -620,47 +567,6 @@ function ScopedWorkoutsDashboard({
             />
           </Paper>
         ))}
-      <Modal
-        opened={editor !== null}
-        onClose={() => {
-          if (!busy) setEditor(null);
-        }}
-        title={m.record}
-        size="lg"
-        closeOnClickOutside={!busy}
-        closeOnEscape={!busy}
-        withCloseButton={!busy}
-        closeButtonProps={{ 'aria-label': m.close, size: 44 }}
-      >
-        {editor?.kind === 'session' && (
-          <SessionForm
-            ownerId={ownerId}
-            initial={editor.initial}
-            busy={busy}
-            error={editorError}
-            onCancel={() => setEditor(null)}
-            onSave={(value) =>
-              void mutate(
-                editor.existing
-                  ? `/sessions/${editor.existing.id}`
-                  : '/sessions',
-                editor.existing ? 'PUT' : 'POST',
-                editor.existing
-                  ? { revision: editor.existing.revision, data: value }
-                  : {
-                      ...value,
-                      ...(editor.planId
-                        ? {
-                            planId: editor.planId,
-                            plannedWorkoutId: editor.plannedWorkoutId,
-                          }
-                        : {}),
-                    },
-              )
-            }
-          />
-        )}
-      </Modal>
       <Modal
         opened={copy !== null}
         onClose={() => setCopy(null)}

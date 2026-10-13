@@ -63,7 +63,7 @@ export function NativeWorkout({
       <Stack gap="md">
         <Group justify="space-between">
           {!fullView && <Title order={2}>{item.title || m.workoutTitle}</Title>}
-          <Badge variant="outline" color="gray">
+          <Badge variant="outline" color="gray" c="dimmed">
             {m.sync}
           </Badge>
         </Group>
@@ -125,15 +125,6 @@ export function NativeWorkout({
                       </Button>
                     )}
                 </Group>
-                {ownerId &&
-                  inspecting ===
-                    `${exercise.protocolId}-${exercise.remoteExerciseId}` && (
-                    <ExerciseDetails
-                      key={`${ownerId}-${exercise.exerciseId}`}
-                      ownerId={ownerId}
-                      exerciseId={exercise.exerciseId}
-                    />
-                  )}
                 {exercise.comment && (
                   <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
                     {exercise.comment}
@@ -169,6 +160,16 @@ export function NativeWorkout({
                     </Table.Tbody>
                   </Table>
                 </ScrollArea>
+                {ownerId &&
+                  inspecting ===
+                    `${exercise.protocolId}-${exercise.remoteExerciseId}` && (
+                    <ExerciseDetails
+                      key={`${ownerId}-${exercise.exerciseId}`}
+                      ownerId={ownerId}
+                      exerciseId={exercise.exerciseId}
+                    />
+                  )}
+
                 {!orders.length && <Text size="sm">{m.nativeEmptySets}</Text>}
               </Stack>
             );

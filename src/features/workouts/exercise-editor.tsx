@@ -86,13 +86,6 @@ export function ExerciseEditor({
                 <IconTrash size={18} />
               </ActionIcon>
             </Group>
-            {ownerId && exercise.transformMate && (
-              <ExerciseDetails
-                key={`${ownerId}-${exercise.transformMate.exerciseId}`}
-                ownerId={ownerId}
-                exerciseId={exercise.transformMate.exerciseId}
-              />
-            )}
             {exercise.sets.map((set, setIndex) => (
               <Box key={setIndex}>
                 <Text size="sm">
@@ -107,6 +100,7 @@ export function ExerciseEditor({
                   }}
                 >
                   <NumberInput
+                    hideControls
                     label={m.weight}
                     placeholder={m.noWeight}
                     value={set.weightKg ?? ''}
@@ -129,6 +123,7 @@ export function ExerciseEditor({
                     }
                   />
                   <NumberInput
+                    hideControls
                     label={m.reps}
                     value={set.reps}
                     min={1}
@@ -181,6 +176,13 @@ export function ExerciseEditor({
               {m.addSet}
             </Button>
 
+            {ownerId && exercise.transformMate && (
+              <ExerciseDetails
+                key={`${ownerId}-${exercise.transformMate.exerciseId}`}
+                ownerId={ownerId}
+                exerciseId={exercise.transformMate.exerciseId}
+              />
+            )}
             <Stack>
               <Textarea
                 label={m.exerciseComment}

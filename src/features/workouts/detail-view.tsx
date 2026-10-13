@@ -3,8 +3,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  ActionIcon,
+  Tooltip,
   Alert,
-  Badge,
   Button,
   Group,
   Modal,
@@ -26,8 +27,6 @@ import {
   type WorkoutPlan,
   type PlannedWorkout,
   type WorkoutSession,
-  type WorkoutSessionInput,
-  workoutSessionSchema,
 } from '@/contracts/workouts';
 import type { TransformMateSyncItem } from '@/contracts/transformmate';
 import type { TransformMateNativeItem } from '@/contracts/transformmate-native';
@@ -35,8 +34,8 @@ import { workoutTitle } from '@/lib/workout-title';
 import { ExerciseTable } from './exercise-table';
 import { NativeWorkout } from './native-workout';
 import { WorkoutSync } from './transformmate-sync';
-import { SessionForm } from './forms';
 import { workoutMessages as m } from './messages';
+import classes from './workout-ui.module.css';
 
 export type WorkoutDetail =
   | {
@@ -73,7 +72,6 @@ export function WorkoutDetailView({
   const [copyDate, setCopyDate] = useState('');
   const [copying, setCopying] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [denied, setDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,15 +117,6 @@ export function WorkoutDetailView({
         );
       if (method === 'DELETE' && mounted.current)
         router.push(`/workouts?date=${date}`);
-      else if (method !== 'DELETE') {
-        const result = await response.json();
-        const saved = workoutSessionSchema.parse(result.data);
-        if (mounted.current) {
-          setEditing(false);
-          router.push(`/workouts/sessions/${saved.id}?date=${saved.date}`);
-          router.refresh();
-        }
-      }
     } catch (cause) {
       if (mounted.current)
         setError(cause instanceof Error ? cause.message : m.error);
@@ -135,26 +124,10 @@ export function WorkoutDetailView({
       if (mounted.current) setBusy(false);
     }
   }
-  const actualInput: WorkoutSessionInput | null = workout
-    ? {
-        title: workout.title,
-        date: workout.date,
-        exercises: structuredClone(workout.exercises),
-        status: 'completed',
-        note: '',
-      }
-    : session
-      ? {
-          title: session.title,
-          date: session.date,
-          exercises: session.exercises,
-          status: session.status,
-          note: session.note,
-        }
-      : null;
   if (denied) return <Alert color="red">{m.noAccess}</Alert>;
   return (
     <Stack
+      className={classes.content}
       data-testid={
         plan ? `plan-${plan.id}` : session ? `session-${session.id}` : undefined
       }
@@ -178,61 +151,66 @@ export function WorkoutDetailView({
       </Group>
       <Group gap="xs">
         {(plan || session) && (
-          <Badge variant="outline" color="gray">
+          <Text size="sm" c="dimmed">
             {m.localSource}
-          </Badge>
+          </Text>
         )}
         {workout && plan && (
-          <Button
-            component={Link}
-            href={`/workouts/plans/${plan.id}/edit?workout=${workout.id}&date=${date}&from=view`}
-            variant={canLog ? 'subtle' : 'filled'}
-            size="compact-sm"
-            mih={44}
-            leftSection={<IconPencil size={16} />}
-            aria-label={m.editWorkout}
-          >
-            {m.editShort}
-          </Button>
+          <Tooltip label={m.editWorkout}>
+            <ActionIcon
+              component={Link}
+              href={`/workouts/plans/${plan.id}/edit?workout=${workout.id}&date=${date}&from=view`}
+              variant={canLog ? 'subtle' : 'filled'}
+              size={44}
+              aria-label={m.editWorkout}
+            >
+              <IconPencil size={16} />
+            </ActionIcon>
+          </Tooltip>
         )}
-        {canLog && actualInput && (
+        {canLog && (workout || session) && (
           <Button
             size="compact-sm"
             mih={44}
             leftSection={<IconClipboardCheck size={16} />}
             aria-label={session ? m.editActual : m.record}
-            onClick={() => setEditing(true)}
+            component={Link}
+            href={
+              session
+                ? `/workouts/sessions/${session.id}/edit?date=${date}&from=view`
+                : `/workouts/plans/${plan!.id}/workouts/${workout!.id}/results?date=${date}&from=view`
+            }
           >
-            {m.recordShort}
+            {session ? m.editActual : m.record}
           </Button>
         )}
         {plan && workout && (
-          <Button
-            variant="subtle"
-            size="compact-sm"
-            mih={44}
-            leftSection={<IconCopy size={16} />}
-            aria-label={m.copy}
-            onClick={() => {
-              setCopyDate(workout.date);
-              setCopying(true);
-            }}
-          >
-            {m.copyShort}
-          </Button>
+          <Tooltip label={m.copy}>
+            <ActionIcon
+              variant="subtle"
+              size={44}
+              aria-label={m.copy}
+              onClick={() => {
+                setCopyDate(workout.date);
+                setCopying(true);
+              }}
+            >
+              <IconCopy size={16} />
+            </ActionIcon>
+          </Tooltip>
         )}
         {plan && plan.workouts.length > 1 && (
-          <Button
-            component={Link}
-            href={`/workouts/plans/${plan.id}/edit?date=${date}`}
-            variant="subtle"
-            size="compact-sm"
-            mih={44}
-            leftSection={<IconCalendar size={16} />}
-            aria-label={m.editPlan}
-          >
-            {m.planShort}
-          </Button>
+          <Tooltip label={m.editPlan}>
+            <ActionIcon
+              component={Link}
+              href={`/workouts/plans/${plan.id}/edit?date=${date}`}
+              variant="subtle"
+              size={44}
+              aria-label={m.editPlan}
+            >
+              <IconCalendar size={16} />
+            </ActionIcon>
+          </Tooltip>
         )}
         {(plan || (session && canLog)) && (
           <Button
@@ -250,7 +228,6 @@ export function WorkoutDetailView({
       </Group>
       {detail.kind === 'plan' && (
         <>
-          <WorkoutSync item={detail.sync ?? undefined} />
           {detail.plan.description && (
             <Text style={{ whiteSpace: 'pre-wrap' }}>
               {detail.plan.description}
@@ -262,6 +239,7 @@ export function WorkoutDetailView({
             sync={detail.sync ?? undefined}
             actual={detail.sessions.at(-1)?.exercises}
           />
+          <WorkoutSync item={detail.sync ?? undefined} />
           {detail.sessions.map((result) => (
             <Stack key={result.id} data-testid={`session-${result.id}`}>
               <Title order={2} size="h3">
@@ -282,7 +260,14 @@ export function WorkoutDetailView({
       )}
       {detail.kind === 'session' && (
         <>
-          <Badge>{m[detail.session.status]}</Badge>
+          <Text size="sm" c="dimmed">
+            {m[detail.session.status]}
+          </Text>
+          {!detail.session.exercises.length && (
+            <Text size="sm" c="dimmed">
+              {m.noActualRecorded}
+            </Text>
+          )}
           {detail.session.planSnapshot && (
             <>
               <Title order={2} size="h3">
@@ -295,14 +280,13 @@ export function WorkoutDetailView({
               />
             </>
           )}
-          <Title order={2} size="h3">
-            {m.actualDetails}
-          </Title>
-          <ExerciseTable
-            ownerId={ownerId}
-            exercises={detail.session.exercises}
-            factOnly
-          />
+          {!detail.session.planSnapshot && (
+            <ExerciseTable
+              ownerId={ownerId}
+              exercises={detail.session.exercises}
+              factOnly
+            />
+          )}
           {detail.session.note && (
             <Text style={{ whiteSpace: 'pre-wrap' }}>
               {detail.session.note}
@@ -396,41 +380,6 @@ export function WorkoutDetailView({
             </Button>
           </Group>
         </Stack>
-      </Modal>
-      <Modal
-        opened={editing}
-        onClose={() => {
-          if (!busy) setEditing(false);
-        }}
-        title={session ? m.editActual : m.record}
-        size="lg"
-        closeOnEscape={!busy}
-        closeOnClickOutside={!busy}
-        withCloseButton={!busy}
-      >
-        {actualInput && (
-          <SessionForm
-            ownerId={ownerId}
-            initial={actualInput}
-            busy={busy}
-            error={error}
-            onCancel={() => setEditing(false)}
-            onSave={(value) =>
-              void mutate(
-                session ? `/sessions/${session.id}` : '/sessions',
-                session ? 'PUT' : 'POST',
-                session
-                  ? { revision: session.revision, data: value }
-                  : {
-                      ...value,
-                      ...(plan && workout
-                        ? { planId: plan.id, plannedWorkoutId: workout.id }
-                        : {}),
-                    },
-              )
-            }
-          />
-        )}
       </Modal>
     </Stack>
   );

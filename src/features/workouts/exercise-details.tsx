@@ -11,9 +11,11 @@ import { workoutMessages as m } from './messages';
 function LoadedExerciseDetails({
   ownerId,
   exerciseId,
+  compactVideo = false,
 }: {
   ownerId: string;
   exerciseId: number;
+  compactVideo?: boolean;
 }) {
   const [info, setInfo] = useState<TransformMateExerciseInfo | null>(null);
   const [failed, setFailed] = useState(false);
@@ -46,6 +48,7 @@ function LoadedExerciseDetails({
     <Stack gap="sm" data-testid={`exercise-details-${exerciseId}`}>
       {info.hasVideo && (
         <TeachingVideo
+          compact={compactVideo}
           key={`${ownerId}-${exerciseId}`}
           poster={
             info.preview.coverage === 'absent'
@@ -56,7 +59,7 @@ function LoadedExerciseDetails({
           src={`/api/workouts/transformmate/exercises/${exerciseId}/video?ownerId=${encodeURIComponent(ownerId)}`}
         />
       )}
-      <Badge variant="outline" color="gray">
+      <Badge variant="outline" color="gray" c="dimmed">
         {m.catalogueSource}
       </Badge>
       {info.description && (
@@ -93,13 +96,16 @@ function LoadedExerciseDetails({
 export function ExerciseDetails({
   ownerId,
   exerciseId,
+  compactVideo,
 }: {
   ownerId: string;
   exerciseId: number;
+  compactVideo?: boolean;
 }) {
   return (
     <LoadedExerciseDetails
       key={`${ownerId}:${exerciseId}`}
+      compactVideo={compactVideo}
       ownerId={ownerId}
       exerciseId={exerciseId}
     />

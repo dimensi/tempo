@@ -178,25 +178,28 @@ export function SyncSummary({
             : m.nativeError}
         </Alert>
       )}
-      {sync.nativeRefresh.checkedAt && (
-        <Text size="sm">
-          {m.checked}:{' '}
-          {new Date(sync.nativeRefresh.checkedAt).toLocaleString('ru-RU')}
-        </Text>
-      )}
+      <Group justify="space-between" gap="xs">
+        {sync.nativeRefresh.checkedAt && (
+          <Text size="sm" c="dimmed">
+            {m.checked}:{' '}
+            {new Date(sync.nativeRefresh.checkedAt).toLocaleString('ru-RU')}
+          </Text>
+        )}
+        <Button
+          variant="subtle"
+          size="compact-sm"
+          mih={44}
+          loading={sync.busy}
+          onClick={() => void sync.refresh()}
+        >
+          {m.syncRefresh}
+        </Button>
+      </Group>
       {sync.error && (
         <Alert color="red" role="alert">
           {m.syncError}
         </Alert>
       )}
-      <Button
-        variant="light"
-        mih={44}
-        loading={sync.busy}
-        onClick={() => void sync.refresh()}
-      >
-        {m.syncRefresh}
-      </Button>
     </Stack>
   );
 }
@@ -210,21 +213,23 @@ export function WorkoutSync({
   if (!item || (!showActual && item.reason === 'not_configured')) return null;
   const unpublished =
     item.reason === 'unsupported' && item.remoteTrainingId === null;
+  const statusColor =
+    (item.status === 'started' && item.actual?.finished) ||
+    item.status === 'synced'
+      ? 'green'
+      : item.status === 'error'
+        ? 'red'
+        : item.status === 'conflict' || item.status === 'unknown'
+          ? 'orange'
+          : 'gray';
   return (
     <Stack gap="xs">
       <Group>
         <Text fw={600}>{m.sync}</Text>
         <Badge
-          color={
-            (item.status === 'started' && item.actual?.finished) ||
-            item.status === 'synced'
-              ? 'green'
-              : item.status === 'error'
-                ? 'red'
-                : item.status === 'conflict' || item.status === 'unknown'
-                  ? 'orange'
-                  : 'gray'
-          }
+          variant={statusColor === 'gray' ? 'light' : undefined}
+          c={statusColor === 'gray' ? 'dimmed' : undefined}
+          color={statusColor}
         >
           {item.status === 'started' && item.actual?.finished
             ? m.completed
