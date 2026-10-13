@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { measurementSyncSchema } from './yazio-body';
 export const measurementMetrics = [
   'weight',
   'waist',
@@ -37,6 +38,7 @@ export const measurementInputSchema = z
 export const measurementSchema = measurementInputSchema.safeExtend({
   id: z.string().min(1),
   ownerId: z.string().min(1),
+  sync: z.array(measurementSyncSchema),
 });
 export type MeasurementInput = z.infer<typeof measurementInputSchema>;
 export type Measurement = z.infer<typeof measurementSchema>;

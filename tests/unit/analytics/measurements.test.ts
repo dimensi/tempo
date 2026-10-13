@@ -7,6 +7,7 @@ it('filters inclusive dates and preserves decimal measurements without convertin
     ownerId: 'synthetic',
     measuredAt,
     note: null,
+    sync: [],
     values: [{ metric: 'weight', value: '80.125', unit: 'kg' }],
   });
   const data = measurementsInRange({ from: '2026-10-01', to: '2026-10-03' }, [

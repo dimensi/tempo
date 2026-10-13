@@ -7,6 +7,8 @@ import { authorize } from '@/server/auth/guards';
 import { hasTrustedOrigin } from '@/server/auth/origin';
 import { measurementInputSchema } from '@/contracts/measurements';
 import { measurementRepository } from './repository';
+import { bodyRepository } from '@/server/yazio/body-repository';
+import { runBodySync } from '@/server/yazio/body-runtime';
 export class MeasurementError extends Error {
   constructor(public status: number) {
     super('Measurement operation failed');
@@ -24,7 +26,12 @@ async function check(headers: Headers, ownerId: string, write = false) {
 }
 export async function listMeasurements(headers: Headers, ownerId: string) {
   await check(headers, ownerId);
-  return measurementRepository().list(ownerId);
+  return measurementRepository()
+    .list(ownerId)
+    .map((record) => ({
+      ...record,
+      sync: bodyRepository().status(ownerId, record.id),
+    }));
 }
 export async function getMeasurement(
   headers: Headers,
@@ -32,7 +39,10 @@ export async function getMeasurement(
   id: string,
 ) {
   await check(headers, ownerId);
-  return measurementRepository().find(ownerId, id) ?? null;
+  const record = measurementRepository().find(ownerId, id);
+  return record
+    ? { ...record, sync: bodyRepository().status(ownerId, id) }
+    : null;
 }
 export async function measurementExists(
   headers: Headers,
@@ -51,11 +61,18 @@ export async function saveMeasurement(
   const parsed = measurementInputSchema.safeParse(input);
   if (!parsed.success) throw new MeasurementError(400);
   const repo = measurementRepository();
-  const result = id
-    ? repo.update(ownerId, id, parsed.data)
-    : repo.create(ownerId, parsed.data);
-  if (!result) throw new MeasurementError(404);
-  return result;
+  const body = bodyRepository();
+  const result = getDatabase().sqlite.transaction(() => {
+    const previous = id ? (repo.find(ownerId, id) ?? null) : null;
+    const saved = id
+      ? repo.update(ownerId, id, parsed.data)
+      : repo.create(ownerId, parsed.data);
+    if (!saved) throw new MeasurementError(404);
+    body.enqueue(ownerId, saved.id, parsed.data, previous);
+    return saved;
+  })();
+  void runBodySync(ownerId).catch(() => {});
+  return { ...result, sync: body.status(ownerId, result.id) };
 }
 export async function deleteMeasurement(
   headers: Headers,
@@ -63,8 +80,11 @@ export async function deleteMeasurement(
   id: string,
 ) {
   await check(headers, ownerId, true);
-  if (!measurementRepository().remove(ownerId, id))
-    throw new MeasurementError(404);
+  getDatabase().sqlite.transaction(() => {
+    bodyRepository().detached(ownerId, id);
+    if (!measurementRepository().remove(ownerId, id))
+      throw new MeasurementError(404);
+  })();
 }
 export function measurementErrorResponse(error: unknown) {
   return Response.json(
@@ -100,4 +120,23 @@ export async function measurementOwner(
 
 export function checkMeasurementOrigin(request: Request) {
   if (!hasTrustedOrigin(request)) throw new MeasurementError(403);
+}
+
+export async function retryMeasurementSync(
+  headers: Headers,
+  ownerId: string,
+  id: string,
+) {
+  await check(headers, ownerId, true);
+  if (!measurementRepository().find(ownerId, id))
+    throw new MeasurementError(404);
+  bodyRepository().retry(ownerId, id);
+  void runBodySync(ownerId, [], id).catch(() => {});
+  await check(headers, ownerId, true);
+  return getMeasurement(headers, ownerId, id);
+}
+
+export async function measurementSyncIssues(headers: Headers, ownerId: string) {
+  await check(headers, ownerId);
+  return bodyRepository().issues(ownerId);
 }

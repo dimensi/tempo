@@ -45,6 +45,10 @@ export function MeasurementsPanel({
   weightHistory: WeightHistory;
   renderComments?: (measurementId: string) => ReactNode;
 }) {
+  const [issues, setIssues] = useState<
+    { metric: MeasurementMetric; date: string; value: string | null }[]
+  >([]);
+  const [retrying, setRetrying] = useState<string>();
   const [items, setItems] = useState<Measurement[]>([]);
   const [loading, setLoading] = useState(true);
   const [readDenied, setReadDenied] = useState(false);
@@ -66,6 +70,7 @@ export function MeasurementsPanel({
         if (!r.ok) {
           if (active && (r.status === 401 || r.status === 403)) {
             setItems([]);
+            setIssues([]);
             setReadDenied(true);
           }
           throw new Error();
@@ -88,6 +93,78 @@ export function MeasurementsPanel({
       active = false;
     };
   }, [url]);
+  useEffect(() => {
+    let active = true;
+    void fetch(`/api/measurements/sync?ownerId=${encodeURIComponent(ownerId)}`)
+      .then(async (response) => {
+        if (response.status === 401 || response.status === 403) {
+          if (active) {
+            setIssues([]);
+            setItems([]);
+            setReadDenied(true);
+          }
+          return;
+        }
+        if (response.ok) {
+          const data = await response.json();
+          if (active) setIssues(data);
+        }
+      })
+      .catch(() => {});
+    if (
+      !items.some((item) =>
+        item.sync.some(
+          (status) =>
+            status.state === 'pending' || status.state === 'uncertain',
+        ),
+      )
+    )
+      return () => {
+        active = false;
+      };
+    const timer = setInterval(() => {
+      void fetch(url, { cache: 'no-store' })
+        .then(async (response) => {
+          if (response.status === 401 || response.status === 403) {
+            if (active) {
+              setItems([]);
+              setIssues([]);
+              setReadDenied(true);
+            }
+            return;
+          }
+          if (response.ok) {
+            const data = await response.json();
+            if (active) setItems(data);
+          }
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [ownerId, url, items]);
+  async function retrySync(id: string) {
+    setRetrying(id);
+    setError(undefined);
+    try {
+      const response = await fetch(
+        `/api/measurements/${id}/retry?ownerId=${encodeURIComponent(ownerId)}`,
+        { method: 'POST' },
+      );
+      if (!response.ok) {
+        setError(responseError(response.status));
+        return;
+      }
+      const updated = (await response.json()) as Measurement;
+      setItems((old) => old.map((item) => (item.id === id ? updated : item)));
+    } catch {
+      setError(m.error);
+    } finally {
+      setRetrying(undefined);
+    }
+  }
   function reset() {
     setEditing(undefined);
     setValues({});
@@ -215,6 +292,9 @@ export function MeasurementsPanel({
                 required
               />
               <Text size="sm">{m.valueHint}</Text>
+              <Text size="sm" c="dimmed">
+                {m.syncHint}
+              </Text>
               <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
                 {measurementMetrics.map((key) => (
                   <TextInput
@@ -295,6 +375,12 @@ export function MeasurementsPanel({
       ) : (
         <Text>{m.empty}</Text>
       )}
+      {issues.map((issue) => (
+        <Alert key={`${issue.metric}-${issue.date}`} color="yellow">
+          {m.precisionIssue} {m.metrics[issue.metric]}: {issue.value} (
+          {issue.date})
+        </Alert>
+      ))}
       <Title order={2}>{m.history}</Title>
       {!loading && !items.length && <Text>{m.empty}</Text>}
       <Table.ScrollContainer minWidth={580}>
@@ -313,11 +399,33 @@ export function MeasurementsPanel({
                 <Table.Td>{item.measuredAt}</Table.Td>
                 <Table.Td>
                   {item.values.map((v) => (
-                    <Text key={v.metric} size="sm">
-                      {m.metrics[v.metric]}: {v.value} {m.units[v.unit]}{' '}
-                      {measurementChange(items, item, v.metric) !== null &&
-                        `(${measurementChange(items, item, v.metric)})`}
-                    </Text>
+                    <Stack key={v.metric} gap={0}>
+                      <Text size="sm">
+                        {m.metrics[v.metric]}: {v.value} {m.units[v.unit]}{' '}
+                        {measurementChange(items, item, v.metric) !== null &&
+                          `(${measurementChange(items, item, v.metric)})`}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {item.sync.find((status) => status.metric === v.metric)
+                          ? m.sync[
+                              item.sync.find(
+                                (status) => status.metric === v.metric,
+                              )!.state
+                            ]
+                          : m.localOnly}
+                      </Text>
+                      {item.sync.find((status) => status.metric === v.metric)
+                        ?.state === 'conflict' && (
+                        <Text size="xs">
+                          {m.remoteValue}:{' '}
+                          {
+                            item.sync.find(
+                              (status) => status.metric === v.metric,
+                            )!.remoteValue
+                          }
+                        </Text>
+                      )}
+                    </Stack>
                   ))}
                 </Table.Td>
                 <Table.Td style={{ overflowWrap: 'anywhere', maxWidth: 240 }}>
@@ -326,6 +434,20 @@ export function MeasurementsPanel({
                 {writable && (
                   <Table.Td>
                     <Group>
+                      {item.sync.some((status) =>
+                        ['failed', 'uncertain', 'conflict'].includes(
+                          status.state,
+                        ),
+                      ) && (
+                        <Button
+                          variant="default"
+                          mih={44}
+                          loading={retrying === item.id}
+                          onClick={() => void retrySync(item.id)}
+                        >
+                          {m.retrySync}
+                        </Button>
+                      )}
                       <Button
                         variant="default"
                         mih={44}

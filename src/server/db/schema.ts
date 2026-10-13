@@ -96,3 +96,5 @@ export const trainerAccess = sqliteTable('trainer_access', {
     .references(() => user.id, { onDelete: 'cascade' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 });
+
+export { yazioBodyLinks, yazioBodyOutbox } from './schema/yazio-body';

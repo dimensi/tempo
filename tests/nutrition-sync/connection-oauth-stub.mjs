@@ -1,5 +1,28 @@
 // Injected only by connection-ui.test.ts into its disposable Next.js child process.
 // Mock the OAuth wire response; the actual vendored SDK still performs the exchange.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+const bodyControlPath = resolve('.data/e2e-yazio-body-control.json');
+const bodyStatePath = resolve('.data/e2e-yazio-body-state.json');
+let bodyState = {
+  runId: '',
+  entries: {},
+  reads: 0,
+  creates: 0,
+  updates: 0,
+  lost: false,
+  version: 0,
+};
+function bodyControl() {
+  try {
+    return JSON.parse(readFileSync(bodyControlPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+function saveBodyState() {
+  writeFileSync(bodyStatePath, JSON.stringify(bodyState), { mode: 0o600 });
+}
 const expected = {
   BETTER_AUTH_URL: 'https://localhost:3160',
   BETTER_AUTH_SECRET: 'offline-production-synthetic-secret-1234567890',
@@ -69,6 +92,88 @@ globalThis.fetch = async (input, init) => {
     );
     if (headers.get('authorization') !== 'Bearer synthetic-ui-access-only')
       throw new Error('Only synthetic YAZIO authorization is allowed');
+    if (url.pathname.includes('/user/bodyvalues')) {
+      const control = bodyControl();
+      if (control) {
+        if (bodyState.runId !== control.runId)
+          bodyState = {
+            runId: control.runId,
+            entries: {},
+            reads: 0,
+            creates: 0,
+            updates: 0,
+            lost: false,
+            version: 0,
+          };
+        if (control.version !== bodyState.version) {
+          for (const [id, value] of Object.entries(control.remoteUpdates ?? {}))
+            for (const entries of Object.values(bodyState.entries))
+              for (const entry of entries)
+                if (entry.id === id) entry.value = value;
+          bodyState.version = control.version;
+        }
+      }
+      const method = init?.method ?? 'GET';
+      if (method === 'GET') {
+        bodyState.reads++;
+        saveBodyState();
+        if (control?.mode === 'outage')
+          return Response.json(
+            { error: 'synthetic body unavailable' },
+            { status: 502 },
+          );
+        if (url.pathname.endsWith('/bodyvalues'))
+          return Response.json(
+            Object.fromEntries(
+              Object.entries(bodyState.entries).map(([key, entries]) => [
+                key,
+                entries.filter(
+                  (entry) =>
+                    entry.date.slice(0, 10) === url.searchParams.get('date'),
+                ),
+              ]),
+            ),
+          );
+        if (url.pathname.endsWith('/weight/last')) return Response.json(null);
+        return Response.json([]);
+      }
+      if (!control)
+        throw new Error('Synthetic body writes need explicit fixture control');
+      if (method === 'POST' && url.pathname.endsWith('/bodyvalues')) {
+        const groups = JSON.parse(init.body);
+        for (const [key, entries] of Object.entries(groups))
+          for (const entry of entries) {
+            if (!bodyState.entries[key]) bodyState.entries[key] = [];
+            const existing = bodyState.entries[key].find(
+              (row) => row.id === entry.id,
+            );
+            if (existing) Object.assign(existing, entry);
+            else bodyState.entries[key].push(entry);
+          }
+        bodyState.creates++;
+        saveBodyState();
+        if (control.mode === 'post_lost' && !bodyState.lost) {
+          bodyState.lost = true;
+          saveBodyState();
+          return Response.json(
+            { error: 'synthetic response lost' },
+            { status: 502 },
+          );
+        }
+        return new Response(null, { status: 204 });
+      }
+      if (method === 'PUT') {
+        const id = url.pathname.split('/').at(-1),
+          body = JSON.parse(init.body);
+        for (const entries of Object.values(bodyState.entries))
+          for (const entry of entries)
+            if (entry.id === id) entry.value = body.value;
+        bodyState.updates++;
+        saveBodyState();
+        return new Response(null, { status: 204 });
+      }
+      throw new Error('Unexpected synthetic body write method');
+    }
     if (url.pathname.endsWith('/user'))
       return Response.json({
         email: 'synthetic-yazio@example.test',
