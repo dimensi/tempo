@@ -1,0 +1,18 @@
+services:
+  app:
+    image: ${NUTRITION_IMAGE:?Set the verified release image tag}
+    ports: !reset []
+    environment:
+      BETTER_AUTH_URL: https://tempo.dimensi.dev
+      YAZIO_TOKEN_FILE: /app/data/yazio-token.json
+      TRANSFORMMATE_TOKEN_FILE: /app/data/transformmate-token.json
+      ENABLE_NUTRITION_SCHEDULER: 'true'
+    networks:
+      web:
+        aliases:
+          - nutrition
+    labels:
+      org.opencontainers.image.revision: ${DEPLOYED_COMMIT:?Set the verified release commit}
+networks:
+  web:
+    external: true

@@ -121,15 +121,18 @@ def main():
         env = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "CD_BACKUP_STAMP": stamp}
         rollout = subprocess.run(["/usr/local/libexec/nutrition-upgrade-ci-release", revision], env=env, capture_output=True)
         if rollout.returncode: raise ValueError("Deployment failed; fixed rollback attempted; operator attention required")
+        retention_ok = b"backup retention failed" not in rollout.stderr
+        if not retention_ok:
+            print("Nutrition CD: release healthy; backup retention failed; operator attention required", file=sys.stderr)
         # Final container identity check after the helper's Docker-health + HTTPS checks.
-        compose = ["docker", "compose", "-p", "nutrition", "--env-file", str(PROJECT / "runtime.env"), "-f", str(PROJECT / "compose.yaml"), "-f", str(PROJECT / "compose.home.yaml")]
+        compose = ["docker", "compose", "-p", "nutrition", "--env-file", str(PROJECT / "runtime.env"), "--env-file", str(PROJECT / "release.env"), "-f", str(PROJECT / "compose.yaml"), "-f", str(PROJECT / "compose.home.yaml")]
         container = subprocess.check_output(compose + ["ps", "-q", "app"], text=True).strip()
         live = json.loads(subprocess.check_output(["docker", "inspect", container]))[0]
         if live["Config"]["Image"] != image or live["State"]["Health"]["Status"] != "healthy":
             raise ValueError("Live image identity mismatch; operator attention required")
         if live["Config"]["Labels"].get("org.opencontainers.image.revision") != revision:
             raise ValueError("Live revision mismatch; operator attention required")
-        checked.update(run=run, tree=tree, archiveSHA256=digest, backupStamp=stamp, healthy=True)
+        checked.update(run=run, tree=tree, archiveSHA256=digest, backupStamp=stamp, healthy=True, backupRetentionOK=retention_ok)
         temporary = receipt_path.with_suffix(".tmp"); temporary.write_text(json.dumps(checked) + "\n"); temporary.replace(receipt_path)
         print(json.dumps(checked))
 

@@ -1,6 +1,8 @@
 node_modules/
 .next/
 .env*
+runtime.env*
+release.env*
 !.env.example
 .data/
 *.sqlite*
