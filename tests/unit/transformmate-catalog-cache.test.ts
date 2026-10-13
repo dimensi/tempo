@@ -505,3 +505,26 @@ it('stale full cache returns typed results immediately with one background full 
   finish({ body });
   await refreshFull(scope);
 });
+
+it('fills unknown muscle membership once instead of hiding valid filtered results', async () => {
+  catalogStore().full(scope, body, new Date().toISOString());
+  const selected = [
+    { id: 2, name: 'Provider-confirmed muscle match', metrics: [] },
+  ];
+  page.mockResolvedValue({ body: { results: selected, count: 1 } });
+  const filters = {
+    query: '',
+    commonMuscleGroup: 'Ноги',
+    muscleGroups: [],
+    offset: 0,
+    limit: 50,
+  };
+  const first = await listCatalog(new Headers(), scope.ownerId, filters);
+  expect(first.items.map((item) => item.id)).toEqual([2]);
+  expect(first.metadata).toMatchObject({ coverage: 'complete', total: 1 });
+  expect(page).toHaveBeenCalledTimes(1);
+  const repeated = await listCatalog(new Headers(), scope.ownerId, filters);
+  expect(repeated.items.map((item) => item.id)).toEqual([2]);
+  expect(page).toHaveBeenCalledTimes(1);
+  expect(list).not.toHaveBeenCalled();
+});
