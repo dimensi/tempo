@@ -59,6 +59,7 @@ export function offlineFixture(now: number): OfflineSnapshot {
     sessionExpiresAt: new Date(now + 1200000).toISOString(),
     from: shiftDate(date, -14),
     to: date,
+    workoutDates: [date],
     diary: [day],
     photos: { availability: 'metadata-only', items: [] },
     measurements: [
@@ -96,6 +97,7 @@ export function offlineFixture(now: number): OfflineSnapshot {
     plannedWorkouts: [
       {
         key: 'F'.repeat(43),
+        href: '/workouts/plans/synthetic-plan/workouts/synthetic-workout',
         date,
         title: 'Synthetic plan',
         planTitle: 'Synthetic programme',
@@ -108,6 +110,9 @@ export function offlineFixture(now: number): OfflineSnapshot {
     workoutSessions: [
       {
         key: 'G'.repeat(43),
+        href: '/workouts/sessions/synthetic-session',
+        plannedHref: null,
+        planSnapshot: null,
         date,
         title: 'Synthetic actual',
         note: '',
@@ -121,6 +126,7 @@ export function offlineFixture(now: number): OfflineSnapshot {
     nativeTrainings: [
       {
         key: 'N'.repeat(43),
+        href: '/workouts/native/101',
         source: 'transformmate',
         date,
         title: 'Synthetic native history',
@@ -184,6 +190,10 @@ export function offlineFixture(now: number): OfflineSnapshot {
     transformMateFacts: [
       {
         key: 'H'.repeat(43),
+        href: '/workouts/links/synthetic-link',
+        nativeHref: null,
+        plannedHref: null,
+        planSnapshot: { title: 'Synthetic published plan', exercises: [] },
         date,
         title: 'Synthetic cached fact',
         checkedAt: new Date(now).toISOString(),

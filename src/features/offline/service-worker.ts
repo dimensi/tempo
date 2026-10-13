@@ -8,7 +8,7 @@ const worker = self;
 const precache = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
   precacheOptions: {
-    cacheName: 'yazio-offline-reader-v1',
+    cacheName: 'yazio-offline-app-v1',
     fetchOptions: { credentials: 'omit', cache: 'reload' },
     directoryIndex: null,
     cleanURLs: false,
@@ -24,6 +24,8 @@ const navigationPaths = new Set([
   '/analytics',
   '/measurements',
   '/workouts',
+  '/settings',
+  '/reports',
   '/offline/index.html',
 ]);
 async function purge(previousEpoch?: string) {
@@ -51,7 +53,11 @@ worker.addEventListener('activate', (event) => {
     (async () => {
       await precache.handleActivate(event);
       for (const key of await caches.keys())
-        if (key.startsWith('yazio-offline-shell-')) await caches.delete(key);
+        if (
+          key.startsWith('yazio-offline-shell-') ||
+          key.startsWith('yazio-offline-reader-')
+        )
+          await caches.delete(key);
       await worker.clients.claim();
     })(),
   );
@@ -79,13 +85,29 @@ worker.addEventListener('fetch', (event) => {
     precache.handleFetch(event);
     return;
   }
-  if (request.mode === 'navigate' && navigationPaths.has(url.pathname)) {
+  if (
+    request.mode === 'navigate' &&
+    (navigationPaths.has(url.pathname) ||
+      /^\/workouts\/(?:plans\/[A-Za-z0-9_%~-]+\/(?:workouts\/[A-Za-z0-9_%~-]+(?:\/results)?|edit)|sessions\/[A-Za-z0-9_%~-]+(?:\/edit)?|native\/[1-9][0-9]*|links\/[A-Za-z0-9_%~-]+|new)$/.test(
+        url.pathname,
+      ))
+  ) {
     event.respondWith(
-      fetch(request).catch(async () => {
-        const shell = await precache.matchPrecache('/offline/index.html');
-        if (!shell) throw new Error('Offline shell unavailable');
-        return shell;
-      }),
+      fetch(request)
+        .then((response) => {
+          if (
+            response.status === 401 ||
+            response.status === 403 ||
+            (response.redirected && new URL(response.url).pathname === '/login')
+          )
+            event.waitUntil(purge());
+          return response;
+        })
+        .catch(async () => {
+          const shell = await precache.matchPrecache('/offline/index.html');
+          if (!shell) throw new Error('Offline shell unavailable');
+          return shell;
+        }),
     );
   }
 });

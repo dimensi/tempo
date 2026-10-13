@@ -88,12 +88,19 @@ export async function listCatalog(
     !filters.query &&
     !filters.commonMuscleGroup &&
     filters.muscleGroups.length === 0;
-  const operation = isFull ? ':full' : ':page:' + queryKey(filters);
   let snapshot = isFull ? null : store.query(scope, queryKey(filters));
   let state = store.state(scope);
-  const at = isFull ? state?.full_catalog_fetched_at : snapshot?.fetchedAt;
+  const needsMembershipFill =
+    !snapshot &&
+    Boolean(filters.commonMuscleGroup || filters.muscleGroups.length) &&
+    (!state?.full_catalog_fetched_at ||
+      store.records(scope, true).some((row) => !row.detail));
+  // Text inputs stay local; unknown muscle membership needs one cached provider page.
+  const useFull = isFull || (!snapshot && !needsMembershipFill);
+  const operation = useFull ? ':full' : ':page:' + queryKey(filters);
+  const at = useFull ? state?.full_catalog_fetched_at : snapshot?.fetchedAt;
   if (!fresh(at)) {
-    const refresh = isFull ? refreshFull(scope) : refreshPage(scope, filters);
+    const refresh = useFull ? refreshFull(scope) : refreshPage(scope, filters);
     if (at) void refresh.catch(() => {});
     else
       try {

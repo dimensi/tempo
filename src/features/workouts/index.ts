@@ -5,3 +5,8 @@ export { WorkoutDetailView } from './detail-view';
 
 export { WorkoutResultsPage } from './results-page';
 export type { ResultReturn } from './results-page';
+
+export {
+  WorkoutReadContent,
+  type WorkoutReadContentProps,
+} from './read-content';

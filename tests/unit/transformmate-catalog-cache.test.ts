@@ -318,6 +318,7 @@ it('cold catalog reads fetch once; warm list, query and dictionary stay local fo
     listCatalog(headers, scope.ownerId, filters),
     listCatalog(headers, scope.ownerId, filters),
   ]);
+  await refreshPage(scope, { ...filters, query: 'squat' });
   await listCatalog(headers, scope.ownerId, { ...filters, query: 'squat' });
   await muscleDictionary(headers, scope.ownerId);
   vi.advanceTimersByTime(CATALOG_TTL_MS - 1);
@@ -391,4 +392,139 @@ it('serves persisted details after SQLite reopen and process cache module reset'
     state.database = null;
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+it('fresh full cache serves each unseen typed query locally with partial coverage', async () => {
+  list.mockResolvedValue({ body });
+  page.mockResolvedValue({ body: { results: body, count: 1 } });
+  const filters = {
+    query: '',
+    commonMuscleGroup: null,
+    muscleGroups: [],
+    offset: 0,
+    limit: 50,
+  };
+  await listCatalog(new Headers(), scope.ownerId, filters);
+  for (const query of ['п', 'пр', 'при']) {
+    const result = await listCatalog(new Headers(), scope.ownerId, {
+      ...filters,
+      query,
+    });
+    expect(result.items.map((item) => item.id)).toEqual([1]);
+    expect(result.metadata).toMatchObject({
+      coverage: 'partial',
+      total: null,
+      stale: false,
+    });
+  }
+  expect(page).not.toHaveBeenCalled();
+  expect(list).toHaveBeenCalledTimes(1);
+});
+
+it('cold typed queries share one full bootstrap, then retain authoritative query snapshots', async () => {
+  let finish!: (value: unknown) => void;
+  list.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const filters = {
+    query: '',
+    commonMuscleGroup: null,
+    muscleGroups: [],
+    offset: 0,
+    limit: 50,
+  };
+  const results = Promise.all(
+    ['п', 'пр', 'при'].map((query) =>
+      listCatalog(new Headers(), scope.ownerId, { ...filters, query }),
+    ),
+  );
+  await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+  expect(page).not.toHaveBeenCalled();
+  finish({ body });
+  expect(
+    (await results).every(
+      (result) =>
+        result.metadata.coverage === 'partial' && result.items.length === 1,
+    ),
+  ).toBe(true);
+  const authoritative = { ...filters, query: 'при' };
+  catalogStore().page(
+    scope,
+    JSON.stringify(authoritative),
+    [],
+    0,
+    false,
+    new Date().toISOString(),
+  );
+  const stored = await listCatalog(new Headers(), scope.ownerId, authoritative);
+  expect(stored.items).toEqual([]);
+  expect(stored.metadata).toMatchObject({ coverage: 'complete', total: 0 });
+  expect(list).toHaveBeenCalledTimes(1);
+  expect(page).not.toHaveBeenCalled();
+});
+it('stale full cache returns typed results immediately with one background full refresh', async () => {
+  vi.useFakeTimers();
+  catalogStore().full(
+    scope,
+    body,
+    new Date(Date.now() - CATALOG_TTL_MS).toISOString(),
+  );
+  let finish!: (value: unknown) => void;
+  list.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const filters = {
+    query: '',
+    commonMuscleGroup: null,
+    muscleGroups: [],
+    offset: 0,
+    limit: 50,
+  };
+  const results = await Promise.all(
+    ['п', 'пр', 'при'].map((query) =>
+      listCatalog(new Headers(), scope.ownerId, { ...filters, query }),
+    ),
+  );
+  expect(
+    results.every(
+      (result) =>
+        result.items.length === 1 &&
+        result.metadata.coverage === 'partial' &&
+        result.metadata.stale &&
+        result.metadata.refreshState === 'updating',
+    ),
+  ).toBe(true);
+  expect(list).toHaveBeenCalledTimes(1);
+  expect(page).not.toHaveBeenCalled();
+  finish({ body });
+  await refreshFull(scope);
+});
+
+it('fills unknown muscle membership once instead of hiding valid filtered results', async () => {
+  catalogStore().full(scope, body, new Date().toISOString());
+  const selected = [
+    { id: 2, name: 'Provider-confirmed muscle match', metrics: [] },
+  ];
+  page.mockResolvedValue({ body: { results: selected, count: 1 } });
+  const filters = {
+    query: '',
+    commonMuscleGroup: 'Ноги',
+    muscleGroups: [],
+    offset: 0,
+    limit: 50,
+  };
+  const first = await listCatalog(new Headers(), scope.ownerId, filters);
+  expect(first.items.map((item) => item.id)).toEqual([2]);
+  expect(first.metadata).toMatchObject({ coverage: 'complete', total: 1 });
+  expect(page).toHaveBeenCalledTimes(1);
+  const repeated = await listCatalog(new Headers(), scope.ownerId, filters);
+  expect(repeated.items.map((item) => item.id)).toEqual([2]);
+  expect(page).toHaveBeenCalledTimes(1);
+  expect(list).not.toHaveBeenCalled();
 });

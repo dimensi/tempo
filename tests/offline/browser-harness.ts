@@ -2,6 +2,7 @@ import { shiftDate } from '../../src/contracts/nutrition-sync-dates';
 import { ownerConfirmedYazioWeightPolicyVersion } from '../../src/contracts/yazio-weight-policy';
 import {
   OfflineStorage,
+  revealOfflineContent,
   purgeOfflineDevice,
   subscribeOfflineBlocked,
   withOfflineDevicePurge,
@@ -11,14 +12,167 @@ import { prepareOfflineShell } from '../../src/features/offline/shell';
 import { offlineFixture } from './fixtures';
 const storage = new OfflineStorage();
 let lastFence: Awaited<ReturnType<typeof storage.enable>>;
-const now = Date.now();
+let now = Date.now();
 let finishMutation!: () => void;
 let mutation: Promise<string>;
 let mutationEntered = false;
+let raceReader: OfflineController;
+let raceFlight: Promise<void>;
+let releaseRaceIdentity!: () => void;
+let raceIdentityEntered = false;
+let raceGeneration = 'B'.repeat(43);
+let raceCommits = 0;
+let raceRequests = 0;
+let racePublished: string[] = [];
+let heldProvider: Promise<Response>;
+let heldProviderEntered = false;
 Object.assign(window, {
   offlineTest: {
     now,
     prepareShell: prepareOfflineShell,
+    startRefillRace() {
+      raceIdentityEntered = false;
+      raceCommits = 0;
+      raceRequests = 0;
+      racePublished = [];
+      let first = true;
+      const gate = new Promise<void>((resolve) => {
+        releaseRaceIdentity = resolve;
+      });
+      const originalCommit = storage.commit.bind(storage);
+      storage.commit = async (
+        ...args: Parameters<OfflineStorage['commit']>
+      ) => {
+        raceCommits++;
+        return originalCommit(...args);
+      };
+      raceReader = new OfflineController(
+        storage,
+        (async (url: string) => {
+          raceRequests++;
+          const snapshot = offlineFixture(Date.now());
+          snapshot.connectionGeneration = raceGeneration;
+          if (url === '/api/offline/identity') {
+            const {
+              contractVersion,
+              weightPolicyVersion,
+              partition,
+              connectionGeneration,
+              role,
+              serverNow,
+              expiresAt,
+              sessionExpiresAt,
+            } = snapshot;
+            if (first) {
+              first = false;
+              raceIdentityEntered = true;
+              await gate;
+            }
+            return new Response(
+              JSON.stringify({
+                contractVersion,
+                weightPolicyVersion,
+                partition,
+                connectionGeneration,
+                role,
+                serverNow,
+                expiresAt,
+                sessionExpiresAt,
+              }),
+            );
+          }
+          return new Response(JSON.stringify(snapshot));
+        }) as typeof fetch,
+        Date.now,
+        async () => {},
+        () => 'UTC',
+      );
+      const node = document.createElement('div');
+      node.dataset.offlinePrivate = '';
+      node.dataset.testid = 'race-private';
+      node.hidden = true;
+      document.body.append(node);
+      // Model delayed cross-tab delivery: exclusion must work without notification timing.
+      raceReader.subscribe(() => {
+        const bundle = raceReader.getSnapshot().bundle;
+        node.hidden = true;
+        if (bundle) {
+          racePublished.push(bundle.snapshot.connectionGeneration);
+          node.textContent = 'Synthetic race private';
+          revealOfflineContent(bundle.fence);
+        }
+      });
+      raceFlight = raceReader.activate(true, true);
+    },
+    releaseRefillIdentity() {
+      releaseRaceIdentity();
+    },
+    waitRefill() {
+      return raceFlight;
+    },
+    retryRefill() {
+      return raceReader.activate(true, true);
+    },
+    raceState() {
+      return {
+        entered: raceIdentityEntered,
+        commits: raceCommits,
+        requests: raceRequests,
+        published: racePublished,
+        status: raceReader.getSnapshot().status,
+      };
+    },
+    setRaceGeneration() {
+      raceGeneration = 'Z'.repeat(43);
+    },
+    startHeldProvider() {
+      heldProviderEntered = false;
+      heldProvider = withOfflineDevicePurge(async () => {
+        heldProviderEntered = true;
+        return fetch('/api/transformmate/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ synthetic: true }),
+        });
+      });
+    },
+    heldProviderEntered() {
+      return heldProviderEntered;
+    },
+    finishHeldProvider() {
+      return heldProvider.then((response) => response.status);
+    },
+    async cacheWithoutLocks() {
+      const manager = navigator.locks;
+      Object.defineProperty(navigator, 'locks', {
+        value: undefined,
+        configurable: true,
+      });
+      let requests = 0;
+      try {
+        const reader = new OfflineController(storage, (async () => {
+          requests++;
+          throw new Error('must not fetch');
+        }) as typeof fetch);
+        await reader.activate(true);
+        return {
+          requests,
+          status: reader.getSnapshot().status,
+          error: reader.getSnapshot().error,
+          bundle: reader.getSnapshot().bundle,
+        };
+      } finally {
+        Object.defineProperty(navigator, 'locks', {
+          value: manager,
+          configurable: true,
+        });
+      }
+    },
+    async removeLinkedNative() {
+      const current = await storage.read(Date.now(), 'UTC');
+      current.bundle!.snapshot.nativeTrainings = [];
+      await storage.commit(current.bundle!, current.photos, Date.now(), 'UTC');
+    },
     async shortenExpiry() {
       const fixture = offlineFixture(now);
       const identity = {
@@ -59,7 +213,11 @@ Object.assign(window, {
       finishMutation();
       return mutation;
     },
-    async seed(variant?: 'zero-entry' | 'empty' | 'photo-only' | 'totals') {
+    async seed(
+      variant?:
+        'zero-entry' | 'empty' | 'photo-only' | 'totals' | 'linked-plan',
+    ) {
+      now = Date.now();
       const snapshot = offlineFixture(now);
       const id = 'I'.repeat(43);
       snapshot.photos.items = [
@@ -84,7 +242,13 @@ Object.assign(window, {
         ],
         { type: 'image/png' },
       );
-      if (variant) {
+      if (variant === 'linked-plan') {
+        snapshot.transformMateFacts[0]!.plannedHref =
+          snapshot.plannedWorkouts[0]!.href;
+        snapshot.transformMateFacts[0]!.nativeHref =
+          snapshot.nativeTrainings[0]!.href;
+      }
+      if (variant && variant !== 'linked-plan') {
         const day = snapshot.diary[0]!;
         day.totals.calories = '123.456';
         for (const meal of day.meals) {
@@ -109,7 +273,8 @@ Object.assign(window, {
           snapshot.photos.items[0]!.daytime = 'lunch';
         else snapshot.photos.items = [];
       }
-      const storedPhotos = variant ? [] : [{ id, bytes }];
+      const storedPhotos =
+        variant && variant !== 'linked-plan' ? [] : [{ id, bytes }];
       lastFence = await storage.enable(
         snapshot.partition,
         snapshot.connectionGeneration,
@@ -125,7 +290,7 @@ Object.assign(window, {
           sessionExpiresAt: now + 1200000,
           snapshot,
           missingPhotos: variant === 'photo-only' ? [id] : [],
-          photoBytes: variant ? 0 : bytes.size,
+          photoBytes: variant && variant !== 'linked-plan' ? 0 : bytes.size,
         },
         storedPhotos,
         now,
@@ -324,4 +489,8 @@ Object.assign(window, {
       });
     },
   },
+});
+
+Object.defineProperty(Reflect.get(window, 'offlineTest'), 'now', {
+  get: () => now,
 });

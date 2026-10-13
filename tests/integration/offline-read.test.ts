@@ -321,14 +321,24 @@ it('safe local projection preserves null/zero/notes/workouts/facts while strippi
   expect(value.photos.items[0]?.downloadUrl).toMatch(
     /^\/api\/offline\/photos\/[^?]+\?date=2026-10-12$/,
   );
+  expect(value.plannedWorkouts[0]?.href).toBe(
+    '/workouts/plans/private-plan-id/workouts/private-planned-id',
+  );
+  expect(value.workoutSessions[0]?.plannedHref).toBe(
+    value.plannedWorkouts[0]?.href,
+  );
+  expect(
+    value.workoutSessions[0]?.planSnapshot?.exercises[0]?.sets[0]?.weightKg,
+  ).toBe(0);
+  expect(value.transformMateFacts[0]?.nativeHref).toBe(
+    '/workouts/native/918274',
+  );
   const serialized = JSON.stringify(value);
   for (const forbidden of [
     ownerId,
     'UPSTREAM_PRIVATE',
-    'private-plan-id',
     'private-occurrence',
     '918273',
-    '918274',
     'PRIVATE_GATEWAY',
     'PRIVATE_SOURCE',
     'PRIVATE_EXPECTED_TOKEN',

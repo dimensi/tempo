@@ -206,9 +206,18 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
   const exercise = (value: {
     name: string;
     comment?: string;
+    transformMate?: { occurrenceKey: string };
     sets: { reps: number; weightKg: number | null }[];
   }) => ({
     name: value.name,
+    ...(value.transformMate
+      ? {
+          comparisonKey: key(
+            'workout-occurrence',
+            value.transformMate.occurrenceKey,
+          ),
+        }
+      : {}),
     ...(value.comment === undefined ? {} : { comment: value.comment }),
     sets: value.sets.map(({ reps, weightKg }) => ({ reps, weightKg })),
   });
@@ -216,6 +225,15 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
     ...after.identity,
     from,
     to,
+    workoutDates: Array.from(
+      {
+        length: Math.floor((Date.parse(to) - Date.parse(from)) / 86400000) + 1,
+      },
+      (_, index) =>
+        new Date(Date.parse(from) + index * 86400000)
+          .toISOString()
+          .slice(0, 10),
+    ),
     diary: rows.diary.map((day) => ({
       ...day,
       meals: day.meals.map((meal) => ({
@@ -268,6 +286,7 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
         .filter((workout) => workout.date >= from && workout.date <= to)
         .map((workout) => ({
           key: key('planned', plan.id + ':' + workout.id),
+          href: `/workouts/plans/${encodeURIComponent(plan.id)}/workouts/${encodeURIComponent(workout.id)}`,
           date: workout.date,
           title: workout.title,
           planTitle: plan.data.title,
@@ -277,6 +296,17 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
     ),
     workoutSessions: rows.sessions.map((session) => ({
       key: key('session', session.id),
+      href: `/workouts/sessions/${encodeURIComponent(session.id)}`,
+      plannedHref:
+        session.planId && session.plannedWorkoutId
+          ? `/workouts/plans/${encodeURIComponent(session.planId)}/workouts/${encodeURIComponent(session.plannedWorkoutId)}`
+          : null,
+      planSnapshot: session.planSnapshot
+        ? {
+            title: session.planSnapshot.planTitle,
+            exercises: session.planSnapshot.workout.exercises.map(exercise),
+          }
+        : null,
       date: session.date,
       title: session.title,
       note: session.note,
@@ -286,6 +316,7 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
     })),
     nativeTrainings: rows.nativeTrainings.map((training) => ({
       key: key('tm-native', training.id),
+      href: `/workouts/native/${training.remoteTrainingId}`,
       source: training.source,
       date: training.date,
       title: training.title,
@@ -315,8 +346,28 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
       })),
     })),
     transformMateFacts: rows.transformMateFacts.map(
-      ({ id, checkedAt, actual }) => ({
+      ({
+        id,
+        checkedAt,
+        actual,
+        planId,
+        workoutId,
+        remoteTrainingId,
+        planSnapshot,
+      }) => ({
         key: key('tm-fact', id),
+        href: `/workouts/links/${encodeURIComponent(id)}`,
+        nativeHref:
+          remoteTrainingId === null
+            ? null
+            : `/workouts/native/${remoteTrainingId}`,
+        plannedHref: `/workouts/plans/${encodeURIComponent(planId)}/workouts/${encodeURIComponent(workoutId)}`,
+        planSnapshot: planSnapshot
+          ? {
+              title: planSnapshot.planTitle,
+              exercises: planSnapshot.workout.exercises.map(exercise),
+            }
+          : null,
         date: actual.date,
         title: actual.title,
         checkedAt,

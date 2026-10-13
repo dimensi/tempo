@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  mergeOfflineSnapshots,
   offlineLocalWindow,
   pruneOfflineSnapshot,
 } from '@/contracts/offline-retention';
@@ -35,7 +36,7 @@ describe('offline local calendar retention', () => {
       ),
     ).toEqual({ from: '2026-10-18', to: '2026-11-01' });
   });
-  it('prunes every collection inclusively without changing genuine server metadata or zero/null', () => {
+  it('prunes diary observations inclusively and retains bounded workout copies without changing genuine server metadata or zero/null', () => {
     const snapshot = offlineFixture(Date.parse('2026-10-12T12:00:00Z'));
     const dates = ['2026-09-27', '2026-09-28', '2026-10-12', '2026-10-13'];
     snapshot.diary = dates.map((date) => ({ ...snapshot.diary[0]!, date }));
@@ -84,10 +85,6 @@ describe('offline local calendar retention', () => {
       result.diary,
       result.photos.items,
       result.dailySteps,
-      result.plannedWorkouts,
-      result.workoutSessions,
-      result.transformMateFacts,
-      result.nativeTrainings,
     ])
       expect(collection.map((r) => r.date)).toEqual([
         '2026-09-28',
@@ -101,9 +98,58 @@ describe('offline local calendar retention', () => {
       '2026-09-28',
       '2026-10-12',
     ]);
+    for (const collection of [
+      result.plannedWorkouts,
+      result.workoutSessions,
+      result.transformMateFacts,
+      result.nativeTrainings,
+    ])
+      expect(collection.map((item) => item.date)).toEqual(dates);
     expect(result.dailySteps[0]!.steps).toBe(0);
     expect(result.importedWeights[0]!.rawValue).toBeNull();
     expect(result.expiresAt).toBe(snapshot.expiresAt);
     expect(result.sessionExpiresAt).toBe(snapshot.sessionExpiresAt);
   });
+});
+
+it('retains old visited workout links across diary refresh and never crosses an account generation', () => {
+  const old = offlineFixture(Date.parse('2026-09-01T12:00:00Z'));
+  const fresh = offlineFixture(Date.parse('2026-10-12T12:00:00Z'));
+  old.workoutSessions[0]!.href = '/workouts/sessions/old-visited';
+  const merged = pruneOfflineSnapshot(
+    mergeOfflineSnapshots(old, fresh),
+    offlineLocalWindow(Date.parse(fresh.serverNow), 'UTC'),
+  );
+  expect(merged.diary.map((item) => item.date)).toEqual(['2026-10-12']);
+  expect(merged.workoutSessions.map((item) => item.href)).toContain(
+    '/workouts/sessions/old-visited',
+  );
+  expect(merged.workoutDates).toContain('2026-09-01');
+  fresh.connectionGeneration = 'Z'.repeat(43);
+  expect(
+    mergeOfflineSnapshots(old, fresh).workoutSessions.map((item) => item.href),
+  ).not.toContain('/workouts/sessions/old-visited');
+});
+
+it('quota eviction invalidates populated date coverage while preserving truly loaded empty dates', () => {
+  const previous = offlineFixture(Date.parse('2026-09-01T12:00:00Z'));
+  const fresh = offlineFixture(Date.parse('2026-10-12T12:00:00Z'));
+  previous.workoutDates = ['2026-09-01', '2026-09-02'];
+  previous.workoutSessions = Array.from({ length: 300 }, (_, index) => ({
+    ...previous.workoutSessions[0]!,
+    href: `/workouts/sessions/old-${index}`,
+  }));
+  const merged = mergeOfflineSnapshots(previous, fresh);
+  expect(merged.workoutSessions).toHaveLength(300);
+  expect(
+    merged.workoutSessions.some(
+      (item) => item.href === '/workouts/sessions/old-0',
+    ),
+  ).toBe(false);
+  expect(
+    merged.workoutSessions.some((item) => item.date === '2026-09-01'),
+  ).toBe(true);
+  expect(merged.workoutDates).not.toContain('2026-09-01'); // Remaining records are a partial date.
+  expect(merged.workoutDates).toContain('2026-09-02'); // Confirmed empty is still distinct from unknown.
+  expect(merged.workoutDates).toContain('2026-10-12');
 });

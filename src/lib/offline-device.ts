@@ -1,4 +1,5 @@
 import {
+  offlineLimits,
   offlineSnapshotSchema,
   type OfflineSnapshot,
 } from '@/contracts/offline';
@@ -11,7 +12,7 @@ export const offlineDeviceLimits = {
   photoBytes: 50 * 1024 * 1024,
 } as const;
 export const offlineDeviceMessages = {
-  title: 'Offline-чтение',
+  title: 'Работа без сети',
   cleanupWarning:
     'Offline-чтение заблокировано. Не удалось полностью очистить данные устройства.',
 } as const;
@@ -95,12 +96,22 @@ const databaseName = 'yazio-offline-read-v1';
 const stores = ['metadata', 'bundle', 'photos'];
 const gateKey = 'yazio.offline.block.v1';
 const channelName = 'yazio-offline-lifecycle-v1';
+const mutationLockName = 'yazio-offline-mutation';
+const mutationIntentPrefix = 'yazio.offline.intent:';
 export const offlineBlockedEvent = 'yazio:offline-blocked';
 interface DeviceGate {
   epoch: string;
   disabled: boolean;
 }
 let memoryBlocked = false;
+let pendingDeviceMutations = 0;
+function hasMutationIntent(storage = browserGateStorage()) {
+  if (pendingDeviceMutations) return true;
+  if (!storage) throw new OfflineStorageError('unavailable');
+  for (let index = 0; index < storage.length; index++)
+    if (storage.key(index)?.startsWith(mutationIntentPrefix)) return true;
+  return false;
+}
 function readGate(storage: Storage | undefined): DeviceGate {
   try {
     if (!storage) throw new Error();
@@ -151,7 +162,12 @@ export function concealOfflineContent() {
 export function revealOfflineContent(fence: CacheFence) {
   try {
     const gate = readGate(browserGateStorage());
-    if (memoryBlocked || gate.disabled || gate.epoch !== fence.deviceEpoch)
+    if (
+      hasMutationIntent() ||
+      memoryBlocked ||
+      gate.disabled ||
+      gate.epoch !== fence.deviceEpoch
+    )
       return;
     for (const node of document.querySelectorAll<HTMLElement>(
       '[data-offline-private]',
@@ -178,6 +194,8 @@ export function subscribeOfflineBlocked(listener: () => void) {
       : new BroadcastChannel(channelName);
   if (channel) channel.onmessage = clear;
   const storage = (event: StorageEvent) => {
+    if (event.key?.startsWith(mutationIntentPrefix) && event.newValue !== null)
+      clear();
     if (event.key === gateKey) {
       try {
         if (readGate(globalThis.localStorage).disabled) clear();
@@ -244,6 +262,24 @@ export async function purgeOfflineDevice() {
   }
   if (failed) throw new OfflineStorageError('unavailable');
 }
+export type OfflineCacheLockResult = 'completed' | 'busy' | 'unavailable';
+export async function withOfflineCacheLock(
+  operation: () => Promise<void>,
+): Promise<OfflineCacheLockResult> {
+  // Browser caching requires actual cross-tab exclusion, not an advisory query.
+  if (typeof navigator === 'undefined' || !navigator.locks)
+    return 'unavailable';
+  if (hasMutationIntent()) return 'busy';
+  return navigator.locks.request(
+    mutationLockName,
+    { mode: 'shared', ifAvailable: true },
+    async (lock) => {
+      if (!lock || hasMutationIntent()) return 'busy';
+      await operation();
+      return 'completed';
+    },
+  );
+}
 export async function withOfflineDevicePurge<T>(
   operation: () => Promise<T>,
   onCleanupFailure?: () => void,
@@ -259,11 +295,55 @@ export async function withOfflineDevicePurge<T>(
       }
     }
   };
-  await cleanup();
+  // Conceal and durably block before waiting for an existing cache read to abort.
+  pendingDeviceMutations++;
+  let intentKey: string | undefined;
+  let intentStored = false;
   try {
-    return await operation();
-  } finally {
+    try {
+      intentKey = mutationIntentPrefix + crypto.randomUUID();
+      globalThis.localStorage.setItem(intentKey, 'pending');
+      intentStored = true;
+    } catch {
+      // Authentication still executes when browser storage is inaccessible.
+      try {
+        onCleanupFailure?.();
+      } catch {
+        /* Reporting cannot replace intent. */
+      }
+    }
+    notifyOfflineBlocked();
     await cleanup();
+    const run = async () => {
+      await cleanup();
+      try {
+        return await operation();
+      } finally {
+        await cleanup();
+      }
+    };
+    if (typeof navigator !== 'undefined' && navigator.locks) {
+      let entered = false;
+      try {
+        return await navigator.locks.request(mutationLockName, async () => {
+          entered = true;
+          return run();
+        });
+      } catch (error) {
+        if (entered) throw error; // Never replay an operation that already started.
+        return await run();
+      }
+    }
+    return await run();
+  } finally {
+    if (intentStored && intentKey) {
+      try {
+        globalThis.localStorage.removeItem(intentKey);
+      } catch {
+        /* A lingering durable intent keeps cache reads blocked. */
+      }
+    }
+    pendingDeviceMutations--;
   }
 }
 export class OfflineStorageError extends Error {
@@ -377,6 +457,7 @@ export class OfflineStorage {
         ...metadata,
         enabled:
           metadata.enabled &&
+          !hasMutationIntent(this.gateStorage) &&
           !memoryBlocked &&
           !gate.disabled &&
           gate.epoch === metadata.deviceEpoch,
@@ -387,6 +468,7 @@ export class OfflineStorage {
     return this.transaction<CacheFence>((_tx, metadata, finish, fail) => {
       const gate = readGate(this.gateStorage);
       if (
+        hasMutationIntent(this.gateStorage) ||
         memoryBlocked ||
         gate.disabled ||
         !metadata.enabled ||
@@ -418,16 +500,21 @@ export class OfflineStorage {
     });
   }
   enable(partition: string, connectionGeneration: string, now = Date.now()) {
+    if (hasMutationIntent(this.gateStorage))
+      throw new OfflineStorageError('fence');
     const gate = { epoch: crypto.randomUUID(), disabled: false };
     writeGate(this.gateStorage, gate);
     memoryBlocked = false;
     return this.transaction<CacheFence>((tx, metadata, finish, fail) => {
       if (
+        hasMutationIntent(this.gateStorage) ||
         readGate(this.gateStorage).epoch !== gate.epoch ||
         readGate(this.gateStorage).disabled ||
         memoryBlocked
       )
         return fail(new OfflineStorageError('fence'));
+      if (now < metadata.lastSeenAt)
+        return fail(new OfflineStorageError('expired'));
       const next = {
         ...nextMetadata(metadata, now),
         partition,
@@ -455,6 +542,7 @@ export class OfflineStorage {
     return this.transaction<void>((tx, metadata, finish, fail) => {
       const gate = readGate(this.gateStorage);
       if (
+        hasMutationIntent(this.gateStorage) ||
         memoryBlocked ||
         gate.disabled ||
         gate.epoch !== bundle.fence.deviceEpoch
@@ -475,6 +563,11 @@ export class OfflineStorage {
         offlineSnapshotSchema.parse(bundle.snapshot),
         offlineLocalWindow(now, timezone),
       );
+      if (
+        new TextEncoder().encode(JSON.stringify(snapshot)).length >
+        offlineLimits.payloadBytes
+      )
+        return fail(new OfflineStorageError('quota'));
       const ids = new Set(snapshot.photos.items.map((photo) => photo.id));
       const retained = photos.filter((photo) => ids.has(photo.id));
       const nextBundle = {
@@ -510,6 +603,7 @@ export class OfflineStorage {
             request.result;
           const gate = readGate(this.gateStorage);
           if (
+            hasMutationIntent(this.gateStorage) ||
             memoryBlocked ||
             gate.disabled ||
             (metadata.enabled && gate.epoch !== metadata.deviceEpoch)
@@ -545,6 +639,7 @@ export class OfflineStorage {
             missingPhotos: bundle.missingPhotos.filter((id) => ids.has(id)),
           };
           if (
+            hasMutationIntent(this.gateStorage) ||
             memoryBlocked ||
             gate.disabled ||
             gate.epoch !== bundle.fence.deviceEpoch ||

@@ -27,6 +27,12 @@ export const offlineLimits = {
 } as const;
 const opaque = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const date = z.iso.date();
+export const offlineWorkoutHrefSchema = z
+  .string()
+  .max(600)
+  .regex(
+    /^\/workouts\/(?:plans\/[A-Za-z0-9_%~-]+\/workouts\/[A-Za-z0-9_%~-]+|sessions\/[A-Za-z0-9_%~-]+|native\/[1-9][0-9]*|links\/[A-Za-z0-9_%~-]+)$/,
+  );
 const timestamp = z.iso.datetime();
 const decimal = nonnegativeDecimalSchema.nullable();
 const nativeExercise = transformMateNativeItemSchema.shape.exercises.element;
@@ -34,6 +40,7 @@ export const offlineNativeTrainingSchema = transformMateNativeItemSchema
   .omit({ remoteTrainingId: true })
   .extend({
     key: opaque,
+    href: offlineWorkoutHrefSchema,
     exercises: z
       .array(
         nativeExercise
@@ -110,6 +117,7 @@ const entry = z
   .strict();
 const exercise = z
   .object({
+    comparisonKey: opaque.optional(),
     name: z.string().max(160),
     comment: z.string().max(4000).optional(),
     sets: z.array(workoutSetSchema).max(50),
@@ -140,6 +148,7 @@ export const offlineSnapshotSchema = offlineIdentitySchema
   .extend({
     from: date,
     to: date,
+    workoutDates: z.array(date).max(300),
     diary: z
       .array(
         z
@@ -220,6 +229,7 @@ export const offlineSnapshotSchema = offlineIdentitySchema
         z
           .object({
             key: opaque,
+            href: offlineWorkoutHrefSchema,
             date,
             title: z.string().max(160),
             planTitle: z.string().max(160),
@@ -234,6 +244,15 @@ export const offlineSnapshotSchema = offlineIdentitySchema
         z
           .object({
             key: opaque,
+            href: offlineWorkoutHrefSchema,
+            plannedHref: offlineWorkoutHrefSchema.nullable(),
+            planSnapshot: z
+              .object({
+                title: z.string().max(160),
+                exercises: z.array(exercise).max(50),
+              })
+              .strict()
+              .nullable(),
             date,
             title: z.string().max(160),
             note: z.string().max(4000),
@@ -252,6 +271,16 @@ export const offlineSnapshotSchema = offlineIdentitySchema
         z
           .object({
             key: opaque,
+            href: offlineWorkoutHrefSchema,
+            nativeHref: offlineWorkoutHrefSchema.nullable(),
+            plannedHref: offlineWorkoutHrefSchema.nullable(),
+            planSnapshot: z
+              .object({
+                title: z.string().max(160),
+                exercises: z.array(exercise).max(50),
+              })
+              .strict()
+              .nullable(),
             date,
             title: z.string().max(500),
             checkedAt: timestamp.nullable(),

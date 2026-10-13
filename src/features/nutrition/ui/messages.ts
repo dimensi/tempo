@@ -1,4 +1,5 @@
 export const diaryMessages = {
+  photoNotSaved: 'Фотография не сохранена на этом устройстве.',
   title: 'Дневник питания',
   refreshDay: 'Обновить день',
   refreshRunning: 'Обновляем еду и фотографии выбранного дня…',

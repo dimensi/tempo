@@ -31,6 +31,8 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - run: pnpm test:e2e
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - run: pnpm test:e2e --config tests/offline/production.config.ts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - run: pnpm test:e2e --config tests/nutrition-sync/e2e.config.ts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - run: pnpm test:e2e --config tests/transformmate-sync/e2e.config.ts

@@ -33,7 +33,7 @@ import type { TransformMateSyncItem } from '@/contracts/transformmate';
 import type { TransformMateNativeItem } from '@/contracts/transformmate-native';
 import { workoutTitle } from '@/lib/workout-title';
 import { ExerciseTable } from './exercise-table';
-import { NativeWorkout } from './native-workout';
+import { WorkoutReadContent } from './read-content';
 import { WorkoutSync } from './transformmate-sync';
 import { workoutMessages as m } from './messages';
 import classes from './workout-ui.module.css';
@@ -229,75 +229,46 @@ export function WorkoutDetailView({
       </Group>
       {detail.kind === 'plan' && (
         <>
-          {detail.plan.description && (
-            <Text style={{ whiteSpace: 'pre-wrap' }}>
-              {detail.plan.description}
-            </Text>
-          )}
-          <ExerciseTable
-            ownerId={ownerId}
-            exercises={detail.workout.exercises}
+          <WorkoutReadContent
+            kind="plan"
             sync={detail.sync ?? undefined}
-            actual={detail.sessions.at(-1)?.exercises}
+            ownerId={ownerId}
+            description={detail.plan.description}
+            exercises={detail.workout.exercises}
+            sessions={detail.sessions.map((result) => ({
+              key: result.id,
+              exercises: result.exercises,
+              note: result.note,
+            }))}
+            comments={renderComments}
           />
           <WorkoutSync item={detail.sync ?? undefined} />
-          {detail.sessions.map((result) => (
-            <Stack key={result.id} data-testid={`session-${result.id}`}>
-              <Title order={2} size="h3">
-                {m.actualDetails}
-              </Title>
-              {result !== detail.sessions.at(-1) && (
-                <ExerciseTable
-                  ownerId={ownerId}
-                  exercises={result.exercises}
-                  factOnly
-                />
-              )}
-              {result.note && <Text>{result.note}</Text>}
-              {renderComments?.(result.id)}
-            </Stack>
-          ))}
         </>
       )}
       {detail.kind === 'session' && (
-        <>
-          <Text size="sm" c="dimmed">
-            {m[detail.session.status]}
-          </Text>
-          {!detail.session.exercises.length && (
-            <Text size="sm" c="dimmed">
-              {m.noActualRecorded}
-            </Text>
-          )}
-          {detail.session.planSnapshot && (
-            <>
-              <Title order={2} size="h3">
-                {m.snapshot}
-              </Title>
-              <ExerciseTable
-                ownerId={ownerId}
-                exercises={detail.session.planSnapshot.workout.exercises}
-                actual={detail.session.exercises}
-              />
-            </>
-          )}
-          {!detail.session.planSnapshot && (
-            <ExerciseTable
-              ownerId={ownerId}
-              exercises={detail.session.exercises}
-              factOnly
-            />
-          )}
-          {detail.session.note && (
-            <Text style={{ whiteSpace: 'pre-wrap' }}>
-              {detail.session.note}
-            </Text>
-          )}
-          {renderComments?.(detail.session.id)}
-        </>
+        <WorkoutReadContent
+          kind="session"
+          ownerId={ownerId}
+          status={detail.session.status}
+          exercises={detail.session.exercises}
+          snapshot={
+            detail.session.planSnapshot
+              ? {
+                  title: detail.session.planSnapshot.planTitle,
+                  exercises: detail.session.planSnapshot.workout.exercises,
+                }
+              : null
+          }
+          note={detail.session.note}
+          comments={renderComments?.(detail.session.id)}
+        />
       )}
       {detail.kind === 'native' && (
-        <NativeWorkout item={detail.item} ownerId={ownerId} fullView />
+        <WorkoutReadContent
+          kind="native"
+          ownerId={ownerId}
+          item={detail.item}
+        />
       )}
       {detail.kind === 'link' && (
         <>
