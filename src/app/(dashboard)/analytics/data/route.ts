@@ -6,6 +6,7 @@ export async function GET(request: Request) {
       request.headers,
       params.get('ownerId') ?? '',
       { from: params.get('from'), to: params.get('to') },
+      params.get('timezone') ?? 'UTC',
     );
     return Response.json(data, {
       headers: { 'Cache-Control': 'private, no-store' },

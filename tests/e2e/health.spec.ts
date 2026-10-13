@@ -101,12 +101,15 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
     });
     await page.goto(`/analytics?from=${from}&to=${today()}`);
     const steps = page.getByRole('main').getByTestId('health-steps');
+    await steps
+      .getByRole('button', { name: 'Показать данные по дням' })
+      .click();
     const zero = steps.getByRole('row').filter({ hasText: today() });
     await expect(zero).toContainText('0');
     await expect(
       steps.getByRole('row').filter({ hasText: shiftDate(today(), -1) }),
     ).toContainText('Нет данных');
-    await expect(steps).toContainText('Среднее за день с данными: 617');
+    await expect(steps).toContainText('617 шагов в среднем за день');
     const points = await (
       await page.request.get(`/api/health/steps?from=${from}&to=${today()}`)
     ).json();
@@ -117,12 +120,19 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
       path: testInfo.outputPath('synthetic-analytics.png'),
       fullPage: true,
     });
+    await page
+      .getByRole('main')
+      .getByRole('button', { name: 'Период', exact: true })
+      .click();
     await page.getByRole('textbox', { name: 'С', exact: true }).fill(today());
     await page.getByRole('textbox', { name: 'По', exact: true }).fill(today());
     await page.getByRole('button', { name: 'Показать', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`from=${today()}&to=${today()}`));
-    await expect(steps).toContainText('Дней с данными: 1 / 1');
-    await expect(steps).toContainText('Среднее за день с данными: 0');
+    await expect(steps).toContainText('Данные за 1 из 1 дней');
+    await expect(steps).toContainText('0 шагов в среднем за день');
+    await steps
+      .getByRole('button', { name: 'Показать данные по дням' })
+      .click();
     await expect(steps.getByRole('row')).toHaveCount(2);
     await page.goto('/measurements');
     const weights = page.getByRole('main').getByTestId('health-weight');
