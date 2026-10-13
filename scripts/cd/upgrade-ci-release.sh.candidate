@@ -8,32 +8,52 @@ image="nutrition-release:${commit:0:12}"
 [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == "$commit" ]] || exit 3
 stamp=${CD_BACKUP_STAMP:?fixed backup stamp required}
 [[ "$stamp" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]] || exit 2
-compose() { docker compose --project-name nutrition --env-file runtime.env -f compose.yaml -f compose.home.yaml "$@"; }
+compose() { docker compose --project-name nutrition --env-file runtime.env --env-file release.env -f compose.yaml -f compose.home.yaml "$@"; }
 container=$(compose ps -q app)
 previous_image=$(docker inspect "$container" --format '{{.Config.Image}}')
 previous_revision=$(docker inspect "$container" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
 [[ "$previous_image" =~ ^nutrition-release:[0-9a-f]{12}$ && "$previous_revision" =~ ^[0-9a-f]{40}$ ]] || exit 3
-env_backup="runtime.env.pre-upgrade-$stamp"
-cp -p runtime.env "$env_backup"
+# Reject mixed secret/release files before passing release metadata to a one-off container.
+while IFS= read -r line || [[ -n "$line" ]]; do
+ [[ "$line" =~ ^(NUTRITION_IMAGE=nutrition-release:[0-9a-f]{12}|DEPLOYED_COMMIT=[0-9a-f]{40})$ ]] || exit 2
+done < release.env
+[[ "$(sed -n 's/^NUTRITION_IMAGE=//p' release.env)" == "$previous_image" && "$(sed -n 's/^DEPLOYED_COMMIT=//p' release.env)" == "$previous_revision" ]] || exit 3
+env_backup="verification/previous-release.env"
+cp -p release.env "$env_backup"
 chmod 600 "$env_backup"
 backup_ready=false
 recovery_armed=false
 snapshot() {
- compose run --rm --no-deps -e BACKUP_PREFIX="$1" --entrypoint node app -e '
+ compose run --rm --no-deps -e BACKUP_PREFIX="$1" -e BACKUP_STAMP="$stamp" \
+ -e BACKUP_IMAGE="$2" -e BACKUP_REVISION="$3" \
+ -e RELEASE_CONFIG="$(cat release.env)" -e BASE_CONFIG="$(cat compose.yaml)" -e HOME_CONFIG="$(cat compose.home.yaml)" --entrypoint node app -e '
  const fs=require("node:fs"),cp=require("node:child_process"),D=require("better-sqlite3");
- const prefix="/app/data/"+process.env.BACKUP_PREFIX;
- process.umask(0o077);
+ process.umask(0o077);fs.mkdirSync("/app/data/cd-backups",{recursive:true,mode:0o700});
+ const dir="/app/data/cd-backups/"+process.env.BACKUP_PREFIX;fs.mkdirSync(dir,{mode:0o700});const prefix=dir+"/snapshot";
  function run(args){const r=cp.spawnSync(args[0],args.slice(1),{stdio:"inherit"});if(r.status!==0)process.exit(1);}
  run(["node","scripts/backup.mjs",prefix+".sqlite"]);
  const db=new D(prefix+".sqlite",{readonly:true});if(db.pragma("integrity_check",{simple:true})!=="ok")process.exit(1);db.close();
  run(["tar","-czf",prefix+"-uploads.tar.gz","-C","/app/uploads","."]);
  run(["gzip","-t",prefix+"-uploads.tar.gz"]);
  for(const [name,file] of [["yazio","yazio-token.json"],["transformmate","transformmate-token.json"]]){const original="/app/data/"+file;if(fs.existsSync(original)){fs.copyFileSync(original,prefix+"-"+name+"-connection.enc");fs.chmodSync(prefix+"-"+name+"-connection.enc",0o600);}else fs.writeFileSync(prefix+"-"+name+"-connection.absent","");}
+ fs.writeFileSync(dir+"/release.env",process.env.RELEASE_CONFIG+"\n",{mode:0o600});
+ fs.writeFileSync(dir+"/compose.yaml",process.env.BASE_CONFIG+"\n");fs.writeFileSync(dir+"/compose.home.yaml",process.env.HOME_CONFIG+"\n");
+ const crypto=require("node:crypto"),files={};function hash(file){const h=crypto.createHash("sha256"),fd=fs.openSync(file,"r"),buf=Buffer.alloc(1048576);try{let n;while((n=fs.readSync(fd,buf,0,buf.length,null)))h.update(buf.subarray(0,n));}finally{fs.closeSync(fd);}return h.digest("hex");}
+ for(const file of fs.readdirSync(dir))files[file]=hash(dir+"/"+file);
+ fs.writeFileSync(dir+"/manifest.json",JSON.stringify({format:1,stamp:process.env.BACKUP_STAMP,image:process.env.BACKUP_IMAGE,revision:process.env.BACKUP_REVISION,createdAt:new Date().toISOString(),files})+"\n",{mode:0o600});
  '
 }
 restore_snapshot() {
- compose run --rm --no-deps -e BACKUP_PREFIX="pre-upgrade-$stamp" --entrypoint node app -e '
- const fs=require("node:fs"),cp=require("node:child_process"),D=require("better-sqlite3");const prefix="/app/data/"+process.env.BACKUP_PREFIX;process.umask(0o077);
+ compose run --rm --no-deps -e BACKUP_PREFIX="pre-upgrade-$stamp" -e BACKUP_IMAGE="$previous_image" -e BACKUP_REVISION="$previous_revision" --entrypoint node app -e '
+ const fs=require("node:fs"),cp=require("node:child_process"),D=require("better-sqlite3");const dir="/app/data/cd-backups/"+process.env.BACKUP_PREFIX,prefix=dir+"/snapshot";process.umask(0o077);
+ const manifest=JSON.parse(fs.readFileSync(dir+"/manifest.json"));const crypto=require("node:crypto");function hash(file){const h=crypto.createHash("sha256"),fd=fs.openSync(file,"r"),buf=Buffer.alloc(1048576);try{let n;while((n=fs.readSync(fd,buf,0,buf.length,null)))h.update(buf.subarray(0,n));}finally{fs.closeSync(fd);}return h.digest("hex");}
+ if(manifest.format!==1||manifest.image!==process.env.BACKUP_IMAGE||manifest.revision!==process.env.BACKUP_REVISION)process.exit(1);
+ for(const file of ["snapshot.sqlite","snapshot-uploads.tar.gz","release.env","compose.yaml","compose.home.yaml"])if(!manifest.files[file])process.exit(1);
+ for(const name of ["yazio","transformmate"])if(!manifest.files["snapshot-"+name+"-connection.enc"]&&!manifest.files["snapshot-"+name+"-connection.absent"])process.exit(1);
+ for(const [file,digest] of Object.entries(manifest.files)){if(file.includes("/")||hash(dir+"/"+file)!==digest)process.exit(1);}
+
+ const checked=new D(prefix+".sqlite",{readonly:true});if(checked.pragma("integrity_check",{simple:true})!=="ok")process.exit(1);checked.close();
+ if(cp.spawnSync("gzip",["-t",prefix+"-uploads.tar.gz"]).status!==0)process.exit(1);
  for(const suffix of ["-wal","-shm"])fs.rmSync("/app/data/nutrition.sqlite"+suffix,{force:true});
  fs.copyFileSync(prefix+".sqlite","/app/data/nutrition.sqlite");const db=new D("/app/data/nutrition.sqlite");if(db.pragma("integrity_check",{simple:true})!=="ok")process.exit(1);db.close();
  for(const [name,file] of [["yazio","yazio-token.json"],["transformmate","transformmate-token.json"]]){const backup=prefix+"-"+name+"-connection.enc";if(fs.existsSync(backup)){fs.copyFileSync(backup,"/app/data/"+file);fs.chmodSync("/app/data/"+file,0o600);}else if(fs.existsSync(prefix+"-"+name+"-connection.absent"))fs.rmSync("/app/data/"+file,{force:true});else process.exit(1);}
@@ -46,21 +66,20 @@ wait_healthy() {
  local expected_image=$1 expected_revision=$2 current
  for attempt in $(seq 1 30); do
   current=$(compose ps -q app) || return 1
-  if [[ "$(docker inspect "$current" --format '{{.State.Health.Status}}')" == healthy && "$(docker inspect "$current" --format '{{.Config.Image}}')" == "$expected_image" && "$(docker inspect "$current" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == "$expected_revision" ]] && [[ "$(curl --silent --show-error --max-time 8 --output /dev/null --write-out '%{http_code}' https://nutrition.dimensi.dev/api/health)" == 200 ]]; then return 0; fi
+  if [[ "$(docker inspect "$current" --format '{{.State.Health.Status}}')" == healthy && "$(docker inspect "$current" --format '{{.Config.Image}}')" == "$expected_image" && "$(docker inspect "$current" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == "$expected_revision" ]] && [[ "$(curl --silent --show-error --max-time 8 --output /dev/null --write-out '%{http_code}' https://tempo.dimensi.dev/api/health)" == 200 ]]; then return 0; fi
   sleep 2
  done
  return 1
 }
 rollback() {
  compose stop app || return 1
- cp -p runtime.env "runtime.env.failed-before-rollback-$stamp" || return 1
- chmod 600 "runtime.env.failed-before-rollback-$stamp" || return 1
- cp -p "$env_backup" runtime.env || return 1
  if [[ "$backup_ready" == true ]]; then
   # Preserve failed-release writes before any destructive data restoration.
-  snapshot "failed-before-rollback-$stamp" || return 1
+  snapshot "failed-before-rollback-$stamp" "$(sed -n 's/^NUTRITION_IMAGE=//p' release.env)" "$(sed -n 's/^DEPLOYED_COMMIT=//p' release.env)" || return 1
+  cp -p "$env_backup" release.env || return 1
   restore_snapshot || return 1
  fi
+ cp -p "$env_backup" release.env || return 1
  compose up -d --no-build || return 1
  wait_healthy "$previous_image" "$previous_revision" || return 1
  echo "Previous exact image and healthy matching backup restored: $stamp"
@@ -81,19 +100,48 @@ recover_on_exit() {
 trap recover_on_exit EXIT
 recovery_armed=true
 compose stop app
-snapshot "pre-upgrade-$stamp"
+snapshot "pre-upgrade-$stamp" "$previous_image" "$previous_revision"
 backup_ready=true
 python3 - "$commit" "$image" <<'PYENV'
 from pathlib import Path
 import sys
-p=Path('runtime.env');lines=p.read_text().splitlines()
+p=Path('release.env');lines=p.read_text().splitlines()
 updates={'DEPLOYED_COMMIT':sys.argv[1],'NUTRITION_IMAGE':sys.argv[2]}
 assert all(sum(line.startswith(key+'=') for line in lines)==1 for key in updates)
-p.write_text('\n'.join(key+'='+updates[key] if (key:=line.split('=',1)[0]) in updates else line for line in lines)+'\n');p.chmod(0o600)
+temporary=p.with_suffix('.env.tmp');temporary.write_text('\n'.join(key+'='+updates[key] for key in updates)+'\n');temporary.chmod(0o600);temporary.replace(p)
 PYENV
 compose config --quiet
 compose up -d --no-build
 compose exec -T app chmod 700 /app/data
 wait_healthy "$image" "$commit"
 recovery_armed=false
+# Only successful upgrades prune managed complete sets; failed/incomplete/legacy backups remain.
+compose run --rm --no-deps -e BACKUP_STAMP="$stamp" --entrypoint node app -e '
+ const fs=require("node:fs"),root="/app/data/cd-backups";const groups=new Map(),protectedStamps=new Set(),crypto=require("node:crypto");
+ function hash(file){const h=crypto.createHash("sha256"),fd=fs.openSync(file,"r"),buf=Buffer.alloc(1048576);try{let n;while((n=fs.readSync(fd,buf,0,buf.length,null)))h.update(buf.subarray(0,n));}finally{fs.closeSync(fd);}return h.digest("hex");}
+ function complete(dir,stamp){
+  try{
+   if(!fs.lstatSync(dir).isDirectory()||!fs.lstatSync(dir+"/manifest.json").isFile())return false;
+   const m=JSON.parse(fs.readFileSync(dir+"/manifest.json"));
+   if(m.format!==1||m.stamp!==stamp||!/^([0-9a-f]{40})$/.test(m.revision)||m.image!=="nutrition-release:"+m.revision.slice(0,12)||typeof m.createdAt!=="string"||!Number.isFinite(Date.parse(m.createdAt))||!m.files||typeof m.files!=="object"||Array.isArray(m.files))return false;
+   const required=["snapshot.sqlite","snapshot-uploads.tar.gz","release.env","compose.yaml","compose.home.yaml"];
+   for(const name of ["yazio","transformmate"]){
+    const choices=["snapshot-"+name+"-connection.enc","snapshot-"+name+"-connection.absent"].filter(file=>Object.hasOwn(m.files,file));
+    if(choices.length!==1)return false;required.push(choices[0]);
+   }
+   // Unknown files, links and missing/corrupt payloads protect the entire deployment group.
+   if(Object.keys(m.files).sort().join("\n")!==[...required].sort().join("\n")||fs.readdirSync(dir).sort().join("\n")!==[...required,"manifest.json"].sort().join("\n"))return false;
+   for(const file of required){if(!fs.lstatSync(dir+"/"+file).isFile()||!/^([0-9a-f]{64})$/.test(m.files[file])||hash(dir+"/"+file)!==m.files[file])return false;}
+   return true;
+  }catch{return false;}
+ }
+ for(const name of fs.readdirSync(root)){
+  const match=/^(pre-upgrade|failed-before-rollback)-([0-9]{8}T[0-9]{6}Z-[0-9]+)$/.exec(name);if(!match)continue;
+  const dir=root+"/"+name,stamp=match[2];
+  if(!complete(dir,stamp)){protectedStamps.add(stamp);continue;}
+  if(!groups.has(stamp))groups.set(stamp,[]);groups.get(stamp).push(dir);
+ }
+ const stamps=[...groups.keys()].filter(stamp=>!protectedStamps.has(stamp)).sort((a,b)=>b.localeCompare(a,undefined,{numeric:true}));
+ for(const stamp of stamps.slice(5).filter(stamp=>stamp!==process.env.BACKUP_STAMP))for(const dir of groups.get(stamp))fs.rmSync(dir,{recursive:true});
+' || echo 'ATTENTION: release healthy; backup retention failed; operator action required.' >&2
 echo "Release started: $commit; consistent backups: pre-upgrade-$stamp"
