@@ -23,6 +23,11 @@ import {
 } from '@/contracts/measurements';
 import { measurementMessages as m } from './messages';
 import { measurementChange, weightTrendChart } from './history';
+import {
+  measurementPrecisionIssueSchema,
+  type MeasurementPrecisionIssue,
+} from '@/contracts/yazio-body';
+import { MeasurementPrecisionWarnings } from './precision-warnings';
 import type { WeightHistory } from '@/contracts/health';
 import { formatDecimal } from '@/lib/number-display';
 function responseError(status: number) {
@@ -45,9 +50,7 @@ export function MeasurementsPanel({
   weightHistory: WeightHistory;
   renderComments?: (measurementId: string) => ReactNode;
 }) {
-  const [issues, setIssues] = useState<
-    { metric: MeasurementMetric; date: string; value: string | null }[]
-  >([]);
+  const [issues, setIssues] = useState<MeasurementPrecisionIssue[]>([]);
   const [retrying, setRetrying] = useState<string>();
   const [items, setItems] = useState<Measurement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,7 +109,9 @@ export function MeasurementsPanel({
           return;
         }
         if (response.ok) {
-          const data = await response.json();
+          const data = measurementPrecisionIssueSchema
+            .array()
+            .parse(await response.json());
           if (active) setIssues(data);
         }
       })
@@ -375,12 +380,7 @@ export function MeasurementsPanel({
       ) : (
         <Text>{m.empty}</Text>
       )}
-      {issues.map((issue) => (
-        <Alert key={`${issue.metric}-${issue.date}`} color="yellow">
-          {m.precisionIssue} {m.metrics[issue.metric]}: {issue.value} (
-          {issue.date})
-        </Alert>
-      ))}
+      <MeasurementPrecisionWarnings issues={issues} />
       <Title order={2}>{m.history}</Title>
       {!loading && !items.length && <Text>{m.empty}</Text>}
       <Table.ScrollContainer minWidth={580}>

@@ -1,4 +1,5 @@
 import 'server-only';
+import { sameYazioBodyValue } from '@/lib/yazio-observations';
 import { bodyMetricKeys, type BodyMetric } from '@/contracts/yazio-body';
 import type { BodyUpstream } from '@/server/yazio/body-adapter';
 import type { bodyRepository, BodyJob } from '@/server/yazio/body-repository';
@@ -54,7 +55,7 @@ export async function syncBodyJobs(
         continue;
       }
       if (!link.measurementId) {
-        if (remote && remote.value === Number(job.value))
+        if (remote && sameYazioBodyValue(remote.value, job.value))
           repo.acknowledge(job, remote);
         else repo.jobState(job.id, 'cancelled');
         continue;
@@ -71,7 +72,7 @@ export async function syncBodyJobs(
       }
       if (remote) {
         repo.remote(link.id, String(remote.value));
-        if (remote.value === Number(job.value)) {
+        if (sameYazioBodyValue(remote.value, job.value)) {
           repo.acknowledge(job, remote);
           continue;
         }
@@ -83,7 +84,7 @@ export async function syncBodyJobs(
         }
         if (
           link.syncedValue !== null &&
-          remote.value !== Number(link.syncedValue) &&
+          !sameYazioBodyValue(remote.value, link.syncedValue) &&
           !manual
         ) {
           repo.jobState(job.id, 'conflict', {
@@ -116,10 +117,9 @@ export async function syncBodyJobs(
         'sending',
         remote
           ? {
-              conflictValue:
-                remote.value !== Number(job.value)
-                  ? String(remote.value)
-                  : null,
+              conflictValue: !sameYazioBodyValue(remote.value, job.value)
+                ? String(remote.value)
+                : null,
             }
           : {},
       );
@@ -143,7 +143,7 @@ export async function syncBodyJobs(
           metric !== link.metric &&
           (check[key] ?? []).some((entry) => entry.id === link.providerId),
       );
-      if (confirmed && !other && confirmed.value === Number(job.value))
+      if (confirmed && !other && sameYazioBodyValue(confirmed.value, job.value))
         repo.acknowledge(job, confirmed);
       else
         repo.jobState(job.id, confirmed ? 'conflict' : 'uncertain', {

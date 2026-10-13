@@ -35,6 +35,7 @@ export const measurementMessages = {
   remoteValue: 'В YAZIO',
   precisionIssue:
     'Значение YAZIO сохранено отдельно: точность превышает формат замеров. Оно не округлено.',
+  precisionObservations: 'Записей YAZIO',
   sync: {
     pending: 'Сохранено локально · отправка в YAZIO',
     synced: 'Синхронизировано с YAZIO',

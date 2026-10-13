@@ -218,7 +218,13 @@ it('keeps unrepresentable provider precision raw and reports it without rounding
   await pullBodyDates(owner, 1, [date], source, repo, fence);
   expect(database.db.select().from(measurements).all()).toHaveLength(0);
   expect(repo.issues(owner)).toEqual([
-    { metric: 'weight', date, value: '80.12345' },
+    {
+      id: remote.weight[0]!.id,
+      metric: 'weight',
+      date,
+      dateTime: date + ' 13:21:00',
+      value: '80.12345',
+    },
   ]);
 });
 it('connection replacement fences a late response and writes no stale ACK', async () => {
@@ -325,4 +331,108 @@ it('keeps a deleted UUID tombstone across reconnect epochs and never adopts old 
       .every((job) => job.epoch === 1),
   ).toBe(true);
   expect(source.create).toHaveBeenCalledTimes(1);
+});
+
+it('projects existing float32 observations without import, relinking, raw rewrite or outbound jobs', async () => {
+  remote.weight = [
+    { id: randomUUID(), date: date + ' 10:55:11', value: Math.fround(103.3) },
+    { id: randomUUID(), date: date + ' 10:55:43', value: Math.fround(103.3) },
+  ];
+  await pullBodyDates(owner, 1, [date], source, repo, fence);
+  const before = database.sqlite
+    .prepare('SELECT * FROM yazio_body_links ORDER BY provider_id')
+    .all();
+  expect(repo.issues(owner)).toEqual([]);
+  expect(repo.issues(owner)).toEqual([]);
+  expect(
+    database.sqlite
+      .prepare('SELECT * FROM yazio_body_links ORDER BY provider_id')
+      .all(),
+  ).toEqual(before);
+  expect(database.db.select().from(measurements).all()).toHaveLength(0);
+  expect(database.db.select().from(yazioBodyOutbox).all()).toHaveLength(0);
+  expect(before).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        remote_value: '103.30000305175781',
+        measurement_id: null,
+        synced_value: null,
+      }),
+    ]),
+  );
+  expect(source.create).not.toHaveBeenCalled();
+  expect(source.update).not.toHaveBeenCalled();
+});
+it('ACKs a matching float32 observation without another upstream write or new outbound job', async () => {
+  const record = save('103.6');
+  const job = repo.due(owner, 1)[0]!;
+  const link = repo.link(job.linkId)!;
+  remote.weight = [
+    {
+      id: link.providerId,
+      date: link.providerDateTime,
+      value: Math.fround(103.6),
+    },
+  ];
+  await syncBodyJobs(owner, 1, source, repo, fence);
+  expect(source.create).not.toHaveBeenCalled();
+  expect(source.update).not.toHaveBeenCalled();
+  expect(repo.status(owner, record.id)[0]?.state).toBe('synced');
+  expect(repo.link(link.id)).toMatchObject({
+    remoteValue: '103.5999984741211',
+    syncedValue: '103.5999984741211',
+  });
+  expect(database.db.select().from(yazioBodyOutbox).all()).toHaveLength(1);
+  expect(
+    measurementRepository(database.db).find(owner, record.id)?.values[0]?.value,
+  ).toBe('103.6');
+  await syncBodyJobs(owner, 1, source, repo, fence);
+  expect(source.update).not.toHaveBeenCalled();
+});
+it('accepts float32 confirmation of an explicitly queued write while preserving the raw ACK', async () => {
+  const record = save('103.3');
+  vi.mocked(source.create).mockImplementationOnce(async (metric, entry) => {
+    (remote[bodyMetricKeys[metric]] ??= []).push({
+      ...entry,
+      value: Math.fround(entry.value),
+    });
+  });
+  await syncBodyJobs(owner, 1, source, repo, fence);
+  expect(repo.status(owner, record.id)[0]?.state).toBe('synced');
+  expect(source.create).toHaveBeenCalledTimes(1);
+  await syncBodyJobs(owner, 1, source, repo, fence);
+  expect(source.create).toHaveBeenCalledTimes(1);
+  expect(source.update).not.toHaveBeenCalled();
+});
+
+it('does not ACK genuinely different high precision as a float32-equal manual value', async () => {
+  const record = save('80.123');
+  const job = repo.due(owner, 1)[0]!;
+  const link = repo.link(job.linkId)!;
+  repo.jobState(job.id, 'uncertain');
+  remote.weight = [
+    { id: link.providerId, date: link.providerDateTime, value: 80.12345 },
+  ];
+  await syncBodyJobs(owner, 1, source, repo, fence);
+  expect(repo.status(owner, record.id)[0]?.state).toBe('conflict');
+  expect(source.update).not.toHaveBeenCalled();
+  expect(source.create).not.toHaveBeenCalled();
+});
+
+it('does not mistake float32 baseline noise for a provider edit during an explicit queued update', async () => {
+  const record = save('103.3');
+  await syncBodyJobs(owner, 1, source, repo, fence);
+  remote.weight![0]!.value = Math.fround(103.3);
+  const next = input('103.6');
+  measurementRepository(database.db).update(owner, record.id, next);
+  repo.enqueue(owner, record.id, next, input('103.3'));
+  vi.mocked(source.update).mockImplementationOnce(async (_id, value) => {
+    remote.weight![0]!.value = Math.fround(Number(value));
+  });
+  await syncBodyJobs(owner, 1, source, repo, fence);
+  expect(source.update).toHaveBeenCalledTimes(1);
+  expect(repo.status(owner, record.id)[0]?.state).toBe('synced');
+  expect(database.db.select().from(yazioBodyOutbox).all()).toHaveLength(2);
+  await syncBodyJobs(owner, 1, source, repo, fence);
+  expect(source.update).toHaveBeenCalledTimes(1);
 });

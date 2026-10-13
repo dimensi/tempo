@@ -79,6 +79,16 @@ export const measurementSyncSchema = z.object({
   remoteValue: z.string().nullable(),
 });
 export type MeasurementSync = z.infer<typeof measurementSyncSchema>;
+export const measurementPrecisionIssueSchema = z.object({
+  id: z.uuid(),
+  metric: bodyMetricSchema,
+  date: z.iso.date(),
+  dateTime: bodyDateTimeSchema,
+  value: z.string(),
+});
+export type MeasurementPrecisionIssue = z.infer<
+  typeof measurementPrecisionIssueSchema
+>;
 export function bodyMetric(metric: string): metric is BodyMetric {
   return Object.hasOwn(bodyMetricKeys, metric);
 }

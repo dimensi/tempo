@@ -511,3 +511,58 @@ it('counts a mirrored linked UUID once and retains an unrelated imported weight'
   );
   expect(history.imported.some((row) => row.rawValue === '155.25')).toBe(true);
 });
+
+it('reads pre-existing raw datetime observations with actual sessions without persistence or outbound intents', async () => {
+  const repo = persistence.yazioHealthRepository();
+  const stamp = '2026-10-12T12:00:00Z';
+  const period = { from: '2026-04-07', to: '2026-04-07' };
+  const rows = ['10:55:11', '10:55:43'].map((time, index) => ({
+    source: 'yazio' as const,
+    externalId: `a0000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    providerDate: period.from + ' ' + time,
+    measuredDate: null,
+    rawValue: '103.30000305175781',
+    unit: null,
+    unitContext: 'kg',
+    upstreamSource: null,
+    gateway: null,
+  }));
+  repo.upsert('owner', { weights: rows, dailySteps: [] }, stamp);
+  const before = database.sqlite
+    .prepare('SELECT * FROM yazio_weight_entries ORDER BY owner_id,external_id')
+    .all();
+  const local = database.sqlite
+    .prepare('SELECT count(*) AS n FROM measurements')
+    .get();
+  const jobs = database.sqlite
+    .prepare('SELECT count(*) AS n FROM yazio_body_outbox')
+    .get();
+  const history = await getWeightHistory(ownerHeaders, period);
+  expect(history.imported).toHaveLength(2);
+  expect(
+    history.imported.every(
+      (row) =>
+        row.rawValue === '103.30000305175781' && row.measuredAt === period.from,
+    ),
+  ).toBe(true);
+  expect(weightTrendChart(history)).toEqual([
+    { date: period.from, local: null, yazio: 103.3 },
+    { date: period.from, local: null, yazio: 103.3 },
+  ]);
+  expect(await getWeightHistory(ownerHeaders, period)).toEqual(history);
+  expect(
+    database.sqlite
+      .prepare(
+        'SELECT * FROM yazio_weight_entries ORDER BY owner_id,external_id',
+      )
+      .all(),
+  ).toEqual(before);
+  expect(
+    database.sqlite.prepare('SELECT count(*) AS n FROM measurements').get(),
+  ).toEqual(local);
+  expect(
+    database.sqlite
+      .prepare('SELECT count(*) AS n FROM yazio_body_outbox')
+      .get(),
+  ).toEqual(jobs);
+});

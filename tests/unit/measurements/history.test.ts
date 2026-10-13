@@ -79,3 +79,33 @@ it('combined kg chart preserves all same-day observations and source differences
     { date: '2026-10-03', local: null, yazio: null },
   ]);
 });
+
+it('groups only identical warnings for presentation, retaining IDs/times and distinct-value stable keys', async () => {
+  const { groupPrecisionIssues } =
+    await import('@/features/measurements/history');
+  const first = {
+    id: 'a1111111-1111-4111-8111-111111111111',
+    metric: 'weight' as const,
+    date: '2026-10-07',
+    dateTime: '2026-10-07 10:55:11',
+    value: '80.12345',
+  };
+  const second = {
+    ...first,
+    id: 'b1111111-1111-4111-8111-111111111111',
+    dateTime: '2026-10-07 10:55:43',
+  };
+  const different = {
+    ...first,
+    id: 'c1111111-1111-4111-8111-111111111111',
+    value: '80.12346',
+  };
+  const issues = [second, first, different],
+    copy = structuredClone(issues);
+  const groups = groupPrecisionIssues(issues);
+  expect(groups).toHaveLength(2);
+  expect(groups[0]?.observations).toEqual([first, second]);
+  expect(groups[0]?.key).not.toBe(groups[1]?.key);
+  expect(groupPrecisionIssues([...issues].reverse())).toEqual(groups);
+  expect(issues).toEqual(copy);
+});
