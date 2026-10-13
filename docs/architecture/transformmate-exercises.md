@@ -166,3 +166,30 @@ joins values with ',' at 0xd6fb30. PhysicalRepositoryImpl.exercises (0xd024fc) r
 /exercises/temporary_exercises/ (GET 0xd025c4); search is added as query key at 0xd0258c.
 Its muscleGroups method requests /exercises/muscle_groups/ (0xd6d23c). Live requests
 confirmed both the paginated and full-catalog routes accept the same name-based filters.
+
+## Server catalog cache policy
+
+Full catalog, muscle dictionary, filtered page membership and exercise details are
+fresh for 30 days. This is a freshness window, not a deletion deadline: SQLite
+retains exercise descriptions and aliases after expiry and process restarts.
+Query snapshots are bounded to 64 per connection; evicting a snapshot does not
+remove its exercise records. Local fallback results retain partial/unknown coverage.
+
+Warm reads do not request the provider. Stale list, dictionary and detail reads
+return stored data while a single refresh per scoped operation runs in the
+background. Cold reads wait for one deduplicated fetch. Failed refreshes preserve
+stored data and impose a shared 60-second retry cooldown across that connection;
+429 uses the existing bounded Retry-After policy. No timer deletes catalog data
+or refreshes it daily. Request-driven refreshes retain owner/account/generation
+and session authorization fences before writes and responses.
+
+Private preview/video delivery still validates media separately. Forced detail
+refreshes wait for the provider and propagate errors, allowing expiring media URLs
+to refresh without treating month-long description freshness as media validity.
+
+Failed private preview checks retain `unknown` availability with a separate
+60-second retry window, checked after catalog authorization. Repeated requests
+within that window skip provider metadata and image requests. A failed image URL
+triggers one forced metadata refresh; the image request is retried only when that
+refresh changes its URL. Expiry permits another attempt. This does not establish
+that the provider has no image; video refresh behavior is unchanged.

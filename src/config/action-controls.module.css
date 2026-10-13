@@ -1,0 +1,36 @@
+.control {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.control:where([data-variant='subtle'], [data-variant='light']):not(
+    :disabled,
+    [data-disabled],
+    [data-loading]
+  ) {
+  color: var(--button-color, var(--ai-color));
+  background-color: color-mix(in srgb, currentColor 9%, transparent);
+}
+
+@media (hover: hover) {
+  .control:where([data-variant='subtle'], [data-variant='light']):hover:not(
+      :disabled,
+      [data-disabled],
+      [data-loading]
+    ) {
+    background-color: color-mix(in srgb, currentColor 15%, transparent);
+  }
+}
+
+.control:where([data-variant='subtle'], [data-variant='light']):active:not(
+    :disabled,
+    [data-disabled],
+    [data-loading]
+  ) {
+  background-color: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.control:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}

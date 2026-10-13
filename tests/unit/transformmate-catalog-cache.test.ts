@@ -1,4 +1,7 @@
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 vi.mock('server-only', () => ({}));
 const state = vi.hoisted(() => ({
   database: null as ReturnType<
@@ -6,7 +9,21 @@ const state = vi.hoisted(() => ({
   > | null,
 }));
 vi.mock('@/server/db', () => ({ getDatabase: () => state.database }));
+vi.mock('@/server/auth/guards', () => ({
+  authorize: async () => ({ ok: true }),
+}));
+vi.mock('@/server/transformmate/runtime', () => ({
+  getTransformMateConnectionFence: async () => ({
+    accountScope: scope.accountScope,
+    generation: scope.generation,
+    client: scope.client,
+    assertCurrent,
+    assertBindingCurrent: () => {},
+  }),
+}));
+import { listCatalog, muscleDictionary } from '@/server/transformmate/catalog';
 import {
+  CATALOG_TTL_MS,
   cachedDetail,
   enrichVisible,
   refreshFull,
@@ -30,6 +47,7 @@ let sequence = 0;
 const list = vi.fn();
 const details = vi.fn();
 const page = vi.fn();
+const dictionary = vi.fn();
 const assertCurrent = vi.fn();
 let scope: CatalogScope;
 const body = [{ id: 1, name: 'Приседание', metrics: [] }];
@@ -59,6 +77,7 @@ beforeEach(() => {
       listExercises: list,
       getExercise: details,
       listExercisePage: page,
+      listMuscleGroups: dictionary,
     } as unknown as TransformMateClient,
   };
   assertCurrent.mockResolvedValue(undefined);
@@ -179,4 +198,197 @@ it('bounds explicitly visible enrichment to six IDs and two concurrent requests'
   expect(maximum).toBeLessThanOrEqual(2);
   await enrichVisible(scope, [1, 2, 3]);
   expect(details).toHaveBeenCalledTimes(6);
+});
+
+it('keeps month-old catalog data fresh until the boundary', () => {
+  vi.useFakeTimers();
+  const now = Date.now();
+  expect(CATALOG_TTL_MS).toBe(30 * 24 * 60 * 60_000);
+  expect(fresh(new Date(now - CATALOG_TTL_MS + 1).toISOString())).toBe(true);
+  expect(fresh(new Date(now - CATALOG_TTL_MS).toISOString())).toBe(false);
+});
+it('returns stale detail immediately and deduplicates its background refresh', async () => {
+  vi.useFakeTimers();
+  details.mockResolvedValueOnce({
+    body: { ...exerciseDetailFixture(), id: 1 },
+  });
+  await cachedDetail(scope, 1);
+  vi.advanceTimersByTime(CATALOG_TTL_MS - 1);
+  await cachedDetail(scope, 1);
+  expect(details).toHaveBeenCalledTimes(1);
+  vi.advanceTimersByTime(1);
+  let finish!: (value: unknown) => void;
+  details.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const original = catalogStore().record(scope, 1);
+  const rows = await Promise.all([
+    cachedDetail(scope, 1),
+    cachedDetail(scope, 1),
+  ]);
+  expect(rows).toEqual([original, original]);
+  expect(details).toHaveBeenCalledTimes(2);
+  expect(refreshState(scope, ':detail:1')).toBe('updating');
+  const forced = cachedDetail(scope, 1, true);
+  finish({
+    body: { ...exerciseDetailFixture(), id: 1, description: 'Refreshed' },
+  });
+  expect((await forced).detail?.description).toBe('Refreshed');
+  expect(details).toHaveBeenCalledTimes(2);
+});
+it('retains stale details and suppresses outage retries across different queries', async () => {
+  vi.useFakeTimers();
+  details.mockResolvedValueOnce({
+    body: { ...exerciseDetailFixture(), id: 1 },
+  });
+  await cachedDetail(scope, 1);
+  vi.advanceTimersByTime(CATALOG_TTL_MS);
+  details.mockRejectedValueOnce(new Error('synthetic outage'));
+  const stale = await cachedDetail(scope, 1);
+  await vi.waitFor(() =>
+    expect(refreshState(scope, ':detail:1')).toBe('unavailable'),
+  );
+  expect(stale.detail).toBeTruthy();
+  expect(await cachedDetail(scope, 1)).toEqual(stale);
+  for (const query of ['s', 'sq', 'squ']) {
+    await expect(
+      refreshPage(scope, {
+        query,
+        commonMuscleGroup: null,
+        muscleGroups: [],
+        offset: 0,
+        limit: 50,
+      }),
+    ).rejects.toThrow('cooldown');
+  }
+  expect(page).not.toHaveBeenCalled();
+  expect(details).toHaveBeenCalledTimes(2);
+  vi.advanceTimersByTime(60_000);
+  details.mockResolvedValueOnce({
+    body: { ...exerciseDetailFixture(), id: 1 },
+  });
+  await cachedDetail(scope, 1, true);
+  expect(details).toHaveBeenCalledTimes(3);
+});
+it('forced detail refresh propagates failures while preserving stored metadata', async () => {
+  details.mockResolvedValueOnce({
+    body: { ...exerciseDetailFixture(), id: 1 },
+  });
+  await cachedDetail(scope, 1);
+  const original = catalogStore().record(scope, 1);
+  details.mockRejectedValueOnce(new Error('expired media refresh failed'));
+  await expect(cachedDetail(scope, 1, true)).rejects.toThrow(
+    'expired media refresh failed',
+  );
+  expect(catalogStore().record(scope, 1)).toEqual(original);
+});
+it('rejects a late detail refresh after the connection or authorization fence changes', async () => {
+  let finish!: (value: unknown) => void;
+  details.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const loading = cachedDetail(scope, 1);
+  await vi.waitFor(() => expect(details).toHaveBeenCalledTimes(1));
+  assertCurrent.mockRejectedValue(new Error('access revoked'));
+  finish({ body: { ...exerciseDetailFixture(), id: 1 } });
+  await expect(loading).rejects.toThrow('access revoked');
+  expect(catalogStore().record(scope, 1)).toBeNull();
+});
+
+it('cold catalog reads fetch once; warm list, query and dictionary stay local for a month', async () => {
+  vi.useFakeTimers();
+  list.mockResolvedValue({ body });
+  page.mockResolvedValue({ body: { results: body, count: 1 } });
+  dictionary.mockResolvedValue({ body: [] });
+  const filters = {
+    query: '',
+    commonMuscleGroup: null,
+    muscleGroups: [],
+    offset: 0,
+    limit: 50,
+  };
+  const headers = new Headers();
+  await Promise.all([
+    listCatalog(headers, scope.ownerId, filters),
+    listCatalog(headers, scope.ownerId, filters),
+  ]);
+  await listCatalog(headers, scope.ownerId, { ...filters, query: 'squat' });
+  await muscleDictionary(headers, scope.ownerId);
+  vi.advanceTimersByTime(CATALOG_TTL_MS - 1);
+  expect(
+    (await listCatalog(headers, scope.ownerId, filters)).metadata.stale,
+  ).toBe(false);
+  expect(
+    (await listCatalog(headers, scope.ownerId, { ...filters, query: 'squat' }))
+      .items,
+  ).toHaveLength(1);
+  expect((await muscleDictionary(headers, scope.ownerId)).stale).toBe(false);
+  expect(list).toHaveBeenCalledTimes(1);
+  expect(page).toHaveBeenCalledTimes(1);
+  expect(dictionary).toHaveBeenCalledTimes(1);
+  vi.advanceTimersByTime(1);
+  let finish!: (value: unknown) => void;
+  list.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const stale = await Promise.all([
+    listCatalog(headers, scope.ownerId, filters),
+    listCatalog(headers, scope.ownerId, filters),
+  ]);
+  expect(
+    stale.every(
+      (result) =>
+        result.items.length === 1 &&
+        result.metadata.stale &&
+        result.metadata.refreshState === 'updating',
+    ),
+  ).toBe(true);
+  expect(list).toHaveBeenCalledTimes(2);
+  finish({ body });
+  await refreshFull(scope);
+});
+
+it('serves persisted details after SQLite reopen and process cache module reset', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'catalog-ram-reset-'));
+  const url = `file:${join(directory, 'synthetic.sqlite')}`;
+  state.database!.sqlite.close();
+  state.database = openDatabase(url);
+  try {
+    migrate(state.database.db, { migrationsFolder: './drizzle' });
+    state.database.db
+      .insert(user)
+      .values({
+        id: scope.ownerId,
+        name: 'Synthetic',
+        role: 'OWNER',
+        email: 'restart@example.test',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .run();
+    details.mockResolvedValueOnce({
+      body: { ...exerciseDetailFixture(), id: 1 },
+    });
+    await cachedDetail(scope, 1);
+    state.database.sqlite.close();
+    state.database = openDatabase(url);
+    vi.resetModules();
+    const restarted = await import('@/server/transformmate/catalog-cache');
+    expect((await restarted.cachedDetail(scope, 1)).detail?.id).toBe(1);
+    expect(details).toHaveBeenCalledTimes(1);
+    expect(restarted.refreshState(scope, ':detail:1')).toBe('idle');
+  } finally {
+    state.database.sqlite.close();
+    state.database = null;
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

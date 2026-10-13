@@ -8,6 +8,7 @@ import {
 } from 'react';
 import {
   ActionIcon,
+  Badge,
   Tooltip,
   Alert,
   Button,
@@ -386,9 +387,9 @@ function ScopedWorkoutsDashboard({
                 <Title order={2}>
                   {workoutTitle(workout.title, workout.date)}
                 </Title>
-                <Text size="sm" c="dimmed">
+                <Badge variant="outline" color="gray" c="dimmed">
                   {m.localSource}
-                </Text>
+                </Badge>
               </Group>
               {plan.title && <Text size="sm">{plan.title}</Text>}
               {plan.description && (

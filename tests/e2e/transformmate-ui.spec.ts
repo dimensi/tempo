@@ -155,7 +155,7 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
           coverage: 'complete',
           refreshState: 'idle',
           total: 3,
-          hasMore: false,
+          hasMore: true,
           unknownMembershipCount: 0,
           filters: {
             query: '',
@@ -239,6 +239,12 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
               commonGroup: { id: 10, name: 'Ноги' },
               muscleIds: [11],
             },
+            {
+              id: 2,
+              name: 'Ягодицы',
+              commonGroup: { id: 10, name: 'Ноги' },
+              muscleIds: [12],
+            },
           ],
           fetchedAt: '2026-10-12T00:00:00Z',
           stale: false,
@@ -285,15 +291,33 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
     .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(title);
   const picker = page;
-  await picker
-    .getByRole('combobox', { name: 'Упражнение', exact: true })
-    .click();
+  const exerciseSearch = picker.getByRole('combobox', {
+    name: 'Упражнение',
+    exact: true,
+  });
+  await expect(
+    picker.getByRole('combobox', { name: 'Область тела', exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    picker.getByRole('combobox', { name: 'Группы мышц', exact: true }).first(),
+  ).toBeVisible();
   await picker
     .getByRole('combobox', { name: 'Область тела', exact: true })
+    .first()
     .click();
-  await picker.getByRole('option', { name: 'Ноги', exact: true }).click();
+  await expect(
+    picker.getByRole('option', { name: 'Ноги', exact: true }),
+  ).toBeVisible();
+  if (test.info().project.name === 'mobile') {
+    await picker.getByRole('option', { name: 'Ноги', exact: true }).tap();
+  } else {
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+  }
+  await exerciseSearch.fill('присед');
   await picker
     .getByRole('combobox', { name: 'Группы мышц', exact: true })
+    .first()
     .click();
   const filtered = page.waitForRequest((request) => {
     const url = new URL(request.url());
@@ -303,16 +327,56 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
       url.searchParams.getAll('muscleGroup').includes('Квадрицепсы')
     );
   });
-  await picker
-    .getByRole('option', { name: 'Квадрицепсы', exact: true })
-    .click();
+  const firstMuscle = picker.getByRole('option', {
+    name: 'Квадрицепсы',
+    exact: true,
+  });
+  if (test.info().project.name === 'mobile') await firstMuscle.tap();
+  else await firstMuscle.click();
   await filtered;
+  await picker.getByRole('option', { name: 'Ягодицы', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await dialog.getByLabel('Комментарий к упражнению').click();
+  await expect(exerciseSearch).toHaveValue('присед');
+  await expect(
+    picker.getByRole('combobox', { name: 'Область тела', exact: true }).first(),
+  ).toHaveValue('Ноги');
+  const muscleField = picker
+    .getByRole('combobox', {
+      name: 'Группы мышц',
+      exact: true,
+    })
+    .first();
+  await expect(muscleField.locator('..')).toContainText('Квадрицепсы');
+  await expect(muscleField.locator('..')).toContainText('Ягодицы');
+  await exerciseSearch.focus();
+  await page.keyboard.press('Escape');
+  await expect(exerciseSearch).toHaveValue('присед');
+  const nextPage = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return (
+      url.pathname === '/api/workouts/transformmate/exercises' &&
+      url.searchParams.get('q') === 'присед' &&
+      url.searchParams.get('commonMuscleGroup') === 'Ноги' &&
+      url.searchParams.getAll('muscleGroup').length === 2 &&
+      url.searchParams.get('offset') === '20'
+    );
+  });
+  await picker
+    .getByRole('button', { name: 'Следующие упражнения', exact: true })
+    .click();
+  await nextPage;
+  await exerciseSearch.focus();
+  await page.keyboard.press('Escape');
   await picker
     .getByRole('button', { name: 'Сбросить фильтры', exact: true })
     .click();
   await expect(
-    picker.getByRole('combobox', { name: 'Область тела', exact: true }),
+    picker.getByRole('combobox', { name: 'Область тела', exact: true }).first(),
   ).toHaveValue('');
+  await expect(exerciseSearch).toHaveValue('присед');
+  await expect(muscleField.locator('..')).not.toContainText('Квадрицепсы');
+  await expect(muscleField.locator('..')).not.toContainText('Ягодицы');
 
   await picker
     .getByRole('combobox', { name: 'Упражнение', exact: true })

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Combobox,
@@ -43,7 +43,6 @@ export function Catalog({
   label?: string;
   required?: boolean;
 }) {
-  const field = useRef<HTMLDivElement>(null);
   const combobox = useCombobox({
     onDropdownClose: () => combobox.resetSelectedOption(),
   });
@@ -56,6 +55,7 @@ export function Catalog({
   );
   const [dictionary, setDictionary] =
     useState<TransformMateMuscleDictionary | null>(null);
+  const [dictionaryError, setDictionaryError] = useState(false);
   const [commonGroup, setCommonGroup] = useState<string | null>(null);
   const [groups, setGroups] = useState<string[]>([]);
   const [offset, setOffset] = useState(0);
@@ -76,9 +76,14 @@ export function Catalog({
         );
       })
       .then((data) => {
-        if (!controller.signal.aborted) setDictionary(data);
+        if (!controller.signal.aborted) {
+          setDictionary(data);
+          setDictionaryError(false);
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!controller.signal.aborted) setDictionaryError(true);
+      });
     return () => controller.abort();
   }, [ownerId, searching, dictionary]);
   useEffect(() => {
@@ -144,61 +149,88 @@ export function Catalog({
     };
   }, [query, ownerId, searching, commonGroup, groups, offset]);
   return (
-    <Stack ref={field} gap="xs">
-      {searching && dictionary && dictionary.groups.length > 0 && (
-        <Stack gap="xs">
-          <Group grow align="start">
-            <Select
-              searchable
-              label={m.muscleCommon}
-              value={commonGroup}
-              clearable
-              data={[
-                ...new Set(
-                  dictionary.groups.map((group) => group.commonGroup.name),
+    <Stack gap="xs">
+      <Stack gap="xs" onFocusCapture={() => setSearching(true)}>
+        <Group grow align="start">
+          <Select
+            searchable
+            label={m.muscleCommon}
+            nothingFoundMessage={
+              dictionaryError
+                ? m.catalogError
+                : dictionary
+                  ? m.filtersEmpty
+                  : m.filtersLoading
+            }
+            rightSection={
+              searching && !dictionary && !dictionaryError ? (
+                <Loader size={16} />
+              ) : undefined
+            }
+            value={commonGroup}
+            clearable
+            data={[
+              ...new Set(
+                (dictionary?.groups ?? []).map(
+                  (group) => group.commonGroup.name,
                 ),
-              ]}
-              onChange={(value) => {
-                setCommonGroup(value);
-                setGroups([]);
-                setOffset(0);
-              }}
-            />
-            <MultiSelect
-              searchable
-              label={m.muscleGroups}
-              value={groups}
-              data={[
-                ...new Set(
-                  dictionary.groups
-                    .filter(
-                      (group) =>
-                        !commonGroup || group.commonGroup.name === commonGroup,
-                    )
-                    .map((group) => group.name),
-                ),
-              ]}
-              onChange={(value) => {
-                setGroups(value);
-                setOffset(0);
-              }}
-            />
-          </Group>
-          {(commonGroup || groups.length > 0) && (
-            <Button
-              variant="subtle"
-              mih={44}
-              onClick={() => {
-                setCommonGroup(null);
-                setGroups([]);
-                setOffset(0);
-              }}
-            >
-              {m.resetFilters}
-            </Button>
-          )}
-        </Stack>
-      )}
+              ),
+            ]}
+            onChange={(value) => {
+              setCommonGroup(value);
+              setGroups([]);
+              setOffset(0);
+              setSearching(true);
+            }}
+          />
+          <MultiSelect
+            searchable
+            label={m.muscleGroups}
+            nothingFoundMessage={
+              dictionaryError
+                ? m.catalogError
+                : dictionary
+                  ? m.filtersEmpty
+                  : m.filtersLoading
+            }
+            rightSection={
+              searching && !dictionary && !dictionaryError ? (
+                <Loader size={16} />
+              ) : undefined
+            }
+            value={groups}
+            data={[
+              ...new Set(
+                (dictionary?.groups ?? [])
+                  .filter(
+                    (group) =>
+                      !commonGroup || group.commonGroup.name === commonGroup,
+                  )
+                  .map((group) => group.name),
+              ),
+            ]}
+            onChange={(value) => {
+              setGroups(value);
+              setOffset(0);
+              setSearching(true);
+            }}
+          />
+        </Group>
+        {(commonGroup || groups.length > 0) && (
+          <Button
+            variant="subtle"
+            mih={44}
+            onClick={() => {
+              setCommonGroup(null);
+              setGroups([]);
+              setOffset(0);
+              setSearching(true);
+            }}
+          >
+            {m.resetFilters}
+          </Button>
+        )}
+      </Stack>
       {searching && metadata && (
         <>
           {metadata?.unknownMembershipCount ||
@@ -273,19 +305,9 @@ export function Catalog({
               setSearching(true);
               combobox.openDropdown();
             }}
-            onBlur={(event) => {
-              combobox.closeDropdown();
-              if (!field.current?.contains(event.relatedTarget)) {
-                setQuery(exercise.name);
-                setSearching(false);
-              }
-            }}
+            onBlur={() => combobox.closeDropdown()}
             onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                setQuery(exercise.name);
-                setSearching(false);
-                combobox.closeDropdown();
-              }
+              if (event.key === 'Escape') combobox.closeDropdown();
             }}
             onChange={(event) => {
               const text = event.currentTarget.value;

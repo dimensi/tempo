@@ -57,6 +57,8 @@ export const workoutMessages = {
   muscleCommon: 'Область тела',
   muscleGroups: 'Группы мышц',
   resetFilters: 'Сбросить фильтры',
+  filtersEmpty: 'Группы мышц не найдены.',
+  filtersLoading: 'Загрузка групп мышц…',
   catalogReadOnly: 'Только просмотр',
   catalogPartial: 'Часть упражнений ещё без описания мышц.',
   catalogStale: 'Показан сохранённый каталог.',

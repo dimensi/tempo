@@ -10,7 +10,9 @@ export type CatalogScope = CatalogIdentity & {
   client: TransformMateClient;
   assertCurrent: () => Promise<void>;
 };
-export const CATALOG_TTL_MS = 5 * 60_000;
+// Freshness is independent of retention: persisted catalog DTOs remain usable.
+export const CATALOG_TTL_MS = 30 * 24 * 60 * 60_000;
+const FAILURE_RETRY_MS = 60_000;
 const pending = new Map<string, Promise<unknown>>();
 const cooldown = new Map<string, number>();
 const failed = new Set<string>();
@@ -89,15 +91,16 @@ async function coalesce<T>(
     })
     .catch((error: unknown) => {
       failed.add(key);
-      if (error instanceof TransformMateApiError && error.status === 429)
-        cooldown.set(
-          scopeKey(scope),
-          Date.now() +
-            Math.min(
-              MAX_RETRY_AFTER_MS,
-              Math.max(1000, error.retryAfterMs ?? 5000),
-            ),
-        );
+      cooldown.set(
+        scopeKey(scope),
+        Date.now() +
+          (error instanceof TransformMateApiError && error.status === 429
+            ? Math.min(
+                MAX_RETRY_AFTER_MS,
+                Math.max(1000, error.retryAfterMs ?? 5000),
+              )
+            : FAILURE_RETRY_MS),
+      );
       boundFailures();
       throw error;
     })
@@ -164,20 +167,21 @@ export async function cachedDetail(
   const current = catalogStore().record(scope, id);
   if (!force && current?.detail && fresh(current.detailFetchedAt))
     return current;
-  try {
-    await coalesce(scope, ':detail:' + id, async () => {
-      const { body } = await detailSlot(async () => {
-        await scope.assertCurrent();
-        return scope.client.getExercise(id);
-      }, priority);
-      if (body.id !== id) throw new Error('Catalog exercise mismatch');
-      const detail = projectDetail(body);
+  const refresh = coalesce(scope, ':detail:' + id, async () => {
+    const { body } = await detailSlot(async () => {
       await scope.assertCurrent();
-      catalogStore().detail(scope, detail, new Date().toISOString());
-    });
-  } catch (error) {
-    if (force || !current?.detail) throw error;
+      return scope.client.getExercise(id);
+    }, priority);
+    if (body.id !== id) throw new Error('Catalog exercise mismatch');
+    const detail = projectDetail(body);
+    await scope.assertCurrent();
+    catalogStore().detail(scope, detail, new Date().toISOString());
+  });
+  if (!force && current?.detail) {
+    void refresh.catch(() => {});
+    return current;
   }
+  await refresh;
   const result = catalogStore().record(scope, id);
   if (!result?.detail) throw new Error('Catalog detail unavailable');
   return result;

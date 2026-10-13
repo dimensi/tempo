@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ActionIcon,
+  Badge,
   Tooltip,
   Alert,
   Button,
@@ -151,9 +152,9 @@ export function WorkoutDetailView({
       </Group>
       <Group gap="xs">
         {(plan || session) && (
-          <Text size="sm" c="dimmed">
+          <Badge variant="outline" color="gray" c="dimmed">
             {m.localSource}
-          </Text>
+          </Badge>
         )}
         {workout && plan && (
           <Tooltip label={m.editWorkout}>
