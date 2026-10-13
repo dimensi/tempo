@@ -145,12 +145,13 @@ test('online controller schema upgrade preserves prior generation opt-in and ref
   });
   expect(await page.evaluate(call('stale()'))).toBe(true);
 });
-test('two tabs hide private DOM and durably block storage before physical cleanup', async ({
+test('two tabs hide private DOM and enlarged offline photo synchronously before physical cleanup', async ({
   page,
   context,
 }) => {
   await inject(page);
   await page.evaluate(call('seed()'));
+  await page.evaluate(call('prepareShell()'));
   const second = await context.newPage();
   await inject(second);
   await second.evaluate(() => {
@@ -160,13 +161,36 @@ test('two tabs hide private DOM and durably block storage before physical cleanu
     document.body.append(element);
   });
   await second.evaluate(call('listen()'));
-  await page.evaluate(call('purge()'));
-  await expect(second.locator('[data-offline-private]')).toBeHidden();
-  expect(await second.evaluate(call('read()'))).toEqual({
-    present: false,
-    photos: 0,
-    enabled: false,
-  });
+  await context.setOffline(true);
+  try {
+    await page.goto(`/diary?date=${new Date().toISOString().slice(0, 10)}`);
+    await page.getByRole('button', { name: /^Увеличить фото:/ }).click();
+    const portal = page
+      .getByRole('dialog', { name: 'Фото приёма пищи' })
+      .locator('[data-offline-private]');
+    await expect(portal.locator('img[src^="blob:"]')).toBeVisible();
+    await page.addScriptTag({ content: harness });
+    expect(
+      await page.evaluate(async () => {
+        const privateImage = document.querySelector<HTMLElement>(
+          '[role="dialog"] [data-offline-private]',
+        );
+        const pending = Reflect.get(window, 'offlineTest').purge();
+        const immediatelyHidden = privateImage?.hidden === true;
+        await pending;
+        return immediatelyHidden;
+      }),
+    ).toBe(true);
+    await expect(page.locator('img[src^="blob:"]')).toHaveCount(0);
+    await expect(second.locator('[data-offline-private]')).toBeHidden();
+    expect(await second.evaluate(call('read(Date.now())'))).toEqual({
+      present: false,
+      photos: 0,
+      enabled: false,
+    });
+  } finally {
+    await context.setOffline(false);
+  }
 });
 
 test('physical storage failure never prevents sign-in or sign-out and leaves durable blocker', async ({
@@ -217,7 +241,7 @@ test('physical storage failure never prevents sign-in or sign-out and leaves dur
   ).toBe(true);
   expect(await getSignedOutSessionWith429Retry(page.request)).toBeNull();
 });
-test('delayed provider completion clears a sibling tab re-enabled during the pending mutation', async ({
+test('pending provider intent blocks sibling re-enable and final completion preserves physical purge', async ({
   page,
   context,
 }) => {
@@ -225,12 +249,16 @@ test('delayed provider completion clears a sibling tab re-enabled during the pen
   const sibling = await context.newPage();
   await inject(sibling);
   await sibling.evaluate(call('listen()'));
+  await sibling.evaluate(call('seed()'));
   await page.evaluate(call('startMutation()'));
   await expect.poll(() => page.evaluate(call('enteredMutation()'))).toBe(true);
-  await sibling.evaluate(call('seed()'));
-  expect(await sibling.evaluate(call('read()'))).toMatchObject({
-    present: true,
-    photos: 1,
+  await expect(sibling.evaluate(call('seed()'))).rejects.toThrow(
+    'Offline storage fence',
+  );
+  expect(await sibling.evaluate(call('read(Date.now())'))).toEqual({
+    present: false,
+    photos: 0,
+    enabled: false,
   });
   await sibling.evaluate(() => {
     const node = document.createElement('div');
@@ -262,113 +290,130 @@ test('shorter live server expiry does not expire an already downloaded local cop
     await page.evaluate(call('read(window.offlineTest.now+1200001)')),
   ).toEqual({ present: true, photos: 1, enabled: true });
 });
-for (const unmount of [false, true]) {
-  test(`actual provider form completion purges sibling cache during delayed POST${unmount ? ' after unmount' : ''}`, async ({
-    page,
-    context,
-  }) => {
-    const signIn = () =>
-      page.request.post('/api/auth/sign-in/email', {
-        headers: {
-          origin: String(test.info().project.use.baseURL),
-        },
-        data: {
-          email: 'owner@example.test',
-          password: 'Test-only-password-12345',
-        },
-      });
-    let auth = await signIn();
-    if (auth.status() === 429) {
-      const seconds = Number(
-        auth.headers()['x-retry-after'] ?? auth.headers()['retry-after'] ?? 10,
-      );
-      await new Promise((resolve) => setTimeout(resolve, (seconds + 1) * 1000));
-      auth = await signIn();
-    }
-    expect(auth.status()).toBe(200);
-    const loaded = page.waitForResponse(
-      (response) =>
-        response.url().endsWith('/api/transformmate/status') &&
-        response.status() === 200,
-    );
-    await page.goto('/settings#transformmate');
-    await loaded;
-    await expect(
-      page
-        .locator('#transformmate')
-        .getByRole('button', { name: 'Подключить', exact: true }),
-    ).toBeEnabled();
-    let release!: () => void;
-    let entered!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const started = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    await page.route('**/api/transformmate/connect', async (route) => {
-      entered();
-      await pending;
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          data: {
-            configured: false,
-            account: null,
-            checkedAt: null,
-            errorCode: null,
+test.describe('provider form interception', () => {
+  // Page routing cannot intercept API fetches issued by an active service worker.
+  // These cases exercise the real form, auth and Web Locks with a held synthetic POST.
+  test.use({ serviceWorkers: 'block' });
+  for (const unmount of [false, true]) {
+    test(`actual provider form completion purges sibling cache during delayed POST${unmount ? ' after unmount' : ''}`, async ({
+      page,
+      context,
+    }) => {
+      const signIn = () =>
+        page.request.post('/api/auth/sign-in/email', {
+          headers: {
+            origin: String(test.info().project.use.baseURL),
           },
-        }),
-      });
-    });
-    // Observe from submission, but start the bounded wait only after releasing the held POST.
-    let completed: Response | undefined;
-    const observeCompletion = (response: Response) => {
-      if (response.url().endsWith('/api/transformmate/connect'))
-        completed = response;
-    };
-    page.on('response', observeCompletion);
-    const form = page.locator('#transformmate');
-    await form.getByLabel(/^Firebase API key/).fill('synthetic-key');
-    await form.getByLabel(/^Firebase refresh token/).fill('synthetic-refresh');
-    await form.getByRole('button', { name: 'Подключить', exact: true }).click();
-    await started;
-    if (unmount) {
-      const navigation = page.getByRole('button', {
-        name: 'Навигация',
-        exact: true,
-      });
-      if (await navigation.isVisible()) {
-        await navigation.click();
-        await expect(navigation).toHaveAttribute('aria-expanded', 'true');
+          data: {
+            email: 'owner@example.test',
+            password: 'Test-only-password-12345',
+          },
+        });
+      let auth = await signIn();
+      if (auth.status() === 429) {
+        const seconds = Number(
+          auth.headers()['x-retry-after'] ??
+            auth.headers()['retry-after'] ??
+            10,
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, (seconds + 1) * 1000),
+        );
+        auth = await signIn();
       }
-      await page.getByRole('link', { name: 'Обзор', exact: true }).click();
-      await expect(form).toHaveCount(0);
-    }
-    const sibling = await context.newPage();
-    await inject(sibling);
-    await sibling.evaluate(call('listen()'));
-    await sibling.evaluate(call('seed()'));
-    expect(await sibling.evaluate(call('read()'))).toMatchObject({
-      present: true,
-      photos: 1,
-    });
-    release();
-    await expect.poll(() => completed?.status(), { timeout: 15000 }).toBe(200);
-    page.off('response', observeCompletion);
-    if (!unmount)
+      expect(auth.status()).toBe(200);
+      const loaded = page.waitForResponse(
+        (response) =>
+          response.url().endsWith('/api/transformmate/status') &&
+          response.status() === 200,
+      );
+      await page.goto('/settings#transformmate');
+      await loaded;
       await expect(
-        form.getByText('Подключение сохранено.', { exact: true }),
-      ).toBeVisible();
-    await expect
-      .poll(() => sibling.evaluate(call('read()')))
-      .toEqual({ present: false, photos: 0, enabled: false });
-    expect(await sibling.evaluate(call('read()'))).toEqual({
-      present: false,
-      photos: 0,
-      enabled: false,
+        page
+          .locator('#transformmate')
+          .getByRole('button', { name: 'Подключить', exact: true }),
+      ).toBeEnabled();
+      let release!: () => void;
+      let entered!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      await page.route('**/api/transformmate/connect', async (route) => {
+        entered();
+        await pending;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: {
+              configured: false,
+              account: null,
+              checkedAt: null,
+              errorCode: null,
+            },
+          }),
+        });
+      });
+      // Observe from submission, but start the bounded wait only after releasing the held POST.
+      let completed: Response | undefined;
+      const observeCompletion = (response: Response) => {
+        if (response.url().endsWith('/api/transformmate/connect'))
+          completed = response;
+      };
+      page.on('response', observeCompletion);
+      const form = page.locator('#transformmate');
+      await form.getByLabel(/^Firebase API key/).fill('synthetic-key');
+      await form
+        .getByLabel(/^Firebase refresh token/)
+        .fill('synthetic-refresh');
+      await form
+        .getByRole('button', { name: 'Подключить', exact: true })
+        .click();
+      await started;
+      if (unmount) {
+        const navigation = page.getByRole('button', {
+          name: 'Навигация',
+          exact: true,
+        });
+        if (await navigation.isVisible()) {
+          await navigation.click();
+          await expect(navigation).toHaveAttribute('aria-expanded', 'true');
+        }
+        await page.getByRole('link', { name: 'Обзор', exact: true }).click();
+        await expect(form).toHaveCount(0);
+      }
+      const sibling = await context.newPage();
+      await inject(sibling);
+      await sibling.evaluate(call('listen()'));
+      await expect(sibling.evaluate(call('seed()'))).rejects.toThrow(
+        'Offline storage fence',
+      );
+      expect(await sibling.evaluate(call('read(Date.now())'))).toEqual({
+        present: false,
+        photos: 0,
+        enabled: false,
+      });
+      release();
+      await expect
+        .poll(() => completed?.status(), { timeout: 15000 })
+        .toBe(200);
+      page.off('response', observeCompletion);
+      if (!unmount)
+        await expect(
+          form.getByText('Подключение сохранено.', { exact: true }),
+        ).toBeVisible();
+      await expect
+        .poll(() => sibling.evaluate(call('read()')))
+        .toEqual({ present: false, photos: 0, enabled: false });
+      expect(await sibling.evaluate(call('read()'))).toEqual({
+        present: false,
+        photos: 0,
+        enabled: false,
+      });
     });
-    expect(await sibling.evaluate(call('stale()'))).toBe(true);
-  });
-}
+  }
+});

@@ -130,3 +130,26 @@ it('retains old visited workout links across diary refresh and never crosses an 
     mergeOfflineSnapshots(old, fresh).workoutSessions.map((item) => item.href),
   ).not.toContain('/workouts/sessions/old-visited');
 });
+
+it('quota eviction invalidates populated date coverage while preserving truly loaded empty dates', () => {
+  const previous = offlineFixture(Date.parse('2026-09-01T12:00:00Z'));
+  const fresh = offlineFixture(Date.parse('2026-10-12T12:00:00Z'));
+  previous.workoutDates = ['2026-09-01', '2026-09-02'];
+  previous.workoutSessions = Array.from({ length: 300 }, (_, index) => ({
+    ...previous.workoutSessions[0]!,
+    href: `/workouts/sessions/old-${index}`,
+  }));
+  const merged = mergeOfflineSnapshots(previous, fresh);
+  expect(merged.workoutSessions).toHaveLength(300);
+  expect(
+    merged.workoutSessions.some(
+      (item) => item.href === '/workouts/sessions/old-0',
+    ),
+  ).toBe(false);
+  expect(
+    merged.workoutSessions.some((item) => item.date === '2026-09-01'),
+  ).toBe(true);
+  expect(merged.workoutDates).not.toContain('2026-09-01'); // Remaining records are a partial date.
+  expect(merged.workoutDates).toContain('2026-09-02'); // Confirmed empty is still distinct from unknown.
+  expect(merged.workoutDates).toContain('2026-10-12');
+});

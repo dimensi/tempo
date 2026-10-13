@@ -2,6 +2,10 @@ import { afterEach, expect, it, vi } from 'vitest';
 vi.mock('@/lib/offline-device', async (importOriginal) => ({
   ...(await importOriginal()),
   purgeOfflineDevice: vi.fn(async () => {}),
+  withOfflineCacheLock: vi.fn(async (operation: () => Promise<void>) => {
+    await operation();
+    return 'completed';
+  }),
 }));
 import { OfflineController } from '@/features/offline/controller';
 import {

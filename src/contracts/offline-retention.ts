@@ -42,11 +42,13 @@ export function mergeOfflineSnapshots(
     previous.connectionGeneration !== incoming.connectionGeneration
   )
     return incoming;
+  const evictedWorkoutDates = new Set<string>();
   const merge = <T extends { date: string }>(
     old: T[],
     fresh: T[],
     limit: number,
     key: (item: T) => string,
+    evictedDates?: Set<string>,
   ) => {
     const values = new Map(
       old
@@ -54,8 +56,39 @@ export function mergeOfflineSnapshots(
         .map((item) => [key(item), item]),
     );
     for (const item of fresh) values.set(key(item), item);
-    return [...values.values()].slice(-limit);
+    const records = [...values.values()];
+    for (const item of records.slice(0, Math.max(0, records.length - limit)))
+      evictedDates?.add(item.date);
+    return records.slice(-limit);
   };
+  const plannedWorkouts = merge(
+    previous.plannedWorkouts,
+    incoming.plannedWorkouts,
+    1000,
+    (item) => item.href,
+    evictedWorkoutDates,
+  );
+  const workoutSessions = merge(
+    previous.workoutSessions,
+    incoming.workoutSessions,
+    300,
+    (item) => item.href,
+    evictedWorkoutDates,
+  );
+  const nativeTrainings = merge(
+    previous.nativeTrainings,
+    incoming.nativeTrainings,
+    300,
+    (item) => item.href,
+    evictedWorkoutDates,
+  );
+  const transformMateFacts = merge(
+    previous.transformMateFacts,
+    incoming.transformMateFacts,
+    300,
+    (item) => item.href,
+    evictedWorkoutDates,
+  );
   return {
     ...incoming,
     diary: merge(previous.diary, incoming.diary, 30, (item) => item.date),
@@ -90,30 +123,12 @@ export function mergeOfflineSnapshots(
     ),
     workoutDates: [
       ...new Set([...previous.workoutDates, ...incoming.workoutDates]),
-    ].slice(-300),
-    plannedWorkouts: merge(
-      previous.plannedWorkouts,
-      incoming.plannedWorkouts,
-      1000,
-      (item) => item.href,
-    ),
-    workoutSessions: merge(
-      previous.workoutSessions,
-      incoming.workoutSessions,
-      300,
-      (item) => item.href,
-    ),
-    nativeTrainings: merge(
-      previous.nativeTrainings,
-      incoming.nativeTrainings,
-      300,
-      (item) => item.href,
-    ),
-    transformMateFacts: merge(
-      previous.transformMateFacts,
-      incoming.transformMateFacts,
-      300,
-      (item) => item.href,
-    ),
+    ]
+      .slice(-300)
+      .filter((date) => !evictedWorkoutDates.has(date)),
+    plannedWorkouts,
+    workoutSessions,
+    nativeTrainings,
+    transformMateFacts,
   };
 }

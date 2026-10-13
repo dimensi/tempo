@@ -44,6 +44,7 @@ export interface DiaryViewProps {
   commentsSlot?: ReactNode;
   navigationSlot?: ReactNode;
   unavailableSlot?: ReactNode;
+  privatePhotos?: boolean;
   // Coordinator supplies authorized operations; absent operations hide mutation controls.
   photoActions?: {
     remove: (id: string) => Promise<void>;
@@ -122,6 +123,7 @@ export function DiaryView({
   commentsSlot,
   navigationSlot,
   unavailableSlot,
+  privatePhotos = false,
   photoActions,
 }: DiaryViewProps) {
   const [viewing, setViewing] = useState<string | null>(null);
@@ -311,11 +313,13 @@ export function DiaryView({
         closeButtonProps={{ 'aria-label': m.closePhoto, size: 44 }}
       >
         {viewingPhoto?.href && (
-          <PhotoViewerImage
-            key={viewingPhoto.id}
-            src={viewingPhoto.href}
-            alt={`${m.meals[viewingPhoto.daytime]} — ${viewingPhoto.source === 'yazio' ? m.automatic : m.manual}`}
-          />
+          <div data-offline-private={privatePhotos || undefined}>
+            <PhotoViewerImage
+              key={viewingPhoto.id}
+              src={viewingPhoto.href}
+              alt={`${m.meals[viewingPhoto.daytime]} — ${viewingPhoto.source === 'yazio' ? m.automatic : m.manual}`}
+            />
+          </div>
         )}
       </Modal>
       <Modal

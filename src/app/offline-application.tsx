@@ -36,7 +36,18 @@ function OfflineRouteContent() {
     controller.getSnapshot,
     controller.getServerSnapshot,
   );
-  const [photos, setPhotos] = useState<DiaryPhoto[]>([]);
+  const [photoCopy, setPhotoCopy] = useState<{
+    bundle: typeof state.bundle;
+    photos: DiaryPhoto[];
+  } | null>(null);
+  const photos =
+    state.bundle && photoCopy?.bundle === state.bundle
+      ? photoCopy.photos.filter((photo) =>
+          state.bundle!.snapshot.photos.items.some(
+            (current) => current.id === photo.id,
+          ),
+        )
+      : [];
   useLayoutEffect(() => {
     if (state.bundle) revealOfflineContent(state.bundle.fence);
   }, [state]);
@@ -54,7 +65,7 @@ function OfflineRouteContent() {
     });
     let active = true;
     void Promise.resolve().then(() => {
-      if (active) setPhotos(nextPhotos);
+      if (active) setPhotoCopy({ bundle: state.bundle, photos: nextPhotos });
     });
     return () => {
       active = false;
@@ -97,6 +108,7 @@ function OfflineRouteContent() {
         <DiaryView
           date={date}
           day={day}
+          privatePhotos
           unavailableSlot={!saved ? unknown : undefined}
           photos={photos.filter((photo) => photo.date === date)}
           navigationSlot={
@@ -215,6 +227,7 @@ function OfflineRouteContent() {
               )}
             />
           )}
+          {plan && <LinkedWorkoutFacts snapshot={snapshot} href={plan.href} />}
           {session && (
             <WorkoutReadContent
               kind="session"
@@ -265,6 +278,36 @@ function OfflineRouteContent() {
       )}
     </Stack>
   );
+}
+function LinkedWorkoutFacts({
+  snapshot,
+  href,
+}: {
+  snapshot: OfflineSnapshot;
+  href: string;
+}) {
+  const renderedNative = new Set<string>();
+  return snapshot.transformMateFacts
+    .filter((fact) => fact.plannedHref === href)
+    .map((fact) => {
+      const native = snapshot.nativeTrainings.find(
+        (item) => item.href === fact.nativeHref,
+      );
+      if (native && renderedNative.has(native.href)) return null;
+      if (native) renderedNative.add(native.href);
+      return (
+        <Stack key={fact.key}>
+          <Title order={2} size="h3">
+            {workoutMessages.remoteActual}
+          </Title>
+          {native ? (
+            <WorkoutReadContent kind="native" item={native} />
+          ) : (
+            <WorkoutReadContent kind="fact" item={fact} />
+          )}
+        </Stack>
+      );
+    });
 }
 function WorkoutDay({
   snapshot,
@@ -336,6 +379,9 @@ function WorkoutDay({
                 (result) => result.plannedHref === item.href,
               )}
             />
+          )}
+          {item.kind === 'plan' && (
+            <LinkedWorkoutFacts snapshot={snapshot} href={item.href} />
           )}
           {item.kind === 'session' && (
             <WorkoutReadContent

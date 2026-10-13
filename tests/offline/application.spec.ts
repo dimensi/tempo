@@ -318,3 +318,186 @@ test('automatic activation waits for pending auth or provider mutation across ta
   await sibling.evaluate(() => window.dispatchEvent(new Event('focus')));
   await waitSaved(sibling);
 });
+
+test('refill holds a shared lock past advisory-check gap and cannot publish during a held provider request', async ({
+  page,
+  context,
+}) => {
+  await page.goto('/login');
+  await page.addScriptTag({ content: harness });
+  const provider = await context.newPage();
+  await provider.goto('/login');
+  await provider.addScriptTag({ content: harness });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await provider.route('**/api/transformmate/connect', async (route) => {
+    await held;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: '{}',
+    });
+  });
+  await page.evaluate('window.offlineTest.startRefillRace()');
+  await expect
+    .poll(() => page.evaluate('window.offlineTest.raceState().entered'))
+    .toBe(true);
+  expect(
+    await page.evaluate(async () =>
+      (await navigator.locks.query()).held?.some(
+        (lock) =>
+          lock.name === 'yazio-offline-mutation' && lock.mode === 'shared',
+      ),
+    ),
+  ).toBe(true);
+  await provider.evaluate('window.offlineTest.startHeldProvider()');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Object.keys(localStorage).some((key) =>
+          key.startsWith('yazio.offline.intent:'),
+        ),
+      ),
+    )
+    .toBe(true);
+  expect(
+    await provider.evaluate('window.offlineTest.heldProviderEntered()'),
+  ).toBe(false);
+  await page.evaluate('window.offlineTest.releaseRefillIdentity()');
+  await page.evaluate('window.offlineTest.waitRefill()');
+  await expect
+    .poll(() => provider.evaluate('window.offlineTest.heldProviderEntered()'))
+    .toBe(true);
+  expect(await page.evaluate('window.offlineTest.raceState()')).toMatchObject({
+    commits: 0,
+    published: [],
+  });
+  await expect(page.getByTestId('race-private')).toBeHidden();
+  const before = Number(
+    await page.evaluate('window.offlineTest.raceState().requests'),
+  );
+  await page.evaluate('window.offlineTest.retryRefill()');
+  expect(await page.evaluate('window.offlineTest.raceState()')).toMatchObject({
+    commits: 0,
+    published: [],
+    requests: before,
+  }); // ifAvailable skips rather than queues.
+  release();
+  expect(
+    await provider.evaluate('window.offlineTest.finishHeldProvider()'),
+  ).toBe(200);
+  await page.evaluate('window.offlineTest.setRaceGeneration()');
+  await page.evaluate('window.offlineTest.retryRefill()');
+  expect(await page.evaluate('window.offlineTest.raceState()')).toMatchObject({
+    commits: 1,
+    published: ['Z'.repeat(43)],
+    status: 'ready',
+  });
+  await expect(page.getByTestId('race-private')).toBeVisible();
+  expect(await page.evaluate('window.offlineTest.cacheWithoutLocks()')).toEqual(
+    { requests: 0, status: 'error', error: 'unavailable', bundle: null },
+  );
+});
+
+test('old workout detail bookmark without a query caches its authorized actual date', async ({
+  page,
+  context,
+}) => {
+  const data = seedReal();
+  try {
+    await signIn(page);
+    await page.goto('/workouts/sessions/offline-older-session');
+    await expect(
+      page.getByRole('heading', {
+        name: 'Synthetic older result',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await waitSaved(page);
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const request = indexedDB.open('yazio-offline-read-v1', 1);
+          return new Promise((resolve) => {
+            request.onsuccess = () => {
+              const db = request.result;
+              const tx = db.transaction('bundle');
+              const read = tx.objectStore('bundle').get('current');
+              read.onsuccess = () => {
+                resolve(
+                  read.result?.snapshot.workoutSessions.some(
+                    (item: { href: string }) =>
+                      item.href === '/workouts/sessions/offline-older-session',
+                  ),
+                );
+                db.close();
+              };
+            };
+          });
+        }),
+      )
+      .toBe(true);
+    await context.setOffline(true);
+    await page.reload();
+    await expect(page).toHaveURL('/workouts/sessions/offline-older-session');
+    await expect(
+      page.getByRole('heading', {
+        name: 'Synthetic older result',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Literal result note', { exact: true }),
+    ).toBeVisible();
+  } finally {
+    await context.setOffline(false);
+    data.db
+      .prepare('DELETE FROM nutrition_days WHERE owner_id=? AND date=?')
+      .run(data.ownerId, data.date);
+    data.db
+      .prepare('DELETE FROM workout_sessions WHERE id IN (?,?)')
+      .run('offline-real-session', 'offline-older-session');
+    data.db.close();
+  }
+});
+
+test('linked TransformMate literal facts remain visible exactly once in plan day and deep detail', async ({
+  page,
+  context,
+}) => {
+  await page.goto('/login');
+  await page.addScriptTag({ content: harness });
+  await page.evaluate('window.offlineTest.seed(\u0027linked-plan\u0027)');
+  await page.evaluate('window.offlineTest.prepareShell()');
+  const date = new Date().toISOString().slice(0, 10);
+  await context.setOffline(true);
+  try {
+    await page.goto(`/workouts?date=${date}`);
+    await expect(page.getByText('Weight: 0 кг', { exact: true })).toHaveCount(
+      1,
+    );
+    await expect(
+      page.getByText('Duration: 01–03 мин', { exact: true }),
+    ).toHaveCount(1);
+    await page.goto(
+      `/workouts/plans/synthetic-plan/workouts/synthetic-workout?date=${date}`,
+    );
+    await expect(page.getByText('Weight: 0 кг', { exact: true })).toHaveCount(
+      1,
+    );
+    await page.addScriptTag({ content: harness });
+    await page.evaluate('window.offlineTest.removeLinkedNative()');
+    await page.reload();
+    await expect(
+      page.getByText('Synthetic movement', { exact: true }),
+    ).toHaveCount(1);
+    await page.goto(`/workouts?date=${date}`);
+    await expect(
+      page.getByText('Synthetic movement', { exact: true }),
+    ).toHaveCount(1);
+  } finally {
+    await context.setOffline(false);
+  }
+});
