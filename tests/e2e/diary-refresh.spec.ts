@@ -36,6 +36,9 @@ test('selected-day owner refresh deduplicates, separates photo warnings and igno
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text());
   });
+  // Serial tests share Better Auth's real in-memory sign-in limit (3 per 10s).
+  // Let earlier tests' login requests expire; keep collecting all console errors.
+  await new Promise((resolve) => setTimeout(resolve, 11000));
   const date = '2024-02-29';
   const ownerId = await login(page, 'owner');
   await page.goto(`/diary?date=${date}`);

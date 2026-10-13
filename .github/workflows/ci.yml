@@ -13,13 +13,13 @@ permissions:
   contents: read
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
           cache: pnpm
@@ -41,15 +41,15 @@ jobs:
       - run: pnpm build
       - name: Mandatory production smoke and selected or manual-full area gates
         run: pnpm test:ci:browsers
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: e2e-results
           path: test-results/
   docker:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Build exact checked-out revision
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
@@ -61,7 +61,7 @@ jobs:
       - name: Export tested release image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: bash scripts/export-release-artifact.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           name: nutrition-release-${{ github.sha }}
