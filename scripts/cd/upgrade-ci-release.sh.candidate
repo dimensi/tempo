@@ -117,15 +117,31 @@ wait_healthy "$image" "$commit"
 recovery_armed=false
 # Only successful upgrades prune managed complete sets; failed/incomplete/legacy backups remain.
 compose run --rm --no-deps -e BACKUP_STAMP="$stamp" --entrypoint node app -e '
- const fs=require("node:fs"),root="/app/data/cd-backups";const groups=new Map();
+ const fs=require("node:fs"),root="/app/data/cd-backups";const groups=new Map(),protectedStamps=new Set(),crypto=require("node:crypto");
+ function hash(file){const h=crypto.createHash("sha256"),fd=fs.openSync(file,"r"),buf=Buffer.alloc(1048576);try{let n;while((n=fs.readSync(fd,buf,0,buf.length,null)))h.update(buf.subarray(0,n));}finally{fs.closeSync(fd);}return h.digest("hex");}
+ function complete(dir,stamp){
+  try{
+   if(!fs.lstatSync(dir).isDirectory()||!fs.lstatSync(dir+"/manifest.json").isFile())return false;
+   const m=JSON.parse(fs.readFileSync(dir+"/manifest.json"));
+   if(m.format!==1||m.stamp!==stamp||!/^([0-9a-f]{40})$/.test(m.revision)||m.image!=="nutrition-release:"+m.revision.slice(0,12)||typeof m.createdAt!=="string"||!Number.isFinite(Date.parse(m.createdAt))||!m.files||typeof m.files!=="object"||Array.isArray(m.files))return false;
+   const required=["snapshot.sqlite","snapshot-uploads.tar.gz","release.env","compose.yaml","compose.home.yaml"];
+   for(const name of ["yazio","transformmate"]){
+    const choices=["snapshot-"+name+"-connection.enc","snapshot-"+name+"-connection.absent"].filter(file=>Object.hasOwn(m.files,file));
+    if(choices.length!==1)return false;required.push(choices[0]);
+   }
+   // Unknown files, links and missing/corrupt payloads protect the entire deployment group.
+   if(Object.keys(m.files).sort().join("\n")!==[...required].sort().join("\n")||fs.readdirSync(dir).sort().join("\n")!==[...required,"manifest.json"].sort().join("\n"))return false;
+   for(const file of required){if(!fs.lstatSync(dir+"/"+file).isFile()||!/^([0-9a-f]{64})$/.test(m.files[file])||hash(dir+"/"+file)!==m.files[file])return false;}
+   return true;
+  }catch{return false;}
+ }
  for(const name of fs.readdirSync(root)){
   const match=/^(pre-upgrade|failed-before-rollback)-([0-9]{8}T[0-9]{6}Z-[0-9]+)$/.exec(name);if(!match)continue;
-  const dir=root+"/"+name;if(!fs.lstatSync(dir).isDirectory())continue;
-  let m;try{m=JSON.parse(fs.readFileSync(dir+"/manifest.json"));}catch{continue;}
-  if(m.format!==1||m.stamp!==match[2])continue;
-  if(!groups.has(m.stamp))groups.set(m.stamp,[]);groups.get(m.stamp).push(dir);
+  const dir=root+"/"+name,stamp=match[2];
+  if(!complete(dir,stamp)){protectedStamps.add(stamp);continue;}
+  if(!groups.has(stamp))groups.set(stamp,[]);groups.get(stamp).push(dir);
  }
- const stamps=[...groups.keys()].sort((a,b)=>b.localeCompare(a,undefined,{numeric:true}));
+ const stamps=[...groups.keys()].filter(stamp=>!protectedStamps.has(stamp)).sort((a,b)=>b.localeCompare(a,undefined,{numeric:true}));
  for(const stamp of stamps.slice(5).filter(stamp=>stamp!==process.env.BACKUP_STAMP))for(const dir of groups.get(stamp))fs.rmSync(dir,{recursive:true});
 ' || echo 'ATTENTION: release healthy; backup retention failed; operator action required.' >&2
 echo "Release started: $commit; consistent backups: pre-upgrade-$stamp"

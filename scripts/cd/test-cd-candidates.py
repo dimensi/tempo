@@ -1,4 +1,4 @@
-import json, re, importlib.machinery, importlib.util, io, os, pathlib, subprocess, sys, tarfile, tempfile, time
+import hashlib, json, re, importlib.machinery, importlib.util, io, os, pathlib, subprocess, sys, tarfile, tempfile, time
 BASE=pathlib.Path(__file__).resolve().parent
 loader=importlib.machinery.SourceFileLoader("candidate",str(BASE/"nutrition-cd.py.candidate"));spec=importlib.util.spec_from_loader(loader.name,loader);m=importlib.util.module_from_spec(spec);loader.exec_module(m)
 def archive(kind=tarfile.REGTYPE):
@@ -103,19 +103,47 @@ retention=blocks[2]
 with tempfile.TemporaryDirectory() as d:
  root=pathlib.Path(d)
  stamps=[f"202610{i:02}T120000Z-1" for i in range(1,8)]
+ def complete(kind,stamp):
+  folder=root/(kind+"-"+stamp);folder.mkdir()
+  files={}
+  for name in ("snapshot.sqlite","snapshot-uploads.tar.gz","release.env","compose.yaml","compose.home.yaml","snapshot-yazio-connection.enc","snapshot-transformmate-connection.absent"):
+   content=b"" if name.endswith(".absent") else b"synthetic fixture"
+   (folder/name).write_bytes(content);files[name]=hashlib.sha256(content).hexdigest()
+  (folder/"manifest.json").write_text(json.dumps(dict(format=1,stamp=stamp,image="nutrition-release:"+OLD[:12],revision=OLD,createdAt="2026-10-13T12:00:00Z",files=files)))
+  return folder
  for stamp in stamps:
-  for kind in ("pre-upgrade","failed-before-rollback"):
-   folder=root/(kind+"-"+stamp);folder.mkdir();(folder/"manifest.json").write_text(json.dumps(dict(format=1,stamp=stamp)))
+  for kind in ("pre-upgrade","failed-before-rollback"):complete(kind,stamp)
+ protected=[]
+ # All malformed sets are older than the five valid groups, so the old implementation deletes them.
+ folder=root/"pre-upgrade-20260801T120000Z-1";folder.mkdir()
+ (folder/"manifest.json").write_text(json.dumps(dict(format=1,stamp="20260801T120000Z-1")));protected.append(folder)
+ for day,damage in enumerate(("missing-file","corrupt-file","missing-hash","bad-hash","symlink","unexpected-file"),2):
+  stamp=f"202608{day:02}T120000Z-1";folder=complete("pre-upgrade",stamp)
+  protected.append(folder);protected.append(complete("failed-before-rollback",stamp))
+  manifest=folder/"manifest.json";payload=json.loads(manifest.read_text())
+  if damage=="missing-file":(folder/"snapshot.sqlite").unlink()
+  elif damage=="corrupt-file":(folder/"snapshot.sqlite").write_text("damaged")
+  elif damage=="missing-hash":del payload["files"]["snapshot.sqlite"]
+  elif damage=="bad-hash":payload["files"]["snapshot.sqlite"]="not-a-sha256"
+  elif damage=="symlink":
+   (folder/"snapshot.sqlite").unlink();(folder/"snapshot.sqlite").symlink_to(root/"outside.sqlite")
+  elif damage=="unexpected-file":(folder/"unmanaged.txt").write_text("preserve")
+  manifest.write_text(json.dumps(payload))
+ # A damaged newest set must not displace any of the newest five valid groups.
+ newest=complete("pre-upgrade","20261101T120000Z-1");(newest/"snapshot.sqlite").write_text("damaged");protected.append(newest)
+ protected.append(complete("failed-before-rollback","20261101T120000Z-1"))
  incomplete=root/"pre-upgrade-20260901T120000Z-1";incomplete.mkdir()
+ protected.append(complete("failed-before-rollback","20260901T120000Z-1"))
  legacy=root/"pre-upgrade-legacy.sqlite";legacy.write_text("old")
  outside=root/"unmanaged";outside.mkdir()
  subprocess.run(["node","-e",retention.replace('root="/app/data/cd-backups"','root='+json.dumps(d))],env=os.environ|dict(BACKUP_STAMP=stamps[0]),check=True)
  assert (root/("pre-upgrade-"+stamps[0])).exists()  # current set is always pinned
  assert not (root/("pre-upgrade-"+stamps[1])).exists()
  assert not (root/("failed-before-rollback-"+stamps[1])).exists()
+ assert all(folder.exists() for folder in protected), "Incomplete/corrupt group was pruned"
  assert incomplete.exists() and legacy.exists() and outside.exists()
  assert all((root/("pre-upgrade-"+stamp)).exists() for stamp in stamps[2:])
-print("PASS: real retention JS keeps latest five groups/current/incomplete/legacy and removes both halves together")
+print("PASS: real retention JS keeps latest five valid groups/current/incomplete/corrupt/symlink/legacy and preserves both halves of damaged groups")
 
 if "--docker" in sys.argv:
  snapshot=re.search(r"snapshot\(\).*?app -e '\n(.*?)\n '",script,re.S)[1]

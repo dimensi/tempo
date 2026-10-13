@@ -18,16 +18,45 @@ The bounded `verification/previous-release.env` records the immediately precedin
 release for recovery. Do not rotate the auth secret: existing encrypted tokens
 depend on it.
 
-This change is an operator handoff, not an installed production change. Before
-activating these candidate helpers, pause CD submissions, retain the existing
-protected runtime configuration, and split its two release assignments into
-`release.env`, preserving the secret assignment byte for byte in `runtime.env`.
-Compare the existing nonsecret values with the repository overlay before removing
-their assignments. Install the reviewed Compose files and both updated root-owned
-helpers together, then validate with `compose config --quiet` (never print rendered
-configuration). Do not recreate the app as part of configuration installation.
-The next separately authorized release must use a completed successful main CI
-artifact. No new registry credentials, access grants or security settings are needed.
+This change is an operator handoff, not an installed production change. **Merging
+into main can run the currently installed CD when `NUTRITION_CD_ENABLED=true`;
+merging does not install these candidate helpers.** The following transition
+requires separate authorization; this PR does not pause CD or change the server.
+
+1. Obtain one explicit approval covering temporary CD pause, merge, coordinated
+   configuration/helper installation, deployment of the successful main artifact,
+   and restoration of the prior CD-enabled state after verification. Record the
+   existing enabled state. Pause submissions before merging and confirm no queued
+   or running deployment can reach the old handler; wait for any active rollout
+   to finish. A variable change alone does not cancel an in-flight handler.
+2. Verify the installed Compose supports `ports: !reset []` and multiple
+   `--env-file` arguments using the reviewed files and synthetic env values.
+   Retain protected copies of both installed helpers, both Compose files and the
+   existing runtime configuration for reverting installation. Record live exact
+   image/revision and the `nutrition` project's existing volume identities.
+3. Merge only after the pause is verified. Wait for both main CI jobs to succeed
+   on the exact merged SHA. Failed CI blocks deployment; do not rebuild its image.
+4. While CD remains paused, stage and install both updated root-owned helpers
+   (`nutrition-cd` and `nutrition-upgrade-ci-release`), both reviewed Compose files,
+   and the split env as one coordinated installation. `release.env` initially
+   pins the currently running image/revision, not the new artifact. Preserve the
+   existing auth-secret assignment byte for byte in mode-0600 `runtime.env`.
+   Confirm the nonsecret settings match the reviewed home overlay. Preserve project
+   `nutrition`, network alias and the existing DB/uploads volumes. Do not run
+   `up`, `down`, migrations or any recreate during preparation/installation.
+5. Validate the installed configuration with both env files and
+   `compose config --quiet`; never print rendered configuration. Verify exact
+   current release identity, file ownership/modes and unchanged secret using
+   comparison without printing its value. If preparation fails, restore the saved
+   configuration/helpers while still paused; the running container remains intact.
+6. Only under the explicit release approval, submit the exact successful main
+   artifact through the updated handler. Check receipt, image/revision, Docker
+   health, Tempo HTTPS health and authentication/data access. Resolve any rollback
+   or retention warning before restoring the prior CD-enabled state. Resume only
+   after that verification; keep the installation backup for operator recovery.
+
+No new registry credentials, access grants or security settings are needed. These
+approvals have not been granted or executed by this PR's implementation task.
 
 ## Managed backup sets
 
@@ -42,7 +71,11 @@ before restoring the previous release configuration and matching data.
 
 After a healthy successful upgrade, retention keeps the newest five deployment
 stamps, grouping pre-upgrade and failed-state snapshots together, and always pins
-the current stamp. Failed rollouts never prune. Legacy backups outside this new
+the current stamp. A group counts only when its manifest metadata, exact required
+regular-file inventory and all SHA-256 checksums validate. Missing/corrupt files,
+links, unknown files or an invalid manifest protect the entire stamp, including
+its otherwise valid counterpart, and do not consume a retention slot.
+Failed rollouts never prune. Legacy backups outside this new
 namespace, unknown entries and incomplete sets remain untouched. A retention
 failure warns without rolling back a healthy release. This is count-based local
 retention, not off-host disaster recovery; keep the unchanged permanent secret in
