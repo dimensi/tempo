@@ -62,7 +62,7 @@ pnpm dev
 | `pnpm auth:create-user`                     | Локальное создание owner/trainer                        |
 | `pnpm db:backup /secure/path/backup.sqlite` | Online backup с учётом WAL                              |
 
-Для E2E сначала `pnpm exec playwright install chromium`. Тесты запускают свой development server на 3100 (или `E2E_PORT`, например `E2E_PORT=3127 pnpm test:e2e`) и пересоздают только `.data/e2e.sqlite`. CI на каждом PR проверяет форматирование, lint, types, unit/integration, build, E2E и Docker smoke.
+Для E2E сначала `pnpm exec playwright install chromium`. Тесты запускают свой development server на 3100 (или `E2E_PORT`, например `E2E_PORT=3127 pnpm test:e2e`) и пересоздают только `.data/e2e.sqlite`. CI запускается только после push в `main` и проверяет форматирование, lint, types, unit/integration, build, все E2E-наборы (включая production offline) и Docker smoke. PR проверяются ревью и локальными проверками затронутых изменений; CI на PR и feature-ветках не запускается.
 
 `pnpm start` требует предварительно применённых миграций и production-конфигурации: HTTPS `BETTER_AUTH_URL`, сильный секрет и `DEMO_MODE=false`. Для локального HTTPS используйте reverse proxy. Для повседневной разработки используйте `pnpm dev`.
 

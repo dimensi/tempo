@@ -50,9 +50,10 @@ For disposable image validation, build `docker build -t nutrition-foundation .`,
 
 ## Reuse the CI-tested image
 
-PR CI runs formatting, lint and type checks for review. A PR may merge after
-those static checks and review; full unit/integration tests, production build,
-all three E2E suites and the Docker build/smoke run once on the main-push
+PRs use review and targeted local checks; GitHub CI does not run on PRs or
+feature-branch pushes. Formatting, lint, type checks, full unit/integration tests,
+production build, all four E2E suites (general, production offline, nutrition sync
+and TransformMate sync), and Docker build/smoke run once on the main-push
 workflow. Production stays on its previous stable image until that entire main
 workflow completes successfully. A failed or incomplete main workflow blocks
 deployment, even if the Docker job has already uploaded an artifact. Local
