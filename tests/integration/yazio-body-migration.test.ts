@@ -12,13 +12,13 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { openDatabase } from '@/server/db/connection';
-it('migrates a synthetic nine-migration database to ten preserving existing records and FK integrity', () => {
+it('migrates a synthetic ten-migration database to eleven preserving existing records and FK integrity', () => {
   const root = mkdtempSync(join(tmpdir(), 'yazio-body-migration-'));
   mkdirSync(join(root, 'meta'));
   const journal = JSON.parse(
     readFileSync('drizzle/meta/_journal.json', 'utf8'),
   );
-  journal.entries = journal.entries.slice(0, 9);
+  journal.entries = journal.entries.slice(0, 10);
   writeFileSync(join(root, 'meta/_journal.json'), JSON.stringify(journal));
   for (const entry of journal.entries)
     copyFileSync(`drizzle/${entry.tag}.sql`, join(root, `${entry.tag}.sql`));
@@ -29,7 +29,7 @@ it('migrates a synthetic nine-migration database to ten preserving existing reco
       database.sqlite
         .prepare('SELECT count(*) as n FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ n: 9 });
+    ).toEqual({ n: 10 });
     database.sqlite
       .prepare(
         'INSERT INTO user(id,name,email,role,created_at,updated_at) VALUES(?,?,?,?,?,?)',
@@ -52,7 +52,7 @@ it('migrates a synthetic nine-migration database to ten preserving existing reco
       database.sqlite
         .prepare('SELECT count(*) as n FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ n: 10 });
+    ).toEqual({ n: 11 });
     expect(database.sqlite.prepare('SELECT * FROM measurements').all()).toEqual(
       before,
     );
@@ -74,7 +74,7 @@ it('migrates a synthetic nine-migration database to ten preserving existing reco
       fresh.sqlite
         .prepare('SELECT count(*) as n FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ n: 10 });
+    ).toEqual({ n: 11 });
     expect(fresh.sqlite.pragma('foreign_key_check')).toEqual([]);
   } finally {
     fresh.sqlite.close();

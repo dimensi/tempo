@@ -1,0 +1,734 @@
+import 'server-only';
+import { randomUUID } from 'node:crypto';
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  sql,
+} from 'drizzle-orm';
+import { getDatabase } from '@/server/db';
+import { user, trainerAccess } from '@/server/db/schema';
+import {
+  medicalDocuments,
+  medicalImportJobs,
+  medicalDocumentPages,
+  medicalMarkers,
+  medicalMarkerAliases,
+  medicalObservations,
+  medicalObservationSources,
+  medicalReviewItems,
+  medicalObservationRevisions,
+  medicalReportExports,
+  medicalMarkerGrants,
+  medicalDocumentGrants,
+} from '@/server/db/schema/anamnesis';
+import type { AnamnesisObservationValue } from '@/contracts/anamnesis';
+
+type Db = ReturnType<typeof getDatabase>['db'];
+
+export type MedicalDocumentRow = typeof medicalDocuments.$inferSelect;
+export type MedicalImportJobRow = typeof medicalImportJobs.$inferSelect;
+export type MedicalObservationRow = typeof medicalObservations.$inferSelect;
+export type MedicalObservationSourceRow =
+  typeof medicalObservationSources.$inferSelect;
+export type MedicalReviewItemRow = typeof medicalReviewItems.$inferSelect;
+export type MedicalObservationRevisionRow =
+  typeof medicalObservationRevisions.$inferSelect;
+export type MedicalReportExportRow = typeof medicalReportExports.$inferSelect;
+export type MedicalMarkerRow = typeof medicalMarkers.$inferSelect;
+
+const documentScope = (ownerId: string, id: string) =>
+  and(
+    eq(medicalDocuments.ownerId, ownerId),
+    eq(medicalDocuments.id, id),
+    isNull(medicalDocuments.deletedAt),
+  );
+
+export function anamnesisRepository(db: Db = getDatabase().db) {
+  function pendingReviewCount(ownerId: string, markerIds?: string[]) {
+    const conditions = [
+      eq(medicalReviewItems.ownerId, ownerId),
+      eq(medicalReviewItems.status, 'pending'),
+    ];
+    if (markerIds && !markerIds.length) return 0;
+    if (markerIds?.length) {
+      conditions.push(
+        inArray(
+          medicalReviewItems.observationId,
+          db
+            .select({ id: medicalObservations.id })
+            .from(medicalObservations)
+            .where(
+              and(
+                eq(medicalObservations.ownerId, ownerId),
+                inArray(medicalObservations.markerId, markerIds),
+              ),
+            ),
+        ),
+      );
+    }
+    return (
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(medicalReviewItems)
+        .where(and(...conditions))
+        .get()?.count ?? 0
+    );
+  }
+  return {
+    // --- Каталог
+    listMarkers: () =>
+      db.select().from(medicalMarkers).orderBy(medicalMarkers.name).all(),
+    listAliases: () => db.select().from(medicalMarkerAliases).all(),
+    findMarker: (markerId: string) =>
+      db
+        .select()
+        .from(medicalMarkers)
+        .where(eq(medicalMarkers.id, markerId))
+        .get(),
+
+    // --- Документы
+    findDocumentBySha: (ownerId: string, sha256: string) =>
+      db
+        .select()
+        .from(medicalDocuments)
+        .where(
+          and(
+            eq(medicalDocuments.ownerId, ownerId),
+            eq(medicalDocuments.sha256, sha256),
+            isNull(medicalDocuments.deletedAt),
+          ),
+        )
+        .get(),
+    insertDocument: (row: typeof medicalDocuments.$inferInsert) =>
+      db.insert(medicalDocuments).values(row).returning().get(),
+    findDocument: (ownerId: string, id: string) =>
+      db
+        .select()
+        .from(medicalDocuments)
+        .where(documentScope(ownerId, id))
+        .get(),
+    listDocuments: (ownerId: string) =>
+      db
+        .select()
+        .from(medicalDocuments)
+        .where(
+          and(
+            eq(medicalDocuments.ownerId, ownerId),
+            isNull(medicalDocuments.deletedAt),
+          ),
+        )
+        .orderBy(desc(medicalDocuments.createdAt))
+        .all(),
+    updateDocument: (
+      ownerId: string,
+      id: string,
+      patch: Partial<
+        Pick<
+          MedicalDocumentRow,
+          'laboratoryName' | 'title' | 'collectedAt' | 'issuedAt'
+        >
+      >,
+    ) =>
+      db
+        .update(medicalDocuments)
+        .set({ ...patch, updatedAt: Date.now() })
+        .where(documentScope(ownerId, id))
+        .returning()
+        .get(),
+    softDeleteDocument: (ownerId: string, id: string) =>
+      db
+        .update(medicalDocuments)
+        .set({ deletedAt: Date.now(), updatedAt: Date.now() })
+        .where(documentScope(ownerId, id))
+        .returning({ id: medicalDocuments.id })
+        .get(),
+
+    // --- Задания импорта
+    insertJob: (row: typeof medicalImportJobs.$inferInsert) =>
+      db.insert(medicalImportJobs).values(row).returning().get(),
+    findJob: (ownerId: string, id: string) =>
+      db
+        .select()
+        .from(medicalImportJobs)
+        .where(
+          and(
+            eq(medicalImportJobs.ownerId, ownerId),
+            eq(medicalImportJobs.id, id),
+          ),
+        )
+        .get(),
+    listJobs: (ownerId: string, limit = 50) =>
+      db
+        .select()
+        .from(medicalImportJobs)
+        .where(eq(medicalImportJobs.ownerId, ownerId))
+        .orderBy(desc(medicalImportJobs.createdAt))
+        .limit(limit)
+        .all(),
+    // Очередь глобальная: один процесс приложения, аренда защищает от зависших заданий.
+    claimNextJob: (leaseUntil: number) =>
+      db
+        .update(medicalImportJobs)
+        .set({ status: 'processing', updatedAt: Date.now(), leaseUntil })
+        .where(
+          and(
+            eq(
+              medicalImportJobs.id,
+              sql`(
+              select id from ${medicalImportJobs}
+              where status = 'queued'
+                 or (status = 'processing' and lease_until is not null and lease_until < ${Date.now()})
+              order by created_at asc limit 1
+            )`,
+            ),
+          ),
+        )
+        .returning()
+        .get(),
+    findJobById: (id: string) =>
+      db
+        .select()
+        .from(medicalImportJobs)
+        .where(eq(medicalImportJobs.id, id))
+        .get(),
+    updateJob: (
+      id: string,
+      patch: Partial<
+        Pick<
+          MedicalImportJobRow,
+          'status' | 'stage' | 'attempts' | 'lastError' | 'leaseUntil'
+        >
+      >,
+    ) =>
+      db
+        .update(medicalImportJobs)
+        .set({ ...patch, updatedAt: Date.now() })
+        .where(eq(medicalImportJobs.id, id))
+        .returning()
+        .get(),
+    countActiveJobs: (ownerId: string) =>
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(medicalImportJobs)
+        .where(
+          and(
+            eq(medicalImportJobs.ownerId, ownerId),
+            inArray(medicalImportJobs.status, ['queued', 'processing']),
+          ),
+        )
+        .get()?.count ?? 0,
+
+    // --- Страницы
+    replacePages: (
+      documentId: string,
+      rows: Array<typeof medicalDocumentPages.$inferInsert>,
+    ) => {
+      db.delete(medicalDocumentPages)
+        .where(eq(medicalDocumentPages.documentId, documentId))
+        .run();
+      if (rows.length) db.insert(medicalDocumentPages).values(rows).run();
+    },
+
+    // --- Измерения
+    insertObservation: (row: typeof medicalObservations.$inferInsert) =>
+      db.insert(medicalObservations).values(row).returning().get(),
+    findObservation: (ownerId: string, id: string) =>
+      db
+        .select()
+        .from(medicalObservations)
+        .where(
+          and(
+            eq(medicalObservations.ownerId, ownerId),
+            eq(medicalObservations.id, id),
+          ),
+        )
+        .get(),
+    findObservationAny: (id: string) =>
+      db
+        .select()
+        .from(medicalObservations)
+        .where(eq(medicalObservations.id, id))
+        .get(),
+    listObservations: (
+      ownerId: string,
+      filter: { markerIds?: string[]; from?: string; to?: string },
+    ) => {
+      const conditions = [
+        eq(medicalObservations.ownerId, ownerId),
+        ne(medicalObservations.verification, 'rejected'),
+      ];
+      if (filter.markerIds?.length)
+        conditions.push(
+          inArray(medicalObservations.markerId, filter.markerIds),
+        );
+      if (filter.from)
+        conditions.push(gte(medicalObservations.collectedAt, filter.from));
+      if (filter.to)
+        conditions.push(lte(medicalObservations.collectedAt, `${filter.to}Z`));
+      return db
+        .select()
+        .from(medicalObservations)
+        .where(and(...conditions))
+        .orderBy(medicalObservations.collectedAt, medicalObservations.createdAt)
+        .all();
+    },
+    // Точное совпадение для дедупликации между документами.
+    findExactObservation: (
+      ownerId: string,
+      match: {
+        markerId: string;
+        collectedAt: string | null;
+        value: AnamnesisObservationValue;
+        originalUnit: string | null;
+        laboratoryName: string | null;
+      },
+    ) =>
+      db
+        .select()
+        .from(medicalObservations)
+        .where(
+          and(
+            eq(medicalObservations.ownerId, ownerId),
+            eq(medicalObservations.markerId, match.markerId),
+            match.collectedAt === null
+              ? isNull(medicalObservations.collectedAt)
+              : eq(medicalObservations.collectedAt, match.collectedAt),
+            eq(medicalObservations.valueJson, match.value),
+            match.originalUnit === null
+              ? isNull(medicalObservations.originalUnit)
+              : eq(medicalObservations.originalUnit, match.originalUnit),
+            match.laboratoryName === null
+              ? isNull(medicalObservations.laboratoryName)
+              : eq(medicalObservations.laboratoryName, match.laboratoryName),
+          ),
+        )
+        .get(),
+    // Противоречие: тот же показатель и дата, но другое значение.
+    hasContradiction: (
+      ownerId: string,
+      match: { markerId: string; collectedAt: string },
+    ) =>
+      db
+        .select({ id: medicalObservations.id })
+        .from(medicalObservations)
+        .where(
+          and(
+            eq(medicalObservations.ownerId, ownerId),
+            eq(medicalObservations.markerId, match.markerId),
+            eq(medicalObservations.collectedAt, match.collectedAt),
+            ne(medicalObservations.verification, 'rejected'),
+          ),
+        )
+        .get() !== undefined,
+    updateObservation: (
+      ownerId: string,
+      id: string,
+      expectedRevision: number,
+      patch: Partial<
+        Pick<
+          MedicalObservationRow,
+          | 'markerId'
+          | 'valueJson'
+          | 'originalUnit'
+          | 'normalizedValue'
+          | 'normalizedUnit'
+          | 'collectedAt'
+          | 'datePrecision'
+          | 'referenceJson'
+          | 'referenceAssessment'
+          | 'verification'
+        >
+      >,
+    ) =>
+      db
+        .update(medicalObservations)
+        .set({
+          ...patch,
+          revision: expectedRevision + 1,
+          updatedAt: Date.now(),
+        })
+        .where(
+          and(
+            eq(medicalObservations.ownerId, ownerId),
+            eq(medicalObservations.id, id),
+            eq(medicalObservations.revision, expectedRevision),
+          ),
+        )
+        .returning()
+        .get(),
+    // Повторная обработка: удаляются только автоматические результаты импорта,
+    // все источники которых лежат внутри перерабатываемого документа.
+    deleteImportedObservations: (documentId: string) => {
+      const removable = db
+        .select({ id: medicalObservations.id })
+        .from(medicalObservations)
+        .where(
+          and(
+            ne(medicalObservations.verification, 'user_verified'),
+            sql`exists (
+              select 1 from ${medicalObservationSources} source_inside
+              where source_inside.observation_id = ${medicalObservations.id}
+                and source_inside.document_id = ${documentId}
+            )`,
+            sql`not exists (
+              select 1 from ${medicalObservationSources} source_outside
+              where source_outside.observation_id = ${medicalObservations.id}
+                and source_outside.document_id != ${documentId}
+            )`,
+          ),
+        )
+        .all()
+        .map((row) => row.id);
+      if (removable.length)
+        db.delete(medicalObservations)
+          .where(inArray(medicalObservations.id, removable))
+          .run();
+      return removable.length;
+    },
+
+    // --- Источники
+    insertSources: (
+      rows: Array<typeof medicalObservationSources.$inferInsert>,
+    ) => {
+      if (rows.length)
+        db.insert(medicalObservationSources)
+          .values(rows)
+          .onConflictDoNothing()
+          .run();
+    },
+    listSources: (observationId: string) =>
+      db
+        .select()
+        .from(medicalObservationSources)
+        .where(eq(medicalObservationSources.observationId, observationId))
+        .all(),
+    listObservationsByDocument: (ownerId: string, documentId: string) => [
+      ...new Map(
+        db
+          .select({ observation: medicalObservations })
+          .from(medicalObservations)
+          .innerJoin(
+            medicalObservationSources,
+            eq(medicalObservationSources.observationId, medicalObservations.id),
+          )
+          .where(
+            and(
+              eq(medicalObservations.ownerId, ownerId),
+              eq(medicalObservationSources.documentId, documentId),
+            ),
+          )
+          .all()
+          .map((row) => [row.observation.id, row.observation] as const),
+      ).values(),
+    ],
+    listSourcesForObservations: (observationIds: string[]) =>
+      observationIds.length
+        ? db
+            .select()
+            .from(medicalObservationSources)
+            .where(
+              inArray(medicalObservationSources.observationId, observationIds),
+            )
+            .all()
+        : [],
+
+    // --- Очередь проверки
+    insertReview: (row: typeof medicalReviewItems.$inferInsert) =>
+      db.insert(medicalReviewItems).values(row).returning().get(),
+    listPendingReviews: (ownerId: string) =>
+      db
+        .select()
+        .from(medicalReviewItems)
+        .where(
+          and(
+            eq(medicalReviewItems.ownerId, ownerId),
+            eq(medicalReviewItems.status, 'pending'),
+          ),
+        )
+        .orderBy(desc(medicalReviewItems.createdAt))
+        .all(),
+    countPendingReviews: (ownerId: string, markerIds?: string[]) =>
+      pendingReviewCount(ownerId, markerIds),
+    findReview: (ownerId: string, id: string) =>
+      db
+        .select()
+        .from(medicalReviewItems)
+        .where(
+          and(
+            eq(medicalReviewItems.ownerId, ownerId),
+            eq(medicalReviewItems.id, id),
+          ),
+        )
+        .get(),
+    resolveReview: (
+      id: string,
+      resolution: 'resolved' | 'rejected',
+      resolvedBy: string,
+    ) =>
+      db
+        .update(medicalReviewItems)
+        .set({ status: resolution, resolvedAt: Date.now(), resolvedBy })
+        .where(
+          and(
+            eq(medicalReviewItems.id, id),
+            eq(medicalReviewItems.status, 'pending'),
+          ),
+        )
+        .returning()
+        .get(),
+
+    // --- История изменений
+    insertRevision: (row: typeof medicalObservationRevisions.$inferInsert) =>
+      db.insert(medicalObservationRevisions).values(row).returning().get(),
+    listRevisions: (observationId: string) =>
+      db
+        .select()
+        .from(medicalObservationRevisions)
+        .where(eq(medicalObservationRevisions.observationId, observationId))
+        .orderBy(medicalObservationRevisions.createdAt)
+        .all(),
+
+    // --- Отчёты
+    insertReport: (row: typeof medicalReportExports.$inferInsert) =>
+      db.insert(medicalReportExports).values(row).returning().get(),
+    listReports: (ownerId: string) =>
+      db
+        .select()
+        .from(medicalReportExports)
+        .where(eq(medicalReportExports.ownerId, ownerId))
+        .orderBy(desc(medicalReportExports.createdAt))
+        .all(),
+    findReport: (ownerId: string, id: string) =>
+      db
+        .select()
+        .from(medicalReportExports)
+        .where(
+          and(
+            eq(medicalReportExports.ownerId, ownerId),
+            eq(medicalReportExports.id, id),
+          ),
+        )
+        .get(),
+    deleteReport: (ownerId: string, id: string) =>
+      db
+        .delete(medicalReportExports)
+        .where(
+          and(
+            eq(medicalReportExports.ownerId, ownerId),
+            eq(medicalReportExports.id, id),
+          ),
+        )
+        .returning({ id: medicalReportExports.id })
+        .get(),
+
+    // --- Гранты тренера
+    markerGrantIds: (ownerId: string, trainerId: string) =>
+      new Set(
+        db
+          .select({ markerId: medicalMarkerGrants.markerId })
+          .from(medicalMarkerGrants)
+          .where(
+            and(
+              eq(medicalMarkerGrants.ownerId, ownerId),
+              eq(medicalMarkerGrants.trainerId, trainerId),
+            ),
+          )
+          .all()
+          .map((row) => row.markerId),
+      ),
+    documentGrantIds: (ownerId: string, trainerId: string) =>
+      new Set(
+        db
+          .select({ documentId: medicalDocumentGrants.documentId })
+          .from(medicalDocumentGrants)
+          .where(
+            and(
+              eq(medicalDocumentGrants.ownerId, ownerId),
+              eq(medicalDocumentGrants.trainerId, trainerId),
+            ),
+          )
+          .all()
+          .map((row) => row.documentId),
+      ),
+    setMarkerGrant: (
+      ownerId: string,
+      trainerId: string,
+      markerId: string,
+      enabled: boolean,
+    ) => {
+      if (enabled)
+        db.insert(medicalMarkerGrants)
+          .values({ ownerId, trainerId, markerId, grantedAt: Date.now() })
+          .onConflictDoNothing()
+          .run();
+      else
+        db.delete(medicalMarkerGrants)
+          .where(
+            and(
+              eq(medicalMarkerGrants.ownerId, ownerId),
+              eq(medicalMarkerGrants.trainerId, trainerId),
+              eq(medicalMarkerGrants.markerId, markerId),
+            ),
+          )
+          .run();
+    },
+    setDocumentGrant: (
+      ownerId: string,
+      trainerId: string,
+      documentId: string,
+      enabled: boolean,
+    ) => {
+      if (enabled)
+        db.insert(medicalDocumentGrants)
+          .values({ ownerId, trainerId, documentId, grantedAt: Date.now() })
+          .onConflictDoNothing()
+          .run();
+      else
+        db.delete(medicalDocumentGrants)
+          .where(
+            and(
+              eq(medicalDocumentGrants.ownerId, ownerId),
+              eq(medicalDocumentGrants.trainerId, trainerId),
+              eq(medicalDocumentGrants.documentId, documentId),
+            ),
+          )
+          .run();
+    },
+    // Тренеры с действующим trainer_access и их медицинские гранты.
+    listGrantTrainers: (ownerId: string) =>
+      db
+        .select({
+          trainerId: trainerAccess.trainerId,
+          name: user.name,
+          email: user.email,
+        })
+        .from(trainerAccess)
+        .innerJoin(user, eq(user.id, trainerAccess.trainerId))
+        .where(eq(trainerAccess.ownerId, ownerId))
+        .all(),
+
+    // --- Сводка. Фильтры ограничивают каждую цифру разрешёнными данными.
+    overview: (
+      ownerId: string,
+      markerFilter?: { markerIds: string[] },
+      documentIds?: string[],
+    ) => {
+      const observationConditions = [
+        eq(medicalObservations.ownerId, ownerId),
+        ne(medicalObservations.verification, 'rejected'),
+      ];
+      if (markerFilter && !markerFilter.markerIds.length)
+        observationConditions.push(sql`1 = 0`);
+      else if (markerFilter?.markerIds.length)
+        observationConditions.push(
+          inArray(medicalObservations.markerId, markerFilter.markerIds),
+        );
+      const observationWhere = and(...observationConditions);
+      const documents = documentIds
+        ? documentIds.length
+          ? (db
+              .select({ count: sql<number>`count(*)` })
+              .from(medicalDocuments)
+              .where(
+                and(
+                  eq(medicalDocuments.ownerId, ownerId),
+                  isNull(medicalDocuments.deletedAt),
+                  inArray(medicalDocuments.id, documentIds),
+                ),
+              )
+              .get()?.count ?? 0)
+          : 0
+        : (db
+            .select({ count: sql<number>`count(*)` })
+            .from(medicalDocuments)
+            .where(
+              and(
+                eq(medicalDocuments.ownerId, ownerId),
+                isNull(medicalDocuments.deletedAt),
+              ),
+            )
+            .get()?.count ?? 0);
+      const observations =
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(medicalObservations)
+          .where(observationWhere)
+          .get()?.count ?? 0;
+      const pendingReviews = pendingReviewCount(
+        ownerId,
+        markerFilter ? markerFilter.markerIds : undefined,
+      );
+      const activeImports = documentIds
+        ? documentIds.length
+          ? (db
+              .select({ count: sql<number>`count(*)` })
+              .from(medicalImportJobs)
+              .where(
+                and(
+                  eq(medicalImportJobs.ownerId, ownerId),
+                  inArray(medicalImportJobs.status, ['queued', 'processing']),
+                  inArray(medicalImportJobs.documentId, documentIds),
+                ),
+              )
+              .get()?.count ?? 0)
+          : 0
+        : (db
+            .select({ count: sql<number>`count(*)` })
+            .from(medicalImportJobs)
+            .where(
+              and(
+                eq(medicalImportJobs.ownerId, ownerId),
+                inArray(medicalImportJobs.status, ['queued', 'processing']),
+              ),
+            )
+            .get()?.count ?? 0);
+      const lastCollectedAt = db
+        .select({
+          value: sql<string | null>`max(${medicalObservations.collectedAt})`,
+        })
+        .from(medicalObservations)
+        .where(observationWhere)
+        .get()?.value;
+      return {
+        documents,
+        observations,
+        markers: 0,
+        pendingReviews,
+        activeImports,
+        lastCollectedAt: lastCollectedAt ?? null,
+      };
+    },
+    markersWithObservations: (ownerId: string) =>
+      db
+        .select({
+          markerId: medicalObservations.markerId,
+          count: sql<number>`count(*)`,
+        })
+        .from(medicalObservations)
+        .where(
+          and(
+            eq(medicalObservations.ownerId, ownerId),
+            ne(medicalObservations.verification, 'rejected'),
+          ),
+        )
+        .groupBy(medicalObservations.markerId)
+        .all(),
+  };
+}
+
+export function anamnesisId() {
+  return randomUUID();
+}
+
+export type PageInsert = typeof medicalDocumentPages.$inferInsert;
+export type ObservationInsert = typeof medicalObservations.$inferInsert;
+export type SourceInsert = typeof medicalObservationSources.$inferInsert;
+export type ReviewInsert = typeof medicalReviewItems.$inferInsert;
+export type RevisionInsert = typeof medicalObservationRevisions.$inferInsert;

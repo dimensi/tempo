@@ -1,0 +1,72 @@
+import 'server-only';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { validateObjectKey } from './keys';
+
+// S3-совместимое хранилище (SeaweedFS на NAS): path-style, приватный бакет.
+// Ключ проверяется на каждом вызове: реализация не доверяет вызывающему.
+export interface S3StorageConfig {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}
+
+export function s3ObjectStorage(config: S3StorageConfig) {
+  const client = new S3Client({
+    endpoint: config.endpoint,
+    region: config.region,
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+    },
+  });
+  return {
+    async put(
+      key: string,
+      bytes: Uint8Array,
+      contentType?: string,
+    ): Promise<void> {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: config.bucket,
+          Key: validateObjectKey(key),
+          Body: bytes,
+          ContentType: contentType,
+        }),
+      );
+    },
+    async get(key: string): Promise<Uint8Array> {
+      const output = await client.send(
+        new GetObjectCommand({
+          Bucket: config.bucket,
+          Key: validateObjectKey(key),
+        }),
+      );
+      const stream = output.Body;
+      if (!stream) throw new Error('Empty storage object');
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      for await (const chunk of stream as AsyncIterable<Uint8Array>) {
+        size += chunk.byteLength;
+        if (size > 104857600) throw new Error('Storage object too large');
+        chunks.push(chunk);
+      }
+      return Buffer.concat(chunks);
+    },
+    async remove(key: string): Promise<void> {
+      await client.send(
+        new DeleteObjectCommand({
+          Bucket: config.bucket,
+          Key: validateObjectKey(key),
+        }),
+      );
+    },
+  };
+}

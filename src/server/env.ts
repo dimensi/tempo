@@ -13,6 +13,40 @@ const schema = z.object({
     .string()
     .default('./.data/private/transformmate-token.json'),
   UPLOADS_DIR: z.string().default('./.data/uploads'),
+  ENABLE_ANAMNESIS_WORKER: z.enum(['true', 'false']).default('false'),
+  S3_ENDPOINT: z.url().optional(),
+  S3_REGION: z.string().min(1).max(32).default('us-east-1'),
+  S3_BUCKET: z.string().min(1).max(63).default('apps'),
+  S3_ACCESS_KEY_ID: z.string().min(1).max(128).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().min(1).max(128).optional(),
+  ANAMNESIS_LLM_BASE_URL: z
+    .url()
+    .default('https://api.z.ai/api/coding/paas/v4'),
+  ANAMNESIS_LLM_API_KEY: z.string().min(1).max(256).optional(),
+  ANAMNESIS_LLM_MODEL: z.string().min(1).max(64).default('glm-4.5v'),
+  ANAMNESIS_LLM_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(5000)
+    .max(300000)
+    .default(120000),
+  ANAMNESIS_IMPORT_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(104857600)
+    .default(26214400),
+  ANAMNESIS_IMPORT_MAX_PAGES: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(500)
+    .default(100),
+  // Тестовый провайдер распознавания: отвечает только на файл с точным sha256.
+  ANAMNESIS_EXTRACTION_FIXTURE_SHA256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
 });
 export function readServerEnv(input: NodeJS.ProcessEnv = process.env) {
   const env = schema.parse(

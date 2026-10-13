@@ -10,6 +10,9 @@ export const permissions = [
   'workouts:log',
   'comments:write',
   'reports:export',
+  'anamnesis:read',
+  'anamnesis:write',
+  'anamnesis:report',
   'yazio:manage',
   'transformmate:manage',
   'trainers:manage',
@@ -22,6 +25,10 @@ const trainerPermissions: readonly Permission[] = [
   'workouts:plan',
   'comments:write',
   'reports:export',
+  // Тренер читает анамнез и строит отчёты только по выданным грантам;
+  // запись (загрузка, правки, управление доступом) — владелец.
+  'anamnesis:read',
+  'anamnesis:report',
 ];
 export function hasPermission(role: string, permission: Permission): boolean {
   return (
