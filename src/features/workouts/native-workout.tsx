@@ -17,8 +17,29 @@ import { IconInfoCircle } from '@tabler/icons-react';
 import { ExerciseDetails } from './exercise-details';
 import { workoutMessages as m } from './messages';
 
-type NativeSet =
-  TransformMateNativeItem['exercises'][number]['metrics'][number]['sets'][number];
+type NativeMetric = Omit<
+  TransformMateNativeItem['exercises'][number]['metrics'][number]['sets'][number]['metrics'][number],
+  'key'
+> & { key?: string };
+type NativeSet = Omit<
+  TransformMateNativeItem['exercises'][number]['metrics'][number]['sets'][number],
+  'metrics'
+> & { metrics: NativeMetric[] };
+export type NativeWorkoutReadItem = Omit<
+  TransformMateNativeItem,
+  'remoteTrainingId' | 'exercises'
+> & {
+  remoteTrainingId?: number;
+  exercises: (Omit<
+    TransformMateNativeItem['exercises'][number],
+    'protocolId' | 'remoteExerciseId' | 'exerciseId' | 'metrics'
+  > & {
+    protocolId?: number;
+    remoteExerciseId?: number;
+    exerciseId?: number;
+    metrics: { type: 'plan' | 'fact'; sets: NativeSet[] }[];
+  })[];
+};
 function SetMetrics({ sets }: { sets: NativeSet[] }) {
   if (!sets.length) return <Text size="sm">—</Text>;
   return (
@@ -48,7 +69,7 @@ export function NativeWorkout({
   ownerId,
   fullView = false,
 }: {
-  item: TransformMateNativeItem;
+  item: NativeWorkoutReadItem;
   ownerId?: string;
   fullView?: boolean;
 }) {
@@ -89,7 +110,7 @@ export function NativeWorkout({
           .sort(
             (a, b) => a.protocolOrder - b.protocolOrder || a.order - b.order,
           )
-          .map((exercise) => {
+          .map((exercise, exerciseIndex) => {
             const planned = exercise.metrics
               .filter((metric) => metric.type === 'plan')
               .flatMap((metric) => metric.sets);
@@ -100,10 +121,7 @@ export function NativeWorkout({
               ...new Set([...planned, ...actual].map((set) => set.order)),
             ].sort((a, b) => a - b);
             return (
-              <Stack
-                gap="xs"
-                key={`${exercise.protocolId}-${exercise.remoteExerciseId}`}
-              >
+              <Stack gap="xs" key={exerciseIndex}>
                 <Group justify="space-between" gap="xs">
                   <Title order={3}>{exercise.name || m.exercise}</Title>
                   {ownerId &&
@@ -166,7 +184,7 @@ export function NativeWorkout({
                     <ExerciseDetails
                       key={`${ownerId}-${exercise.exerciseId}`}
                       ownerId={ownerId}
-                      exerciseId={exercise.exerciseId}
+                      exerciseId={exercise.exerciseId!}
                     />
                   )}
 

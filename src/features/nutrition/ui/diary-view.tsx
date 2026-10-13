@@ -34,7 +34,7 @@ import {
 } from './presentation';
 
 export interface DiaryPhoto extends SafeMealPhotoView {
-  href: string;
+  href: string | null;
 }
 export interface DiaryViewProps {
   date: string;
@@ -43,6 +43,7 @@ export interface DiaryViewProps {
   source?: 'demo';
   commentsSlot?: ReactNode;
   navigationSlot?: ReactNode;
+  unavailableSlot?: ReactNode;
   // Coordinator supplies authorized operations; absent operations hide mutation controls.
   photoActions?: {
     remove: (id: string) => Promise<void>;
@@ -120,6 +121,7 @@ export function DiaryView({
   source,
   commentsSlot,
   navigationSlot,
+  unavailableSlot,
   photoActions,
 }: DiaryViewProps) {
   const [viewing, setViewing] = useState<string | null>(null);
@@ -162,7 +164,7 @@ export function DiaryView({
       </Group>
       {navigationSlot}
       {!day ? (
-        <Alert>{m.empty}</Alert>
+        (unavailableSlot ?? <Alert>{m.empty}</Alert>)
       ) : (
         <Card
           withBorder
@@ -203,20 +205,24 @@ export function DiaryView({
                   <Stack gap="sm" className={classes.photos}>
                     {mealPhotos.map((photo) => (
                       <Stack key={photo.id}>
-                        <UnstyledButton
-                          className={classes.photoOpen}
-                          aria-label={`${m.enlargePhoto}: ${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
-                          onClick={() => setViewing(photo.id)}
-                        >
-                          <Image
-                            src={photo.href}
-                            alt={`${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
-                            radius="md"
-                            mah={260}
-                            style={{ aspectRatio: '4 / 3' }}
-                            fit="contain"
-                          />
-                        </UnstyledButton>
+                        {photo.href ? (
+                          <UnstyledButton
+                            className={classes.photoOpen}
+                            aria-label={`${m.enlargePhoto}: ${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
+                            onClick={() => setViewing(photo.id)}
+                          >
+                            <Image
+                              src={photo.href}
+                              alt={`${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
+                              radius="md"
+                              mah={260}
+                              style={{ aspectRatio: '4 / 3' }}
+                              fit="contain"
+                            />
+                          </UnstyledButton>
+                        ) : (
+                          <Text role="status">{m.photoNotSaved}</Text>
+                        )}
                         <Text size="sm">
                           {photo.source === 'yazio' ? m.automatic : m.manual}
                         </Text>
@@ -304,7 +310,7 @@ export function DiaryView({
         trapFocus
         closeButtonProps={{ 'aria-label': m.closePhoto, size: 44 }}
       >
-        {viewingPhoto && (
+        {viewingPhoto?.href && (
           <PhotoViewerImage
             key={viewingPhoto.id}
             src={viewingPhoto.href}

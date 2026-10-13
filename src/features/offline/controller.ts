@@ -5,9 +5,13 @@ import {
   type OfflineIdentity,
   type OfflineSnapshot,
 } from '@/contracts/offline';
-import { offlineLocalWindow } from '@/contracts/offline-retention';
+import {
+  mergeOfflineSnapshots,
+  offlineLocalWindow,
+} from '@/contracts/offline-retention';
 import { ownerConfirmedYazioWeightPolicyVersion } from '@/contracts/yazio-weight-policy';
 import {
+  offlineMutationInProgress,
   OfflineStorage,
   OfflineStorageError,
   purgeOfflineDevice,
@@ -197,13 +201,21 @@ export class OfflineController {
   }
   private async load(online: boolean) {
     const operation = this.begin('checking');
+    if (await offlineMutationInProgress()) {
+      if (this.revision === operation.revision) this.invalidate();
+      return;
+    }
+    if (this.revision !== operation.revision) return;
     let verifiedCache: OfflineState | undefined;
     try {
       const metadata = await this.storage.metadata();
       if (this.revision !== operation.revision) return;
       this.optedIn = metadata.enabled;
       if (!metadata.enabled) {
-        await this.storage.read(this.now(), this.timezone());
+        if (online) {
+          await this.save();
+          return;
+        }
         this.set({ ...empty, status: 'disabled' });
         return;
       }
@@ -272,6 +284,10 @@ export class OfflineController {
       this.state.status === 'saving'
     )
       return this.flight;
+    if (await offlineMutationInProgress()) {
+      this.invalidate();
+      return;
+    }
     this.optedIn = true;
     const operation = this.begin('saving');
     const work = (async () => {
@@ -313,12 +329,14 @@ export class OfflineController {
     identity: OfflineIdentity,
     operation: { revision: number; signal: AbortSignal },
     cached: Awaited<ReturnType<OfflineStorage['read']>>,
+    requestedPeriod?: { from: string; to: string },
   ) {
     this.lastRefreshAttempt = this.now();
     await this.prepareShell();
     if (this.revision !== operation.revision) return;
     const fence = await this.storage.currentFence();
-    const period = offlineLocalWindow(this.now(), this.timezone());
+    const period =
+      requestedPeriod ?? offlineLocalWindow(this.now(), this.timezone());
     const response = await this.request(
       `/api/offline/snapshot?from=${period.from}&to=${period.to}`,
       operation.signal,
@@ -326,7 +344,8 @@ export class OfflineController {
     const text = await response.text();
     if (new TextEncoder().encode(text).length > offlineLimits.payloadBytes)
       throw new OfflineStorageError('unavailable');
-    const snapshot = offlineSnapshotSchema.parse(JSON.parse(text));
+    const incoming = offlineSnapshotSchema.parse(JSON.parse(text));
+    const snapshot = incoming;
     if (
       !this.sameIdentity(identity, snapshot) ||
       snapshot.from !== period.from ||
@@ -335,6 +354,9 @@ export class OfflineController {
       await this.disable();
       return;
     }
+    const merged = offlineSnapshotSchema.parse(
+      mergeOfflineSnapshots(cached.bundle?.snapshot, snapshot),
+    );
     const previousPhotos = new Map(
       cached.photos.map((photo) => [photo.id, photo.bytes]),
     );
@@ -345,7 +367,7 @@ export class OfflineController {
     const photos: StoredPhoto[] = [];
     const missingPhotos: string[] = [];
     let photoBytes = 0;
-    for (const photo of snapshot.photos.items) {
+    for (const photo of merged.photos.items) {
       if (this.revision !== operation.revision) return;
       const remaining = offlineDeviceLimits.photoBytes - photoBytes;
       const previous = previousMetadata.get(photo.id);
@@ -383,7 +405,7 @@ export class OfflineController {
       savedAt: Date.parse(snapshot.serverNow),
       expiresAt: Date.parse(snapshot.expiresAt),
       sessionExpiresAt: Date.parse(snapshot.sessionExpiresAt),
-      snapshot,
+      snapshot: merged,
       missingPhotos,
       photoBytes,
     };
@@ -421,6 +443,40 @@ export class OfflineController {
       status: verifiedCache?.bundle ? 'ready' : 'error',
       error: 'unavailable',
     });
+  }
+  async saveWorkoutDate(date: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !navigator.onLine) return;
+    await this.activate(true);
+    if (this.flight) await this.flight;
+    if (
+      !this.state.enabled ||
+      this.state.error ||
+      this.flight ||
+      (await offlineMutationInProgress())
+    )
+      return;
+    const operation = this.begin('saving');
+    const work = (async () => {
+      try {
+        const identity = await this.identity(operation.signal);
+        const cached = await this.storage.read(this.now(), this.timezone());
+        if (this.revision !== operation.revision) return;
+        await this.download(identity, operation, cached, {
+          from: date,
+          to: date,
+        });
+      } catch (error) {
+        await this.failed(error, operation.revision);
+      }
+    })();
+    this.flight = work;
+    this.flightRevision = operation.revision;
+    this.flightOnline = true;
+    try {
+      await work;
+    } finally {
+      if (this.flight === work) this.flight = undefined;
+    }
   }
   async disable() {
     this.optedIn = false;

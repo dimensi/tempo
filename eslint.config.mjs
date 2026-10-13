@@ -12,7 +12,11 @@ export default defineConfig([
         {
           patterns: [
             {
-              group: ['@/features/*/*'],
+              group: [
+                '@/features/*/*',
+                '!@/features/nutrition/read',
+                '!@/features/workouts/read',
+              ],
               message:
                 'Import only a feature public entry point; shared contracts belong in src/contracts.',
             },

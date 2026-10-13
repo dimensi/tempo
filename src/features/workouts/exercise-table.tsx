@@ -7,6 +7,7 @@ import type { TransformMateSyncItem } from '@/contracts/transformmate';
 import { actualSetForExercise } from './transformmate-exercises';
 import { ExerciseDetails } from './exercise-details';
 import { workoutMessages as m } from './messages';
+export type ReadExercise = WorkoutExercise & { comparisonKey?: string };
 export function ExerciseTable({
   exercises,
   sync,
@@ -14,25 +15,27 @@ export function ExerciseTable({
   factOnly = false,
   ownerId,
 }: {
-  exercises: WorkoutExercise[];
+  exercises: ReadExercise[];
   sync?: TransformMateSyncItem;
-  actual?: WorkoutExercise[];
+  actual?: ReadExercise[];
   factOnly?: boolean;
   ownerId?: string;
 }) {
   const [inspecting, setInspecting] = useState<number | null>(null);
-  const match = (exercise: WorkoutExercise, index: number) =>
-    exercise.transformMate
-      ? actual?.find(
-          (entry) =>
-            entry.transformMate?.occurrenceKey ===
-              exercise.transformMate?.occurrenceKey &&
-            entry.transformMate?.exerciseId ===
-              exercise.transformMate?.exerciseId,
-        )
-      : actual?.[index]?.name === exercise.name
-        ? actual[index]
-        : undefined;
+  const match = (exercise: ReadExercise, index: number) =>
+    exercise.comparisonKey
+      ? actual?.find((entry) => entry.comparisonKey === exercise.comparisonKey)
+      : exercise.transformMate
+        ? actual?.find(
+            (entry) =>
+              entry.transformMate?.occurrenceKey ===
+                exercise.transformMate?.occurrenceKey &&
+              entry.transformMate?.exerciseId ===
+                exercise.transformMate?.exerciseId,
+          )
+        : actual?.[index]?.name === exercise.name
+          ? actual[index]
+          : undefined;
   const represented = new Set(exercises.map(match));
   return (
     <Stack gap="md">

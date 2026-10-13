@@ -160,13 +160,32 @@ export function offlineRepository(database = getDatabase()) {
         return session;
       });
       const transformMateFacts = rows(
-        "SELECT id,CASE WHEN length(CAST(json_extract(state,'$.actual') AS BLOB)) <= ? THEN json_extract(state,'$.actual') END AS payload,json_extract(state,'$.checkedAt') AS checkedAt FROM workout_transformmate_links WHERE owner_id = ? AND json_extract(state,'$.actual.date') BETWEEN ? AND ? ORDER BY updated_at,id",
+        "SELECT id,plan_id AS planId,workout_id AS workoutId,remote_training_id AS remoteTrainingId,CASE WHEN length(CAST(CASE WHEN json_type(state,'$.published') = 'object' THEN json_extract(state,'$.published') WHEN json_type(state,'$.workout') = 'object' THEN json_object('planTitle',json_extract(state,'$.planTitle'),'workout',json(json_extract(state,'$.workout'))) END AS BLOB)) <= 2097152 THEN CASE WHEN json_type(state,'$.published') = 'object' THEN json_extract(state,'$.published') WHEN json_type(state,'$.workout') = 'object' THEN json_object('planTitle',json_extract(state,'$.planTitle'),'workout',json(json_extract(state,'$.workout'))) END END AS planSnapshot,CASE WHEN length(CAST(json_extract(state,'$.actual') AS BLOB)) <= ? THEN json_extract(state,'$.actual') END AS payload,json_extract(state,'$.checkedAt') AS checkedAt FROM workout_transformmate_links WHERE owner_id = ? AND json_extract(state,'$.actual.date') BETWEEN ? AND ? ORDER BY updated_at,id",
         args,
         offlineLimits.transformMateFacts,
-        jsonRow.extend({ checkedAt: stamp.nullable() }),
+        jsonRow.extend({
+          checkedAt: stamp.nullable(),
+          planId: id,
+          workoutId: id,
+          remoteTrainingId: z.number().int().positive().nullable(),
+          planSnapshot: text.nullable(),
+        }),
       ).map((row) => ({
         id: row.id,
         checkedAt: row.checkedAt,
+        planId: row.planId,
+        workoutId: row.workoutId,
+        remoteTrainingId: row.remoteTrainingId,
+        planSnapshot:
+          row.planSnapshot === null
+            ? null
+            : parseJson(
+                row.planSnapshot,
+                z.object({
+                  planTitle: text,
+                  workout: workoutPlanInputSchema.shape.workouts.element,
+                }),
+              ),
         actual: parseJson(row.payload, transformMateActualSchema),
       }));
       const nativeTrainings =

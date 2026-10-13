@@ -102,6 +102,7 @@ export function useTransformMateSync(
           setConfigured(parsed.configured);
           setError(false);
           setDenied(false);
+          window.dispatchEvent(new Event('yazio:workouts-loaded'));
         }
       } catch {
         if (!controller.signal.aborted && current === generation.current)

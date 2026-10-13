@@ -1,4 +1,5 @@
 import {
+  offlineLimits,
   offlineSnapshotSchema,
   type OfflineSnapshot,
 } from '@/contracts/offline';
@@ -11,7 +12,7 @@ export const offlineDeviceLimits = {
   photoBytes: 50 * 1024 * 1024,
 } as const;
 export const offlineDeviceMessages = {
-  title: 'Offline-чтение',
+  title: 'Работа без сети',
   cleanupWarning:
     'Offline-чтение заблокировано. Не удалось полностью очистить данные устройства.',
 } as const;
@@ -244,6 +245,18 @@ export async function purgeOfflineDevice() {
   }
   if (failed) throw new OfflineStorageError('unavailable');
 }
+let pendingDeviceMutations = 0;
+export async function offlineMutationInProgress() {
+  if (pendingDeviceMutations) return true;
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    const locks = await navigator.locks.query();
+    return (
+      locks.held?.some((lock) => lock.name === 'yazio-offline-mutation') ??
+      false
+    );
+  }
+  return false;
+}
 export async function withOfflineDevicePurge<T>(
   operation: () => Promise<T>,
   onCleanupFailure?: () => void,
@@ -259,12 +272,22 @@ export async function withOfflineDevicePurge<T>(
       }
     }
   };
-  await cleanup();
-  try {
-    return await operation();
-  } finally {
-    await cleanup();
-  }
+  const run = async () => {
+    pendingDeviceMutations++;
+    try {
+      await cleanup();
+      return await operation();
+    } finally {
+      try {
+        await cleanup();
+      } finally {
+        pendingDeviceMutations--;
+      }
+    }
+  };
+  if (typeof navigator !== 'undefined' && navigator.locks)
+    return navigator.locks.request('yazio-offline-mutation', run);
+  return run();
 }
 export class OfflineStorageError extends Error {
   constructor(
@@ -428,6 +451,8 @@ export class OfflineStorage {
         memoryBlocked
       )
         return fail(new OfflineStorageError('fence'));
+      if (now < metadata.lastSeenAt)
+        return fail(new OfflineStorageError('expired'));
       const next = {
         ...nextMetadata(metadata, now),
         partition,
@@ -475,6 +500,11 @@ export class OfflineStorage {
         offlineSnapshotSchema.parse(bundle.snapshot),
         offlineLocalWindow(now, timezone),
       );
+      if (
+        new TextEncoder().encode(JSON.stringify(snapshot)).length >
+        offlineLimits.payloadBytes
+      )
+        return fail(new OfflineStorageError('quota'));
       const ids = new Set(snapshot.photos.items.map((photo) => photo.id));
       const retained = photos.filter((photo) => ids.has(photo.id));
       const nextBundle = {

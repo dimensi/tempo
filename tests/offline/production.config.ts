@@ -1,7 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: '..',
-  testMatch: ['e2e/offline.spec.ts', 'offline/service-worker.spec.ts'],
+  testMatch: [
+    'e2e/offline.spec.ts',
+    'offline/service-worker.spec.ts',
+    'offline/application.spec.ts',
+  ],
   workers: 1,
   timeout: 60000,
   use: {

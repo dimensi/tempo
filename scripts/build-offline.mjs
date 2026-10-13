@@ -17,13 +17,13 @@ const brand = await readFile('public/branding/mark.svg');
 const brandName = `mark-${createHash('sha256').update(brand).digest('hex').slice(0, 16)}.svg`;
 await copyFile('public/branding/mark.svg', `${directory}/${brandName}`);
 await build({
-  entryPoints: ['src/features/offline/entry.tsx'],
+  entryPoints: ['src/app/offline-entry.tsx'],
   bundle: true,
   format: 'esm',
   platform: 'browser',
   target: 'es2022',
   outdir: directory,
-  entryNames: 'reader-[hash]',
+  entryNames: 'app-[hash]',
   minify: true,
   sourcemap: false,
   tsconfig: 'tsconfig.json',
@@ -37,6 +37,6 @@ const files = (await readdir(directory)).sort();
 const js = files.find((file) => file.endsWith('.js'));
 const css = files.find((file) => file.endsWith('.css'));
 if (!js || !css) throw new Error('Offline assets missing');
-const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Offline-чтение · ${ru.appName}</title><link rel="stylesheet" href="/offline/assets/${css}"></head><body><div id="offline-root"></div><script type="module" src="/offline/assets/${js}"></script></body></html>`;
+const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${ru.appName}</title><link rel="stylesheet" href="/offline/assets/${css}"></head><body><div id="offline-root"></div><script type="module" src="/offline/assets/${js}"></script></body></html>`;
 await writeFile(`${root}/index.html`, html);
-console.info(`Offline reader: ${files.length} static assets`);
+console.info(`Offline application: ${files.length} static assets`);

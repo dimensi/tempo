@@ -1,179 +1,45 @@
 'use client';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
-import {
-  AppShell,
-  Burger,
-  Group,
-  Text,
-  NavLink,
-  ActionIcon,
-  Button,
-  Stack,
-  Badge,
-  useMantineColorScheme,
-  useComputedColorScheme,
-} from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
-import {
-  IconSunMoon,
-  IconHome,
-  IconToolsKitchen2,
-  IconRuler,
-  IconBarbell,
-  IconChartLine,
-  IconFileText,
-  IconSettings,
-} from '@tabler/icons-react';
 import { authClient } from '@/lib/auth-client';
-import { ru } from '@/config/messages';
-import { BrandMark } from '@/components/branding/brand-mark';
-import {
-  withOfflineDevicePurge,
-  offlineDeviceMessages,
-} from '@/lib/offline-device';
-const icons = [
-  IconHome,
-  IconToolsKitchen2,
-  IconRuler,
-  IconBarbell,
-  IconChartLine,
-  IconFileText,
-  IconSettings,
-];
-export function ApplicationShell({
-  children,
-  role,
-  demo,
-}: {
+import { withOfflineDevicePurge } from '@/lib/offline-device';
+import { ApplicationShellFrame } from './application-shell-frame';
+export function ApplicationShell(props: {
   children: React.ReactNode;
   role: string;
   demo: boolean;
 }) {
-  const [opened, { toggle, close }] = useDisclosure();
+  const [online, setOnline] = useState(true);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    update();
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+  const [cleanupError, setCleanupError] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-  const { setColorScheme } = useMantineColorScheme();
-  const scheme = useComputedColorScheme('light');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
-  const [cleanupError, setCleanupError] = useState(false);
-  async function logout() {
-    setBusy(true);
-    setError(false);
-    try {
-      const result = await withOfflineDevicePurge(
-        () => authClient.signOut(),
-        () => setCleanupError(true),
-      );
-      if (result.error) {
-        setError(true);
-        return;
-      }
-      router.replace('/login');
-      router.refresh();
-    } catch {
-      setError(true);
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
-    <>
-      <a className="skip-link" href="#main-content">
-        Перейти к содержимому
-      </a>
-      <AppShell
-        header={{ height: 68 }}
-        navbar={{
-          width: 250,
-          breakpoint: 'sm',
-          collapsed: { mobile: !opened },
-        }}
-        padding={{ base: 'md', sm: 'xl' }}
-      >
-        <AppShell.Header>
-          <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-            <Group gap="sm" wrap="nowrap">
-              <Burger
-                opened={opened}
-                onClick={toggle}
-                hiddenFrom="sm"
-                size="sm"
-                aria-label={ru.navigation}
-                aria-expanded={opened}
-                style={{ width: 44, height: 44 }}
-              />
-              <BrandMark />
-              <Text fw={700} size="sm">
-                {ru.appName}
-              </Text>
-            </Group>
-            <ActionIcon
-              variant="default"
-              aria-label={ru.theme}
-              onClick={() =>
-                setColorScheme(scheme === 'dark' ? 'light' : 'dark')
-              }
-            >
-              <IconSunMoon size={20} />
-            </ActionIcon>
-          </Group>
-        </AppShell.Header>
-        <AppShell.Navbar p="md">
-          <Stack h="100%" justify="space-between">
-            <nav aria-label={ru.navigation}>
-              {ru.sections.map((section, index) => {
-                if (role === 'TRAINER' && section.href === '/settings')
-                  return null;
-                const Icon = icons[index] ?? IconHome;
-                return (
-                  <NavLink
-                    key={section.href}
-                    component={Link}
-                    href={section.href}
-                    label={section.title}
-                    leftSection={<Icon size={20} />}
-                    active={
-                      pathname === section.href ||
-                      (section.href === '/settings' &&
-                        pathname.startsWith('/settings/'))
-                    }
-                    aria-current={
-                      pathname === section.href ? 'page' : undefined
-                    }
-                    onClick={close}
-                    py="sm"
-                    mb={4}
-                    style={{ borderRadius: 'var(--mantine-radius-md)' }}
-                  />
-                );
-              })}
-            </nav>
-            <Stack gap="xs">
-              <Badge variant="light">
-                {role === 'OWNER' ? 'Владелец' : 'Тренер'}
-              </Badge>
-              {demo && <Badge color="orange">Демо-режим</Badge>}
-              {error && (
-                <Text c="red" role="alert" size="sm">
-                  Не удалось выйти. Повторите попытку.
-                </Text>
-              )}
-              {cleanupError && (
-                <Text role="status" size="sm">
-                  {offlineDeviceMessages.cleanupWarning}
-                </Text>
-              )}
-              <Button variant="default" loading={busy} onClick={logout}>
-                {ru.logout}
-              </Button>
-            </Stack>
-          </Stack>
-        </AppShell.Navbar>
-        <AppShell.Main id="main-content">{children}</AppShell.Main>
-      </AppShell>
-    </>
+    <ApplicationShellFrame
+      {...props}
+      pathname={pathname}
+      linkComponent={Link}
+      cleanupError={cleanupError}
+      logoutDisabled={!online}
+      onLogout={async () => {
+        const result = await withOfflineDevicePurge(
+          () => authClient.signOut(),
+          () => setCleanupError(true),
+        );
+        if (result.error) throw new Error('Logout failed');
+        router.replace('/login');
+        router.refresh();
+      }}
+    />
   );
 }

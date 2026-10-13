@@ -11,7 +11,7 @@ import { prepareOfflineShell } from '../../src/features/offline/shell';
 import { offlineFixture } from './fixtures';
 const storage = new OfflineStorage();
 let lastFence: Awaited<ReturnType<typeof storage.enable>>;
-const now = Date.now();
+let now = Date.now();
 let finishMutation!: () => void;
 let mutation: Promise<string>;
 let mutationEntered = false;
@@ -60,6 +60,7 @@ Object.assign(window, {
       return mutation;
     },
     async seed(variant?: 'zero-entry' | 'empty' | 'photo-only' | 'totals') {
+      now = Date.now();
       const snapshot = offlineFixture(now);
       const id = 'I'.repeat(43);
       snapshot.photos.items = [
@@ -324,4 +325,8 @@ Object.assign(window, {
       });
     },
   },
+});
+
+Object.defineProperty(Reflect.get(window, 'offlineTest'), 'now', {
+  get: () => now,
 });

@@ -140,13 +140,13 @@ it('explicit opt-in verifies OWNER and always requests rolling15 date-only data,
     unitStatus: 'OWNER_CONFIRMED',
   });
 });
-it('OFF devices make no background requests; denial of an enabled cache purges before displaying content', async () => {
+it('OWNER startup automatically populates the copy; denial of an enabled cache purges before displaying content', async () => {
   const persistence = storage();
   const request = fetcher();
   const reader = controller(persistence, request as typeof fetch);
   await reader.activate(true);
-  expect(request).not.toHaveBeenCalled();
-  await reader.save();
+  expect(request).toHaveBeenCalledTimes(3);
+  expect(reader.getSnapshot().bundle).not.toBeNull();
   const denied = controller(
     persistence,
     (async () => new Response('{}', { status: 403 })) as typeof fetch,
@@ -280,7 +280,7 @@ it('ready same-calendar clock rollback bypasses fast path and clears the guarded
   expect((await persistence.metadata()).enabled).toBe(false);
   await reader.activate(true);
   expect(reader.getSnapshot().bundle).toBeNull();
-  expect(persistence.read).toHaveBeenCalledTimes(2);
+  expect(persistence.read).toHaveBeenCalledTimes(3);
 });
 it('online identity denial supersedes a deferred unverified offline read without any private publish', async () => {
   const persistence = storage();

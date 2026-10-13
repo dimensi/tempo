@@ -5,6 +5,7 @@ if (!Number.isInteger(port) || port < 1024 || port > 65535)
 const baseURL = `http://localhost:${port}`;
 export default defineConfig({
   testDir: './tests/e2e',
+  testIgnore: ['**/offline.spec.ts'],
   timeout: 60000,
   fullyParallel: false,
   workers: 1,

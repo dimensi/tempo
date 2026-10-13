@@ -35,6 +35,7 @@ import { z } from 'zod';
 import { workoutTitle } from '@/lib/workout-title';
 import { DateNavigation } from '@/components/shared/date-navigation';
 import { NativeWorkout } from './native-workout';
+import { WorkoutReadContent } from './read-content';
 import { ExerciseTable } from './exercise-table';
 import {
   IconArrowRight,
@@ -84,16 +85,24 @@ function SessionResult({
           ? `${m.snapshot}: ${workoutTitle(session.planSnapshot.planTitle, session.planSnapshot.workout.date)}`
           : m.independent}
       </Text>
-      {session.planSnapshot && !comparisonShown && (
-        <ExerciseTable
-          exercises={session.planSnapshot.workout.exercises}
-          actual={session.exercises}
+      {!comparisonShown && (
+        <WorkoutReadContent
+          kind="session"
+          showStatus={false}
+          status={session.status}
+          exercises={session.exercises}
+          snapshot={
+            session.planSnapshot
+              ? {
+                  title: session.planSnapshot.planTitle,
+                  exercises: session.planSnapshot.workout.exercises,
+                }
+              : null
+          }
+          note={session.note}
         />
       )}
-      {!session.planSnapshot && (
-        <ExerciseTable exercises={session.exercises} factOnly />
-      )}
-      {session.note && (
+      {comparisonShown && session.note && (
         <Text style={{ whiteSpace: 'pre-wrap' }}>{session.note}</Text>
       )}
       <Button
@@ -193,6 +202,7 @@ function ScopedWorkoutsDashboard({
         if (!controller.signal.aborted) {
           setData(value);
           setError(null);
+          window.dispatchEvent(new Event('yazio:workouts-loaded'));
         }
       })
       .catch((error: unknown) => {

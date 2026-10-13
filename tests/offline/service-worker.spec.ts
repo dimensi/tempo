@@ -42,7 +42,7 @@ async function cachePaths(page: Page) {
     return paths.sort();
   });
 }
-test('production precache and standalone contain only the public readonly reader', async ({
+test('production precache and standalone contain only the public application shell', async ({
   page,
 }) => {
   const worker = readFileSync('public/offline-sw.js', 'utf8');
@@ -77,7 +77,7 @@ test('production precache and standalone contain only the public readonly reader
   );
   await expect.poll(() => cachePaths(page)).toEqual(paths);
 });
-test('fresh pages cold-launch the generic reader only for supported navigations', async ({
+test('fresh pages cold-launch the application shell only for supported navigations', async ({
   page,
   context,
 }) => {
@@ -91,6 +91,10 @@ test('fresh pages cold-launch the generic reader only for supported navigations'
       '/analytics',
       '/measurements',
       '/workouts',
+      '/settings',
+      '/reports',
+      '/workouts/native/101',
+      '/workouts/sessions/synthetic-session',
       '/offline/index.html',
     ]) {
       const cold = await context.newPage();
@@ -101,7 +105,7 @@ test('fresh pages cold-launch the generic reader only for supported navigations'
       await expect(cold.getByRole('textbox')).toHaveCount(0);
       await cold.close();
     }
-    for (const path of ['/login', '/settings', '/reports', '/unknown']) {
+    for (const path of ['/login', '/unknown', '/workouts/arbitrary/path']) {
       const cold = await context.newPage();
       await expect(cold.goto(path)).rejects.toThrow();
       await cold.close();
