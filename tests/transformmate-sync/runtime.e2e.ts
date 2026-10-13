@@ -792,15 +792,15 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
     grant(owner, trainerId, true);
     expect((await trainer.request.head(video)).status()).toBe(200);
     await control(request, 'cachedauthdelay');
-    // Expire this synthetic cached detail so the read genuinely reaches the provider.
+    // A cold synthetic detail makes this response wait for the delayed provider.
     const cache = new Database('.data/e2e.sqlite');
     try {
-      const expired = cache
+      const cleared = cache
         .prepare(
-          'UPDATE transformmate_catalog_exercise SET detail_fetched_at = ? WHERE owner_id = ? AND exercise_id = 501',
+          'UPDATE transformmate_catalog_exercise SET detail = NULL, detail_fetched_at = NULL WHERE owner_id = ? AND exercise_id = 501',
         )
-        .run('2020-01-01T00:00:00Z', owner);
-      expect(expired.changes).toBeGreaterThan(0);
+        .run(owner);
+      expect(cleared.changes).toBeGreaterThan(0);
     } finally {
       cache.close();
     }
@@ -810,6 +810,18 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
       .toBeGreaterThan(0);
     grant(owner, trainerId, false);
     expect((await inFlight).status()).toBe(403);
+    const deniedCache = new Database('.data/e2e.sqlite');
+    try {
+      expect(
+        deniedCache
+          .prepare(
+            'SELECT detail, detail_fetched_at FROM transformmate_catalog_exercise WHERE owner_id = ? AND exercise_id = 501',
+          )
+          .get(owner),
+      ).toEqual({ detail: null, detail_fetched_at: null });
+    } finally {
+      deniedCache.close();
+    }
     expect((await trainer.request.get(catalog)).status()).toBe(403);
     expect((await trainer.request.get(video)).status()).toBe(403);
     await request.post('http://127.0.0.1:3158/control', {
