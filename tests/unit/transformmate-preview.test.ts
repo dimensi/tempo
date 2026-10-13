@@ -7,13 +7,14 @@ const mocks = vi.hoisted(() => ({
   getExercise: vi.fn(),
   authorize: vi.fn(),
   assertCurrent: vi.fn(),
+  generation: 0,
 }));
 vi.mock('@/server/db', () => ({ getDatabase: () => mocks.database }));
 vi.mock('@/server/auth/guards', () => ({ authorize: mocks.authorize }));
 vi.mock('@/server/transformmate/runtime', () => ({
   getTransformMateConnectionFence: async () => ({
     accountScope: 'account',
-    generation: 'preview',
+    generation: `preview-${mocks.generation}`,
     client: mocks,
     assertCurrent: mocks.assertCurrent,
     assertBindingCurrent() {},
@@ -43,6 +44,7 @@ const request = () =>
 const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 beforeEach(() => {
   vi.resetAllMocks();
+  scope.generation = `preview-${++mocks.generation}`;
   mocks.database = openDatabase('file::memory:');
   migrate(mocks.database.db, { migrationsFolder: './drizzle' });
   mocks.database.db
@@ -261,7 +263,7 @@ it('checks revoked authorization before returning a cached negative preview', as
     .mockResolvedValue(new Response(null, { status: 404 }));
   expect(
     (await streamExercisePreview(request(), '501', fetchImage)).status,
-  ).toBe(502);
+  ).toBe(404);
   const original = catalogStore().record(scope, 501);
   mocks.authorize.mockResolvedValue({ ok: false, status: 403 });
   expect(
@@ -286,6 +288,40 @@ it('revocation after forced metadata refresh prevents changed image delivery and
   ).toBe(403);
   expect(fetchImage).toHaveBeenCalledTimes(1);
   expect(catalogStore().record(scope, 501)?.detail?.image).toBe(url);
+  expect(catalogStore().record(scope, 501)?.detail?.previewCoverage).toBe(
+    'unknown',
+  );
+});
+
+it.each([404, 410])(
+  'returns temporary owned404 for confirmed CDN%i with unchanged URL',
+  async (status) => {
+    const image = vi.fn().mockResolvedValue(new Response(null, { status }));
+    expect((await streamExercisePreview(request(), '501', image)).status).toBe(
+      404,
+    );
+    expect(image).toHaveBeenCalledTimes(1);
+    expect(catalogStore().record(scope, 501)?.detail?.previewCoverage).toBe(
+      'unknown',
+    );
+  },
+);
+it('returns owned404 when refreshed preview URL is also missing', async () => {
+  mocks.getExercise
+    .mockResolvedValueOnce({ body: { ...exerciseDetailFixture(), image: url } })
+    .mockResolvedValueOnce({
+      body: {
+        ...exerciseDetailFixture(),
+        image: 'https://transformmate.pht.space/media/new.png',
+      },
+    });
+  const image = vi
+    .fn()
+    .mockImplementation(async () => new Response(null, { status: 404 }));
+  expect((await streamExercisePreview(request(), '501', image)).status).toBe(
+    404,
+  );
+  expect(image).toHaveBeenCalledTimes(2);
   expect(catalogStore().record(scope, 501)?.detail?.previewCoverage).toBe(
     'unknown',
   );

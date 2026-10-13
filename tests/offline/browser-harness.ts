@@ -29,7 +29,7 @@ let heldProviderEntered = false;
 Object.assign(window, {
   offlineTest: {
     now,
-    prepareShell: prepareOfflineShell,
+    prepareShell: () => prepareOfflineShell(new AbortController().signal),
     startRefillRace() {
       raceIdentityEntered = false;
       raceCommits = 0;

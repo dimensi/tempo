@@ -67,7 +67,10 @@ test('granted trainer reads measurements without write controls and cannot write
   baseURL,
 }) => {
   const ownerId = await login(page, 'owner', baseURL!);
-  const context = await browser.newContext({ baseURL });
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    baseURL,
+  });
   const trainer = await context.newPage();
   const trainerId = await login(trainer, 'trainer', baseURL!);
   const scope = { ownerId, trainerId };

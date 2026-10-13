@@ -9,6 +9,7 @@ export default defineConfig({
       'tests/nutrition-sync/**/*.test.ts',
       'tests/nutrition-scheduler/**/*.test.ts',
     ],
+    exclude: ['tests/nutrition-sync/connection-ui.test.ts'],
     environment: 'node',
   },
 });

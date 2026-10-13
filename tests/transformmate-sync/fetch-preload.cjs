@@ -1,12 +1,17 @@
-// Loaded only in the disposable Next child, never in production.
+// Loaded only in the disposable production-test child, never in a deployed server.
 const expected = {
   DATABASE_URL: 'file:./.data/e2e.sqlite',
-  BETTER_AUTH_URL: 'http://localhost:3157',
+  BETTER_AUTH_URL: 'https://localhost:3160',
   TRANSFORMMATE_TOKEN_FILE: './.data/e2e-transformmate-token.json',
-  BETTER_AUTH_SECRET: 'transformmate-e2e-only-secret-123456789012345',
+  BETTER_AUTH_SECRET: 'offline-production-synthetic-secret-1234567890',
 };
-if (process.env.NODE_ENV === 'production')
-  throw new Error('Synthetic preload cannot run in production');
+if (
+  process.env.NODE_ENV !== 'production' ||
+  process.env.CI_SYNTHETIC_PROVIDER !== 'transformmate'
+)
+  throw new Error(
+    'Only the isolated synthetic production runner may load this fixture',
+  );
 if (
   process.env.TRANSFORMMATE_FIREBASE_API_KEY ||
   process.env.TRANSFORMMATE_FIREBASE_REFRESH_TOKEN
@@ -15,7 +20,15 @@ if (
     'Synthetic runtime requires the encrypted user-entered store',
   );
 for (const [key, value] of Object.entries(expected)) {
-  if (process.env[key] !== value)
+  if (
+    process.env[key] !== value &&
+    !(
+      ['DATABASE_URL', 'TRANSFORMMATE_TOKEN_FILE'].includes(key) &&
+      process.env[key] ===
+        (key === 'DATABASE_URL' ? 'file:' : '') +
+          `${process.cwd()}/${value.replace(/^file:/, '').replace(/^\.\//, '')}`
+    )
+  )
     throw new Error('Unsafe synthetic runtime environment');
 }
 const original = globalThis.fetch;
@@ -53,7 +66,19 @@ globalThis.fetch = async (input, init) => {
       const headers = new Headers(
         init?.headers ?? (input instanceof Request ? input.headers : undefined),
       );
+      const method = String(
+        init?.method ?? (input instanceof Request ? input.method : 'GET'),
+      ).toUpperCase();
+      const syntheticPreview =
+        method === 'GET' &&
+        !url.username &&
+        !url.password &&
+        url.search === '' &&
+        ['/synthetic-preview/old.png', '/synthetic-preview/new.png'].includes(
+          url.pathname,
+        );
       if (
+        !syntheticPreview &&
         !['JWT synthetic-id-token', 'JWT synthetic-id-token-other'].includes(
           headers.get('authorization'),
         )

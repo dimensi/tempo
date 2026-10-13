@@ -1,3 +1,4 @@
+import { testOrigin } from '../ci/origin';
 import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
@@ -65,12 +66,12 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
   db.prepare(
     'INSERT INTO nutrition_days(owner_id,date,snapshot,fetched_at) VALUES(?,?,?,?)',
   ).run(ownerId, snapshot.date, JSON.stringify(snapshot), snapshot.fetchedAt);
-  const context = await browser.newContext();
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
     const measurementResponse = await page.request.post(
       `/api/measurements?ownerId=${ownerId}`,
       {
-        headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+        headers: { origin: testOrigin },
         data: {
           measuredAt: '2026-10-02',
           values: [{ metric: 'weight', value: '80.125', unit: 'kg' }],
@@ -150,7 +151,7 @@ test('scoped analytics API, coverage, controls and mobile geometry', async ({
     await page.request.delete(
       `/api/measurements/${measurement.id}?ownerId=${ownerId}`,
       {
-        headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+        headers: { origin: testOrigin },
       },
     );
     snapshot.totals.calories = '1e400';

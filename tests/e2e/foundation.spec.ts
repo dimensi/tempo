@@ -1,3 +1,4 @@
+import { testOrigin } from '../ci/origin';
 import { test, expect, type Page } from '@playwright/test';
 const browserErrors = new WeakMap<Page, string[]>();
 test.beforeEach(async ({ page }) => {
@@ -53,7 +54,7 @@ test('anonymous routes are protected and registration is closed', async ({
   }
   expect((await request.get('/api/yazio/status')).status()).toBe(401);
   const result = await request.post('/api/auth/sign-up/email', {
-    headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+    headers: { origin: testOrigin },
     data: {
       name: 'Intruder',
       email: 'intruder@example.test',
@@ -181,7 +182,7 @@ test('trainer cannot access owner configuration or elevate their role', async ({
   ).toHaveCount(0);
   expect((await page.request.get('/api/yazio/status')).status()).toBe(403);
   await page.request.post('/api/auth/update-user', {
-    headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+    headers: { origin: testOrigin },
     data: { role: 'OWNER' },
   });
   expect((await page.request.get('/api/yazio/status')).status()).toBe(403);

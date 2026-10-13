@@ -1,3 +1,4 @@
+import { testOrigin } from '../ci/origin';
 import { expect, test } from '@playwright/test';
 
 for (const role of ['owner', 'trainer'] as const) {
@@ -6,7 +7,7 @@ for (const role of ['owner', 'trainer'] as const) {
   }) => {
     const signIn = () =>
       page.request.post('/api/auth/sign-in/email', {
-        headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+        headers: { origin: testOrigin },
         data: {
           email: `${role}@example.test`,
           password: 'Test-only-password-12345',

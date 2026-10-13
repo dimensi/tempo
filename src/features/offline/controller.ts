@@ -349,7 +349,7 @@ export class OfflineController {
     requestedPeriod?: { from: string; to: string },
   ) {
     this.lastRefreshAttempt = this.now();
-    await this.prepareShell();
+    await this.prepareShell(operation.signal);
     if (this.revision !== operation.revision) return;
     const fence = await this.storage.currentFence();
     const period =

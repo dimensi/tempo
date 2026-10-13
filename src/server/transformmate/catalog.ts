@@ -193,7 +193,7 @@ export async function listCatalog(
     unknownMembershipCount = records.filter((row) => !row.detail).length;
   return {
     items: records.map((r) =>
-      catalogItem(r.summary, r.fetchedAt, r.detail, r.detailFetchedAt, ownerId),
+      catalogItem(r.summary, r.fetchedAt, r.detail, r.detailFetchedAt, scope),
     ),
     metadata: transformMateCatalogMetadataSchema.parse({
       fetchedAt,
@@ -233,7 +233,7 @@ export async function exerciseInfo(
     row.detailFetchedAt!,
     !fresh(row.detailFetchedAt),
     selectMediaUrl(row.detail!) !== null,
-    ownerId,
+    scope,
   );
 }
 export async function muscleDictionary(headers: Headers, ownerId: string) {

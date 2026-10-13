@@ -62,7 +62,7 @@ pnpm dev
 | `pnpm auth:create-user`                     | Локальное создание owner/trainer                        |
 | `pnpm db:backup /secure/path/backup.sqlite` | Online backup с учётом WAL                              |
 
-Для E2E сначала `pnpm exec playwright install chromium`. Тесты запускают свой development server на 3100 (или `E2E_PORT`, например `E2E_PORT=3127 pnpm test:e2e`) и пересоздают только `.data/e2e.sqlite`. CI запускается только после push в `main` и проверяет форматирование, lint, types, unit/integration, build, все E2E-наборы (включая production offline) и Docker smoke. PR проверяются ревью и локальными проверками затронутых изменений; CI на PR и feature-ветках не запускается.
+Для E2E сначала `pnpm exec playwright install chromium` и `pnpm build`. Наборы последовательно запускают production сервер через HTTPS `localhost:3160`, используя одну готовую сборку; пересоздают только worktree-local `.data/e2e.sqlite` и synthetic uploads/token stores. Автоматический CI запускается только после push в `main`: static checks, unit/integration, одна сборка для браузерных тестов, обязательный smoke и выбранные по diff проверки областей, отдельный Docker build/smoke. Полный production regression доступен только через ручной CI → Run workflow → full, без расписания. Ручной regression не публикует release image и не запускает автоматический CD. PR и feature-ветки автоматически не запускают CI. Правила выбора и команды — [deployment](docs/deployment.md).
 
 `pnpm start` требует предварительно применённых миграций и production-конфигурации: HTTPS `BETTER_AUTH_URL`, сильный секрет и `DEMO_MODE=false`. Для локального HTTPS используйте reverse proxy. Для повседневной разработки используйте `pnpm dev`.
 

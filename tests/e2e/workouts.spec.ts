@@ -1,3 +1,4 @@
+import { testOrigin } from '../ci/origin';
 import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
@@ -81,7 +82,7 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
   const extended = await page.request.put(
     `/api/workouts/plans/${plan.id}?ownerId=${id}`,
     {
-      headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+      headers: { origin: testOrigin },
       data: {
         revision: plan.revision,
         data: {
@@ -169,7 +170,8 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
   await login(page);
   const id = await ownerId(page);
   const context = await browser.newContext({
-    baseURL: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+    ignoreHTTPSErrors: true,
+    baseURL: testOrigin,
   });
   const trainer = await context.newPage();
   const database = new Database('.data/e2e.sqlite');
@@ -230,7 +232,7 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     const created = await trainer.request.post(
       `/api/workouts/plans?ownerId=${id}`,
       {
-        headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+        headers: { origin: testOrigin },
         data: input,
       },
     );
@@ -258,7 +260,7 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
       (
         await trainer.request.post(`/api/workouts/sessions?ownerId=${id}`, {
           headers: {
-            origin: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+            origin: testOrigin,
           },
           data: actual,
         })
@@ -270,7 +272,7 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
           `/api/workouts/sessions/anything?ownerId=${id}`,
           {
             headers: {
-              origin: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+              origin: testOrigin,
             },
             data: { revision: 1, data: actual },
           },
@@ -283,7 +285,7 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
           `/api/workouts/sessions/anything?ownerId=${id}`,
           {
             headers: {
-              origin: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+              origin: testOrigin,
             },
             data: { revision: 1 },
           },
@@ -304,7 +306,7 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     const updated = await trainer.request.put(
       `/api/workouts/plans/${plan.id}?ownerId=${id}`,
       {
-        headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+        headers: { origin: testOrigin },
         data: { revision: 1, data: { ...input, title: 'Исправленный план' } },
       },
     );
@@ -315,7 +317,7 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
           `/api/workouts/plans/${plan.id}?ownerId=${id}`,
           {
             headers: {
-              origin: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+              origin: testOrigin,
             },
             data: { revision: 1, data: input },
           },
@@ -439,7 +441,7 @@ test('unnamed editor preserves drafts, handles errors and copies only the select
         `/api/workouts/plans/${created.id}?ownerId=${id}`,
         {
           headers: {
-            origin: `http://localhost:${process.env.E2E_PORT ?? 3100}`,
+            origin: testOrigin,
           },
           data: {
             revision: created.revision,
@@ -578,7 +580,7 @@ test('result page separates plan guidance, preserves missing facts and returns t
   const sourceDate = '2026-10-15';
   const name = `Result squat ${test.info().project.name}`;
   const created = await page.request.post(`/api/workouts/plans?ownerId=${id}`, {
-    headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+    headers: { origin: testOrigin },
     data: {
       title: '',
       description: '',
@@ -884,9 +886,12 @@ test('retained planned and actual editors hide cached drafts before real access 
     test.info().project.name !== 'desktop',
     'Retained access lifecycle is viewport independent.',
   );
-  const baseURL = `http://localhost:${process.env.E2E_PORT ?? 3100}`;
+  const baseURL = testOrigin;
   for (const kind of ['planned', 'actual'] as const) {
-    const context = await browser.newContext({ baseURL });
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      baseURL,
+    });
     const page = await context.newPage();
     const database = new Database('.data/e2e.sqlite', { fileMustExist: true });
     let release = () => {};

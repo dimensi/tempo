@@ -1,4 +1,6 @@
 import 'server-only';
+import { createHash } from 'node:crypto';
+import type { CatalogIdentity } from '@/server/transformmate/catalog-store';
 import { transformMatePublicationCapability } from '@/contracts/transformmate-capability';
 import { z } from 'zod';
 import {
@@ -74,8 +76,9 @@ export function catalogItem(
   fetchedAt: string,
   detail: PersistedDetail | null,
   detailFetchedAt: string | null,
-  ownerId?: string,
+  identity: CatalogIdentity,
 ) {
+  const ownerId = identity.ownerId;
   const groups = new Map(
     detail?.muscles.map(({ muscle }) => [
       muscle.muscle_group.id,
@@ -90,6 +93,18 @@ export function catalogItem(
     snippet: detail ? detail.description.slice(0, 500) : null,
     // A non-null unvalidated URL is unknown, never an invented/unsafe preview.
     preview: {
+      revision: createHash('sha256')
+        .update(
+          JSON.stringify([
+            identity.ownerId,
+            identity.accountScope,
+            identity.generation,
+            identity.locale,
+            summary.id,
+            detail?.image,
+          ]),
+        )
+        .digest('hex'),
       coverage:
         detail?.previewCoverage === 'available' && ownerId
           ? 'available'
@@ -119,10 +134,10 @@ export function detailInfo(
   detailFetchedAt: string,
   stale: boolean,
   hasVideo: boolean,
-  ownerId: string,
+  identity: CatalogIdentity,
 ) {
   return transformMateExerciseInfoSchema.parse({
-    ...catalogItem(summary, fetchedAt, detail, detailFetchedAt, ownerId),
+    ...catalogItem(summary, fetchedAt, detail, detailFetchedAt, identity),
     description: detail.description,
     hasVideo,
     muscles: detail.muscles.map(({ muscle, position }) => ({

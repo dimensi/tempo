@@ -1,3 +1,5 @@
+import { testOrigin } from '../ci/origin';
+import { get } from 'node:https';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,21 +8,34 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium, type Browser } from '@playwright/test';
 import { expect, it } from 'vitest';
 
-const port = process.env.NUTRITION_CONNECTION_E2E_PORT ?? '3135';
-const origin = `http://localhost:${port}`;
+const origin = testOrigin;
+async function readyResponse() {
+  return new Promise<boolean>((resolve) => {
+    const r = get(
+      origin + '/login',
+      { rejectUnauthorized: false },
+      (response) => {
+        response.resume();
+        resolve(response.statusCode === 200);
+      },
+    );
+    r.on('error', () => resolve(false));
+  });
+}
 const tokenPath = './.data/e2e-yazio-connection.json';
 const password = 'Synthetic-YAZIO-password-only';
 it('real owner connects/disconnects through UI with synthetic OAuth; clears passwords, encrypts tokens, and denies trainer/anonymous', async () => {
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
+    PATH: process.env.PATH,
+    HOME: process.env.HOME,
+    TMPDIR: process.env.TMPDIR,
     NODE_ENV: 'development',
     DATABASE_URL: 'file:./.data/e2e.sqlite',
     BETTER_AUTH_URL: origin,
-    BETTER_AUTH_SECRET: 'e2e-only-secret-not-a-production-secret-12345',
+    BETTER_AUTH_SECRET: 'offline-production-synthetic-secret-1234567890',
     YAZIO_TOKEN_FILE: tokenPath,
     UPLOADS_DIR: './.data/e2e-nutrition-uploads',
     DEMO_MODE: 'false',
-    NODE_OPTIONS: '--import=./tests/nutrition-sync/connection-oauth-stub.mjs',
   };
   await unlink(tokenPath).catch((error) => {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
@@ -51,7 +66,12 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
   try {
     server = spawn(
       process.execPath,
-      ['node_modules/next/dist/bin/next', 'dev', '--port', port],
+      [
+        '--import',
+        'tsx',
+        'tests/offline/production-runner.ts',
+        'nutrition-connection',
+      ],
       { env, stdio: ['ignore', 'pipe', 'pipe'] },
     );
     server.stdout!.on('data', (chunk) => {
@@ -70,7 +90,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
             output.slice(-10).join('').replaceAll(password, '[redacted]'),
         );
       try {
-        if ((await fetch(origin + '/login')).ok) {
+        if (await readyResponse()) {
           ready = true;
           break;
         }
@@ -78,8 +98,10 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       await delay(500);
     }
     expect(ready).toBe(true);
-    browser = await chromium.launch();
+    browser = await chromium.launch({ args: ['--ignore-certificate-errors'] });
     const ownerContext = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      serviceWorkers: 'block',
       timezoneId: 'Europe/Moscow',
     });
     await ownerContext.route('https://images.yazio-cdn.com/**', (route) =>
@@ -361,7 +383,10 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     await owner
       .getByRole('button', { name: 'Дополнительные настройки', exact: true })
       .click();
-    const trainer = await browser.newPage();
+    const trainer = await browser.newPage({
+      ignoreHTTPSErrors: true,
+      serviceWorkers: 'block',
+    });
     await trainer.goto(origin + '/login');
     await trainer.getByLabel('Электронная почта').fill('trainer@example.test');
     await trainer
@@ -470,9 +495,14 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     await new Promise<void>((resolve) => server!.once('exit', () => resolve()));
     server = spawn(
       process.execPath,
-      ['node_modules/next/dist/bin/next', 'dev', '--port', port],
+      [
+        '--import',
+        'tsx',
+        'tests/offline/production-runner.ts',
+        'nutrition-connection',
+      ],
       {
-        env: { ...env, YAZIO_TOKEN_FILE: '' },
+        env: { ...env, CI_YAZIO_UNCONFIGURED: 'true' },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
@@ -482,7 +512,7 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       if (server.exitCode !== null)
         throw new Error('Disposable unconfigured server exited');
       try {
-        if ((await fetch(origin + '/login')).ok) break;
+        if (await readyResponse()) break;
       } catch {}
       await delay(500);
     }

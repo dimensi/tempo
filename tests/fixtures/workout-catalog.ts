@@ -2,7 +2,7 @@ import type { TransformMateCatalogItem } from '@/contracts/transformmate';
 export const richCatalogFields = {
   publicationCapability: { state: 'supported', reason: null },
   snippet: null,
-  preview: { coverage: 'absent', path: null },
+  preview: { coverage: 'absent', path: null, revision: 'a'.repeat(64) },
   detailCoverage: 'available',
   membershipCoverage: 'available',
   muscleGroups: [],

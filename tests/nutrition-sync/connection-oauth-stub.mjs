@@ -1,5 +1,36 @@
 // Injected only by connection-ui.test.ts into its disposable Next.js child process.
 // Mock the OAuth wire response; the actual vendored SDK still performs the exchange.
+const expected = {
+  BETTER_AUTH_URL: 'https://localhost:3160',
+  BETTER_AUTH_SECRET: 'offline-production-synthetic-secret-1234567890',
+};
+if (
+  process.env.NODE_ENV !== 'production' ||
+  process.env.CI_SYNTHETIC_PROVIDER !== 'yazio'
+)
+  throw new Error(
+    'Only isolated synthetic production YAZIO tests may load this fixture',
+  );
+for (const [key, value] of Object.entries(expected))
+  if (process.env[key] !== value)
+    throw new Error('Unsafe synthetic YAZIO environment');
+const root = process.cwd();
+if (
+  !['file:./.data/e2e.sqlite', `file:${root}/.data/e2e.sqlite`].includes(
+    process.env.DATABASE_URL,
+  )
+)
+  throw new Error('Only the disposable E2E database is allowed');
+if (
+  process.env.YAZIO_TOKEN_FILE !== `${root}/.data/e2e-yazio-connection.json` &&
+  !(
+    process.env.YAZIO_TOKEN_FILE === '' &&
+    process.env.CI_YAZIO_UNCONFIGURED === 'true'
+  )
+)
+  throw new Error('Only the disposable YAZIO token store is allowed');
+if (process.env.YAZIO_ACCESS_TOKEN || process.env.YAZIO_REFRESH_TOKEN)
+  throw new Error('Inherited provider credentials forbidden');
 let initialFailuresRemaining = 0;
 let backfillDelay = 0;
 const originalFetch = globalThis.fetch;
@@ -33,6 +64,11 @@ globalThis.fetch = async (input, init) => {
     });
   }
   if (url.hostname === 'yzapi.yazio.com') {
+    const headers = new Headers(
+      init?.headers ?? (input instanceof Request ? input.headers : undefined),
+    );
+    if (headers.get('authorization') !== 'Bearer synthetic-ui-access-only')
+      throw new Error('Only synthetic YAZIO authorization is allowed');
     if (url.pathname.endsWith('/user'))
       return Response.json({
         email: 'synthetic-yazio@example.test',
@@ -78,5 +114,7 @@ globalThis.fetch = async (input, init) => {
       { error: 'unexpected synthetic upstream call' },
       { status: 502 },
     );
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+    throw new Error('External network forbidden in synthetic YAZIO runtime');
   return originalFetch(input, init);
 };

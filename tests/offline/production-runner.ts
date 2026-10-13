@@ -7,10 +7,27 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  appendFileSync,
+  mkdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { build } from 'esbuild';
+import { startUpstream } from '../transformmate-sync/upstream';
+const family = process.argv[2] ?? 'offline';
+if (
+  ![
+    'general',
+    'nutrition',
+    'nutrition-connection',
+    'transformmate',
+    'offline',
+    'smoke',
+  ].includes(family)
+)
+  throw new Error('Unknown production test family');
+if (!existsSync('.next/standalone/server.js'))
+  throw new Error('Build once before production tests');
 
 const assets = readdirSync('public/offline/assets').map(
   (file) => `/offline/assets/${file}`,
@@ -38,6 +55,8 @@ const held: (() => void)[] = [];
 for (const file of [
   '.env',
   '.env.local',
+  '.env.development',
+  '.env.development.local',
   '.env.production',
   '.env.production.local',
 ])
@@ -75,17 +94,53 @@ const env: NodeJS.ProcessEnv = {
   BETTER_AUTH_SECRET: 'offline-production-synthetic-secret-1234567890',
   DEMO_MODE: 'false',
   ENABLE_NUTRITION_SCHEDULER: 'false',
-  YAZIO_TOKEN_FILE: '',
-  TRANSFORMMATE_TOKEN_FILE: resolve('.data/offline-test-transformmate.json'),
+  YAZIO_TOKEN_FILE:
+    family === 'nutrition-connection' &&
+    process.env.CI_YAZIO_UNCONFIGURED !== 'true'
+      ? resolve('.data/e2e-yazio-connection.json')
+      : '',
+  TRANSFORMMATE_TOKEN_FILE: resolve('.data/e2e-transformmate-token.json'),
+  UPLOADS_DIR: './.data/e2e-nutrition-uploads',
   NEXT_TELEMETRY_DISABLED: '1',
 };
-execFileSync('pnpm', ['exec', 'tsx', 'scripts/prepare-e2e.ts'], {
-  env,
+rmSync(env.TRANSFORMMATE_TOKEN_FILE!, { force: true });
+if (family !== 'nutrition-connection')
+  rmSync(env.UPLOADS_DIR!, { force: true, recursive: true });
+const upstream = family === 'transformmate' ? await startUpstream() : undefined;
+if (family !== 'nutrition-connection')
+  execFileSync('pnpm', ['exec', 'tsx', 'scripts/prepare-e2e.ts'], {
+    env,
+    stdio: 'inherit',
+  });
+const child = spawn(process.execPath, ['scripts/start.mjs'], {
+  env: {
+    ...env,
+    NODE_ENV: 'production',
+    PORT: '3161',
+    HOSTNAME: '127.0.0.1',
+    ...(family === 'nutrition-connection'
+      ? {
+          CI_SYNTHETIC_PROVIDER: 'yazio',
+          CI_YAZIO_UNCONFIGURED:
+            process.env.CI_YAZIO_UNCONFIGURED === 'true' ? 'true' : 'false',
+          NODE_OPTIONS: `--import=${resolve('tests/nutrition-sync/connection-oauth-stub.mjs')}`,
+        }
+      : {}),
+    ...(family === 'transformmate'
+      ? {
+          CI_SYNTHETIC_PROVIDER: 'transformmate',
+          NODE_OPTIONS: `--require=${resolve('tests/transformmate-sync/fetch-preload.cjs')}`,
+        }
+      : {}),
+  },
   stdio: 'inherit',
 });
-const child = spawn(process.execPath, ['scripts/start.mjs'], {
-  env: { ...env, NODE_ENV: 'production', PORT: '3161', HOSTNAME: '127.0.0.1' },
-  stdio: 'inherit',
+child.on('spawn', () => {
+  mkdirSync('test-results', { recursive: true });
+  appendFileSync(
+    'test-results/production-starts.jsonl',
+    JSON.stringify({ family, at: new Date().toISOString() }) + '\n',
+  );
 });
 const server = createServer(
   {
@@ -174,6 +229,7 @@ const server = createServer(
 server.listen(3160, '127.0.0.1');
 function close() {
   child.kill('SIGTERM');
+  upstream?.close();
   server.close();
   rmSync(directory, { recursive: true, force: true });
 }

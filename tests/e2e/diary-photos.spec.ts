@@ -138,6 +138,7 @@ test('real diary photos and comments persist; trainer is read-only and revoked U
   ).toBeVisible();
 
   const trainerContext = await browser.newContext({
+    ignoreHTTPSErrors: true,
     viewport: info.project.use.viewport,
     isMobile: info.project.use.isMobile,
     hasTouch: info.project.use.hasTouch,
