@@ -193,3 +193,10 @@ within that window skip provider metadata and image requests. A failed image URL
 triggers one forced metadata refresh; the image request is retried only when that
 refresh changes its URL. Expiry permits another attempt. This does not establish
 that the provider has no image; video refresh behavior is unchanged.
+
+Unseen search/filter combinations use the existing local full-catalog filter;
+a fresh full snapshot causes no provider requests per typed input. Cold combinations
+share one full-catalog bootstrap, while stale full data returns immediately with
+one background full refresh. Local results keep partial/unknown coverage and no
+provider total. An existing provider query snapshot remains authoritative and
+retains its own 30-day freshness and refresh behavior.

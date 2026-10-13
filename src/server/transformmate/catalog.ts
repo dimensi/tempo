@@ -88,12 +88,14 @@ export async function listCatalog(
     !filters.query &&
     !filters.commonMuscleGroup &&
     filters.muscleGroups.length === 0;
-  const operation = isFull ? ':full' : ':page:' + queryKey(filters);
   let snapshot = isFull ? null : store.query(scope, queryKey(filters));
+  // New filters use the persisted full catalog, never one provider call per input.
+  const useFull = isFull || !snapshot;
+  const operation = useFull ? ':full' : ':page:' + queryKey(filters);
   let state = store.state(scope);
-  const at = isFull ? state?.full_catalog_fetched_at : snapshot?.fetchedAt;
+  const at = useFull ? state?.full_catalog_fetched_at : snapshot?.fetchedAt;
   if (!fresh(at)) {
-    const refresh = isFull ? refreshFull(scope) : refreshPage(scope, filters);
+    const refresh = useFull ? refreshFull(scope) : refreshPage(scope, filters);
     if (at) void refresh.catch(() => {});
     else
       try {
