@@ -1,4 +1,4 @@
-import { shiftDate } from '@/contracts/nutrition-sync-dates';
+import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
 import {
   ownerConfirmedYazioWeightPolicyVersion,
   ownerConfirmedYazioWeightUnit,
@@ -7,8 +7,8 @@ import {
   offlineSnapshotSchema,
   type OfflineSnapshot,
 } from '@/contracts/offline';
-export function offlineFixture(now: number): OfflineSnapshot {
-  const date = new Date(now).toISOString().slice(0, 10);
+export function offlineFixture(now: number, timezone = 'UTC'): OfflineSnapshot {
+  const date = dateInTimezone(new Date(now), timezone);
   const totals = { calories: '0', protein: null, fat: '0', carbs: '1.125' };
   const day = {
     date,
