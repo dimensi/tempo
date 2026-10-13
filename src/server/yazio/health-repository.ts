@@ -1,5 +1,6 @@
 import 'server-only';
-import { and, asc, eq, gte, lte } from 'drizzle-orm';
+import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
+import { yazioObservationDate } from '@/lib/yazio-observations';
 import { z } from 'zod';
 import { getDatabase } from '@/server/db';
 import {
@@ -90,21 +91,25 @@ export function yazioHealthRepository(db = getDatabase().db) {
     weights(ownerId: string, period: { from: string; to: string }) {
       const owner = ownerSchema.parse(ownerId);
       const { from, to } = periodSchema.parse(period);
+      const date = sql<string>`coalesce(${yazioWeightEntries.measuredDate}, substr(${yazioWeightEntries.providerDate}, 1, 10))`;
       return db
         .select()
         .from(yazioWeightEntries)
         .where(
           and(
             eq(yazioWeightEntries.ownerId, owner),
-            gte(yazioWeightEntries.measuredDate, from),
-            lte(yazioWeightEntries.measuredDate, to),
+            gte(date, from),
+            lte(date, to),
           ),
         )
-        .orderBy(
-          asc(yazioWeightEntries.measuredDate),
-          asc(yazioWeightEntries.externalId),
-        )
-        .all();
+        .orderBy(asc(date), asc(yazioWeightEntries.externalId))
+        .all()
+        .flatMap((record) => {
+          const measuredDate = yazioObservationDate(
+            record.measuredDate ?? record.providerDate,
+          );
+          return measuredDate ? [{ ...record, measuredDate }] : [];
+        });
     },
     steps(ownerId: string, period: { from: string; to: string }) {
       const owner = ownerSchema.parse(ownerId);

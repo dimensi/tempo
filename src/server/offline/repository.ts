@@ -1,4 +1,5 @@
 import 'server-only';
+import { yazioObservationDate } from '@/lib/yazio-observations';
 import { z } from 'zod';
 import { getDatabase } from '@/server/db';
 import { offlineLimits } from '@/contracts/offline';
@@ -99,19 +100,24 @@ export function offlineRepository(database = getDatabase()) {
         }),
       }));
       const weights = rows(
-        'SELECT external_id AS id,provider_date AS providerDate,measured_date AS measuredDate,raw_value AS rawValue,unit,unit_context AS unitContext,observed_at AS observedAt FROM yazio_weight_entries WHERE owner_id = ? AND measured_date BETWEEN ? AND ? ORDER BY measured_date,external_id',
+        'SELECT external_id AS id,provider_date AS providerDate,measured_date AS measuredDate,raw_value AS rawValue,unit,unit_context AS unitContext,observed_at AS observedAt FROM yazio_weight_entries WHERE owner_id = ? AND coalesce(measured_date,substr(provider_date,1,10)) BETWEEN ? AND ? ORDER BY coalesce(measured_date,substr(provider_date,1,10)),external_id',
         [ownerId, from, to],
         offlineLimits.weights,
         z.object({
           id,
           providerDate: text.max(128),
-          measuredDate: z.iso.date(),
+          measuredDate: z.iso.date().nullable(),
           rawValue: scalar,
           unit: z.null(),
           unitContext: scalar,
           observedAt: stamp,
         }),
-      );
+      ).flatMap((row) => {
+        const measuredDate = yazioObservationDate(
+          row.measuredDate ?? row.providerDate,
+        );
+        return measuredDate ? [{ ...row, measuredDate }] : [];
+      });
       const steps = rows(
         'SELECT date,steps,observed_at AS observedAt FROM yazio_daily_steps WHERE owner_id = ? AND date BETWEEN ? AND ? ORDER BY date',
         [ownerId, from, to],

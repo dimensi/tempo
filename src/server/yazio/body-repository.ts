@@ -1,4 +1,9 @@
 import 'server-only';
+import {
+  canonicalYazioBodyValue,
+  sameYazioBodyValue,
+} from '@/lib/yazio-observations';
+import { measurementPrecisionIssueSchema } from '@/contracts/yazio-body';
 import { randomUUID } from 'node:crypto';
 import { and, eq, asc, inArray, lte, sql, or, lt, isNull } from 'drizzle-orm';
 import { getDatabase } from '@/server/db';
@@ -317,8 +322,8 @@ export function bodyRepository(database = getDatabase()) {
       if (!old) return;
       if (
         known.syncedValue !== null &&
-        Number(old.value) !== Number(known.syncedValue) &&
-        Number(old.value) !== remote.value
+        !sameYazioBodyValue(old.value, known.syncedValue) &&
+        !sameYazioBodyValue(remote.value, old.value)
       )
         return;
       db.update(measurements)
@@ -487,17 +492,17 @@ export function bodyRepository(database = getDatabase()) {
             .filter(
               (l) =>
                 l.remoteValue !== null &&
-                !measurementValueSchema.safeParse({
-                  metric: l.metric,
-                  value: l.remoteValue,
-                  unit: l.metric === 'weight' ? 'kg' : 'cm',
-                }).success,
+                canonicalYazioBodyValue(l.remoteValue) === null,
             )
-            .map((l) => ({
-              metric: l.metric,
-              date: l.providerDateTime.slice(0, 10),
-              value: l.remoteValue,
-            }))
+            .map((l) =>
+              measurementPrecisionIssueSchema.parse({
+                id: l.providerId,
+                metric: l.metric,
+                date: l.providerDateTime.slice(0, 10),
+                dateTime: l.providerDateTime,
+                value: l.remoteValue,
+              }),
+            )
         : [];
     },
     link: (id: string) => db.select().from(links).where(eq(links.id, id)).get(),

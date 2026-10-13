@@ -4,6 +4,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { openDatabase } from '@/server/db/connection';
 import { user } from '@/server/db/schema';
 import { yazioHealthRepository } from '@/server/yazio/health-repository';
+import { offlineRepository } from '@/server/offline/repository';
 import { normalizeYazioWeight } from '@/server/yazio/health-normalize';
 
 const connections: ReturnType<typeof openDatabase>[] = [];
@@ -160,4 +161,53 @@ test('owner deletion cascades and database rejects unsafe step counts and claime
   sqlite.prepare('DELETE FROM user WHERE id = ?').run('owner');
   expect(repo.weights('owner', period)).toEqual([]);
   expect(repo.steps('owner', period)).toEqual([]);
+});
+
+test('projects stored provider datetime without history rewrite, guesses, owner leakage or collapsing UUIDs', () => {
+  const { repo, sqlite, db } = fixture();
+  const values = [
+    '2026-10-07 10:55:11',
+    '2026-10-07 10:55:43',
+    '2026-10-12 23:59:59',
+    '2026-10-07T10:55:43Z',
+    '2026-10-07 24:00:00',
+    '2026-02-30 10:00:00',
+  ];
+  const rows = values.map((providerDate, index) => ({
+    ...weight,
+    externalId: `a1111111-1111-4111-8111-${String(index).padStart(12, '0')}`,
+    providerDate,
+    measuredDate: null,
+    rawValue: '103.30000305175781',
+  }));
+  repo.upsert('owner', { weights: rows, dailySteps: [] }, observed);
+  repo.upsert('other', { weights: [rows[0]!], dailySteps: [] }, observed);
+  const before = sqlite
+    .prepare('SELECT * FROM yazio_weight_entries ORDER BY owner_id,external_id')
+    .all();
+  expect(repo.weights('owner', period).map((row) => row.measuredDate)).toEqual([
+    '2026-10-07',
+    '2026-10-07',
+    '2026-10-12',
+  ]);
+  expect(repo.weights('owner', period)).toHaveLength(3);
+  expect(repo.weights('other', period)).toHaveLength(1);
+  expect(
+    offlineRepository({ db, sqlite })
+      .read('owner', period.from, period.to)
+      .weights.map((row) => row.measuredDate),
+  ).toEqual(['2026-10-07', '2026-10-07', '2026-10-12']);
+  expect(
+    sqlite
+      .prepare(
+        'SELECT * FROM yazio_weight_entries ORDER BY owner_id,external_id',
+      )
+      .all(),
+  ).toEqual(before);
+  expect(
+    sqlite.prepare('SELECT count(*) AS n FROM measurements').get(),
+  ).toEqual({ n: 0 });
+  expect(
+    sqlite.prepare('SELECT count(*) AS n FROM yazio_body_outbox').get(),
+  ).toEqual({ n: 0 });
 });

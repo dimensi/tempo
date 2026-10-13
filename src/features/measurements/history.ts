@@ -1,5 +1,35 @@
 import type { Measurement, MeasurementMetric } from '@/contracts/measurements';
 import type { WeightHistory } from '@/contracts/health';
+import type { MeasurementPrecisionIssue } from '@/contracts/yazio-body';
+import { canonicalYazioBodyValue } from '@/lib/yazio-observations';
+
+export function groupPrecisionIssues(issues: MeasurementPrecisionIssue[]) {
+  const groups = new Map<
+    string,
+    {
+      key: string;
+      metric: MeasurementPrecisionIssue['metric'];
+      date: string;
+      value: string;
+      observations: MeasurementPrecisionIssue[];
+    }
+  >();
+  for (const issue of [...issues].sort(
+    (a, b) => a.dateTime.localeCompare(b.dateTime) || a.id.localeCompare(b.id),
+  )) {
+    const key = JSON.stringify([issue.metric, issue.date, issue.value]);
+    const group = groups.get(key) ?? {
+      key,
+      metric: issue.metric,
+      date: issue.date,
+      value: issue.value,
+      observations: [],
+    };
+    group.observations.push(issue);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
 
 // Pair source observations by date without averaging, selecting a last value,
 // or collapsing same-day records. Distinct observations retain distinct slots.
@@ -14,7 +44,15 @@ export function weightTrendChart(history: WeightHistory) {
     value: string | null,
   ) => {
     const row = byDate.get(date) ?? { local: [], yazio: [] };
-    row[source].push(value === null ? null : Number(value));
+    row[source].push(
+      value === null
+        ? null
+        : Number(
+            source === 'yazio'
+              ? (canonicalYazioBodyValue(value) ?? value)
+              : value,
+          ),
+    );
     byDate.set(date, row);
   };
   history.local.forEach((record) =>

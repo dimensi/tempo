@@ -22,4 +22,20 @@ Provider UUID links prevent echo writes and duplicate weight chart series. Pull 
 
 Measurement DTOs include per-metric sync status. POST /api/measurements/:id/retry remains owner-write and trusted-Origin protected. GET /api/measurements/sync?ownerId=... exposes authorized precision issues. Process-local coalescing retains new work; native fetch aborts/drains within30seconds. Logical connection fencing uses nutrition_schedule.epoch, not the OAuth-refresh token-envelope generation.
 
+Provider-number projection recognizes float32 noise only when a positive,
+in-range candidate with at most three decimal places roundtrips exactly through
+`Math.fround` to the observed number. Extra decimal-string coefficients are not
+discarded. True higher precision remains raw with a warning; the manual input
+contract is unchanged. Sync ACK/baseline comparisons use this same rule and
+retain raw remote/synced values. This does not enqueue work or broaden import
+materialization/linking of existing observations.
+
+Online and offline reads recognize only a valid calendar date or the established
+provider-local `YYYY-MM-DD HH:mm:ss` format. For already stored null measured
+dates, the read projection supplies the validated calendar day without rewriting
+history or guessing a timezone. Unknown formats/overflow remain excluded.
+Warnings include provider UUID and timestamp; presentation groups equal
+metric/date/raw-value warnings with a count and every observation time, retaining
+each identity. Reads create no local measurements, associations or outbound jobs.
+
 [Static APK wire evidence](../../../../docs/architecture/yazio-body-measurements.md).
