@@ -4,10 +4,12 @@ import type {
 } from '@/contracts/transformmate';
 import type { WorkoutExercise } from '@/contracts/workouts';
 
-export function selectCatalogExercise(
-  exercise: WorkoutExercise,
+export function selectCatalogExercise<
+  T extends Pick<WorkoutExercise, 'name' | 'transformMate'>,
+>(
+  exercise: T,
   item: TransformMateCatalogItem,
-): WorkoutExercise {
+): T & Pick<WorkoutExercise, 'name' | 'transformMate'> {
   return {
     ...exercise,
     name: item.name,

@@ -1,0 +1,15 @@
+.content {
+  --mantine-color-dimmed: var(--mantine-color-gray-7);
+  --mantine-color-placeholder: var(--mantine-color-gray-7);
+  min-width: 0;
+}
+
+[data-mantine-color-scheme='dark'] .content {
+  --mantine-color-dimmed: var(--mantine-color-gray-5);
+  --mantine-color-placeholder: var(--mantine-color-gray-5);
+}
+
+.content :global(.mantine-Input-input) {
+  min-height: 44px;
+  font-size: 16px;
+}

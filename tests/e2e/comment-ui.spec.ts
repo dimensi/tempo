@@ -89,14 +89,16 @@ test('measurement and actual-session comments compose after CRUD with real train
     await page.goto('/workouts');
     await page
       .getByRole('button', {
-        name: 'Записать выполненную тренировку',
+        name: 'Добавить тренировку',
         exact: true,
       })
       .click();
-    const dialog = page.getByRole('dialog');
+    await page.getByText('Уже выполнена', { exact: true }).click();
+    await expect(page).toHaveURL(/\/workouts\/sessions\/new\?date=/);
+    const dialog = page;
     await dialog.getByLabel('Название (необязательно)').fill(note);
     await dialog
-      .getByRole('combobox', { name: 'Упражнение', exact: true })
+      .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
       .fill('Synthetic squat');
     await page
       .getByRole('option', {
@@ -104,10 +106,11 @@ test('measurement and actual-session comments compose after CRUD with real train
         exact: true,
       })
       .click();
+    await dialog.getByRole('textbox', { name: /Факт · Повторения/ }).fill('10');
     await dialog
       .getByRole('button', { name: 'Сохранить', exact: true })
       .click();
-    await expect(dialog).not.toBeVisible();
+    await expect(page).toHaveURL(/\/workouts\/sessions\//);
     await page.goto('/workouts');
     const data = (
       await (await page.request.get(`/api/workouts?ownerId=${ownerId}`)).json()

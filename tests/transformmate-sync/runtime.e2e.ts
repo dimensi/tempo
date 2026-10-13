@@ -659,11 +659,11 @@ test('imports a phone-created workout read-only without echoing provider writes'
     page.getByRole('heading', { name: 'Native phone workout', exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole('button', { name: 'Записать результат' }),
+    page.getByRole('link', { name: 'Внести результаты' }),
   ).toHaveCount(0);
-  await expect(
-    page.getByRole('link', { name: 'Изменить тренировку' }),
-  ).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Изменить план' })).toHaveCount(
+    0,
+  );
   await page.getByRole('link', { name: 'К тренировкам', exact: true }).click();
   await expect(page).toHaveURL('/workouts?date=2026-01-01');
   const counters = await control(request);
@@ -1031,9 +1031,9 @@ test('saving creates once, idle updates once, and remote facts preserve initial 
   await expect(
     page.getByRole('button', { name: 'Удалить весь план' }),
   ).toHaveCount(0);
-  await expect(
-    page.getByRole('link', { name: 'Изменить тренировку' }),
-  ).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Изменить план' })).toHaveCount(
+    0,
+  );
   expect((await control(request)).posts).toHaveLength(1);
   expect((await control(request)).patches).toHaveLength(1);
   expect((await control(request)).forbiddenWrites).toBe(0);

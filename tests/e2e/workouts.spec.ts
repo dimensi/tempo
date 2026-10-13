@@ -2,6 +2,7 @@ import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import type { WorkoutsData } from '@/contracts/workouts';
+import { workoutMessages } from '@/features/workouts/messages';
 
 async function login(page: Page, role: 'owner' | 'trainer' = 'owner') {
   await page.goto('/login');
@@ -51,7 +52,7 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
   await page
     .getByRole('button', { name: 'Добавить тренировку', exact: true })
     .click();
-  const dialog = page.getByRole('dialog');
+  const dialog = page;
   await page
     .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(title);
@@ -95,14 +96,15 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
   );
   expect(extended.ok()).toBe(true);
   await page.reload();
-  const card = page.getByTestId(`plan-${plan.id}`);
-  await card.getByRole('button', { name: 'Записать результат' }).click();
-  await dialog.getByLabel('Вес, кг', { exact: true }).fill('35');
+  const card = page.getByTestId(`plan-${plan.id}`).filter({ visible: true });
+  await card.getByRole('link', { name: 'Внести результаты' }).click();
+  await dialog.getByRole('textbox', { name: /Факт · Вес, кг/ }).fill('35');
+  await dialog.getByRole('textbox', { name: /Факт · Повторения/ }).fill('10');
   await dialog
     .getByLabel('Заметка', { exact: true })
     .fill('Фактическая нагрузка');
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(dialog).not.toBeVisible();
+  await expect(page).toHaveURL(/\/workouts\/sessions\/[^?]+\?date=/);
   const session = (await workouts(page, id)).sessions.find(
     (value) => value.planId === plan.id,
   )!;
@@ -111,9 +113,7 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
     `/workouts/plans/${plan.id}/workouts/${plan.workouts[0]!.id}?date=${plan.workouts[0]!.date}`,
   );
   await expect(card).toContainText('10 × 35 кг');
-  await card
-    .getByRole('link', { name: 'Изменить тренировку', exact: true })
-    .click();
+  await card.getByRole('link', { name: 'Изменить план', exact: true }).click();
   await expect(
     page.getByRole('button', { name: /Удалить тренировку/ }),
   ).toHaveCount(0);
@@ -137,7 +137,9 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
   await dialog
     .getByRole('button', { name: 'Подтвердить удаление', exact: true })
     .click();
-  await expect(dialog).not.toBeVisible();
+  await expect(
+    page.getByRole('dialog', { name: 'Удалить весь план', exact: true }),
+  ).not.toBeVisible();
   await expect(page.getByRole('tab', { name: 'История' })).toHaveCount(0);
   const history = page.getByTestId(`session-${session.id}`);
   await expect(page).toHaveURL(/\/workouts\?date=/);
@@ -196,6 +198,20 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     ).toHaveCount(0);
     await trainer.goto('/workouts/new?date=2026-10-11');
     await expect(trainer.getByLabel('Название (необязательно)')).toBeEditable();
+    await expect(
+      trainer.getByRole('radio', { name: 'Уже выполнена', exact: true }),
+    ).toBeDisabled();
+    await trainer.goto('/workouts/sessions/new?date=2026-10-11');
+    await expect(
+      trainer.locator('#main-content').getByRole('alert'),
+    ).toContainText(workoutMessages.noAccess);
+    await trainer.goto('/workouts/sessions/foreign/edit?date=2026-10-11');
+    await expect(
+      trainer.locator('#main-content').getByRole('alert'),
+    ).toContainText(workoutMessages.noAccess);
+    await expect(
+      trainer.getByRole('textbox', { name: 'Название (необязательно)' }),
+    ).toHaveCount(0);
     await trainer.goto('/workouts?date=2026-10-11');
     const input = {
       title: 'План тренера',
@@ -225,10 +241,10 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
       trainer.getByRole('heading', { name: 'Силовая', exact: true }),
     ).toBeVisible();
     await expect(
-      trainer.getByRole('link', { name: 'Изменить тренировку', exact: true }),
+      trainer.getByRole('link', { name: 'Изменить план', exact: true }),
     ).toBeVisible();
     await expect(
-      trainer.getByRole('button', { name: 'Записать результат' }),
+      trainer.getByRole('link', { name: 'Внести результаты' }),
     ).toHaveCount(0);
 
     const actual = {
@@ -544,12 +560,319 @@ test('a save settling after Back does not redirect or repeat the write', async (
           ).length,
       ),
     )
-    .toBe(0);
+    .toBe(1);
   await expect(page).toHaveURL('/workouts?date=2026-10-12');
   expect(posts).toBe(1);
   expect(
     (await workouts(page, id)).plans.filter(
       (plan) => plan.workouts[0]?.exercises[0]?.name === 'Delayed save',
+    ),
+  ).toHaveLength(1);
+});
+
+test('result page separates plan guidance, preserves missing facts and returns to the source day after date changes', async ({
+  page,
+}) => {
+  await login(page);
+  const id = await ownerId(page);
+  const sourceDate = '2026-10-15';
+  const name = `Result squat ${test.info().project.name}`;
+  const created = await page.request.post(`/api/workouts/plans?ownerId=${id}`, {
+    headers: { origin: `http://localhost:${process.env.E2E_PORT ?? 3100}` },
+    data: {
+      title: '',
+      description: '',
+      startsOn: sourceDate,
+      endsOn: sourceDate,
+      workouts: [
+        {
+          id: crypto.randomUUID(),
+          title: '',
+          date: sourceDate,
+          exercises: [{ name, sets: [{ reps: 10, weightKg: 40 }] }],
+        },
+      ],
+    },
+  });
+  expect(created.ok()).toBe(true);
+  const plan = (await created.json()).data;
+  const resource = `/workouts/plans/${plan.id}/workouts/${plan.workouts[0].id}`;
+  await page.goto(`${resource}?date=${sourceDate}`);
+  await page
+    .getByRole('link', { name: 'Внести результаты', exact: true })
+    .click();
+  await expect(page).toHaveURL(
+    `${resource}/results?date=${sourceDate}&from=view`,
+  );
+  const reps = page.getByRole('textbox', { name: /Факт · Повторения/ });
+  const weight = page.getByRole('textbox', { name: /Факт · Вес, кг/ });
+  await expect(reps).toHaveValue('');
+  await expect(weight).toHaveValue('');
+  await expect(
+    page.getByRole('columnheader', { name: 'План', exact: true }),
+  ).toBeVisible();
+  await weight.fill('35');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page.locator('#main-content').getByRole('alert')).toContainText(
+    'Укажите целое число повторений в каждом записываемом подходе.',
+  );
+  expect(
+    (await workouts(page, id)).sessions.some(
+      (value) => value.planId === plan.id,
+    ),
+  ).toBe(false);
+  await page
+    .getByRole('button', { name: 'К тренировкам', exact: true })
+    .click();
+  await expect(page).toHaveURL(`${resource}?date=${sourceDate}`);
+  await page.goBack();
+  await expect(weight).toHaveValue('35');
+  await expect(reps).toHaveValue('');
+  await reps.fill('8');
+  await weight.fill('');
+  await page
+    .getByRole('textbox', { name: 'Дата', exact: true })
+    .fill('2026-10-16');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page).toHaveURL(/\/workouts\/sessions\/[^?]+\?date=2026-10-15$/);
+  const session = (await workouts(page, id)).sessions.find(
+    (value) => value.planId === plan.id,
+  )!;
+  expect(session.date).toBe('2026-10-16');
+  expect(session.exercises[0]!.sets).toEqual([{ reps: 8, weightKg: null }]);
+  await page
+    .getByRole('link', { name: 'Изменить результаты', exact: true })
+    .click();
+  await expect(reps).toHaveValue('8');
+  await expect(weight).toHaveValue('');
+  await reps.fill('6');
+  await page
+    .getByRole('button', { name: 'Добавить подход', exact: true })
+    .click();
+  await page
+    .getByRole('textbox', {
+      name: `Факт · Повторения · ${name} · Подход 2`,
+      exact: true,
+    })
+    .fill('4');
+  await page
+    .getByRole('textbox', {
+      name: `Факт · Вес, кг · ${name} · Подход 2`,
+      exact: true,
+    })
+    .fill('0');
+  const adder = page.getByRole('combobox', {
+    name: 'Добавить упражнение',
+    exact: true,
+  });
+  await adder.click();
+  await adder.fill('Extra actual');
+  await page
+    .getByRole('option', {
+      name: 'Добавить вручную: Extra actual',
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole('textbox', {
+      name: 'Факт · Повторения · Extra actual · Подход 1',
+      exact: true,
+    })
+    .fill('3');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page).toHaveURL(
+    `/workouts/sessions/${session.id}?date=${sourceDate}`,
+  );
+  await expect(page.getByText('4 × 0 кг', { exact: true })).toBeVisible();
+  await expect(page.getByText('Extra actual', { exact: true })).toBeVisible();
+  expect(
+    (await workouts(page, id)).sessions.filter(
+      (value) => value.planId === plan.id,
+    ),
+  ).toHaveLength(1);
+  await page.getByRole('link', { name: 'К тренировкам', exact: true }).click();
+  await expect(page).toHaveURL(`/workouts?date=${sourceDate}`);
+});
+
+test('add choice creates performed work directly without a plan and skipped work has no invented facts', async ({
+  page,
+}) => {
+  await login(page);
+  const id = await ownerId(page);
+  const before = await workouts(page, id);
+  await page.goto('/workouts?date=2026-10-17');
+  await page
+    .getByRole('button', { name: 'Добавить тренировку', exact: true })
+    .click();
+  await page.getByText('Уже выполнена', { exact: true }).click();
+  await expect(page).toHaveURL(
+    '/workouts/sessions/new?date=2026-10-17&returnDate=2026-10-17',
+  );
+  await expect(
+    page.getByRole('columnheader', { name: 'План', exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByLabel('Название (необязательно)')
+    .fill(`Skipped ${test.info().project.name}`);
+  await page.getByRole('combobox', { name: 'Статус', exact: true }).click();
+  await page.getByRole('option', { name: 'Пропущена', exact: true }).click();
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page).toHaveURL(/\/workouts\/sessions\//);
+  const after = await workouts(page, id);
+  expect(after.plans.map((value) => value.id)).toEqual(
+    before.plans.map((value) => value.id),
+  );
+  const session = after.sessions.find(
+    (value) => !before.sessions.some((old) => old.id === value.id),
+  )!;
+  expect(session.status).toBe('skipped');
+  expect(session.exercises).toEqual([]);
+  expect(session.planId).toBeNull();
+});
+
+test('actual draft survives conflict and access errors; unavailable storage requires explicit leave', async ({
+  page,
+}) => {
+  test.skip(
+    test.info().project.name !== 'desktop',
+    'Storage and response guards are viewport independent.',
+  );
+  await login(page);
+  const date = '2026-10-18';
+  const route = `/workouts/sessions/new?date=${date}`;
+  await page.goto(route);
+  await page
+    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
+    .fill('Draft actual');
+  await page
+    .getByRole('option', {
+      name: 'Добавить вручную: Draft actual',
+      exact: true,
+    })
+    .click();
+  const reps = page.getByRole('textbox', { name: /Факт · Повторения/ });
+  await reps.fill('7');
+  await page.route('**/api/workouts/sessions?*', (handler) =>
+    handler.fulfill({ status: 409, json: { error: 'conflict' } }),
+  );
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page.locator('#main-content').getByRole('alert')).toContainText(
+    'измен',
+  );
+  await expect(reps).toHaveValue('7');
+  await page.unroute('**/api/workouts/sessions?*');
+  await page.route('**/api/workouts?*', (handler) =>
+    handler.fulfill({ status: 503, json: { error: 'unavailable' } }),
+  );
+  await page.reload();
+  await expect(page.locator('#main-content').getByRole('alert')).toContainText(
+    'загрузить',
+  );
+  await page.unroute('**/api/workouts?*');
+  await page
+    .getByRole('button', { name: 'Обновить данные', exact: true })
+    .click();
+  await expect(reps).toHaveValue('7');
+  await page.evaluate(() => {
+    Storage.prototype.setItem = () => {
+      throw Error('storage disabled');
+    };
+  });
+  await reps.fill('9');
+  await expect(
+    page.getByText('Черновик сохранён в этой вкладке.', { exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'К тренировкам', exact: true })
+    .click();
+  const confirmation = page.getByRole('dialog');
+  await expect(confirmation).toBeVisible();
+  await confirmation
+    .getByRole('button', { name: 'Продолжить редактирование', exact: true })
+    .click();
+  await expect(reps).toHaveValue('9');
+  await page.getByText('Запланировать', { exact: true }).click();
+  await expect(confirmation).toBeVisible();
+  await confirmation
+    .getByRole('button', { name: 'Удалить черновик', exact: true })
+    .click();
+  await expect(page).toHaveURL(`/workouts/new?date=${date}&returnDate=${date}`);
+});
+
+test('late actual save cannot erase a reopened draft or redirect it', async ({
+  page,
+}) => {
+  test.skip(
+    test.info().project.name !== 'desktop',
+    'Mounted resource race is viewport independent.',
+  );
+  await login(page);
+  const id = await ownerId(page);
+  const path = '/workouts/sessions/new?date=2026-10-19';
+  await page.goto(path);
+  await page
+    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
+    .fill('Delayed actual');
+  await page
+    .getByRole('option', {
+      name: 'Добавить вручную: Delayed actual',
+      exact: true,
+    })
+    .click();
+  const reps = page.getByRole('textbox', { name: /Факт · Повторения/ });
+  await reps.fill('6');
+  let release!: () => void,
+    notifySaved!: () => void,
+    notifySettled!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const saved = new Promise<void>((resolve) => {
+    notifySaved = resolve;
+  });
+  const settled = new Promise<void>((resolve) => {
+    notifySettled = resolve;
+  });
+  let posts = 0;
+  await page.route('**/api/workouts/sessions?*', async (handler) => {
+    posts++;
+    const response = await handler.fetch();
+    expect(response.ok()).toBe(true);
+    notifySaved();
+    await gate;
+    try {
+      await handler.fulfill({ response });
+    } finally {
+      notifySettled();
+    }
+  });
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await saved;
+  await expect(reps).toBeDisabled();
+  await expect(
+    page.getByRole('radio', { name: 'Запланировать', exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole('button', { name: 'К тренировкам', exact: true }),
+  ).toBeDisabled();
+  await page.goBack();
+  await page.goto(path);
+  await expect(reps).toHaveValue('6');
+  await reps.fill('9');
+  release();
+  await settled;
+  await expect(page).toHaveURL(path);
+  await expect(reps).toHaveValue('9');
+  const stored = await page.evaluate(() =>
+    Object.entries(sessionStorage)
+      .filter(([key]) => key.includes(':session:'))
+      .map(([, value]) => JSON.parse(value)),
+  );
+  expect(stored[0].value.exercises[0].sets[0].reps).toBe(9);
+  expect(posts).toBe(1);
+  expect(
+    (await workouts(page, id)).sessions.filter(
+      (value) => value.exercises[0]?.name === 'Delayed actual',
     ),
   ).toHaveLength(1);
 });

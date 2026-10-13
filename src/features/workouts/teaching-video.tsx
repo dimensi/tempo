@@ -8,9 +8,11 @@ import { workoutMessages as m } from './messages';
 export function TeachingVideo({
   src,
   poster,
+  compact = false,
 }: {
   src: string;
   poster?: string;
+  compact?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
@@ -83,7 +85,12 @@ export function TeachingVideo({
           {m.videoError}
         </Alert>
       )}
-      <div ref={host} className={styles.player} data-vjs-player />
+      <div
+        ref={host}
+        className={styles.player}
+        style={compact ? { maxWidth: 320 } : undefined}
+        data-vjs-player
+      />
     </div>
   );
 }
