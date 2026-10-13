@@ -114,27 +114,32 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
   let trainerId: string | undefined;
   try {
     await page.goto('/reports');
+    const activeReports = page.getByRole('main').filter({ visible: true });
     await expect(
       page.getByRole('heading', { name: 'Отчёты', exact: true }),
     ).toBeVisible();
-    await expect(page.getByLabel('Начало')).toHaveValue('2026-10-12');
-    await page.getByLabel('Начало').fill('10000-01-01');
+    await expect(activeReports.getByLabel('Начало')).toHaveValue('2026-10-12');
+    await activeReports.getByLabel('Начало').fill('10000-01-01');
     await expect(
       page.getByRole('alert').filter({ hasText: 'Проверьте даты' }),
     ).toBeVisible();
     await expect(
       page.getByRole('heading', { name: 'Отчёты', exact: true }),
     ).toBeVisible();
-    await page.getByLabel('Начало').fill('2026-10-12');
+    await activeReports.getByLabel('Начало').fill('2026-10-12');
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page
       .getByRole('option', { name: 'Произвольный период', exact: true })
       .click();
-    await expect(page.getByLabel('Окончание')).toHaveValue('2026-10-12');
-    await page.getByLabel('Окончание').fill('2026-10-13');
+    await expect(activeReports.getByLabel('Окончание')).toHaveValue(
+      '2026-10-12',
+    );
+    await activeReports.getByLabel('Окончание').fill('2026-10-13');
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'Неделя', exact: true }).click();
-    await expect(page.getByLabel('Начало периода')).toHaveValue('2026-10-12');
+    await expect(activeReports.getByLabel('Начало периода')).toHaveValue(
+      '2026-10-12',
+    );
     await expect(
       page.getByText(
         'Период отчёта: 12 октября 2026 г. — 18 октября 2026 г. · 7 дней',
@@ -145,7 +150,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       ['2026-01-29', '29 января 2026 г. — 4 февраля 2026 г.'],
       ['2026-12-29', '29 декабря 2026 г. — 4 января 2027 г.'],
     ]) {
-      await page.getByLabel('Начало периода').fill(start!);
+      await activeReports.getByLabel('Начало периода').fill(start!);
       await expect(
         page.getByText(`Период отчёта: ${label} · 7 дней`, { exact: true }),
       ).toBeVisible();
@@ -164,40 +169,42 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
           Number.parseFloat(getComputedStyle(input).fontSize),
         ),
     ).toBeGreaterThanOrEqual(16);
-    await page.getByLabel('Начало периода').fill('2026-10-12');
+    await activeReports.getByLabel('Начало периода').fill('2026-10-12');
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page
       .getByRole('option', { name: 'Произвольный период', exact: true })
       .click();
-    await expect(page.getByLabel('Окончание')).toHaveValue('2026-10-13');
-    await page.getByLabel('Окончание').fill('');
+    await expect(activeReports.getByLabel('Окончание')).toHaveValue(
+      '2026-10-13',
+    );
+    await activeReports.getByLabel('Окончание').fill('');
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'День', exact: true }).click();
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page
       .getByRole('option', { name: 'Произвольный период', exact: true })
       .click();
-    await expect(page.getByLabel('Окончание')).toHaveValue('');
+    await expect(activeReports.getByLabel('Окончание')).toHaveValue('');
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'День', exact: true }).click();
     await page.screenshot({
       path: test.info().outputPath('reports-local-today.png'),
     });
-    await page.getByLabel('Начало').fill(date);
+    await activeReports.getByLabel('Начало').fill(date);
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'Неделя', exact: true }).click();
-    await expect(page.getByLabel('Начало')).toHaveValue(date);
+    await expect(activeReports.getByLabel('Начало')).toHaveValue(date);
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'День', exact: true }).click();
-    await expect(page.getByLabel('Начало')).toHaveValue(date);
-    await page.getByLabel('Начало').fill('');
+    await expect(activeReports.getByLabel('Начало')).toHaveValue(date);
+    await activeReports.getByLabel('Начало').fill('');
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'Неделя', exact: true }).click();
-    await expect(page.getByLabel('Начало')).toHaveValue('');
+    await expect(activeReports.getByLabel('Начало')).toHaveValue('');
     await expect(page.getByText(/Период отчёта:/)).toHaveCount(0);
     await page.getByRole('combobox', { name: 'Период' }).click();
     await page.getByRole('option', { name: 'День', exact: true }).click();
-    await page.getByLabel('Начало').fill(date);
+    await activeReports.getByLabel('Начало').fill(date);
     await expect(
       page.getByRole('button', { name: 'Предпросмотр HTML' }),
     ).toHaveCount(0);
@@ -235,16 +242,16 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       });
     });
     try {
-      await page.getByLabel('Начало').fill('2026-02-05');
+      await activeReports.getByLabel('Начало').fill('2026-02-05');
       await expect
         .poll(() => previewRequests.includes('html:2026-02-05'))
         .toBe(true);
       await expect(
         preview.getByText('Яйцо · запись 1', { exact: true }),
       ).toBeVisible();
-      await page.getByLabel('Начало').fill('2026-02-06');
-      await page.getByLabel('Начало').fill('2026-02-07');
-      await page.getByLabel('Начало').fill('2026-02-08');
+      await activeReports.getByLabel('Начало').fill('2026-02-06');
+      await activeReports.getByLabel('Начало').fill('2026-02-07');
+      await activeReports.getByLabel('Начало').fill('2026-02-08');
       await expect(
         preview.getByText('Synthetic preview 2026-02-08'),
       ).toBeVisible();
@@ -259,17 +266,21 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
           exact: true,
         })
         .click();
-      await expect(page.getByLabel('Начало')).toHaveValue('2026-02-02');
+      await expect(activeReports.getByLabel('Начало')).toHaveValue(
+        '2026-02-02',
+      );
       await expect(
         preview.getByText('Synthetic preview 2026-02-02'),
       ).toBeVisible();
       await page.getByRole('button', { name: 'Сегодня', exact: true }).click();
-      await expect(page.getByLabel('Начало')).toHaveValue('2026-10-12');
+      await expect(activeReports.getByLabel('Начало')).toHaveValue(
+        '2026-10-12',
+      );
     } finally {
       releaseStale();
       await page.unroute('**/api/reports?**');
     }
-    await page.getByLabel('Начало').fill(date);
+    await activeReports.getByLabel('Начало').fill(date);
     await expect(
       preview.getByText('Яйцо · запись 1', { exact: true }),
     ).toBeVisible();
@@ -332,14 +343,14 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
         preview.getByText('Яйцо · запись 1', { exact: true }),
       ).toHaveCount(0);
       await expect(page.getByText(/^Предпросмотр HTML:/)).toHaveCount(0);
-      await expect(page.getByLabel('Начало')).toHaveValue(selected);
-      await expect(page.getByLabel('Начало')).toBeEnabled();
+      await expect(activeReports.getByLabel('Начало')).toHaveValue(selected);
+      await expect(activeReports.getByLabel('Начало')).toBeEnabled();
       await expect(page.getByRole('combobox', { name: 'Период' })).toHaveValue(
         'День',
       );
     };
     await interceptDenial();
-    await page.getByLabel('Начало').fill('2026-02-09');
+    await activeReports.getByLabel('Начало').fill('2026-02-09');
     await expect(
       page.getByRole('alert').filter({ hasText: 'Synthetic report failure' }),
     ).toBeVisible();
@@ -350,7 +361,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       page.getByText(`Предпросмотр HTML: ${date} — ${date}`, { exact: true }),
     ).toBeVisible();
     await page.unroute('**/api/reports?**');
-    await page.getByLabel('Начало').fill(date);
+    await activeReports.getByLabel('Начало').fill(date);
     await expect(
       page.getByRole('button', { name: 'Скачать PDF' }),
     ).toBeEnabled();
@@ -376,7 +387,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       denialStatus = status;
       deniedFormat = 'html';
       await interceptDenial();
-      await page.getByLabel('Начало').fill('2026-02-10');
+      await activeReports.getByLabel('Начало').fill('2026-02-10');
       await expect(
         page
           .getByRole('alert')
@@ -384,7 +395,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       ).toBeVisible();
       await assertPurged('2026-02-10');
       await page.unroute('**/api/reports?**');
-      await page.getByLabel('Начало').fill(date);
+      await activeReports.getByLabel('Начало').fill(date);
       await expect(
         preview.getByText('Яйцо · запись 1', { exact: true }),
       ).toBeVisible();
@@ -407,8 +418,8 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       ).toBe(0);
       expect(deniedDownloads).toHaveLength(0);
       await page.unroute('**/api/reports?**');
-      await page.getByLabel('Начало').fill('2026-02-10');
-      await page.getByLabel('Начало').fill(date);
+      await activeReports.getByLabel('Начало').fill('2026-02-10');
+      await activeReports.getByLabel('Начало').fill(date);
       await expect(
         preview.getByText('Яйцо · запись 1', { exact: true }),
       ).toBeVisible();
