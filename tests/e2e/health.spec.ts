@@ -136,16 +136,18 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
     const imported = weights.getByRole('row').filter({ hasText: '160,13' });
     await expect(imported).toContainText('YAZIO');
     await expect(imported).toContainText('кг');
-    const weightChart = page.getByTestId('measurement-trend-chart');
+    const weightChart = page
+      .getByRole('main')
+      .getByTestId('measurement-trend-chart');
     await expect(weightChart.locator('svg.recharts-surface')).toBeVisible();
-    await expect(weightChart).toContainText('Вручную');
+    await expect(weightChart).toContainText('Замеры в приложении');
     await expect(weightChart).toContainText('YAZIO');
     expect(await weightChart.locator('.recharts-line').count()).toBe(2);
     await expect(weightChart.locator('.recharts-line-dot')).toHaveCount(4);
     await expect(weightChart).toContainText(olderLocalDate);
-    await expect(page.getByTestId('measurements-panel')).toContainText(
-      'Ручные замеры — вся доступная история.',
-    );
+    await expect(
+      page.getByRole('main').getByTestId('measurements-panel'),
+    ).toContainText('Замеры в приложении — вся доступная история.');
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -176,7 +178,7 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
         route.fulfill({ status, json: { error: 'Synthetic denial' } }),
       );
       await page.goto('/measurements');
-      const panel = page.getByTestId('measurements-panel');
+      const panel = page.getByRole('main').getByTestId('measurements-panel');
       await expect(panel.getByRole('alert')).toContainText(
         'Доступ к замерам не предоставлен.',
       );

@@ -3,6 +3,8 @@ import Database from 'better-sqlite3';
 import { build } from 'esbuild';
 import { offlineFixture } from './fixtures';
 import { shiftDate } from '../../src/contracts/nutrition-sync-dates';
+// These fixtures seed calendar days with toISOString(), independent of host timezone.
+test.use({ timezoneId: 'UTC' });
 let harness: string;
 test.beforeAll(async () => {
   harness = (
