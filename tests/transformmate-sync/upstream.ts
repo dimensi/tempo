@@ -284,6 +284,13 @@ export async function startUpstream() {
           common_muscle_group: { id: 1, name: 'Demo common group' },
         },
       ]);
+    if (path === '/exercises/temporary_exercises/')
+      return json({
+        count: 1,
+        next: null,
+        previous: null,
+        results: [exercise()],
+      });
     if (path === '/exercises/' || path === '/exercises/501/')
       return json(path === '/exercises/' ? [exercise()] : exercise());
     if (path === '/workouts/trainings/' && req.method === 'POST') {
