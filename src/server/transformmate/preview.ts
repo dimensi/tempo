@@ -6,6 +6,7 @@ import {
 } from '@/server/transformmate/catalog';
 import { cachedDetail } from '@/server/transformmate/catalog-cache';
 import { catalogStore } from '@/server/transformmate/catalog-store';
+const PREVIEW_FAILURE_RETRY_MS = 60_000;
 const MAX_BYTES = 5 * 1024 * 1024;
 const TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
 export function selectPreviewUrl(value: string | null): URL | null {
@@ -53,6 +54,14 @@ export async function streamExercisePreview(
     const id = exerciseId(idValue);
     const ownerId = new URL(request.url).searchParams.get('ownerId') ?? '';
     const scope = await catalogScope(request.headers, ownerId);
+    const cached = catalogStore().record(scope, id);
+    if (
+      cached?.detail?.previewCoverage === 'unknown' &&
+      cached.detail.previewCheckedAt &&
+      Date.now() - Date.parse(cached.detail.previewCheckedAt) <
+        PREVIEW_FAILURE_RETRY_MS
+    )
+      throw new CatalogError(502);
     let record = await cachedDetail(scope, id);
     let url = selectPreviewUrl(record.detail!.image);
     if (!url) throw new CatalogError(404);
@@ -91,9 +100,15 @@ export async function streamExercisePreview(
       await upstream.body?.cancel();
       await scope.assertCurrent();
       await markUnknown();
+      const previousUrl = url.href;
       record = await cachedDetail(scope, id, true);
+      await scope.assertCurrent();
       url = selectPreviewUrl(record.detail!.image);
       if (!url) throw new CatalogError(404);
+      if (url.href === previousUrl) {
+        await markUnknown();
+        throw new CatalogError(502);
+      }
       upstream = await fetchImage(url);
     }
     try {

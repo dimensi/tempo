@@ -62,7 +62,10 @@ beforeEach(() => {
     body: { ...exerciseDetailFixture(), image: url },
   });
 });
-afterEach(() => mocks.database?.sqlite.close());
+afterEach(() => {
+  mocks.database?.sqlite.close();
+  vi.useRealTimers();
+});
 it.each([
   'http://transformmate.pht.space/a',
   'https://transformmate.pht.space.evil.test/a',
@@ -117,6 +120,7 @@ it.each(['image/svg+xml', 'text/html', 'application/octet-stream'])(
   },
 );
 it('rejects declared oversized and chunked oversized payloads, cancelling the stream', async () => {
+  vi.useFakeTimers();
   for (const declared of [true, false]) {
     const cancel = vi.fn();
     const stream = new ReadableStream({
@@ -141,6 +145,7 @@ it('rejects declared oversized and chunked oversized payloads, cancelling the st
     );
     expect(response.status).toBe(502);
     expect(cancel).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(60_000);
   }
 });
 it('rejects HTML masquerading as an approved image MIME', async () => {
@@ -177,18 +182,30 @@ it('denied/revoked grants prevent media delivery and cache availability writes',
     'unknown',
   );
 });
-it('refreshes expired metadata at most once and shares one abort deadline', async () => {
+it('does not retry an unchanged broken image URL and suppresses requests for 60 seconds', async () => {
+  vi.useFakeTimers();
   const fetchImage = vi
     .fn()
     .mockResolvedValue(new Response(null, { status: 403 }));
   expect(
     (await streamExercisePreview(request(), '501', fetchImage)).status,
   ).toBe(502);
-  expect(fetchImage).toHaveBeenCalledTimes(2);
+  expect(fetchImage).toHaveBeenCalledTimes(1);
   expect(mocks.getExercise).toHaveBeenCalledTimes(2);
-  expect(fetchImage.mock.calls[0]![1].signal).toBe(
-    fetchImage.mock.calls[1]![1].signal,
+  expect(
+    (await streamExercisePreview(request(), '501', fetchImage)).status,
+  ).toBe(502);
+  expect(fetchImage).toHaveBeenCalledTimes(1);
+  expect(mocks.getExercise).toHaveBeenCalledTimes(2);
+  expect(catalogStore().record(scope, 501)?.detail?.previewCoverage).toBe(
+    'unknown',
   );
+  vi.advanceTimersByTime(60_000);
+  expect(
+    (await streamExercisePreview(request(), '501', fetchImage)).status,
+  ).toBe(502);
+  expect(fetchImage).toHaveBeenCalledTimes(2);
+  expect(mocks.getExercise).toHaveBeenCalledTimes(3);
 });
 
 it('client abort reaches the private fetch and does not persist availability', async () => {
@@ -208,6 +225,67 @@ it('client abort reaches the private fetch and does not persist availability', a
   );
   expect(response.status).toBe(502);
   expect(received?.aborted).toBe(true);
+  expect(catalogStore().record(scope, 501)?.detail?.previewCoverage).toBe(
+    'unknown',
+  );
+});
+
+it('retries a changed image URL after forced metadata refresh with the same abort deadline', async () => {
+  const changed = 'https://transformmate.pht.space/media/changed.png';
+  mocks.getExercise
+    .mockResolvedValueOnce({ body: { ...exerciseDetailFixture(), image: url } })
+    .mockResolvedValueOnce({
+      body: { ...exerciseDetailFixture(), image: changed },
+    });
+  const fetchImage = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(null, { status: 403 }))
+    .mockResolvedValueOnce(
+      new Response(png, { headers: { 'Content-Type': 'image/png' } }),
+    );
+  expect(
+    (await streamExercisePreview(request(), '501', fetchImage)).status,
+  ).toBe(200);
+  expect(fetchImage).toHaveBeenCalledTimes(2);
+  expect(fetchImage.mock.calls[1]![0].href).toBe(changed);
+  expect(fetchImage.mock.calls[0]![1].signal).toBe(
+    fetchImage.mock.calls[1]![1].signal,
+  );
+  expect(catalogStore().record(scope, 501)?.detail?.previewCoverage).toBe(
+    'available',
+  );
+});
+it('checks revoked authorization before returning a cached negative preview', async () => {
+  const fetchImage = vi
+    .fn()
+    .mockResolvedValue(new Response(null, { status: 404 }));
+  expect(
+    (await streamExercisePreview(request(), '501', fetchImage)).status,
+  ).toBe(502);
+  const original = catalogStore().record(scope, 501);
+  mocks.authorize.mockResolvedValue({ ok: false, status: 403 });
+  expect(
+    (await streamExercisePreview(request(), '501', fetchImage)).status,
+  ).toBe(403);
+  expect(fetchImage).toHaveBeenCalledTimes(1);
+  expect(catalogStore().record(scope, 501)).toEqual(original);
+});
+it('revocation after forced metadata refresh prevents changed image delivery and preview writes', async () => {
+  const changed = 'https://transformmate.pht.space/media/changed.png';
+  mocks.getExercise
+    .mockResolvedValueOnce({ body: { ...exerciseDetailFixture(), image: url } })
+    .mockImplementationOnce(async () => {
+      mocks.authorize.mockResolvedValue({ ok: false, status: 403 });
+      return { body: { ...exerciseDetailFixture(), image: changed } };
+    });
+  const fetchImage = vi
+    .fn()
+    .mockResolvedValue(new Response(null, { status: 403 }));
+  expect(
+    (await streamExercisePreview(request(), '501', fetchImage)).status,
+  ).toBe(403);
+  expect(fetchImage).toHaveBeenCalledTimes(1);
+  expect(catalogStore().record(scope, 501)?.detail?.image).toBe(url);
   expect(catalogStore().record(scope, 501)?.detail?.previewCoverage).toBe(
     'unknown',
   );
