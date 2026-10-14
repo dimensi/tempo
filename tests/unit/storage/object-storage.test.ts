@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { Readable } from 'node:stream';
+import { S3Client } from '@aws-sdk/client-s3';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -8,6 +10,30 @@ vi.mock('server-only', () => ({}));
 const { validateObjectKey, storageNamespaceKey } =
   await import('@/server/storage/keys');
 const { fsObjectStorage } = await import('@/server/storage/fs');
+const { s3ObjectStorage } = await import('@/server/storage/s3');
+const { analyzeAnamnesisPdf } = await import('@/server/anamnesis/pdf');
+
+it('parses a PDF read from the S3 Node stream', async () => {
+  const pdf = readFileSync('tests/fixtures/anamnesis/synthetic-lab.pdf');
+  const send = vi.spyOn(S3Client.prototype, 'send').mockResolvedValueOnce({
+    Body: Readable.from([pdf.subarray(0, 100), pdf.subarray(100)]),
+  } as never);
+  try {
+    const storage = s3ObjectStorage({
+      endpoint: 'http://localhost:9000',
+      region: 'us-east-1',
+      bucket: 'test',
+      accessKeyId: 'synthetic',
+      secretAccessKey: 'synthetic',
+    });
+    const bytes = await storage.get('anamnesis/owner-1/synthetic.pdf');
+    const pages = await analyzeAnamnesisPdf(bytes);
+    expect(pages).toHaveLength(3);
+    expect(pages[0]!.width).toBeGreaterThan(0);
+  } finally {
+    send.mockRestore();
+  }
+});
 
 describe('object storage keys', () => {
   it('accepts namespaced keys with extension', () => {
