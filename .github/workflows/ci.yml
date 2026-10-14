@@ -50,23 +50,30 @@ jobs:
           path: test-results/
   docker:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Build exact checked-out revision
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           docker build -t nutrition-foundation \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             --label "org.opencontainers.image.tree=$(git rev-parse HEAD^{tree})" .
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - run: bash scripts/docker-smoke.sh
-      - name: Export tested release image
+      - name: Publish tested image to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: bash scripts/export-release-artifact.sh
-      - uses: actions/upload-artifact@v7.0.2
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        with:
-          name: nutrition-release-${{ github.sha }}
-          path: release-artifact/
-          retention-days: 7
-          if-no-files-found: error
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          export DOCKER_CONFIG=$(mktemp -d)
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:$GITHUB_SHA"
+          docker tag nutrition-foundation "$image"
+          docker push "$image"
