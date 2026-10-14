@@ -144,8 +144,12 @@ test('owner connects through masked settings, persists rotation, rejects wrong b
   await page.goto('/settings#transformmate');
   expect((await initialStatus).ok()).toBe(true);
   const connectionSection = page.locator('#transformmate');
-  const apiKey = connectionSection.getByLabel('Firebase API key');
-  const refreshToken = connectionSection.getByLabel('Firebase refresh token');
+  const apiKey = connectionSection
+    .getByLabel('Firebase API key')
+    .filter({ visible: true });
+  const refreshToken = connectionSection
+    .getByLabel('Firebase refresh token')
+    .filter({ visible: true });
   await expect(apiKey).toHaveAttribute('type', 'password');
   await expect(refreshToken).toHaveAttribute('type', 'password');
   await expect(
