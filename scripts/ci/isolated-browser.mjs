@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { requirePassingReport } from './report.mjs';
 import { runProcessGroup } from './process-group.mjs';
+import { caseTitlePattern } from './case-selection.mjs';
 
 // One disposable checkout and browser process per bounded worker. Each case
 // restores its closed synthetic fixture and private paths before a fresh Next
@@ -205,7 +206,6 @@ async function executeIsolated(run, concurrency, signal) {
       writeFileSync(resolve(sandbox, '.data/e2e.sqlite'), fixture);
       const gatewayPort = 3260 + slot * 2;
       const copiedSeconds = (performance.now() - start) / 1000;
-      const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
       const status = await runProcessGroup(
         'pnpm',
         [
@@ -219,7 +219,7 @@ async function executeIsolated(run, concurrency, signal) {
           selectedCases[0].project,
           '--workers=1',
           '--grep',
-          `(?:${[...new Set(selectedCases.map((entry) => escape(entry.title)))].join('|')})$`,
+          caseTitlePattern(selectedCases),
         ],
         {
           cwd: sandbox,
