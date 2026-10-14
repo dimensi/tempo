@@ -1,5 +1,5 @@
 import { testOrigin } from '../ci/origin';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../ci/isolated-test';
 const browserErrors = new WeakMap<Page, string[]>();
 test.beforeEach(async ({ page }) => {
   const errors: string[] = [];

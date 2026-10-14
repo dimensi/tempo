@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
 import { getSessionWith429Retry } from './auth-session';

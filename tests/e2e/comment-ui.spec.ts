@@ -2,7 +2,7 @@ import { testOrigin } from '../ci/origin';
 import { getSessionWith429Retry } from './auth-session';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import { test, expect, type Page, type Locator } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '../ci/isolated-test';
 
 async function login(page: Page, email: string) {
   const signin = () =>

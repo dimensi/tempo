@@ -1,5 +1,5 @@
 import { getSessionWith429Retry } from './auth-session';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../ci/isolated-test';
 
 async function login(page: Page, role: 'owner' | 'trainer', origin: string) {
   const signIn = () =>

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../ci/isolated-test';
 import { mkdirSync } from 'node:fs';
 
 test('nutrition chart shares, missing and zero states fit the common content layout', async ({

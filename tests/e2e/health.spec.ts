@@ -1,5 +1,5 @@
 import { testOrigin } from '../ci/origin';
-import { test, expect, type APIRequestContext } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
 import {
   dateInTimezone,

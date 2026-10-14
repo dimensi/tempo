@@ -1,5 +1,5 @@
 import { getSessionWith429Retry } from './auth-session';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
 import { nutritionDaySchema } from '@/contracts/nutrition';
 import { day as syntheticDay } from '../unit/diary/fixture';

@@ -1,6 +1,6 @@
 import { testOrigin } from '../ci/origin';
 import { getSessionWith429Retry } from './auth-session';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
 import type { WorkoutsData } from '@/contracts/workouts';
 import { workoutMessages } from '@/features/workouts/messages';

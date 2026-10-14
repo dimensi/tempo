@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../ci/isolated-test';
 
 async function login(page: Page) {
   await page.goto('/login');
@@ -29,7 +29,9 @@ test('section navigation keeps form values through anchors and history', async (
   await login(page);
   await page.goto('/settings');
   const navigation = page.getByRole('navigation', { name: 'Разделы настроек' });
-  const startDate = page.getByLabel('Загрузить данные начиная с…');
+  const startDate = page
+    .getByLabel('Загрузить данные начиная с…')
+    .filter({ visible: true });
   await startDate.fill('2026-10-01');
   await navigation
     .getByRole('link', { name: 'Синхронизация', exact: true })
@@ -143,7 +145,9 @@ test('hydration preserves an already focused settings anchor for keyboard activa
     await connection.focus();
     await expect(connection).toBeFocused();
     release();
-    await expect(page.getByLabel('Загрузить данные начиная с…')).toBeEnabled();
+    await expect(
+      page.getByLabel('Загрузить данные начиная с…').filter({ visible: true }),
+    ).toBeEnabled();
     await page.evaluate(
       () =>
         new Promise<void>((resolve) =>

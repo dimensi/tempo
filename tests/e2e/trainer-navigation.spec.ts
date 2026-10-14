@@ -1,5 +1,5 @@
 import { testOrigin } from '../ci/origin';
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../ci/isolated-test';
 
 for (const role of ['owner', 'trainer'] as const) {
   test(`${role} navigation exposes only available settings`, async ({
