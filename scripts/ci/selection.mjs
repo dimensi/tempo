@@ -10,6 +10,30 @@ export const areas = [
   'providers',
   'shell',
 ];
+// Exact aliases for existing specs whose names differ from their feature area.
+const testAliases = {
+  'settings-navigation.spec.ts': ['shell'],
+  'trainer-navigation.spec.ts': ['shell'],
+  'comment-ui.spec.ts': ['comments'],
+  'diary.spec.ts': ['nutrition', 'providers'],
+  'diary-navigation.spec.ts': ['nutrition', 'providers'],
+  'diary-ui.spec.ts': ['nutrition', 'providers'],
+  'diary-photos.spec.ts': ['nutrition', 'providers'],
+  'diary-refresh.spec.ts': ['nutrition', 'providers'],
+  'diary-macro-chart.spec.ts': ['nutrition', 'providers'],
+  'diary-meal-content.spec.ts': ['nutrition', 'providers'],
+  'overview-nutrition-chart.spec.ts': ['nutrition', 'providers'],
+  'transformmate-ui.spec.ts': ['workouts', 'providers'],
+  'transformmate-connection-form.spec.ts': ['workouts', 'providers'],
+};
+const crosscuttingSpecs = new Set([
+  'foundation.spec.ts', // All pages, authentication, logout and role boundaries.
+  'mobile-inputs.spec.ts', // Login and forms across all data sections.
+  'health.spec.ts', // Nutrition observations, measurements and trainer grants.
+  'overview.spec.ts', // Aggregated nutrition, measurements and workouts.
+  'collaboration.spec.ts', // Grants/revocation and direct API isolation across sections.
+  'invite-accept.spec.ts', // Real invitation acceptance and account/grant boundaries.
+]);
 export function selectAreas(paths, mode = 'selected') {
   if (mode === 'full')
     return {
@@ -26,6 +50,17 @@ export function selectAreas(paths, mode = 'selected') {
   const selected = new Set();
   for (const path of paths) {
     if (/^(docs\/|README\.md$)/.test(path)) continue;
+    const spec = /^tests\/e2e\/([^/]+\.spec\.ts)$/.exec(path)?.[1];
+    if (crosscuttingSpecs.has(spec))
+      return {
+        mode,
+        areas: [...areas],
+        reason: `Crosscutting E2E spec: ${path}`,
+      };
+    if (testAliases[spec]) {
+      for (const area of testAliases[spec]) selected.add(area);
+      continue;
+    }
     const match =
       /^src\/features\/(nutrition|workouts|measurements|analytics|anamnesis|reports|comments)\//.exec(
         path,
