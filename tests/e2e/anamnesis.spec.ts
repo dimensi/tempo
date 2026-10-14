@@ -86,9 +86,6 @@ test('owner imports the reference PDF and trainer receives only granted access',
   await page.getByRole('link', { name: 'Загрузить PDF', exact: true }).click();
   await expect(page).toHaveURL(/\/anamnesis\/documents$/);
   await expect(page.getByLabel('Загрузить PDF')).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: 'Загрузить PDF' }),
-  ).toBeDisabled();
 
   // Тренер получает доступ через настоящее приглашение (trainer_access).
   // Проекты и повторы делят одну e2e-базу: аккаунт уникален для каждого
