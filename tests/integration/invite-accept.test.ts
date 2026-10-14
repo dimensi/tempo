@@ -170,37 +170,42 @@ it('parallel accepts preserve one-use CAS and only one created account', async (
   ]);
   expect(responses.map((r) => r.status).sort()).toEqual([200, 400]);
 });
-it('CLI shares 7 reject/8 accept/12 accept validation and compatible real credentials', async () => {
-  for (const password of ['abcdefg', 'abcdefgh', 'abcdefghijkl']) {
-    const email = `cli-${password.length}@example.test`;
-    const result = spawnSync(
-      process.execPath,
-      ['--import', 'tsx', 'scripts/create-user.ts'],
-      {
-        env: {
-          ...process.env,
-          DATABASE_URL: url,
-          CREATE_USER_EMAIL: email,
-          CREATE_USER_NAME: 'Synthetic CLI',
-          CREATE_USER_ROLE: 'TRAINER',
-          CREATE_USER_PASSWORD: password,
+// Three sequential CLI startups plus real password hashing need their own CI budget.
+it(
+  'CLI shares 7 reject/8 accept/12 accept validation and compatible real credentials',
+  { timeout: 30000 },
+  async () => {
+    for (const password of ['abcdefg', 'abcdefgh', 'abcdefghijkl']) {
+      const email = `cli-${password.length}@example.test`;
+      const result = spawnSync(
+        process.execPath,
+        ['--import', 'tsx', 'scripts/create-user.ts'],
+        {
+          env: {
+            ...process.env,
+            DATABASE_URL: url,
+            CREATE_USER_EMAIL: email,
+            CREATE_USER_NAME: 'Synthetic CLI',
+            CREATE_USER_ROLE: 'TRAINER',
+            CREATE_USER_PASSWORD: password,
+          },
+          encoding: 'utf8',
         },
-        encoding: 'utf8',
-      },
-    );
-    expect(result.status).toBe(password.length === 7 ? 1 : 0);
-    if (password.length === 7)
-      expect(
-        database.db.select().from(user).where(eq(user.email, email)).get(),
-      ).toBeUndefined();
-    else
-      expect(
-        (
-          await getAuth().api.signInEmail({
-            body: { email, password },
-            asResponse: true,
-          })
-        ).status,
-      ).toBe(200);
-  }
-});
+      );
+      expect(result.status).toBe(password.length === 7 ? 1 : 0);
+      if (password.length === 7)
+        expect(
+          database.db.select().from(user).where(eq(user.email, email)).get(),
+        ).toBeUndefined();
+      else
+        expect(
+          (
+            await getAuth().api.signInEmail({
+              body: { email, password },
+              asResponse: true,
+            })
+          ).status,
+        ).toBe(200);
+    }
+  },
+);
