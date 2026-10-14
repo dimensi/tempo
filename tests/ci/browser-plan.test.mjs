@@ -6,7 +6,9 @@ import { selectAreas } from '../../scripts/ci/selection.mjs';
 test('video test changes select and execute the video browser spec', () => {
   const selection = selectAreas(['tests/e2e/workout-videos.spec.ts']);
   assert.deepEqual(selection.areas, ['workouts', 'providers']);
-  const general = browserPlan(selection).find((run) => run.family === 'general');
+  const general = browserPlan(selection).find(
+    (run) => run.family === 'general',
+  );
   assert.ok(general.files.includes('workout-videos.spec.ts'));
 });
 
