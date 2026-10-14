@@ -41,6 +41,13 @@ for (const label of ['first', 'second', 'third', 'fourth']) {
       writeFileSync('.data/e2e-transformmate-token.json', label);
       mkdirSync('.data/e2e-nutrition-uploads', { recursive: true });
       writeFileSync('.data/e2e-nutrition-uploads/isolation.txt', label);
+      const objectPath =
+        '.data/e2e-nutrition-uploads/object-storage/apps/anamnesis/isolation.txt';
+      expect(existsSync(objectPath)).toBe(false);
+      mkdirSync('.data/e2e-nutrition-uploads/object-storage/apps/anamnesis', {
+        recursive: true,
+      });
+      writeFileSync(objectPath, label);
       await new Promise((done) => setTimeout(done, 500));
       expect(readFileSync('.data/e2e-transformmate-token.json', 'utf8')).toBe(
         label,
@@ -48,6 +55,7 @@ for (const label of ['first', 'second', 'third', 'fourth']) {
       expect(
         readFileSync('.data/e2e-nutrition-uploads/isolation.txt', 'utf8'),
       ).toBe(label);
+      expect(readFileSync(objectPath, 'utf8')).toBe(label);
       const records = await request.get(`/api/measurements?ownerId=${owner}`);
       expect(records.status()).toBe(200);
       expect(JSON.stringify(await records.json())).toContain(label);

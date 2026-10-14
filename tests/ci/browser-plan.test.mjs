@@ -50,3 +50,28 @@ test('full keeps genuine auth wait; selected measurements include every mapped s
   );
   assert.deepEqual(targeted[2].files, ['measurements.spec.ts']);
 });
+
+for (const path of [
+  'src/features/anamnesis/documents-panel.tsx',
+  'src/server/anamnesis/worker.ts',
+  'src/app/api/anamnesis/documents/route.ts',
+  'src/app/(dashboard)/anamnesis/page.tsx',
+  'tests/e2e/anamnesis.spec.ts',
+]) {
+  test(`Anamnesis mapping retains all spec cases and mandatory smoke: ${path}`, () => {
+    const plan = browserPlan(selectAreas([path]));
+    assert.deepEqual(
+      plan.map((run) => run.family),
+      ['isolation', 'smoke', 'general'],
+    );
+    assert.deepEqual(plan[2].files, ['anamnesis.spec.ts']);
+  });
+}
+test('shared object storage keeps broad coverage including new Anamnesis tests', () => {
+  const selection = selectAreas(['src/server/storage/fs.ts']);
+  assert.ok(selection.areas.includes('anamnesis'));
+  assert.equal(
+    browserPlan(selection).find((run) => run.family === 'general').files,
+    undefined,
+  );
+});

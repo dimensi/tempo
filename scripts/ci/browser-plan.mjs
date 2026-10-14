@@ -4,6 +4,7 @@ export function browserPlan(selection) {
     workouts: ['workouts.spec.ts', 'transformmate.*spec.ts'],
     measurements: ['measurements.spec.ts'],
     analytics: ['analytics.spec.ts'],
+    anamnesis: ['anamnesis.spec.ts'],
     reports: ['reports.*spec.ts'],
     comments: ['comment-ui.spec.ts', 'collaboration.spec.ts'],
     shell: [
