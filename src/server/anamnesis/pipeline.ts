@@ -11,6 +11,7 @@ import type { CatalogIndex } from './markers';
 import { matchMarker } from './markers';
 
 export type ReviewReason =
+  | 'unknown_source_kind'
   | 'ambiguous_marker'
   | 'missing_origin'
   | 'missing_date'
@@ -244,7 +245,12 @@ export function prepareCandidate(
   const canonical = canonicalUnit(originalUnit);
   const unitKnown = canonical !== null || originalUnit === null;
   const { collectedAt, precision } = parseCollectedAt(candidate.collectedAt);
-  const referenceRange = parseReference(candidate.reference);
+  // Историческое значение не наследует референс текущего результата:
+  // доверять референсу от провайдера для historical_result нельзя.
+  const referenceRange =
+    candidate.sourceKind === 'historical_result'
+      ? null
+      : parseReference(candidate.reference);
   const provenance =
     value !== null && valueProvenance(value, candidate.rawText);
 

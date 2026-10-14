@@ -1,3 +1,4 @@
+import { isNull } from 'drizzle-orm';
 import {
   sqliteTable,
   text,
@@ -74,7 +75,11 @@ export const medicalDocuments = sqliteTable(
     deletedAt: integer('deleted_at'),
   },
   (t) => [
-    uniqueIndex('medical_documents_owner_sha_uq').on(t.ownerId, t.sha256),
+    // Уникальность только среди живых документов: мягко удалённый файл
+    // можно загрузить повторно.
+    uniqueIndex('medical_documents_owner_sha_uq')
+      .on(t.ownerId, t.sha256)
+      .where(isNull(t.deletedAt)),
     index('medical_documents_owner_idx').on(t.ownerId, t.createdAt),
   ],
 );

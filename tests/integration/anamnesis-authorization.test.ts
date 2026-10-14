@@ -10,6 +10,7 @@ import {
 } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { ZodError } from 'zod';
 
 const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
@@ -805,6 +806,88 @@ describe('anamnesis authorization and grants', () => {
     expect(trainerOverview.documents).toBe(0);
     expect(trainerOverview.activeImports).toBe(0);
     expect(trainerOverview.lastCollectedAt).toBe(expectedLast || null);
+  });
+
+  it('soft-deleted documents can be re-uploaded and trainer imports stay grant-scoped', async () => {
+    await seedUsers();
+    const trainerId = '11111111-1111-4111-8111-111111111111';
+    state.session = { user: { id: 'owner', role: 'OWNER' } };
+    // Тесты делят базу: снимаем гранты документов предыдущих сценариев.
+    for (const documentRow of repo.listDocuments('owner'))
+      await service.setAnamnesisDocumentGrant(
+        ownerHeaders,
+        'owner',
+        documentRow.id,
+        { trainerId, enabled: false },
+      );
+    // Тесты делят базу: файл уже загружен первым сценарием.
+    const existing = await service.uploadAnamnesisDocument(
+      ownerHeaders,
+      'owner',
+      {
+        filename: 'again.pdf',
+        bytes: fixtureBytes(),
+      },
+    );
+    expect(existing.duplicate).toBe(true);
+    await service.deleteAnamnesisDocument(
+      ownerHeaders,
+      'owner',
+      existing.document.id,
+    );
+    // Мягко удалённый файл загружается снова без конфликта уникальности.
+    const reupload = await service.uploadAnamnesisDocument(
+      ownerHeaders,
+      'owner',
+      {
+        filename: 'again.pdf',
+        bytes: fixtureBytes(),
+      },
+    );
+    expect(reupload.duplicate).toBe(false);
+    expect(reupload.document.id).not.toBe(existing.document.id);
+
+    // Импорты тренера фильтруются по грантам документов.
+    state.session = { user: { id: trainerId, role: 'TRAINER' } };
+    const trainerHeaders = headers();
+    expect(
+      await service.listAnamnesisImports(trainerHeaders, 'owner'),
+    ).toHaveLength(0);
+    await expect(
+      service.getAnamnesisImport(
+        trainerHeaders,
+        'owner',
+        reupload.importJob!.id,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    state.session = { user: { id: 'owner', role: 'OWNER' } };
+    await service.setAnamnesisDocumentGrant(
+      ownerHeaders,
+      'owner',
+      reupload.document.id,
+      { trainerId, enabled: true },
+    );
+    state.session = { user: { id: trainerId, role: 'TRAINER' } };
+    const trainerImports = await service.listAnamnesisImports(
+      trainerHeaders,
+      'owner',
+    );
+    expect(trainerImports.map((job) => job.documentId)).toEqual([
+      reupload.document.id,
+    ]);
+
+    // Некорректная корректировка — ZodError: маршрут отвечает 400, не 500.
+    state.session = { user: { id: 'owner', role: 'OWNER' } };
+    const invalid = await service
+      .correctAnamnesisObservation(ownerHeaders, 'owner', 'obs-1', {
+        nonsense: true,
+      })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(invalid).toBeInstanceOf(ZodError);
+    expect(service.anamnesisErrorResponse(invalid).status).toBe(400);
   });
 
   it('rejects uploads that are not PDFs', async () => {

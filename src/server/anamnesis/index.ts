@@ -36,6 +36,8 @@ import {
   anamnesisUploadLimits,
   validateAnamnesisPdf,
 } from './pdf';
+
+export { anamnesisUploadLimits };
 import { anamnesisDocumentStorageKey, kickAnamnesisImport } from './worker';
 import { generateMedicalReport, withMedicalReportSlot } from './reports';
 import {
@@ -90,25 +92,19 @@ function requireMarkerAccess(
   if (!markerId || !grants.has(markerId)) throw new AnamnesisError(403);
 }
 
-// --- Обзор и показатели -------------------------------------------------------
-
-export async function anamnesisOwner(
-  headers: Headers,
-  userId: string,
-  role: string,
-): Promise<string | null> {
-  const ownerId =
-    role === 'OWNER'
-      ? userId
-      : getDatabase()
-          .db.select({ ownerId: trainerAccess.ownerId })
-          .from(trainerAccess)
-          .where(eq(trainerAccess.trainerId, userId))
-          .get()?.ownerId;
-  if (!ownerId) return null;
-  await check(headers, ownerId);
-  return ownerId;
+// Оригинал PDF выдаётся отдельным грантом — проверка едина для всех мест.
+function requireDocumentAccess(
+  session: AuthorizedSession,
+  repo: Repo,
+  ownerId: string,
+  documentId: string,
+): void {
+  if (session.user.role !== 'TRAINER') return;
+  const grants = repo.documentGrantIds(ownerId, session.user.id);
+  if (!grants.has(documentId)) throw new AnamnesisError(403);
 }
+
+// --- Обзор и показатели -------------------------------------------------------
 
 export async function getAnamnesisOverview(
   headers: Headers,
@@ -265,17 +261,17 @@ export async function getAnamnesisObservation(
   };
 }
 
+// История изменений содержит прежние значения, включая данные показателей,
+// выданных раньше гранта: только владелец.
 export async function listObservationRevisions(
   headers: Headers,
   ownerId: string,
   id: string,
 ) {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId, true);
   const repo = anamnesisRepository();
   const row = repo.findObservation(ownerId, id);
   if (!row) throw new AnamnesisError(404);
-  const grants = await markerGrants(session, repo, ownerId);
-  requireMarkerAccess(grants, row.markerId);
   return repo.listRevisions(id).map(revisionDto);
 }
 
@@ -302,10 +298,13 @@ async function correctObservation(
   id: string,
   input: unknown,
   reason: 'edit' | 'review_confirm',
+  resolveReviewId?: string,
 ): Promise<MedicalObservation> {
   const correction = medicalObservationCorrectionSchema.parse(input);
   const row = repo.findObservation(ownerId, id);
   if (!row) throw new AnamnesisError(404);
+  if (correction.markerId && !repo.findMarker(correction.markerId))
+    throw new AnamnesisError(400);
   if (row.revision !== correction.expectedRevision)
     throw new AnamnesisError(409);
   const nextValue = correction.value;
@@ -362,6 +361,12 @@ async function correctObservation(
         changesJson: changes,
         createdAt: Date.now(),
       });
+    // Подтверждение проверки атомарно с правкой: половинные состояния исключены.
+    if (
+      resolveReviewId &&
+      !repo.resolveReview(resolveReviewId, 'resolved', userId)
+    )
+      throw new AnamnesisError(409);
     return saved;
   })();
   return observationDto(updated);
@@ -407,10 +412,7 @@ export async function getAnamnesisDocument(
   const repo = anamnesisRepository();
   const row = repo.findDocument(ownerId, id);
   if (!row) throw new AnamnesisError(404);
-  if (session.user.role === 'TRAINER') {
-    const grants = repo.documentGrantIds(ownerId, session.user.id);
-    if (!grants.has(id)) throw new AnamnesisError(403);
-  }
+  requireDocumentAccess(session, repo, ownerId, id);
   return documentDto(row);
 }
 
@@ -429,10 +431,7 @@ export async function listAnamnesisDocumentObservations(
   const repo = anamnesisRepository();
   const document = repo.findDocument(ownerId, documentId);
   if (!document) throw new AnamnesisError(404);
-  if (session.user.role === 'TRAINER') {
-    const grants = repo.documentGrantIds(ownerId, session.user.id);
-    if (!grants.has(documentId)) throw new AnamnesisError(403);
-  }
+  requireDocumentAccess(session, repo, ownerId, documentId);
   const observations = repo.listObservationsByDocument(ownerId, documentId);
   const sources = repo.listSourcesForObservations(
     observations.map((row) => row.id),
@@ -461,10 +460,7 @@ export async function getAnamnesisDocumentFile(
   const repo = anamnesisRepository();
   const row = repo.findDocument(ownerId, id);
   if (!row) throw new AnamnesisError(404);
-  if (session.user.role === 'TRAINER') {
-    const grants = repo.documentGrantIds(ownerId, session.user.id);
-    if (!grants.has(id)) throw new AnamnesisError(403);
-  }
+  requireDocumentAccess(session, repo, ownerId, id);
   const bytes = await getObjectStorage().get(row.storageKey);
   return { bytes, filename: row.filename };
 }
@@ -498,40 +494,53 @@ export async function uploadAnamnesisDocument(
     };
   const pageCount = await validateAnamnesisPdfGuarded(input.bytes);
   const now = Date.now();
-  const document = repo.insertDocument({
-    id: anamnesisId(),
-    ownerId,
-    filename,
-    storageKey: anamnesisDocumentStorageKey(ownerId, sha256),
-    sha256,
-    mimeType: 'application/pdf',
-    sizeBytes: input.bytes.byteLength,
-    pageCount,
-    laboratoryName: null,
-    title: null,
-    collectedAt: null,
-    issuedAt: null,
-    createdAt: now,
-    updatedAt: now,
-    deletedAt: null,
-  });
-  const job = repo.insertJob({
-    id: anamnesisId(),
-    ownerId,
-    documentId: document.id,
-    status: 'queued',
-    stage: 'upload_validation',
-    attempts: 0,
-    lastError: null,
-    leaseUntil: null,
-    createdAt: now,
-    updatedAt: now,
-  });
-  await getObjectStorage().put(
-    document.storageKey,
-    input.bytes,
-    'application/pdf',
-  );
+  const storageKey = anamnesisDocumentStorageKey(ownerId, sha256);
+  // Объект записывается первым: контентно-адресуемый ключ делает «осиротевший»
+  // объект безвредным, а строки без объекта — нет.
+  await getObjectStorage().put(storageKey, input.bytes, 'application/pdf');
+  let document;
+  let job;
+  try {
+    document = repo.insertDocument({
+      id: anamnesisId(),
+      ownerId,
+      filename,
+      storageKey,
+      sha256,
+      mimeType: 'application/pdf',
+      sizeBytes: input.bytes.byteLength,
+      pageCount,
+      laboratoryName: null,
+      title: null,
+      collectedAt: null,
+      issuedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    });
+    job = repo.insertJob({
+      id: anamnesisId(),
+      ownerId,
+      documentId: document.id,
+      status: 'queued',
+      stage: 'upload_validation',
+      attempts: 0,
+      lastError: null,
+      leaseUntil: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } catch (error) {
+    // Гонка одинаковых загрузок: победил параллельный запрос.
+    const winner = repo.findDocumentBySha(ownerId, sha256);
+    if ((error as Error).message?.includes('UNIQUE') && winner)
+      return {
+        document: documentDto(winner),
+        importJob: null,
+        duplicate: true,
+      };
+    throw error;
+  }
   kickAnamnesisImport();
   return {
     document: documentDto(document),
@@ -578,7 +587,7 @@ export async function reprocessAnamnesisDocument(
   const document = repo.findDocument(ownerId, id);
   if (!document) throw new AnamnesisError(404);
   const now = Date.now();
-  const removed = repo.deleteImportedObservations(id);
+  repo.deleteImportedObservations(id);
   const job = repo.insertJob({
     id: anamnesisId(),
     ownerId,
@@ -591,7 +600,6 @@ export async function reprocessAnamnesisDocument(
     createdAt: now,
     updatedAt: now,
   });
-  void removed;
   kickAnamnesisImport();
   return jobDto(job);
 }
@@ -602,8 +610,15 @@ export async function listAnamnesisImports(
   headers: Headers,
   ownerId: string,
 ): Promise<MedicalImportJob[]> {
-  await check(headers, ownerId);
-  return anamnesisRepository().listJobs(ownerId).map(jobDto);
+  const session = await check(headers, ownerId);
+  // Опрос очереди оживляет обработку после перезапуска процесса —
+  // состояние заданий живёт в базе, а не в памяти.
+  kickAnamnesisImport();
+  const repo = anamnesisRepository();
+  const rows = repo.listJobs(ownerId);
+  if (session.user.role !== 'TRAINER') return rows.map(jobDto);
+  const grants = repo.documentGrantIds(ownerId, session.user.id);
+  return rows.filter((row) => grants.has(row.documentId)).map(jobDto);
 }
 
 export async function getAnamnesisImport(
@@ -611,9 +626,11 @@ export async function getAnamnesisImport(
   ownerId: string,
   id: string,
 ): Promise<MedicalImportJob> {
-  await check(headers, ownerId);
-  const job = anamnesisRepository().findJob(ownerId, id);
+  const session = await check(headers, ownerId);
+  const repo = anamnesisRepository();
+  const job = repo.findJob(ownerId, id);
   if (!job) throw new AnamnesisError(404);
+  requireDocumentAccess(session, repo, ownerId, job.documentId);
   return jobDto(job);
 }
 
@@ -659,17 +676,15 @@ export async function confirmAnamnesisReview(
   const repo = anamnesisRepository();
   const review = repo.findReview(ownerId, id);
   if (!review || review.status !== 'pending') throw new AnamnesisError(404);
-  const observation = await correctObservation(
+  return correctObservation(
     ownerId,
     session.user.id,
     repo,
     review.observationId,
     input,
     'review_confirm',
+    id,
   );
-  if (!repo.resolveReview(id, 'resolved', session.user.id))
-    throw new AnamnesisError(409);
-  return observation;
 }
 
 export async function rejectAnamnesisReview(
@@ -869,7 +884,7 @@ export function anamnesisErrorResponse(error: unknown): Response {
       status:
         error instanceof AnamnesisError
           ? error.status
-          : error instanceof SyntaxError
+          : error instanceof SyntaxError || error instanceof ZodError
             ? 400
             : 500,
     },

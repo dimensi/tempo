@@ -71,6 +71,7 @@ export const anamnesisImportStages = [
   'persistence',
 ] as const;
 export const anamnesisReviewReasons = [
+  'unknown_source_kind',
   'ambiguous_marker',
   'missing_origin',
   'missing_date',
@@ -417,3 +418,23 @@ export const extractionResultSchema = z
   })
   .strict();
 export type ExtractionResult = z.infer<typeof extractionResultSchema>;
+
+// Единое отображение значения для клиента и PDF-шаблона.
+export function formatAnamnesisValue(
+  value:
+    | { kind: 'numeric'; value: string; comparator: string }
+    | { kind: 'text'; value: string },
+): string {
+  if (value.kind === 'text') return value.value;
+  const sign =
+    value.comparator === 'gt'
+      ? '> '
+      : value.comparator === 'gte'
+        ? '≥ '
+        : value.comparator === 'lt'
+          ? '< '
+          : value.comparator === 'lte'
+            ? '≤ '
+            : '';
+  return `${sign}${value.value.replace('.', ',')}`;
+}

@@ -286,14 +286,15 @@ describe('prepareCandidate', () => {
     expect(prepared.reviewReason).toBe('missing_origin');
   });
 
-  it('does not inherit the current reference for historical results', () => {
+  it('drops even an explicitly returned reference for historical results', () => {
+    // Провайдер может вернуть референс текущего результата вместе с
+    // историческим значением — код не доверяет ему.
     const prepared = prepareCandidate(
       candidate({
         value: '28,4',
         rawText: 'Витамин D 28,4 нг/мл',
         collectedAt: '10.06.2026',
         sourceKind: 'historical_result',
-        reference: null,
       }),
       index,
       preferred,

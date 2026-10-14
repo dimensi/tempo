@@ -20,7 +20,11 @@ export function fsObjectStorage(config: FsStorageConfig) {
       await writeFile(target, bytes, { mode: 0o600 });
     },
     async get(key: string): Promise<Uint8Array> {
-      return new Uint8Array(await readFile(path(key)));
+      const target = path(key);
+      const { stat } = await import('node:fs/promises');
+      const info = await stat(target);
+      if (info.size > 104857600) throw new Error('Storage object too large');
+      return new Uint8Array(await readFile(target));
     },
     async remove(key: string): Promise<void> {
       await rm(path(key), { force: true });

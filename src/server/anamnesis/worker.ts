@@ -22,6 +22,7 @@ import {
   parseCollectedAt,
   type PreparedCandidate,
 } from './pipeline';
+import { normalizeSourceKinds } from './extraction-normalize';
 
 export const ANAMNESIS_EXTRACTION_VERSION = '1';
 const LEASE_MS = 300000;
@@ -73,7 +74,7 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
       ).length;
 
       repo.updateJob(jobId, { stage: 'structured_extraction' });
-      const extraction = extractionResultSchema.parse(
+      const { result: extraction, forcedReviewIndexes } = normalizeSourceKinds(
         await deps.provider.extract({
           sha256: document.sha256,
           pages: requestPages,
@@ -90,9 +91,17 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
       const preferredUnits = new Map(
         repo.listMarkers().map((marker) => [marker.id, marker.preferredUnit]),
       );
-      const prepared = extraction.observations.map((candidate) =>
-        prepareCandidate(candidate, index, preferredUnits),
-      );
+      const prepared = extraction.observations.map((candidate, position) => {
+        const item = prepareCandidate(candidate, index, preferredUnits);
+        // Роль результата не распознана — обязательное условие нарушено.
+        if (forcedReviewIndexes.includes(position))
+          return {
+            ...item,
+            reviewReason: 'unknown_source_kind' as const,
+            autoVerifiable: false,
+          };
+        return item;
+      });
 
       repo.updateJob(jobId, { stage: 'validation' });
       const groups = groupDuplicateCandidates(prepared);
@@ -204,13 +213,31 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
         repo.insertSources(sourceRows(exact.id));
         return 'merged';
       }
-      if (
-        repo.hasContradiction(ctx.ownerId, {
-          markerId: primary.markerId,
-          collectedAt: primary.collectedAt,
-        })
-      )
-        reason = 'contradiction';
+      {
+        // В тот же день по этому показателю уже есть записи: другое значение —
+        // противоречие; то же значение при другой лаборатории или единице —
+        // совпадение не доказано, возможный дубль.
+        const sameDay = repo.findObservationsByMarkerAndDay(
+          ctx.ownerId,
+          primary.markerId,
+          primary.collectedAt.slice(0, 10),
+        );
+        const sameValue = sameDay.filter(
+          (row) =>
+            row.valueJson.kind === primary.value?.kind &&
+            (row.valueJson.kind !== 'numeric' ||
+              row.valueJson.value === primary.value?.value),
+        );
+        if (sameDay.length > sameValue.length) reason = 'contradiction';
+        else if (
+          sameValue.some(
+            (row) =>
+              (row.originalUnit ?? null) !== (primary.originalUnit ?? null) ||
+              (row.laboratoryName ?? null) !== (ctx.laboratoryName ?? null),
+          )
+        )
+          reason = 'possible_duplicate';
+      }
     }
     const observationId = anamnesisId();
     const verification = reason ? 'needs_review' : 'auto_verified';
@@ -259,11 +286,10 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
     if (
       error instanceof AnamnesisProviderError &&
       error.transient &&
-      job.attempts + 1 < MAX_ATTEMPTS
+      job.attempts < MAX_ATTEMPTS
     ) {
       repo.updateJob(jobId, {
         status: 'queued',
-        attempts: job.attempts + 1,
         leaseUntil: null,
         lastError: error.code,
       });

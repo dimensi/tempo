@@ -31,24 +31,7 @@ export function ownerIdQuery(ownerId: string): string {
   return `ownerId=${encodeURIComponent(ownerId)}`;
 }
 
-export function formatAnamnesisValue(
-  value:
-    | { kind: 'numeric'; value: string; comparator: string }
-    | { kind: 'text'; value: string },
-): string {
-  if (value.kind === 'text') return value.value;
-  const sign =
-    value.comparator === 'gt'
-      ? '> '
-      : value.comparator === 'gte'
-        ? '≥ '
-        : value.comparator === 'lt'
-          ? '< '
-          : value.comparator === 'lte'
-            ? '≤ '
-            : '';
-  return `${sign}${value.value.replace('.', ',')}`;
-}
+export { formatAnamnesisValue } from '@/contracts/anamnesis';
 
 export function formatAnamnesisDate(value: string | null): string {
   if (!value) return m.unknownDate;

@@ -2,6 +2,7 @@ import 'server-only';
 import { anamnesisRepository, anamnesisId } from './repository';
 import { observationDto } from './dto';
 import {
+  formatAnamnesisValue,
   medicalReportRequestSchema,
   type MedicalMarker,
   type MedicalObservation,
@@ -61,21 +62,6 @@ h2,p{margin:0}
 .numeric{font-variant-numeric:tabular-nums lining-nums}
 `;
 
-function formatValue(observation: MedicalObservation): string {
-  if (observation.value.kind === 'text') return observation.value.value;
-  const sign =
-    observation.value.comparator === 'gt'
-      ? '> '
-      : observation.value.comparator === 'gte'
-        ? '≥ '
-        : observation.value.comparator === 'lt'
-          ? '< '
-          : observation.value.comparator === 'lte'
-            ? '≤ '
-            : '';
-  return `${sign}${observation.value.value.replace('.', ',')}`;
-}
-
 function dateLabel(value: string | null): string {
   if (!value) return m.unknownDate;
   const date = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -117,7 +103,7 @@ export function renderMedicalReportHtml(
     .map(({ marker, observations }) => {
       const last = observations[observations.length - 1] ?? null;
       const unit = last?.normalizedUnit ?? last?.originalUnit ?? '';
-      const lastValue = last ? formatValue(last) : m.noData;
+      const lastValue = last ? formatAnamnesisValue(last.value) : m.noData;
       return `<section class="marker-section" data-title="${escapeHtml(marker.name)}" data-header="${escapeHtml(period)}" data-footer="${escapeHtml(m.reportFooter)}">${
         last
           ? `<div class="marker-summary"><span class="summary-value numeric">${escapeHtml(lastValue)} ${escapeHtml(unit)}</span><p class="summary-caption">${escapeHtml(m.lastMeasurement)}: ${escapeHtml(dateLabel(last.collectedAt))}</p>${rangeBar(last)}</div>`
@@ -125,7 +111,7 @@ export function renderMedicalReportHtml(
       }<div class="table-header"><span>${escapeHtml(m.dateColumn)}</span><span></span><span>${escapeHtml(m.valueColumn)}</span><span>${escapeHtml(m.referenceColumn)}</span></div>${observations
         .map(
           (observation) =>
-            `<div class="observation-row"><span class="date numeric">${escapeHtml(dateLabel(observation.collectedAt))}</span><span class="meta">${escapeHtml(observation.laboratoryName ?? '')}</span><span class="value numeric">${escapeHtml(formatValue(observation))} ${escapeHtml(observation.normalizedUnit ?? observation.originalUnit ?? '')}</span><span class="meta ${observation.referenceAssessment !== 'within' && observation.referenceRange ? `assessment-${observation.referenceAssessment}` : ''}">${escapeHtml(observation.referenceRange ? observation.referenceRange.originalText : m.assessment.unknown)}</span></div>`,
+            `<div class="observation-row"><span class="date numeric">${escapeHtml(dateLabel(observation.collectedAt))}</span><span class="meta">${escapeHtml(observation.laboratoryName ?? '')}</span><span class="value numeric">${escapeHtml(formatAnamnesisValue(observation.value))} ${escapeHtml(observation.normalizedUnit ?? observation.originalUnit ?? '')}</span><span class="meta ${observation.referenceAssessment !== 'within' && observation.referenceRange ? `assessment-${observation.referenceAssessment}` : ''}">${escapeHtml(observation.referenceRange ? observation.referenceRange.originalText : m.assessment.unknown)}</span></div>`,
         )
         .join(
           '',

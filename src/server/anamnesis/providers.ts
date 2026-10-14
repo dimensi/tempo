@@ -13,10 +13,12 @@ export interface ExtractionRequestPage {
 
 export interface AnamnesisExtractionProvider {
   readonly name: string;
+  // Провайдер возвращает сырой ответ модели: приведение к контракту и
+  // мягкая нормализация выполняются в extraction-normalize.
   extract(input: {
     sha256: string;
     pages: ExtractionRequestPage[];
-  }): Promise<ExtractionResult>;
+  }): Promise<unknown>;
 }
 
 // transient — временный сбой (сеть, 5xx): воркер повторит задание.
@@ -131,7 +133,7 @@ function glmProvider(config: {
           continue;
         }
         try {
-          return extractionResultSchema.parse(parseModelJson(text));
+          return parseModelJson(text);
         } catch {
           lastError = 'BAD_RESPONSE';
         }

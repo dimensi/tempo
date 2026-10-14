@@ -43,6 +43,7 @@ export const anamnesisMessages = {
     rejected: 'Отклонено',
   },
   reviewReason: {
+    unknown_source_kind: 'Неизвестна роль результата (текущий/исторический)',
     ambiguous_marker: 'Показатель не сопоставлен однозначно',
     missing_origin: 'Значение не найдено в источнике',
     missing_date: 'Не определена дата исследования',

@@ -186,3 +186,160 @@ afterAll(() => {
   database.sqlite.close();
   rmSync(storageRoot, { recursive: true, force: true });
 });
+
+describe('review routing for uncertain recognition', () => {
+  it('sends unknown source kinds and unproven duplicates to review', async () => {
+    await ensureAnamnesisCatalog(database);
+    const now = Date.now();
+    const bytes = new Uint8Array(
+      readFileSync('tests/fixtures/anamnesis/synthetic-lab.pdf'),
+    );
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const storage = fsObjectStorage({ rootDir: storageRoot });
+    await storage.put(`anamnesis/owner2/${sha256}.pdf`, bytes);
+    database.db
+      .insert(user)
+      .values({
+        id: 'owner2',
+        name: 'Owner2',
+        email: 'owner2@example.test',
+        emailVerified: true,
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+        // Единственный OWNER ограничен частичным индексом; для изоляции
+        // данных достаточно любого пользователя.
+        role: 'TRAINER',
+      })
+      .onConflictDoNothing()
+      .run();
+    repo.insertDocument({
+      id: 'document-2',
+      ownerId: 'owner2',
+      filename: 'mixed.pdf',
+      storageKey: `anamnesis/owner2/${sha256}.pdf`,
+      sha256,
+      mimeType: 'application/pdf',
+      sizeBytes: bytes.byteLength,
+      pageCount: 3,
+      laboratoryName: null,
+      title: null,
+      collectedAt: null,
+      issuedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    });
+    repo.insertObservation({
+      id: 'obs-existing-lab-a',
+      ownerId: 'owner2',
+      markerId: 'alt',
+      originalName: 'АЛТ',
+      valueJson: { kind: 'numeric', value: '30.1', comparator: 'eq' },
+      originalUnit: 'Ед/л',
+      normalizedValue: '30.1',
+      normalizedUnit: 'U/L',
+      collectedAt: '2027-01-15',
+      datePrecision: 'date',
+      laboratoryName: 'Лаборатория А',
+      referenceJson: null,
+      referenceAssessment: 'unknown',
+      verification: 'user_verified',
+      extractionVersion: '1',
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    repo.insertJob({
+      id: 'job-mixed',
+      ownerId: 'owner2',
+      documentId: 'document-2',
+      status: 'queued',
+      stage: 'upload_validation',
+      attempts: 0,
+      lastError: null,
+      leaseUntil: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const mixedWorker = createAnamnesisWorker({
+      database,
+      storage: fsObjectStorage({ rootDir: storageRoot }),
+      provider: {
+        name: 'mixed',
+        extract: async () => ({
+          laboratory: 'Лаборатория Б',
+          title: null,
+          issuedAt: '15.01.2027',
+          observations: [
+            {
+              // Та же дата и значение, но другая лаборатория: совпадение
+              // не доказано — возможный дубль.
+              name: 'АЛТ',
+              rawText: 'АЛТ 30,1 Ед/л',
+              pageNumber: 1,
+              value: '30,1',
+              comparator: 'eq',
+              unit: 'Ед/л',
+              collectedAt: '15.01.2027',
+              sourceKind: 'current_result',
+              reference: null,
+            },
+            {
+              // Роль результата не распознана — обязательная проверка.
+              name: 'АСТ',
+              rawText: 'АСТ 25,3 Ед/л',
+              pageNumber: 1,
+              value: '25,3',
+              comparator: 'eq',
+              unit: 'Ед/л',
+              collectedAt: '15.01.2027',
+              sourceKind: 'непонятная роль',
+              reference: null,
+            },
+          ],
+        }),
+      },
+    });
+    await mixedWorker.runQueue();
+
+    const job = repo.findJobById('job-mixed')!;
+    expect(job.status).toBe('completed_with_warnings');
+
+    const observations = repo.listObservations('owner2', {});
+    const altObservations = observations.filter(
+      (row) => row.markerId === 'alt',
+    );
+    expect(altObservations).toHaveLength(2);
+    // Существующая запись владельца не тронута, новая ушла на проверку.
+    const existing = altObservations.find(
+      (row) => row.id === 'obs-existing-lab-a',
+    )!;
+    expect(existing.verification).toBe('user_verified');
+    const added = altObservations.find(
+      (row) => row.id !== 'obs-existing-lab-a',
+    )!;
+    expect(added.verification).toBe('needs_review');
+    const allReviews = database.db
+      .select()
+      .from((await import('@/server/db/schema/anamnesis')).medicalReviewItems)
+      .all();
+    const addedReview = allReviews.find(
+      (review) => review.observationId === added.id,
+    );
+    expect(addedReview?.reason).toBe('possible_duplicate');
+    // История существующей записи не получила новых проверок.
+    expect(
+      allReviews.filter(
+        (review) => review.observationId === 'obs-existing-lab-a',
+      ),
+    ).toHaveLength(0);
+
+    // Неизвестная роль результата уходит на проверку с точной причиной.
+    const ast = observations.find((row) => row.markerId === 'ast')!;
+    expect(ast.verification).toBe('needs_review');
+    const astReview = allReviews.find(
+      (review) => review.observationId === ast.id,
+    );
+    expect(astReview?.reason).toBe('unknown_source_kind');
+  });
+});

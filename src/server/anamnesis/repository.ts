@@ -8,6 +8,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  like,
   lte,
   ne,
   sql,
@@ -173,18 +174,27 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
         .limit(limit)
         .all(),
     // Очередь глобальная: один процесс приложения, аренда защищает от зависших заданий.
-    claimNextJob: (leaseUntil: number) =>
+    // Аренда счётает попытку; исчерпавшие попытки задания не забираются.
+    claimNextJob: (leaseUntil: number, maxAttempts = 3) =>
       db
         .update(medicalImportJobs)
-        .set({ status: 'processing', updatedAt: Date.now(), leaseUntil })
+        .set({
+          status: 'processing',
+          attempts: sql`${medicalImportJobs.attempts} + 1`,
+          updatedAt: Date.now(),
+          leaseUntil,
+        })
         .where(
           and(
             eq(
               medicalImportJobs.id,
               sql`(
               select id from ${medicalImportJobs}
-              where status = 'queued'
-                 or (status = 'processing' and lease_until is not null and lease_until < ${Date.now()})
+              where attempts < ${maxAttempts}
+                and (
+                  status = 'queued'
+                  or (status = 'processing' and lease_until is not null and lease_until < ${Date.now()})
+                )
               order by created_at asc limit 1
             )`,
             ),
@@ -310,23 +320,25 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
           ),
         )
         .get(),
-    // Противоречие: тот же показатель и дата, но другое значение.
-    hasContradiction: (
+    // Кандидаты на возможный дубль: тот же показатель и день (точное
+    // совпадение даты или её префикс при разной точности).
+    findObservationsByMarkerAndDay: (
       ownerId: string,
-      match: { markerId: string; collectedAt: string },
+      markerId: string,
+      day: string,
     ) =>
       db
-        .select({ id: medicalObservations.id })
+        .select()
         .from(medicalObservations)
         .where(
           and(
             eq(medicalObservations.ownerId, ownerId),
-            eq(medicalObservations.markerId, match.markerId),
-            eq(medicalObservations.collectedAt, match.collectedAt),
+            eq(medicalObservations.markerId, markerId),
             ne(medicalObservations.verification, 'rejected'),
+            like(medicalObservations.collectedAt, `${day}%`),
           ),
         )
-        .get() !== undefined,
+        .all(),
     updateObservation: (
       ownerId: string,
       id: string,

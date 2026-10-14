@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "2aa4d939-9d6a-4247-a8a5-5a4bf3286ab4",
+  "id": "ed9155ef-65f7-4b4e-ada1-558b6ab48227",
   "prevId": "2b127f52-3b70-446a-89f9-40a93ad1963a",
   "tables": {
     "account": {
@@ -1035,7 +1035,8 @@
             "owner_id",
             "sha256"
           ],
-          "isUnique": true
+          "isUnique": true,
+          "where": "\"medical_documents\".\"deleted_at\" is null"
         },
         "medical_documents_owner_idx": {
           "name": "medical_documents_owner_idx",

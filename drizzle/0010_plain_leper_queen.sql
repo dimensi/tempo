@@ -42,7 +42,7 @@ CREATE TABLE `medical_documents` (
 	FOREIGN KEY (`owner_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `medical_documents_owner_sha_uq` ON `medical_documents` (`owner_id`,`sha256`);--> statement-breakpoint
+CREATE UNIQUE INDEX `medical_documents_owner_sha_uq` ON `medical_documents` (`owner_id`,`sha256`) WHERE "medical_documents"."deleted_at" is null;--> statement-breakpoint
 CREATE INDEX `medical_documents_owner_idx` ON `medical_documents` (`owner_id`,`created_at`);--> statement-breakpoint
 CREATE TABLE `medical_import_jobs` (
 	`id` text PRIMARY KEY NOT NULL,
