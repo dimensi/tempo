@@ -26,3 +26,6 @@ export function validateObjectKey(key: string): string {
 export function storageNamespaceKey(namespace: string, ...segments: string[]) {
   return validateObjectKey([namespace, ...segments].join('/'));
 }
+
+// Единый лимит чтения объекта из хранилища: обе реализации и документация.
+export const MAX_OBJECT_BYTES = 104857600;

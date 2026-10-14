@@ -249,6 +249,26 @@ describe('review routing for uncertain recognition', () => {
       createdAt: now,
       updatedAt: now,
     });
+    repo.insertObservation({
+      id: 'obs-existing-bilirubin',
+      ownerId: 'owner2',
+      markerId: 'total-bilirubin',
+      originalName: 'Билирубин общий',
+      valueJson: { kind: 'numeric', value: '9.1', comparator: 'eq' },
+      originalUnit: 'мкмоль/л',
+      normalizedValue: '9.1',
+      normalizedUnit: 'мкмоль/л',
+      collectedAt: '2027-01-15',
+      datePrecision: 'date',
+      laboratoryName: 'Лаборатория А',
+      referenceJson: null,
+      referenceAssessment: 'unknown',
+      verification: 'user_verified',
+      extractionVersion: '1',
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
     repo.insertJob({
       id: 'job-mixed',
       ownerId: 'owner2',
@@ -296,6 +316,18 @@ describe('review routing for uncertain recognition', () => {
               sourceKind: 'непонятная роль',
               reference: null,
             },
+            {
+              // Тот же день и показатель, но другое значение — противоречие.
+              name: 'Билирубин общий',
+              rawText: 'Билирубин общий 55,5 мкмоль/л',
+              pageNumber: 1,
+              value: '55,5',
+              comparator: 'eq',
+              unit: 'мкмоль/л',
+              collectedAt: '15.01.2027',
+              sourceKind: 'current_result',
+              reference: null,
+            },
           ],
         }),
       },
@@ -341,5 +373,18 @@ describe('review routing for uncertain recognition', () => {
       (review) => review.observationId === ast.id,
     );
     expect(astReview?.reason).toBe('unknown_source_kind');
+
+    // Другое значение того же дня — противоречие, не автосохранение.
+    const bilirubin = observations.filter(
+      (row) => row.markerId === 'total-bilirubin',
+    );
+    expect(bilirubin).toHaveLength(2);
+    const conflict = bilirubin.find(
+      (row) => row.id !== 'obs-existing-bilirubin',
+    )!;
+    expect(conflict.verification).toBe('needs_review');
+    expect(
+      allReviews.find((review) => review.observationId === conflict.id)?.reason,
+    ).toBe('contradiction');
   });
 });

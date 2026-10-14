@@ -131,7 +131,7 @@ export async function getAnamnesisOverview(
   );
   const visibleMarkers =
     grants === null
-      ? counts.size
+      ? [...counts.keys()].filter((markerId) => markerId !== null).length
       : [...counts.keys()].filter(
           (markerId) => markerId !== null && grants.has(markerId),
         ).length;
@@ -176,11 +176,7 @@ export async function listAnamnesisMarkers(
           definitionVersion: marker.definitionVersion,
         },
         observationCount: own.length,
-        lastValue: last
-          ? last.valueJson.kind === 'numeric'
-            ? last.valueJson.value
-            : last.valueJson.value
-          : null,
+        lastValue: last ? last.valueJson.value : null,
         lastUnit: last?.normalizedUnit ?? last?.originalUnit ?? null,
         lastCollectedAt: last?.collectedAt ?? null,
         lastReferenceAssessment: last?.referenceAssessment ?? null,
@@ -501,35 +497,37 @@ export async function uploadAnamnesisDocument(
   let document;
   let job;
   try {
-    document = repo.insertDocument({
-      id: anamnesisId(),
-      ownerId,
-      filename,
-      storageKey,
-      sha256,
-      mimeType: 'application/pdf',
-      sizeBytes: input.bytes.byteLength,
-      pageCount,
-      laboratoryName: null,
-      title: null,
-      collectedAt: null,
-      issuedAt: null,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    });
-    job = repo.insertJob({
-      id: anamnesisId(),
-      ownerId,
-      documentId: document.id,
-      status: 'queued',
-      stage: 'upload_validation',
-      attempts: 0,
-      lastError: null,
-      leaseUntil: null,
-      createdAt: now,
-      updatedAt: now,
-    });
+    getDatabase().sqlite.transaction(() => {
+      document = repo.insertDocument({
+        id: anamnesisId(),
+        ownerId,
+        filename,
+        storageKey,
+        sha256,
+        mimeType: 'application/pdf',
+        sizeBytes: input.bytes.byteLength,
+        pageCount,
+        laboratoryName: null,
+        title: null,
+        collectedAt: null,
+        issuedAt: null,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      });
+      job = repo.insertJob({
+        id: anamnesisId(),
+        ownerId,
+        documentId: document.id,
+        status: 'queued',
+        stage: 'upload_validation',
+        attempts: 0,
+        lastError: null,
+        leaseUntil: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+    })();
   } catch (error) {
     // Гонка одинаковых загрузок: победил параллельный запрос.
     const winner = repo.findDocumentBySha(ownerId, sha256);
@@ -541,6 +539,7 @@ export async function uploadAnamnesisDocument(
       };
     throw error;
   }
+  if (!document || !job) throw new AnamnesisError(500);
   kickAnamnesisImport();
   return {
     document: documentDto(document),

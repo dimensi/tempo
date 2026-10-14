@@ -111,8 +111,6 @@ export const medicalDocumentSchema = z
     id,
     ownerId: id,
     filename: z.string().min(1).max(255),
-    storageKey: z.string().min(1).max(300),
-    sha256: z.string().regex(/^[a-f0-9]{64}$/),
     mimeType: z.literal('application/pdf'),
     sizeBytes: z.number().int().min(1),
     pageCount: z.number().int().min(1),
@@ -122,7 +120,6 @@ export const medicalDocumentSchema = z
     issuedAt: z.iso.date().nullable(),
     createdAt: epoch,
     updatedAt: epoch,
-    deletedAt: epoch.nullable(),
   })
   .strict();
 export type MedicalDocument = z.infer<typeof medicalDocumentSchema>;

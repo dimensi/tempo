@@ -6,7 +6,6 @@ import {
   eq,
   gte,
   inArray,
-  isNotNull,
   isNull,
   like,
   lte,
@@ -223,28 +222,6 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
         .where(eq(medicalImportJobs.id, id))
         .returning()
         .get(),
-    countActiveJobs: (ownerId: string) =>
-      db
-        .select({ count: sql<number>`count(*)` })
-        .from(medicalImportJobs)
-        .where(
-          and(
-            eq(medicalImportJobs.ownerId, ownerId),
-            inArray(medicalImportJobs.status, ['queued', 'processing']),
-          ),
-        )
-        .get()?.count ?? 0,
-
-    // --- Страницы
-    replacePages: (
-      documentId: string,
-      rows: Array<typeof medicalDocumentPages.$inferInsert>,
-    ) => {
-      db.delete(medicalDocumentPages)
-        .where(eq(medicalDocumentPages.documentId, documentId))
-        .run();
-      if (rows.length) db.insert(medicalDocumentPages).values(rows).run();
-    },
 
     // --- Измерения
     insertObservation: (row: typeof medicalObservations.$inferInsert) =>
@@ -307,9 +284,14 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
           and(
             eq(medicalObservations.ownerId, ownerId),
             eq(medicalObservations.markerId, match.markerId),
+            ne(medicalObservations.verification, 'rejected'),
+            // День без времени: разная точность дат — то же измерение.
             match.collectedAt === null
               ? isNull(medicalObservations.collectedAt)
-              : eq(medicalObservations.collectedAt, match.collectedAt),
+              : like(
+                  medicalObservations.collectedAt,
+                  `${match.collectedAt.slice(0, 10)}%`,
+                ),
             eq(medicalObservations.valueJson, match.value),
             match.originalUnit === null
               ? isNull(medicalObservations.originalUnit)
@@ -403,6 +385,17 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
           .where(inArray(medicalObservations.id, removable))
           .run();
       return removable.length;
+    },
+
+    // --- Страницы
+    replacePages: (
+      documentId: string,
+      rows: Array<typeof medicalDocumentPages.$inferInsert>,
+    ) => {
+      db.delete(medicalDocumentPages)
+        .where(eq(medicalDocumentPages.documentId, documentId))
+        .run();
+      if (rows.length) db.insert(medicalDocumentPages).values(rows).run();
     },
 
     // --- Источники
@@ -738,9 +731,3 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
 export function anamnesisId() {
   return randomUUID();
 }
-
-export type PageInsert = typeof medicalDocumentPages.$inferInsert;
-export type ObservationInsert = typeof medicalObservations.$inferInsert;
-export type SourceInsert = typeof medicalObservationSources.$inferInsert;
-export type ReviewInsert = typeof medicalReviewItems.$inferInsert;
-export type RevisionInsert = typeof medicalObservationRevisions.$inferInsert;

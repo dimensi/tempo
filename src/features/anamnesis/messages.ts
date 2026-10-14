@@ -13,6 +13,11 @@ export const anamnesisMessages = {
     goToDocuments: 'Перейти к документам',
     goToReviews: 'Перейти к проверке',
   },
+  buttons: {
+    edit: 'Изменить',
+    save: 'Сохранить',
+    cancel: 'Отмена',
+  },
   markers: {
     title: 'Показатели',
     empty: 'Показателей пока нет. Загрузите лабораторный PDF.',

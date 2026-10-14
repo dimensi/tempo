@@ -5,7 +5,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { validateObjectKey } from './keys';
+import { MAX_OBJECT_BYTES, validateObjectKey } from './keys';
 
 // S3-совместимое хранилище (SeaweedFS на NAS): path-style, приватный бакет.
 // Ключ проверяется на каждом вызове: реализация не доверяет вызывающему.
@@ -55,7 +55,8 @@ export function s3ObjectStorage(config: S3StorageConfig) {
       let size = 0;
       for await (const chunk of stream as AsyncIterable<Uint8Array>) {
         size += chunk.byteLength;
-        if (size > 104857600) throw new Error('Storage object too large');
+        if (size > MAX_OBJECT_BYTES)
+          throw new Error('Storage object too large');
         chunks.push(chunk);
       }
       return Buffer.concat(chunks);

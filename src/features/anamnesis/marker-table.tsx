@@ -142,7 +142,6 @@ export function MarkerTable({ ownerId }: { ownerId: string }) {
 }
 
 function formatAnamnesisValueText(item: AnamnesisMarkerSummary): string {
-  // lastValue всегда строка; запятая для отображения.
   return item.lastValue?.replace('.', ',') ?? '';
 }
 

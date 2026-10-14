@@ -5,7 +5,6 @@ import {
   storageNamespaceKey,
   type ObjectStorage,
 } from '@/server/storage';
-import { extractionResultSchema } from '@/contracts/anamnesis';
 import { anamnesisRepository, anamnesisId } from './repository';
 import { analyzeAnamnesisPdf, type PdfPageAnalysis } from './pdf';
 import { ensureAnamnesisCatalog } from './catalog';
@@ -20,6 +19,7 @@ import {
   prepareCandidate,
   groupDuplicateCandidates,
   parseCollectedAt,
+  unitsCanonicallyEqual,
   type PreparedCandidate,
 } from './pipeline';
 import { normalizeSourceKinds } from './extraction-normalize';
@@ -217,11 +217,21 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
         // В тот же день по этому показателю уже есть записи: другое значение —
         // противоречие; то же значение при другой лаборатории или единице —
         // совпадение не доказано, возможный дубль.
-        const sameDay = repo.findObservationsByMarkerAndDay(
-          ctx.ownerId,
-          primary.markerId,
-          primary.collectedAt.slice(0, 10),
-        );
+        // Сравнение симметрично точности дат: день кандидата покрывает
+        // сохранённые месяц/дату, и наоборот.
+        const sameDay = repo
+          .findObservationsByMarkerAndDay(
+            ctx.ownerId,
+            primary.markerId,
+            primary.collectedAt.slice(0, 10),
+          )
+          .filter((row) => {
+            const candidateDay = primary.collectedAt ?? '';
+            const stored = row.collectedAt ?? '';
+            return (
+              candidateDay.startsWith(stored) || stored.startsWith(candidateDay)
+            );
+          });
         const sameValue = sameDay.filter(
           (row) =>
             row.valueJson.kind === primary.value?.kind &&
@@ -230,11 +240,18 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
         );
         if (sameDay.length > sameValue.length) reason = 'contradiction';
         else if (
-          sameValue.some(
-            (row) =>
-              (row.originalUnit ?? null) !== (primary.originalUnit ?? null) ||
-              (row.laboratoryName ?? null) !== (ctx.laboratoryName ?? null),
-          )
+          sameValue.some((row) => {
+            // Канонически равные единицы (нг/мл и ng/ml) дублем не считаются.
+            const sameUnit =
+              (row.originalUnit ?? null) === (primary.originalUnit ?? null) ||
+              (row.originalUnit !== null &&
+                primary.originalUnit !== null &&
+                unitsCanonicallyEqual(row.originalUnit, primary.originalUnit));
+            return (
+              !sameUnit ||
+              (row.laboratoryName ?? null) !== (ctx.laboratoryName ?? null)
+            );
+          })
         )
           reason = 'possible_duplicate';
       }
@@ -334,7 +351,7 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
     runQueue: async (): Promise<number> => {
       let processed = 0;
       for (;;) {
-        const job = repo.claimNextJob(now() + LEASE_MS);
+        const job = repo.claimNextJob(now() + LEASE_MS, MAX_ATTEMPTS);
         if (!job) break;
         await processJob(job.id);
         processed++;

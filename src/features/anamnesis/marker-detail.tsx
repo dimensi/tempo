@@ -279,7 +279,7 @@ export function MarkerDetail({
               </SimpleGrid>
               <Group mt="md">
                 <Button onClick={() => void save()} loading={busy} mih={44}>
-                  Сохранить
+                  {m.buttons.save}
                 </Button>
                 <Button
                   variant="default"

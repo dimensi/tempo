@@ -1,7 +1,7 @@
 import 'server-only';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { validateObjectKey } from './keys';
+import { MAX_OBJECT_BYTES, validateObjectKey } from './keys';
 
 // Локальная реализация объектного хранилища: разработка и E2E без NAS.
 // Ключ проверяется на каждом вызове: реализация не доверяет вызывающему.
@@ -23,7 +23,8 @@ export function fsObjectStorage(config: FsStorageConfig) {
       const target = path(key);
       const { stat } = await import('node:fs/promises');
       const info = await stat(target);
-      if (info.size > 104857600) throw new Error('Storage object too large');
+      if (info.size > MAX_OBJECT_BYTES)
+        throw new Error('Storage object too large');
       return new Uint8Array(await readFile(target));
     },
     async remove(key: string): Promise<void> {

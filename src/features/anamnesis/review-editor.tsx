@@ -73,7 +73,8 @@ export function ReviewEditor({ ownerId }: { ownerId: string }) {
       originalUnit: entry.observation.originalUnit,
       collectedAt:
         editing === entry.review.id ? date : entry.observation.collectedAt,
-      datePrecision: entry.observation.datePrecision,
+      datePrecision:
+        editing === entry.review.id ? 'date' : entry.observation.datePrecision,
       referenceRange: entry.observation.referenceRange,
     });
     if (!correction.success) {

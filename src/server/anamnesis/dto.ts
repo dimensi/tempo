@@ -23,8 +23,6 @@ export function documentDto(row: MedicalDocumentRow): MedicalDocument {
     id: row.id,
     ownerId: row.ownerId,
     filename: row.filename,
-    storageKey: row.storageKey,
-    sha256: row.sha256,
     mimeType: 'application/pdf',
     sizeBytes: row.sizeBytes,
     pageCount: row.pageCount,
@@ -34,7 +32,6 @@ export function documentDto(row: MedicalDocumentRow): MedicalDocument {
     issuedAt: row.issuedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    deletedAt: row.deletedAt,
   };
 }
 
