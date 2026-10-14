@@ -33,8 +33,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-dejavu-core poppler-utils
+      - run: pnpm exec playwright install chromium
       - run: pnpm test
       - run: pnpm build
       - name: Mandatory production smoke and selected or manual-full area gates
@@ -60,7 +59,6 @@ jobs:
             --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             --label "org.opencontainers.image.tree=$(git rev-parse HEAD^{tree})" .
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - run: bash scripts/docker-smoke.sh
       - name: Publish tested image to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
