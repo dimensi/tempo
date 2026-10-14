@@ -96,7 +96,7 @@ function fixture(
   }
   return result;
 }
-test('analytics hierarchy, comparisons, combined weight, disclosures, block failures and owner scope', async ({
+test('scoped analytics API, coverage, controls: hierarchy, comparisons, combined weight, disclosures and block failures', async ({
   page,
   browser,
   request,
