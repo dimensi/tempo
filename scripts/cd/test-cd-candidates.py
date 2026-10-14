@@ -175,7 +175,7 @@ if "--docker" in sys.argv:
  def docker(code,env=None,ok=True):
   args=["docker","run","--rm","--network","none","--user","root","-v",data+":/app/data","-v",uploads+":/app/uploads"]
   for k,v in (env or {}).items():args += ["-e",k+"="+v]
-  result=subprocess.run(args+["--entrypoint","node","nutrition-foundation:latest","-e",code],capture_output=True,text=True)
+  result=subprocess.run(args+["--entrypoint","node",os.environ.get("CD_TEST_IMAGE","nutrition-foundation:latest"),"-e",code],capture_output=True,text=True)
   if ok and result.returncode:raise AssertionError(result.stderr)
   if not ok:assert result.returncode!=0
  try:
@@ -189,6 +189,16 @@ if "--docker" in sys.argv:
   docker("const fs=require('fs');if(fs.readFileSync('/app/uploads/photo','utf8')!=='failed')process.exit(1);fs.writeFileSync('/app/data/cd-backups/pre-upgrade-20261013T120000Z-1/compose.yaml','services: {}\\n');")
   docker(restore,env)
   docker("const fs=require('fs'),D=require('better-sqlite3');const d=new D('/app/data/nutrition.sqlite');if(d.prepare('SELECT value FROM fixture').get().value!=='original')process.exit(1);d.close();if(fs.readFileSync('/app/uploads/photo','utf8')!=='original'||fs.readFileSync('/app/data/yazio-token.json','utf8')!=='synthetic-encrypted'||fs.existsSync('/app/data/transformmate-token.json'))process.exit(1);")
+  inventory=blocks[2]
+  docker("const D=require('better-sqlite3'),d=new D('/app/data/nutrition.sqlite');d.exec('CREATE TABLE medical_documents(id INTEGER); CREATE TABLE medical_import_jobs(id INTEGER)');d.close();")
+  docker(inventory)
+  docker("const D=require('better-sqlite3'),d=new D('/app/data/nutrition.sqlite');d.exec('INSERT INTO medical_import_jobs VALUES (1)');d.close();")
+  docker(inventory,ok=False)
+  docker("const D=require('better-sqlite3'),d=new D('/app/data/nutrition.sqlite');d.exec('DELETE FROM medical_import_jobs; INSERT INTO medical_documents VALUES (1)');d.close();")
+  docker(inventory,ok=False)
+  docker("const D=require('better-sqlite3'),d=new D('/app/data/nutrition.sqlite');d.exec('DELETE FROM medical_documents');d.close();const fs=require('fs');fs.mkdirSync('/app/uploads/object-storage');fs.writeFileSync('/app/uploads/object-storage/synthetic','fixture');")
+  docker(inventory,ok=False)
   print("PASS: disposable Docker snapshot manifest/checksums, corruption refusal, DB/uploads/encrypted-file restore and absence marker")
+  print("PASS: actual SQLite/local-object inventory allows empty storage; refuses jobs/documents/objects")
  finally:
   subprocess.run(["docker","volume","rm",data,uploads],check=True,stdout=subprocess.DEVNULL)
