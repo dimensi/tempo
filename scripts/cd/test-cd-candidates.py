@@ -4,7 +4,7 @@ loader=importlib.machinery.SourceFileLoader("candidate",str(BASE/"nutrition-cd.p
 def archive(kind=tarfile.REGTYPE):
     b=io.BytesIO()
     with tarfile.open(fileobj=b,mode="w",format=tarfile.USTAR_FORMAT) as t:
-        for name in ("manifest.json","image.tar.gz","runtime-config.json"):
+        for name in ("manifest.json","image.tar.gz"):
             h=tarfile.TarInfo(name);h.type=kind;h.size=1 if kind==tarfile.REGTYPE else 0;t.addfile(h,io.BytesIO(b"x") if h.size else None)
     return b.getvalue()
 def rejects(data):
@@ -34,7 +34,6 @@ print("PASS: USTAR success; PAX/GNU/link/oversize/checksum/trailing/total-limit/
 NEW="a"*40;OLD="b"*40
 mock=r'''import os,pathlib,sys
 args=sys.argv[1:];mode=os.environ["MODE"];root=pathlib.Path.cwd();log=root/"commands.log"
-assert not any('synthetic-$#' in argument for argument in args), 'Secret in Docker argv'
 def record(s):
  with log.open("a") as f:f.write(s+"\n")
 def env(key):
@@ -49,35 +48,23 @@ if args[0]=="inspect":
  else:print(revision)
  sys.exit(0)
 if "run" in args and "groups=new Map" in args[-1]:record("PRUNE");sys.exit(1 if mode=="retention" else 0)
-if "stop" in args:
- record("STOP")
- if mode=="stop" and not (root/"stop-failed").exists():(root/"stop-failed").touch();sys.exit(1)
+if "stop" in args:record("STOP")
 elif "run" in args:
- if "SELECT count(*)" in args[-1]:record("INVENTORY");sys.exit(1 if mode=="inventory" else 0)
  prefix=next((a.split("=",1)[1] for a in args if a.startswith("BACKUP_PREFIX=")),"")
  record(("RESTORE " if "fs.rmSync" in args[-1] else "SNAPSHOT ")+prefix)
- if mode=="snapshot" and prefix.startswith("pre-upgrade"):sys.exit(1)
 elif "ps" in args:
  if mode=="ps" and env("DEPLOYED_COMMIT")=="a"*40 and not (root/"ps-failed").exists():
   (root/"ps-failed").touch();record("PS_FAIL");sys.exit(1)
  print("container")
 elif "up" in args:
  record("UP "+env("DEPLOYED_COMMIT"));(root/"up-count").touch()
- if mode=="up" and env("DEPLOYED_COMMIT")=="a"*40:sys.exit(1)
-elif "config" in args:
- record("CONFIG");sys.exit(1 if mode=="config" and env("DEPLOYED_COMMIT")=="a"*40 else 0)
 else:record("OTHER")
 '''
-for mode in ("stop","snapshot","inventory","config","up","rewrite","ps","health","rollback-health","success","retention","invalid-release"):
+for mode in ("rewrite","ps","health","rollback-health","success","retention","invalid-release"):
  with tempfile.TemporaryDirectory() as d:
   root=pathlib.Path(d);bindir=root/"bin";bindir.mkdir()
   (root/"verification").mkdir()
   (root/"runtime.env").write_text("BETTER_AUTH_SECRET=synthetic-constant\n")
-  (root/"runtime.env").chmod(0o600)
-  source=root/"verification/ci-incoming/stage/runtime-config.json";source.parent.mkdir(parents=True,mode=0o700)
-  runtime_spec=importlib.util.spec_from_file_location("runtime",BASE/"nutrition-runtime-config.py");runtime=importlib.util.module_from_spec(runtime_spec);runtime_spec.loader.exec_module(runtime)
-  values=runtime.FIXED|{key:"synthetic-$#\"-secret" for key in runtime.KEYS if key not in runtime.FIXED}
-  source.write_text(json.dumps({"version":2,"runtime":values}));source.chmod(0o600)
   (root/"compose.yaml").write_text("services: {}\n")
   (root/"compose.home.yaml").write_text("services: {}\n")
   (root/"release.env").write_text("DEPLOYED_COMMIT="+OLD+"\nNUTRITION_IMAGE=nutrition-release:"+OLD[:12]+"\n")
@@ -89,16 +76,8 @@ for mode in ("stop","snapshot","inventory","config","up","rewrite","ps","health"
   (bindir/"python3").write_text("#!/bin/sh\n"+("exit 1\n" if mode=="rewrite" else "exec "+sys.executable+" \"$@\"\n"))
   for f in bindir.iterdir():f.chmod(0o700)
   script=(BASE/"upgrade-ci-release.sh.candidate").read_text().replace("cd /opt/compose/yazio-dashboard","cd "+str(root))
-  helper=bindir/"runtime-helper"
-  helper.write_text("#!"+sys.executable+"\nimport importlib.util,pathlib,sys\ns=importlib.util.spec_from_file_location('r',"+repr(str(BASE/"nutrition-runtime-config.py"))+");r=importlib.util.module_from_spec(s);s.loader.exec_module(r);r.PROJECT=pathlib.Path("+repr(str(root))+")\nif sys.argv[1]=='inventory':print('required' if r.needs_inventory(pathlib.Path(sys.argv[2])) else 'unchanged')\nelif sys.argv[1]=='apply':r.apply(sys.argv[2],pathlib.Path(sys.argv[3]))\nelse:r.restore(sys.argv[2])\n")
-  helper.chmod(0o700)
-  script=script.replace("/usr/local/libexec/nutrition-runtime-config.py",str(helper))
-  run=subprocess.run(["bash","-c",script,"test",NEW],env=os.environ|dict(PATH=str(bindir)+":"+os.environ["PATH"],MODE=mode,CD_BACKUP_STAMP="20261012T120000Z-1",CD_RUNTIME_CONFIG=str(source)),capture_output=True,text=True,timeout=10)
-  if mode not in ("success","retention"):
-   assert (root/"runtime.env").read_text()=="BETTER_AUTH_SECRET=synthetic-constant\n"
-  else:
-   assert (root/"runtime.env").read_bytes().startswith(b"BETTER_AUTH_SECRET=synthetic-constant\n")
-  assert 'synthetic-$#' not in run.stdout+run.stderr
+  run=subprocess.run(["bash","-c",script,"test",NEW],env=os.environ|dict(PATH=str(bindir)+":"+os.environ["PATH"],MODE=mode,CD_BACKUP_STAMP="20261012T120000Z-1"),capture_output=True,text=True,timeout=10)
+  assert (root/"runtime.env").read_text()=="BETTER_AUTH_SECRET=synthetic-constant\n"
   assert not list(root.glob("runtime.env.*"))
   if mode=="invalid-release":
    assert run.returncode!=0 and not (root/"commands.log").exists()
@@ -111,9 +90,7 @@ for mode in ("stop","snapshot","inventory","config","up","rewrite","ps","health"
   else:
    assert run.returncode!=0 and "PRUNE" not in log
    assert "UP "+OLD in log
-   if mode not in ("stop","snapshot"):
-    assert log.index("SNAPSHOT failed-before-rollback")<log.index("RESTORE pre-upgrade")
-   else:assert "RESTORE" not in log
+   assert log.index("SNAPSHOT failed-before-rollback")<log.index("RESTORE pre-upgrade")
    if mode=="rollback-health":assert "ATTENTION" in run.stderr
    else:assert "previous exact healthy release restored" in run.stderr
 print("PASS: injected env rewrite/compose-ps/new-health failures recover old exact healthy image; rollback-health failure alerts; success disarms trap; retention failure preserves healthy release; mixed secret/release rejected")
@@ -121,8 +98,8 @@ print("PASS: injected env rewrite/compose-ps/new-health failures recover old exa
 # Execute the actual embedded JavaScript, not a second implementation of retention.
 script=(BASE/"upgrade-ci-release.sh.candidate").read_text()
 blocks=re.findall(r"app -e '\n(.*?)\n *'",script,re.S)
-assert len(blocks)==4
-retention=blocks[-1]
+assert len(blocks)==3
+retention=blocks[2]
 with tempfile.TemporaryDirectory() as d:
  root=pathlib.Path(d)
  stamps=[f"202610{i:02}T120000Z-1" for i in range(1,8)]
@@ -175,7 +152,7 @@ if "--docker" in sys.argv:
  def docker(code,env=None,ok=True):
   args=["docker","run","--rm","--network","none","--user","root","-v",data+":/app/data","-v",uploads+":/app/uploads"]
   for k,v in (env or {}).items():args += ["-e",k+"="+v]
-  result=subprocess.run(args+["--entrypoint","node",os.environ.get("CD_TEST_IMAGE","nutrition-foundation:latest"),"-e",code],capture_output=True,text=True)
+  result=subprocess.run(args+["--entrypoint","node","nutrition-foundation:latest","-e",code],capture_output=True,text=True)
   if ok and result.returncode:raise AssertionError(result.stderr)
   if not ok:assert result.returncode!=0
  try:
@@ -189,16 +166,6 @@ if "--docker" in sys.argv:
   docker("const fs=require('fs');if(fs.readFileSync('/app/uploads/photo','utf8')!=='failed')process.exit(1);fs.writeFileSync('/app/data/cd-backups/pre-upgrade-20261013T120000Z-1/compose.yaml','services: {}\\n');")
   docker(restore,env)
   docker("const fs=require('fs'),D=require('better-sqlite3');const d=new D('/app/data/nutrition.sqlite');if(d.prepare('SELECT value FROM fixture').get().value!=='original')process.exit(1);d.close();if(fs.readFileSync('/app/uploads/photo','utf8')!=='original'||fs.readFileSync('/app/data/yazio-token.json','utf8')!=='synthetic-encrypted'||fs.existsSync('/app/data/transformmate-token.json'))process.exit(1);")
-  inventory=blocks[2]
-  docker("const D=require('better-sqlite3'),d=new D('/app/data/nutrition.sqlite');d.exec('CREATE TABLE medical_documents(id INTEGER); CREATE TABLE medical_import_jobs(id INTEGER)');d.close();")
-  docker(inventory)
-  docker("const D=require('better-sqlite3'),d=new D('/app/data/nutrition.sqlite');d.exec('INSERT INTO medical_import_jobs VALUES (1)');d.close();")
-  docker(inventory,ok=False)
-  docker("const D=require('better-sqlite3'),d=new D('/app/data/nutrition.sqlite');d.exec('DELETE FROM medical_import_jobs; INSERT INTO medical_documents VALUES (1)');d.close();")
-  docker(inventory,ok=False)
-  docker("const D=require('better-sqlite3'),d=new D('/app/data/nutrition.sqlite');d.exec('DELETE FROM medical_documents');d.close();const fs=require('fs');fs.mkdirSync('/app/uploads/object-storage');fs.writeFileSync('/app/uploads/object-storage/synthetic','fixture');")
-  docker(inventory,ok=False)
   print("PASS: disposable Docker snapshot manifest/checksums, corruption refusal, DB/uploads/encrypted-file restore and absence marker")
-  print("PASS: actual SQLite/local-object inventory allows empty storage; refuses jobs/documents/objects")
  finally:
   subprocess.run(["docker","volume","rm",data,uploads],check=True,stdout=subprocess.DEVNULL)

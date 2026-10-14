@@ -15,6 +15,7 @@ on:
 permissions:
   contents: read
   actions: read
+  packages: read
 concurrency:
   group: nutrition-production
   cancel-in-progress: false
@@ -47,30 +48,10 @@ jobs:
               found = [j for j in jobs if j['name'] == name]
               assert len(found) == 1 and found[0]['status'] == 'completed' and found[0]['conclusion'] == 'success'
           PYVERIFY
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/checkout@v7.0.1
         with:
-          name: nutrition-release-${{ inputs.revision || github.event.workflow_run.head_sha }}
-          run-id: ${{ inputs.run_id || github.event.workflow_run.id }}
-          github-token: ${{ github.token }}
-          path: release-artifact
-      - name: Verify archive and Git tree
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REVISION: ${{ inputs.revision || github.event.workflow_run.head_sha }}
-        run: |
-          set -euo pipefail
-          export EXPECTED_TREE=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$REVISION" --jq '.tree.sha')
-          python3 - <<'PYVERIFY'
-          import hashlib, json, os
-          m = json.load(open('release-artifact/manifest.json'))
-          assert m['revision'] == os.environ['REVISION'] and m['tree'] == os.environ['EXPECTED_TREE']
-          assert m['imageTag'] == 'nutrition-release:' + m['revision'][:12]
-          h = hashlib.sha256()
-          with open('release-artifact/image.tar.gz', 'rb') as f:
-              for chunk in iter(lambda: f.read(1048576), b''): h.update(chunk)
-          assert h.hexdigest() == m['archiveSHA256']
-          PYVERIFY
-      - name: Invoke constrained deployment (candidate protocol)
+          ref: ${{ inputs.revision || github.event.workflow_run.head_sha }}
+      - name: Copy env and Compose, then pull and start over SSH
         env:
           GH_TOKEN: ${{ github.token }}
           DEPLOY_KEY: ${{ secrets.NUTRITION_DEPLOY_KEY }}
@@ -93,30 +74,102 @@ jobs:
           set -euo pipefail
           set +x
           umask 077
-          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$DEPLOY_USER" == nutrition-deploy ]]
-          key=$(mktemp)
-          hosts=$(mktemp)
-          config_dir=$(mktemp -d "$RUNNER_TEMP/nutrition-runtime.XXXXXX")
-          trap 'rm -f "$key" "$hosts"; rm -rf "$config_dir"' EXIT
-          export RUNTIME_CONFIG_PATH="$config_dir/runtime-config.json"
-          python3 - <<'PYCONFIG'
-          import json, os
-          keys = ('S3_ENDPOINT', 'S3_REGION', 'S3_BUCKET', 'S3_ACCESS_KEY_ID',
-                  'S3_SECRET_ACCESS_KEY', 'ANAMNESIS_LLM_API_KEY', 'ANAMNESIS_LLM_BASE_URL',
-                  'ANAMNESIS_LLM_MODEL', 'ANAMNESIS_LLM_TIMEOUT_MS', 'ENABLE_ANAMNESIS_WORKER')
-          values = {key: os.environ[key] for key in keys}
-          assert all(0 < len(value) <= 2048 and all(32 <= ord(c) <= 126 and c not in "'\\" for c in value) for value in values.values()), 'Runtime configuration rejected'
-          payload = json.dumps({'version': 2, 'runtime': values}).encode('ascii')
-          assert len(payload) <= 16384, 'Runtime configuration rejected'
-          with open(os.environ['RUNTIME_CONFIG_PATH'], 'xb') as f:
-              f.write(payload)
-          PYCONFIG
-          unset S3_ENDPOINT S3_REGION S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY ANAMNESIS_LLM_API_KEY ANAMNESIS_LLM_BASE_URL ANAMNESIS_LLM_MODEL ANAMNESIS_LLM_TIMEOUT_MS ENABLE_ANAMNESIS_WORKER RUNTIME_CONFIG_PATH
-          printf '%s\n' "$DEPLOY_KEY" > "$key"
-          printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          [[ "$RUN_ID" =~ ^[0-9]+$ && "$REVISION" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ && "$DEPLOY_USER" != nutrition-deploy ]]
+          [[ "$GITHUB_ACTOR" =~ ^[a-zA-Z0-9-]+$ ]]
+          [[ "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" == "$REVISION" ]]
+          scratch=$(mktemp -d "$RUNNER_TEMP/tempo-deploy.XXXXXX")
+          deploy_run="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          [[ "$deploy_run" =~ ^[0-9]+-[0-9]+$ ]]
+          stage="/opt/compose/yazio-dashboard/.deploy-$deploy_run-$REVISION"
+          dest="$DEPLOY_USER@$DEPLOY_HOST"
+          printf '%s\n' "$DEPLOY_KEY" > "$scratch/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$scratch/hosts"
           unset DEPLOY_KEY KNOWN_HOSTS
-          tree=$(python3 -c 'import json; print(json.load(open("release-artifact/manifest.json"))["tree"])')
-          digest=$(python3 -c 'import json; print(json.load(open("release-artifact/manifest.json"))["archiveSHA256"])')
-          current_main=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
-          [[ "$current_main" == "$REVISION" ]] || { echo 'Stale main revision refused.' >&2; exit 1; }
-          tar --format=ustar -cf - -C "$config_dir" runtime-config.json -C "$GITHUB_WORKSPACE/release-artifact" manifest.json image.tar.gz | ssh -p 2224 -i "$key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "nutrition-release $RUN_ID $REVISION $tree $digest"
+          ssh_args=(-i "$scratch/key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$scratch/hosts" -o BatchMode=yes -o ConnectTimeout=10)
+          cleanup() {
+            ssh -p 2224 "${ssh_args[@]}" "$dest" "rm -rf -- '$stage'" >/dev/null 2>&1 || true
+            rm -rf "$scratch"
+          }
+          trap cleanup EXIT
+          export DEPLOY_ENV_PATH="$scratch/.env.deploy"
+          python3 - <<'PYENV'
+          import os
+          fixed = {'S3_ENDPOINT': 'http://192.168.1.90:8333', 'S3_REGION': 'us-east-1', 'S3_BUCKET': 'apps',
+                   'ANAMNESIS_LLM_BASE_URL': 'https://api.z.ai/api/coding/paas/v4', 'ANAMNESIS_LLM_MODEL': 'glm-5.3-flash',
+                   'ANAMNESIS_LLM_TIMEOUT_MS': '120000', 'ENABLE_ANAMNESIS_WORKER': 'false'}
+          keys = (*fixed, 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'ANAMNESIS_LLM_API_KEY')
+          values = {key: os.environ[key] for key in keys}
+          assert all(values[key] == value for key, value in fixed.items()), 'Unapproved runtime setting'
+          assert all(0 < len(value) <= 2048 and all(32 <= ord(c) <= 126 and c not in "'\\" for c in value) for value in values.values()), 'Invalid runtime setting'
+          values.update(NUTRITION_IMAGE='ghcr.io/' + os.environ['GITHUB_REPOSITORY'].lower() + ':' + os.environ['REVISION'], DEPLOYED_COMMIT=os.environ['REVISION'])
+          with open(os.environ['DEPLOY_ENV_PATH'], 'x') as output:
+              output.write(''.join(f"{key}='{value}'\n" for key, value in values.items()))
+          PYENV
+          printf '%s' "$GH_TOKEN" > "$scratch/registry-token"
+          unset GH_TOKEN S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY ANAMNESIS_LLM_API_KEY
+          ssh -p 2224 "${ssh_args[@]}" "$dest" "umask 077; test -r /opt/compose/yazio-dashboard/runtime.env && mkdir -m 700 '$stage'"
+          scp -P 2224 "${ssh_args[@]}" compose.yaml compose.home.yaml "$scratch/.env.deploy" "$scratch/registry-token" "$dest:$stage/"
+          ssh -p 2224 "${ssh_args[@]}" "$dest" "bash -s -- '$REVISION' '$deploy_run' '$GITHUB_ACTOR'" <<'REMOTE'
+          set -euo pipefail
+          set +x
+          umask 077
+          revision=$1 run=$2 actor=$3
+          [[ "$revision" =~ ^[0-9a-f]{40}$ && "$run" =~ ^[0-9]+-[0-9]+$ && "$actor" =~ ^[a-zA-Z0-9-]+$ ]]
+          cd /opt/compose/yazio-dashboard
+          stage="$PWD/.deploy-$run-$revision"
+          exec 9>verification/rollout.lock
+          flock -n 9
+          old_container=$(docker ps -q --filter label=com.docker.compose.project=nutrition --filter label=com.docker.compose.service=app)
+          [[ -n "$old_container" && "$old_container" != *$'\n'* ]]
+          stopped=false
+          cleanup() {
+            status=$?
+            trap - EXIT
+            if [[ "$stopped" == true ]] && ! docker start "$old_container" >/dev/null; then
+              echo 'ATTENTION: old app restart failed; operator action required.' >&2
+            fi
+            rm -f compose.yaml.new compose.home.yaml.new .env.deploy.new
+            rm -rf "$stage"
+            exit "$status"
+          }
+          trap cleanup EXIT
+          test -f runtime.env && test -r runtime.env && test ! -L runtime.env
+          export DOCKER_CONFIG="$stage/docker-config"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          docker login ghcr.io -u "$actor" --password-stdin < "$stage/registry-token" >/dev/null
+          rm "$stage/registry-token"
+          compose_stage() { docker compose -p nutrition --env-file runtime.env --env-file "$stage/.env.deploy" -f "$stage/compose.yaml" -f "$stage/compose.home.yaml" "$@"; }
+          compose_stage config --quiet
+          compose_stage pull app
+          image=$(sed -n "s/^NUTRITION_IMAGE='\(.*\)'$/\1/p" "$stage/.env.deploy")
+          [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == "$revision" ]]
+          # Use the application's existing online-backup CLI before migrations.
+          docker exec "$old_container" node scripts/backup.mjs "/app/data/pre-deploy-$run-$revision.sqlite"
+          if [[ ! -f .env.deploy ]] || ! cmp -s <(sed -n '/^S3_/p' .env.deploy) <(sed -n '/^S3_/p' "$stage/.env.deploy"); then
+            old_image=$(docker inspect "$old_container" --format '{{.Config.Image}}')
+            stopped=true
+            docker stop "$old_container" >/dev/null
+            docker run --rm --network none --volumes-from "$old_container:ro" --entrypoint node "$old_image" -e '
+              const fs=require("node:fs"),D=require("better-sqlite3");
+              const db=new D("/app/data/nutrition.sqlite",{readonly:true,fileMustExist:true});
+              const count=db.prepare("SELECT count(*) AS n FROM medical_documents").get().n+db.prepare("SELECT count(*) AS n FROM medical_import_jobs").get().n;db.close();
+              function files(p){if(!fs.existsSync(p))return 0;return fs.readdirSync(p,{withFileTypes:true}).reduce((n,e)=>{if(e.isSymbolicLink())throw Error("link");return n+(e.isDirectory()?files(p+"/"+e.name):1);},0);}
+              if(count||files("/app/uploads/object-storage")){console.error("Storage switch requires a separate migration plan");process.exit(1);}
+            '
+          fi
+          # Auth runtime.env and historical release.env remain untouched.
+          for file in compose.yaml compose.home.yaml .env.deploy; do
+            cp "$stage/$file" "$file.new"
+            chmod 600 "$file.new"
+            mv -f "$file.new" "$file"
+          done
+          # Compose may replace the old container and run migrations. From here,
+          # fail visibly on startup/health errors; never restore a live DB blindly.
+          stopped=false
+          docker compose -p nutrition --env-file runtime.env --env-file .env.deploy -f compose.yaml -f compose.home.yaml up -d --no-build --wait --wait-timeout 120 app
+          current=$(docker compose -p nutrition --env-file runtime.env --env-file .env.deploy -f compose.yaml -f compose.home.yaml ps -q app)
+          [[ "$(docker inspect "$current" --format '{{.Config.Image}}')" == "$image" ]]
+          [[ "$(docker inspect "$current" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == "$revision" ]]
+          [[ "$(curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' https://tempo.dimensi.dev/api/health)" == 200 ]]
+          REMOTE

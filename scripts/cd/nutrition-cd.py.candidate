@@ -3,12 +3,6 @@ import datetime, fcntl, importlib.util, json, os, pathlib, re, subprocess, sys, 
 
 PROJECT = pathlib.Path("/opt/compose/yazio-dashboard")
 MAX_ARCHIVE = 1024 * 1024 * 1024
-MAX_CONFIG = 16384
-
-class ProtocolError(ValueError):
-    def __init__(self, code, received):
-        super().__init__(code)
-        self.code, self.received = code, received
 
 def parse_args(args):
     if len(args) != 4: raise ValueError("Unsupported arguments")
@@ -21,38 +15,35 @@ def parse_args(args):
 class BoundedReader:
     def __init__(self, stream, deadline_seconds=600):
         self.stream = stream
-        self.remaining = MAX_ARCHIVE + 65536 + MAX_CONFIG + 32768 + 4096
+        self.remaining = MAX_ARCHIVE + 65536 + 32768
         self.deadline = time.monotonic() + deadline_seconds
-        self.received = 0
         try: self.fd = stream.fileno()
         except (AttributeError, OSError): self.fd = None
 
     def optional(self, count):
         seconds = self.deadline - time.monotonic()
-        if seconds <= 0: raise ProtocolError("upload-deadline", self.received)
-        if count > self.remaining: raise ProtocolError("stream-limit", self.received)
+        if seconds <= 0: raise ValueError("Upload deadline exceeded")
+        if count > self.remaining: raise ValueError("Total stream limit exceeded")
         if self.fd is not None:
-            if not select.select([self.fd], [], [], seconds)[0]: raise ProtocolError("upload-deadline", self.received)
+            if not select.select([self.fd], [], [], seconds)[0]: raise ValueError("Upload deadline exceeded")
             chunk = os.read(self.fd, count)
         else: chunk = self.stream.read(count)
-        self.received += len(chunk)
-        if time.monotonic() >= self.deadline: raise ProtocolError("upload-deadline", self.received)
+        if time.monotonic() >= self.deadline: raise ValueError("Upload deadline exceeded")
         self.remaining -= len(chunk)
         return chunk
 
     def exact(self, count):
-        if count > self.remaining: raise ProtocolError("stream-limit", self.received)
+        if count > self.remaining: raise ValueError("Total stream limit exceeded")
         chunks = []
         while count:
             seconds = self.deadline - time.monotonic()
-            if seconds <= 0: raise ProtocolError("upload-deadline", self.received)
+            if seconds <= 0: raise ValueError("Upload deadline exceeded")
             if self.fd is not None:
-                if not select.select([self.fd], [], [], seconds)[0]: raise ProtocolError("upload-deadline", self.received)
+                if not select.select([self.fd], [], [], seconds)[0]: raise ValueError("Upload deadline exceeded")
                 chunk = os.read(self.fd, min(count, 1048576))
             else: chunk = self.stream.read(min(count, 1048576))
-            self.received += len(chunk)
-            if time.monotonic() >= self.deadline: raise ProtocolError("upload-deadline", self.received)
-            if not chunk: raise ProtocolError("truncated-stream", self.received)
+            if time.monotonic() >= self.deadline: raise ValueError("Upload deadline exceeded")
+            if not chunk: raise ValueError("Truncated stream")
             count -= len(chunk); self.remaining -= len(chunk); chunks.append(chunk)
         return b"".join(chunks)
 
@@ -64,7 +55,7 @@ def octal(field):
 def receive(stream, target, deadline_seconds=600):
     reader = BoundedReader(stream, deadline_seconds)
     seen = set()
-    for _ in range(3):
+    for _ in range(2):
         header = reader.exact(512)
         # Reject metadata extensions before any payload or generic archive parser runs.
         if header[156:157] not in (b"0", b"\0"): raise ValueError("Only regular USTAR members allowed")
@@ -74,10 +65,10 @@ def receive(stream, target, deadline_seconds=600):
         if sum(header[:148]) + 8 * 32 + sum(header[156:]) != expected:
             raise ValueError("Header checksum mismatch")
         name = header[:100].rstrip(b"\0").decode("ascii")
-        if name not in ("manifest.json", "image.tar.gz", "runtime-config.json") or name in seen:
+        if name not in ("manifest.json", "image.tar.gz") or name in seen:
             raise ValueError("Unsupported archive member")
         size = octal(header[124:136])
-        limit = {"manifest.json": 65536, "image.tar.gz": MAX_ARCHIVE, "runtime-config.json": MAX_CONFIG}[name]
+        limit = 65536 if name == "manifest.json" else MAX_ARCHIVE
         if not 0 < size <= limit: raise ValueError("Archive member size rejected")
         seen.add(name)
         with (target / name).open("xb") as output:
@@ -86,7 +77,7 @@ def receive(stream, target, deadline_seconds=600):
                 chunk = reader.exact(min(1048576, remaining)); output.write(chunk); remaining -= len(chunk)
         padding = reader.exact((-size) % 512)
         if padding.strip(b"\0"): raise ValueError("Nonzero member padding")
-    if seen != {"manifest.json", "image.tar.gz", "runtime-config.json"} or reader.exact(1024).strip(b"\0"):
+    if seen != {"manifest.json", "image.tar.gz"} or reader.exact(1024).strip(b"\0"):
         raise ValueError("Missing end blocks or extra members")
     trailing = 0
     while True:
@@ -95,47 +86,22 @@ def receive(stream, target, deadline_seconds=600):
         trailing += len(chunk)
         if chunk.strip(b"\0") or trailing > 32768: raise ValueError("Excess trailing archive data")
 
-def deploy(stage, run, revision, tree, digest, receipt_path):
-        started = time.monotonic()
-        phase = "receive"
-        config = stage / "runtime-config.json"
-        try:
-            print("Nutrition CD phase=receive", file=sys.stderr, flush=True)
-            receive(sys.stdin.buffer, stage)
-            phase = "validate-config"
-            spec = importlib.util.spec_from_file_location("runtime", "/usr/local/libexec/nutrition-runtime-config.py")
-            runtime = importlib.util.module_from_spec(spec); spec.loader.exec_module(runtime)
-            runtime.protected_file(config)
-            runtime.validate(config.read_bytes())
-            phase = "validated-deployment"
-            verified_deploy(stage, run, revision, tree, digest, receipt_path)
-        except Exception as error:
-            print("Nutrition CD failed phase=" + phase + " elapsedSeconds=" + str(int(time.monotonic() - started)), file=sys.stderr)
-            if isinstance(error, ProtocolError):
-                print("Nutrition CD protocol=" + error.code + " receivedBytes=" + str(error.received), file=sys.stderr)
-            raise
-        finally:
-            config.unlink(missing_ok=True)
-
 def main():
     run, revision, tree, digest = parse_args(sys.argv[1:])
     os.umask(0o077)
     if os.geteuid() != 0: raise ValueError("Root-owned wrapper required")
     with (PROJECT / "verification/rollout.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(lock, fcntl.LOCK_EX)
         receipt_path = PROJECT / "verification/cd-last-run.json"
-        if receipt_path.exists() and int(json.loads(receipt_path.read_text())["run"]) >= int(run):
-            raise ValueError("Completed or older CD run refused")
+        if receipt_path.exists() and int(json.loads(receipt_path.read_text())["run"]) > int(run):
+            raise ValueError("Older CD run refused")
         incoming = PROJECT / "verification/ci-incoming"
         if incoming.is_symlink(): raise ValueError("Invalid staging path")
         incoming.mkdir(mode=0o700, exist_ok=True)
         if incoming.stat().st_uid != 0 or incoming.stat().st_mode & 0o077: raise ValueError("Unprotected staging directory")
         # Protected artifacts remain available for diagnosis or operator rollback.
         stage = pathlib.Path(tempfile.mkdtemp(prefix=revision + ".", dir=incoming))
-        deploy(stage, run, revision, tree, digest, receipt_path)
-
-def verified_deploy(stage, run, revision, tree, digest, receipt_path):
-        print("Nutrition CD phase=verify-image", file=sys.stderr, flush=True)
+        receive(sys.stdin.buffer, stage)
         spec = importlib.util.spec_from_file_location("verify", "/usr/local/libexec/nutrition-ci-verify.py")
         verify = importlib.util.module_from_spec(spec); spec.loader.exec_module(verify)
         manifest = json.loads((stage / "manifest.json").read_text())
@@ -152,8 +118,7 @@ def verified_deploy(stage, run, revision, tree, digest, receipt_path):
             if unpack.wait() or loaded.returncode: raise ValueError("Image load failed")
         checked = verify.verify_image(manifest, json.loads(subprocess.check_output(["docker", "image", "inspect", image]))[0])
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + run
-        env = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "CD_BACKUP_STAMP": stamp, "CD_RUNTIME_CONFIG": str(stage / "runtime-config.json")}
-        print("Nutrition CD phase=rollout", file=sys.stderr, flush=True)
+        env = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "CD_BACKUP_STAMP": stamp}
         rollout = subprocess.run(["/usr/local/libexec/nutrition-upgrade-ci-release", revision], env=env, capture_output=True)
         if rollout.returncode: raise ValueError("Deployment failed; fixed rollback attempted; operator attention required")
         retention_ok = b"backup retention failed" not in rollout.stderr
