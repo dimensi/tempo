@@ -55,6 +55,13 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
       });
       return;
     }
+    // Multi-page requests can outlive one lease; keep the claimed job owned
+    // until all pages are read and the result is atomically persisted.
+    const heartbeat = setInterval(() => {
+      if (repo.findJobById(jobId)?.status === 'processing')
+        repo.updateJob(jobId, { leaseUntil: now() + LEASE_MS });
+    }, LEASE_MS / 3);
+    heartbeat.unref?.();
     try {
       const bytes = await deps.storage.get(document.storageKey);
       if (!(await stillOurs(jobId))) return;
@@ -161,6 +168,8 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
       })();
     } catch (error) {
       failJob(jobId, error);
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 
