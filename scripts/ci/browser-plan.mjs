@@ -1,7 +1,11 @@
 export function browserPlan(selection) {
   const general = {
     nutrition: ['diary.*spec.ts', 'overview.*spec.ts'],
-    workouts: ['workouts.spec.ts', 'transformmate.*spec.ts'],
+    workouts: [
+      'workouts.spec.ts',
+      'workout-videos.spec.ts',
+      'transformmate.*spec.ts',
+    ],
     measurements: ['measurements.spec.ts'],
     analytics: ['analytics.spec.ts'],
     anamnesis: ['anamnesis.spec.ts'],
