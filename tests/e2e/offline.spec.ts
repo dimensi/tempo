@@ -379,9 +379,13 @@ test.describe('provider form interception', () => {
       };
       page.on('response', observeCompletion);
       const form = page.locator('#transformmate');
-      await form.getByLabel(/^Firebase API key/).fill('synthetic-key');
+      await form
+        .getByLabel(/^Firebase API key/)
+        .filter({ visible: true })
+        .fill('synthetic-key');
       await form
         .getByLabel(/^Firebase refresh token/)
+        .filter({ visible: true })
         .fill('synthetic-refresh');
       await form
         .getByRole('button', { name: 'Подключить', exact: true })
