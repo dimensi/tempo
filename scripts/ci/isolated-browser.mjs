@@ -1,4 +1,4 @@
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   cpSync,
   appendFileSync,
@@ -12,11 +12,24 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { requirePassingReport } from './report.mjs';
+import { runProcessGroup } from './process-group.mjs';
 
 // One case/project per disposable checkout and server. The unchanged test-side
 // SQLite paths resolve inside that checkout, as do CLI calls, uploads and tokens.
 // Real accounts/auth quotas belong to the dedicated Next process and database.
 export async function isolatedBrowser(run, concurrency = 2) {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  process.on('SIGINT', cancel);
+  process.on('SIGTERM', cancel);
+  try {
+    return await executeIsolated(run, concurrency, controller.signal);
+  } finally {
+    process.off('SIGINT', cancel);
+    process.off('SIGTERM', cancel);
+  }
+}
+async function executeIsolated(run, concurrency, signal) {
   if (![1, 2].includes(concurrency))
     throw new Error('Browser concurrency must be 1 or 2');
   mkdirSync('test-results', { recursive: true });
@@ -81,7 +94,7 @@ export async function isolatedBrowser(run, concurrency = 2) {
   };
   let index = 0;
   async function worker(slot) {
-    while (index < cases.length) {
+    while (index < cases.length && !signal.aborted) {
       const selected = cases[index++];
       const sandbox = mkdtempSync(`${tmpdir()}/yazio-browser-case-`);
       const start = performance.now();
@@ -106,35 +119,32 @@ export async function isolatedBrowser(run, concurrency = 2) {
         cpSync('.next/BUILD_ID', resolve(sandbox, '.next/BUILD_ID'));
         cpSync('public', resolve(sandbox, 'public'), { recursive: true });
         const gatewayPort = 3260 + slot * 2;
-        const status = await new Promise((done, reject) => {
-          const child = spawn(
-            'pnpm',
-            [
-              'exec',
-              'playwright',
-              'test',
-              '--config',
-              run.config,
-              `${selected.file}:${selected.line}`,
-              '--project',
-              selected.project,
-              '--workers=1',
-              '--grep',
-              selected.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$',
-            ],
-            {
-              cwd: sandbox,
-              env: {
-                ...process.env,
-                CI_E2E_ORIGIN: `https://localhost:${gatewayPort}`,
-                CI_E2E_BACKEND_PORT: String(gatewayPort + 1),
-              },
-              stdio: 'inherit',
+        const copiedSeconds = (performance.now() - start) / 1000;
+        const status = await runProcessGroup(
+          'pnpm',
+          [
+            'exec',
+            'playwright',
+            'test',
+            '--config',
+            run.config,
+            `${selected.file}:${selected.line}`,
+            '--project',
+            selected.project,
+            '--workers=1',
+            '--grep',
+            selected.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$',
+          ],
+          {
+            cwd: sandbox,
+            env: {
+              ...process.env,
+              CI_E2E_ORIGIN: `https://localhost:${gatewayPort}`,
+              CI_E2E_BACKEND_PORT: String(gatewayPort + 1),
             },
-          );
-          child.on('error', reject);
-          child.on('exit', done);
-        });
+            signal,
+          },
+        );
         const report = JSON.parse(
           readFileSync(
             resolve(sandbox, `test-results/${run.family}.json`),
@@ -157,6 +167,7 @@ export async function isolatedBrowser(run, concurrency = 2) {
         );
         combined.isolation.cases.push({
           ...selected,
+          copySeconds: Number(copiedSeconds.toFixed(3)),
           seconds: Number(((performance.now() - start) / 1000).toFixed(2)),
         });
         // Every enumerated case must produce exactly one result, even intentional skips.
@@ -170,7 +181,24 @@ export async function isolatedBrowser(run, concurrency = 2) {
           throw new Error(
             `Isolated case failed or missing: ${selected.file}:${selected.line} (${selected.project})`,
           );
-        if (report.stats.skipped && selected.project !== 'mobile')
+        const allowedMobileSkips = {
+          'e2e/workouts.spec.ts': [
+            'a save settling after Back does not redirect or repeat the write',
+            'actual draft survives conflict and access errors; unavailable storage requires explicit leave',
+            'late actual save cannot erase a reopened draft or redirect it',
+            'retained planned and actual editors hide cached drafts before real access revalidation and denial',
+          ],
+          'e2e/transformmate-ui.spec.ts': [
+            'real authenticated session throttle is retried once after its server interval',
+          ],
+        };
+        if (
+          report.stats.skipped &&
+          !(
+            selected.project === 'mobile' &&
+            allowedMobileSkips[selected.file]?.includes(selected.title)
+          )
+        )
           throw new Error(
             `Unexpected skipped isolated case: ${selected.title}`,
           );
@@ -190,15 +218,18 @@ export async function isolatedBrowser(run, concurrency = 2) {
           `test-results/${run.family}/artifacts`,
         );
         try {
-          cpSync(
-            artifact,
-            `test-results/${run.family}/isolated/${selected.project}-${selected.line}-${selected.file.replaceAll('/', '_')}`,
-            { recursive: true },
-          );
-        } catch (error) {
-          if (error.code !== 'ENOENT') throw error;
+          try {
+            cpSync(
+              artifact,
+              `test-results/${run.family}/isolated/${selected.project}-${selected.line}-${selected.file.replaceAll('/', '_')}`,
+              { recursive: true },
+            );
+          } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+          }
+        } finally {
+          rmSync(sandbox, { recursive: true, force: true });
         }
-        rmSync(sandbox, { recursive: true, force: true });
       }
     }
   }
@@ -211,6 +242,8 @@ export async function isolatedBrowser(run, concurrency = 2) {
   );
   for (const result of results)
     if (result.status === 'rejected') throw result.reason;
+  if (signal.aborted)
+    throw new Error('Browser run cancelled; checkouts removed');
   if (combined.isolation.errors.length)
     throw new Error(JSON.stringify(combined.isolation.errors));
   requirePassingReport(combined, run.requiredCases);

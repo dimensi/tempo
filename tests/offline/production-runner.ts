@@ -96,6 +96,7 @@ const env: NodeJS.ProcessEnv = {
   PATH: process.env.PATH,
   HOME: process.env.HOME,
   TMPDIR: process.env.TMPDIR,
+  PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH,
   DATABASE_URL: 'file:./.data/e2e.sqlite',
   BETTER_AUTH_URL: `https://localhost:${gatewayPort}`,
   BETTER_AUTH_SECRET: 'offline-production-synthetic-secret-1234567890',
