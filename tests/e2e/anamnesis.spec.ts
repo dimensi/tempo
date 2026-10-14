@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../ci/isolated-test';
 import { getSessionWith429Retry } from './auth-session';
 
 async function login(page: Page, role: 'owner' | 'trainer', origin: string) {
@@ -115,6 +115,7 @@ test('owner imports the reference PDF and trainer receives only granted access',
   const before = (await (
     await page.request.get(`/api/anamnesis/documents?${ownerQuery}`)
   ).json()) as Array<{ id: string; filename: string }>;
+  if (process.env.CI_E2E_WORKER === 'true') expect(before).toHaveLength(0);
   const existing = before.find(
     (item) =>
       item.filename === 'synthetic-lab.pdf' || item.filename === 'copy.pdf',

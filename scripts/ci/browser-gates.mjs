@@ -7,72 +7,12 @@ import {
   rmSync,
 } from 'node:fs';
 import { requirePassingReport } from './report.mjs';
+import { isolatedBrowser } from './isolated-browser.mjs';
+import { browserPlan } from './browser-plan.mjs';
 const selection = JSON.parse(
   readFileSync('test-results/ci-selection.json', 'utf8'),
 );
-const general = {
-  nutrition: 'authenticated diary date navigation and empty state',
-  workouts:
-    'owner creates plan, logs actual, edits and deletes plan without changing history',
-  measurements: 'owner creates, edits and deletes a manual measurement',
-  analytics: 'scoped analytics API, coverage, controls',
-  reports: 'persisted diary and private photo PDF API',
-  comments: 'measurement and actual-session comments compose',
-  shell:
-    'section navigation keeps form values|owner shell, all pages, theme persistence, mobile overflow and logout',
-};
-const runs = [
-  {
-    family: 'smoke',
-    config: 'tests/smoke/production.config.ts',
-    requiredCases: [
-      'production real login',
-      'two tabs hide private DOM',
-      'refill holds a shared lock',
-    ],
-  },
-];
-if (selection.mode === 'full') {
-  runs.push({ family: 'general', config: 'playwright.config.ts' });
-} else {
-  const patterns = selection.areas.map((area) => general[area]).filter(Boolean);
-  if (patterns.length)
-    runs.push({
-      family: 'general',
-      config: 'playwright.config.ts',
-      grep: patterns.join('|'),
-      requiredCases: patterns.flatMap((pattern) => pattern.split('|')),
-    });
-}
-if (selection.mode === 'full' || selection.areas.includes('offline'))
-  runs.push({
-    family: 'offline',
-    config: 'tests/offline/production.config.ts',
-    requiredCases: [
-      { pattern: 'held initial offline install', project: 'desktop' },
-    ],
-  });
-if (selection.mode === 'full' || selection.areas.includes('providers')) {
-  runs.push({
-    family: 'nutrition',
-    config: 'tests/nutrition-sync/e2e.config.ts',
-  });
-  runs.push({
-    family: 'nutrition-connection',
-    vitest: true,
-    config: 'tests/ci/yazio.config.ts',
-  });
-  runs.push({
-    family: 'transformmate',
-    config: 'tests/transformmate-sync/e2e.config.ts',
-    requiredCases: [
-      {
-        pattern: 'owned preview negative requests coalesce',
-        project: 'desktop',
-      },
-    ],
-  });
-}
+const runs = browserPlan(selection);
 const evidence = {
   ...selection,
   browserArtifactBuilds: 1,
@@ -98,7 +38,16 @@ for (const run of runs) {
         run.config,
         ...(run.grep ? ['--grep', run.grep] : []),
       ];
-  const result = spawnSync('pnpm', args, { stdio: 'inherit' });
+  let result;
+  if (run.isolated) {
+    try {
+      await isolatedBrowser(run, Number(process.env.CI_E2E_CONCURRENCY ?? 2));
+      result = { status: 0 };
+    } catch (error) {
+      console.error(error);
+      result = { status: 1 };
+    }
+  } else result = spawnSync('pnpm', args, { stdio: 'inherit' });
   evidence.productionStarts = readFileSync(
     'test-results/production-starts.jsonl',
     'utf8',

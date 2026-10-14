@@ -1,6 +1,6 @@
 import { testOrigin } from '../ci/origin';
 import { getSessionWith429Retry } from './auth-session';
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
 import { meals, nutritionDaySchema } from '@/contracts/nutrition';
 test('real invited trainer login, owner grant revocation and direct API isolation', async ({

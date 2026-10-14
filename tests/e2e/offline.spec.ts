@@ -1,5 +1,5 @@
 import { getSignedOutSessionWith429Retry } from './auth-session';
-import { test, expect, type Response } from '@playwright/test';
+import { test, expect, type Response } from '../ci/isolated-test';
 import { build } from 'esbuild';
 import { dateInTimezone } from '@/contracts/nutrition-sync-dates';
 let harness: string;
@@ -379,9 +379,13 @@ test.describe('provider form interception', () => {
       };
       page.on('response', observeCompletion);
       const form = page.locator('#transformmate');
-      await form.getByLabel(/^Firebase API key/).fill('synthetic-key');
+      await form
+        .getByLabel(/^Firebase API key/)
+        .filter({ visible: true })
+        .fill('synthetic-key');
       await form
         .getByLabel(/^Firebase refresh token/)
+        .filter({ visible: true })
         .fill('synthetic-refresh');
       await form
         .getByRole('button', { name: 'Подключить', exact: true })

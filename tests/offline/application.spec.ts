@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
 import { build } from 'esbuild';
 import { offlineFixture } from './fixtures';

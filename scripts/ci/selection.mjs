@@ -3,6 +3,7 @@ export const areas = [
   'workouts',
   'measurements',
   'analytics',
+  'anamnesis',
   'reports',
   'comments',
   'offline',
@@ -26,13 +27,20 @@ export function selectAreas(paths, mode = 'selected') {
   for (const path of paths) {
     if (/^(docs\/|README\.md$)/.test(path)) continue;
     const match =
-      /^src\/features\/(nutrition|workouts|measurements|analytics|reports|comments)\//.exec(
+      /^src\/features\/(nutrition|workouts|measurements|analytics|anamnesis|reports|comments)\//.exec(
         path,
       );
     if (match) {
       selected.add(match[1]);
       if (['nutrition', 'workouts'].includes(match[1]))
         selected.add('providers');
+      continue;
+    }
+    if (
+      /^src\/(?:server|app\/api)\/anamnesis\//.test(path) ||
+      /^src\/app\/\(dashboard\)\/anamnesis\//.test(path)
+    ) {
+      selected.add('anamnesis');
       continue;
     }
     if (/^src\/server\/(nutrition|yazio|jobs)\//.test(path)) {
@@ -53,7 +61,7 @@ export function selectAreas(paths, mode = 'selected') {
       };
     }
     const testArea =
-      /^tests\/(?:e2e\/)?(nutrition|workouts|measurements|analytics|reports|comments|offline)/.exec(
+      /^tests\/(?:e2e\/)?(nutrition|workouts|measurements|analytics|anamnesis|reports|comments|offline)/.exec(
         path,
       );
     if (testArea) {

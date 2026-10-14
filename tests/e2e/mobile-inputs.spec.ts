@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../ci/isolated-test';
 
 async function audit(page: Page, touch: boolean) {
   const controls = page.locator(

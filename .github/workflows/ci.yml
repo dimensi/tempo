@@ -40,6 +40,8 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - name: Mandatory production smoke and selected or manual-full area gates
+        env:
+          CI_E2E_CONCURRENCY: 2
         run: pnpm test:ci:browsers
       - uses: actions/upload-artifact@v7.0.2
         if: always()

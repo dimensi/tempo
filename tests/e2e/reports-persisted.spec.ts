@@ -1,5 +1,5 @@
 import { getSessionWith429Retry } from './auth-session';
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
 import { execFileSync } from 'node:child_process';
 import { syntheticDay } from '../unit/reports/fixtures';
