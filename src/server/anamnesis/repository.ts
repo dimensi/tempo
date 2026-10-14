@@ -1,17 +1,6 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
-import {
-  and,
-  desc,
-  eq,
-  gte,
-  inArray,
-  isNull,
-  like,
-  lte,
-  ne,
-  sql,
-} from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 import { getDatabase } from '@/server/db';
 import { user, trainerAccess } from '@/server/db/schema';
 import {
