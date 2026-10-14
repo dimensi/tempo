@@ -1,21 +1,22 @@
 # Nutrition deployment
 
 Tempo uses the same basic deployment path as `dimensi/dark-corses-vault`:
-CI builds and tests the image, publishes it to GHCR, then CD copies env/Compose
+CI builds the image, publishes it to GHCR, then CD copies env/Compose
 and runs ordinary SSH commands `docker compose pull` and `up --wait`.
 No deployment receiver, custom archive protocol, installer or new server helper is used.
 
 ## Image and checks
 
-Existing CI gates remain: formatting, lint, typecheck, unit/integration tests,
-production browser gates, image build and disposable Docker smoke. After the Docker
-smoke, a main push publishes that exact local image as
+CI runs only on main pushes and performs the Docker build and GHCR publication.
+PR CI, formatting, lint, typecheck, unit/integration tests, browser gates and
+disposable Docker smoke do not run in this workflow. All three full E2E suites
+are mandatory before every merge into main, as specified in AGENTS.md.
+A main push publishes that exact local image as
 `ghcr.io/dimensi/yazio-dashboard:FULL_COMMIT_SHA` using the job's `GITHUB_TOKEN`.
-There is no second build and no moving latest tag in deployment. Manual full CI
-continues to run checks without publishing or deploying.
+There is no second build and no moving latest tag in deployment. There is no manual full-test CI branch.
 
 CD accepts only the current main SHA with a completed successful main-push CI run
-and both required jobs `checks` and `docker`. Production concurrency remains
+and the successful `docker` job. No `checks` job is required. Production concurrency remains
 `nutrition-production`, cancel-in-progress false. SSH verifies the existing host key
 on port 2224. The pulled image revision label and final running image/revision must match.
 

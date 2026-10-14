@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Called only after the CI Docker smoke step succeeds.
+# Called only after the main-push Docker image build succeeds.
 [[ "${GITHUB_EVENT_NAME:-}" == push && "${GITHUB_REF:-}" == refs/heads/main ]] || {
   echo 'Release export requires a main push.' >&2
   exit 1
