@@ -7,3 +7,4 @@ export { ImportQueue } from './import-queue';
 export { ReviewEditor } from './review-editor';
 export { ReportsPanel } from './reports-panel';
 export { AccessPanel } from './access-panel';
+export { AnamnesisNavigation, AnamnesisUploadLink } from './navigation';

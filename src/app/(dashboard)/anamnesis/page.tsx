@@ -3,9 +3,12 @@ import { authorize, requireSession } from '@/server/auth/guards';
 import { getAccessibleOwnerId } from '@/server/access/owner';
 import { anamnesisMessages as m } from '@/features/anamnesis';
 import { getAnamnesisOverview } from '@/server/anamnesis';
-import { AnamnesisOverviewCards } from '@/features/anamnesis';
+import {
+  AnamnesisOverviewCards,
+  AnamnesisUploadLink,
+} from '@/features/anamnesis';
 import Link from 'next/link';
-import { Alert, Stack, Text } from '@mantine/core';
+import { Alert, Group, Stack, Text } from '@mantine/core';
 
 export const metadata = { title: m.title };
 
@@ -32,6 +35,11 @@ export default async function Page() {
   if (!overview) return null;
   return (
     <Stack gap="lg" data-testid="anamnesis-page">
+      {access.session.user.role === 'OWNER' && (
+        <Group>
+          <AnamnesisUploadLink />
+        </Group>
+      )}
       <AnamnesisOverviewCards overview={overview} />
       {!overview.documents && !overview.observations ? (
         <Text>{m.overview.empty}</Text>

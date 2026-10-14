@@ -81,6 +81,12 @@ test('owner imports the reference PDF and trainer receives only granted access',
   const owner = await login(page, 'owner', origin);
   const ownerQuery = `ownerId=${owner.id}`;
 
+  // The overview must expose the actual upload form without a guessed URL.
+  await page.goto('/anamnesis');
+  await page.getByRole('link', { name: 'Загрузить PDF', exact: true }).click();
+  await expect(page).toHaveURL(/\/anamnesis\/documents$/);
+  await expect(page.getByLabel('Загрузить PDF')).toBeVisible();
+
   // Тренер получает доступ через настоящее приглашение (trainer_access).
   // Проекты и повторы делят одну e2e-базу: аккаунт уникален для каждого
   // запуска, чтобы приглашение оставалось одноразовым.
@@ -237,6 +243,9 @@ test('owner imports the reference PDF and trainer receives only granted access',
   ).toBe(403);
   await trainerPage.goto('/anamnesis');
   await expect(trainerPage.getByTestId('anamnesis-overview')).toBeVisible();
+  await expect(
+    trainerPage.getByRole('link', { name: 'Загрузить PDF', exact: true }),
+  ).toHaveCount(0);
 
   // Грант на показатель открывает только его.
   const grant = await page.request.put(
