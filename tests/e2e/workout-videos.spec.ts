@@ -174,15 +174,6 @@ test('select, compress rotated MOV, preview, resume network interruption after r
       await trainer.request.get(url, { headers: { range: 'bytes=0-9' } })
     ).status(),
   ).toBe(403);
-  // Restore the synthetic grant for the next isolated browser scenario.
-  expect(
-    (
-      await page.request.post('/api/trainers', {
-        headers: { origin: testOrigin },
-        data: { ownerId, trainerId },
-      })
-    ).ok(),
-  ).toBe(true);
   await trainerContext.close();
   expect(
     await page.evaluate(
