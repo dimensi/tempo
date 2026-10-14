@@ -319,6 +319,9 @@ test('measurement and actual-session comments compose after CRUD with real train
     // Disposable fixture-only cleanup survives UI timeout/context disposal and
     // removes only this run's rows, including parents created before IDs were read.
     try {
+      // IMMEDIATE берёт write-lock в BEGIN: deferred-транзакция с SELECT
+      // перед DELETE падает SQLITE_BUSY при любом коммите живого webserver
+      // между чтением и записью (устаревший снапшот, busy-timeout не спасает).
       db.transaction(() => {
         const measurements = db
           .prepare('SELECT id FROM measurements WHERE owner_id=? AND note=?')
@@ -358,7 +361,7 @@ test('measurement and actual-session comments compose after CRUD with real train
           db.prepare(
             'DELETE FROM trainer_access WHERE owner_id=? AND trainer_id=?',
           ).run(ownerId, trainerId);
-      })();
+      }).immediate();
     } finally {
       db.close();
       await trainerContext.close().catch(() => undefined);

@@ -17,7 +17,9 @@ export default async function Page() {
   if (session.user.role !== 'OWNER')
     return (
       <Stack>
-        <Title order={1}>{ru.sections[6]!.title}</Title>
+        <Title order={1}>
+          {ru.sections.find((section) => section.href === '/settings')!.title}
+        </Title>
         <Text c="dimmed">{ru.settings.ownerOnly}</Text>
       </Stack>
     );
@@ -30,7 +32,9 @@ export default async function Page() {
   return (
     <Stack gap="xl">
       <Stack gap="xs">
-        <Title order={1}>{ru.sections[6]!.title}</Title>
+        <Title order={1}>
+          {ru.sections.find((section) => section.href === '/settings')!.title}
+        </Title>
         <Text c="dimmed">{ru.settings.description}</Text>
       </Stack>
       <SettingsNavigation>

@@ -41,6 +41,12 @@ export const ru = {
       area: 'measurements',
     },
     {
+      href: '/anamnesis',
+      title: 'Анамнез',
+      description: 'Лабораторные показатели, документы и отчёты.',
+      area: 'anamnesis',
+    },
+    {
       href: '/workouts',
       title: 'Тренировки',
       description: 'Здесь появятся тренировки и планы занятий.',

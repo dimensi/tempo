@@ -1,4 +1,5 @@
 import { spawn, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:https';
 import { request } from 'node:http';
 import {
@@ -101,6 +102,10 @@ const env: NodeJS.ProcessEnv = {
       : '',
   TRANSFORMMATE_TOKEN_FILE: resolve('.data/e2e-transformmate-token.json'),
   UPLOADS_DIR: './.data/e2e-nutrition-uploads',
+  // E2E-only детерминированное распознавание контрольного PDF анамнеза.
+  ANAMNESIS_EXTRACTION_FIXTURE_SHA256: createHash('sha256')
+    .update(readFileSync('tests/fixtures/anamnesis/synthetic-lab.pdf'))
+    .digest('hex'),
   NEXT_TELEMETRY_DISABLED: '1',
 };
 rmSync(env.TRANSFORMMATE_TOKEN_FILE!, { force: true });
