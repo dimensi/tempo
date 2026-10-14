@@ -3,6 +3,15 @@ import assert from 'node:assert/strict';
 import { browserPlan } from '../../scripts/ci/browser-plan.mjs';
 import { selectAreas } from '../../scripts/ci/selection.mjs';
 
+test('video test changes select and execute the video browser spec', () => {
+  const selection = selectAreas(['tests/e2e/workout-videos.spec.ts']);
+  assert.deepEqual(selection.areas, ['workouts', 'providers']);
+  const general = browserPlan(selection).find(
+    (run) => run.family === 'general',
+  );
+  assert.ok(general.files.includes('workout-videos.spec.ts'));
+});
+
 test('settings test path retains mandatory gates and the complete shell section', () => {
   const plan = browserPlan(
     selectAreas(['tests/e2e/settings-navigation.spec.ts']),

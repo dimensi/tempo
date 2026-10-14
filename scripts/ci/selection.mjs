@@ -12,6 +12,7 @@ export const areas = [
 ];
 // Exact aliases for existing specs whose names differ from their feature area.
 const testAliases = {
+  'workout-videos.spec.ts': ['workouts', 'providers'],
   'settings-navigation.spec.ts': ['shell'],
   'trainer-navigation.spec.ts': ['shell'],
   'comment-ui.spec.ts': ['comments'],
