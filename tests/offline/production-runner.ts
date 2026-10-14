@@ -10,12 +10,16 @@ import {
   rmSync,
   appendFileSync,
   mkdirSync,
+  writeFileSync,
+  cpSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { build } from 'esbuild';
 import { startUpstream } from '../transformmate-sync/upstream';
 import { testOrigin } from '../ci/origin';
+import { verifyFixtureSnapshot } from '../ci/fixture-snapshot';
+import { stopServer } from '../ci/stop-server';
 const family = process.argv[2] ?? 'offline';
 const gatewayPort = Number(new URL(testOrigin).port);
 const backendPort = Number(process.env.CI_E2E_BACKEND_PORT ?? 3161);
@@ -119,47 +123,158 @@ rmSync(env.TRANSFORMMATE_TOKEN_FILE!, { force: true });
 if (family !== 'nutrition-connection')
   rmSync(env.UPLOADS_DIR!, { force: true, recursive: true });
 const upstream = family === 'transformmate' ? await startUpstream() : undefined;
-if (family !== 'nutrition-connection')
+const fixtureHash = process.env.CI_E2E_FIXTURE_SHA256;
+if (fixtureHash) verifyFixtureSnapshot(family, fixtureHash);
+if (family !== 'nutrition-connection' && !fixtureHash)
   execFileSync('pnpm', ['exec', 'tsx', 'scripts/prepare-e2e.ts'], {
     env,
     stdio: 'inherit',
   });
-const child = spawn(process.execPath, ['scripts/start.mjs'], {
-  env: {
-    ...env,
-    NODE_ENV: 'production',
-    PORT: String(backendPort),
-    HOSTNAME: '127.0.0.1',
-    ...(family === 'nutrition-connection'
-      ? {
-          CI_SYNTHETIC_PROVIDER: 'yazio',
-          CI_YAZIO_UNCONFIGURED:
-            process.env.CI_YAZIO_UNCONFIGURED === 'true' ? 'true' : 'false',
-          NODE_OPTIONS: `--import=${resolve('tests/nutrition-sync/connection-oauth-stub.mjs')}`,
-        }
-      : {}),
-    ...(family === 'transformmate'
-      ? {
-          CI_SYNTHETIC_PROVIDER: 'transformmate',
-          NODE_OPTIONS: `--require=${resolve('tests/transformmate-sync/fetch-preload.cjs')}`,
-        }
-      : {}),
-  },
-  stdio: 'inherit',
-});
-child.on('spawn', () => {
-  mkdirSync('test-results', { recursive: true });
-  appendFileSync(
-    'test-results/production-starts.jsonl',
-    JSON.stringify({ family, at: new Date().toISOString() }) + '\n',
-  );
-});
+const isolatedWorker = process.env.CI_E2E_WORKER === 'true';
+if (isolatedWorker && !fixtureHash)
+  throw new Error('Isolated worker requires a verified fixture');
+const fixture = isolatedWorker ? readFileSync('.data/e2e.sqlite') : undefined;
+let restarting = false;
+let closing = false;
+let generation = 0;
+const serverSnapshot = resolve('.next/e2e-server-snapshot');
+if (isolatedWorker)
+  cpSync('.next/standalone/.next/server', serverSnapshot, { recursive: true });
+function startServer(caseKey?: unknown[]) {
+  const value = spawn(process.execPath, ['.next/standalone/server.js'], {
+    env: {
+      ...env,
+      DATABASE_URL: `file:${resolve('.data/e2e.sqlite')}`,
+      UPLOADS_DIR: resolve(env.UPLOADS_DIR!),
+      NODE_ENV: 'production',
+      PORT: String(backendPort),
+      HOSTNAME: '127.0.0.1',
+      ...(family === 'nutrition-connection'
+        ? {
+            CI_SYNTHETIC_PROVIDER: 'yazio',
+            CI_YAZIO_UNCONFIGURED:
+              process.env.CI_YAZIO_UNCONFIGURED === 'true' ? 'true' : 'false',
+            NODE_OPTIONS: `--import=${resolve('tests/nutrition-sync/connection-oauth-stub.mjs')}`,
+          }
+        : {}),
+      ...(family === 'transformmate'
+        ? {
+            CI_SYNTHETIC_PROVIDER: 'transformmate',
+            NODE_OPTIONS: `--require=${resolve('tests/transformmate-sync/fetch-preload.cjs')}`,
+          }
+        : {}),
+    },
+    stdio: 'inherit',
+  });
+  value.on('spawn', () => {
+    mkdirSync('test-results', { recursive: true });
+    appendFileSync(
+      'test-results/production-starts.jsonl',
+      JSON.stringify({
+        family,
+        generation,
+        caseKey,
+        at: new Date().toISOString(),
+      }) + '\n',
+    );
+  });
+  value.on('exit', (code) => {
+    if (value !== child || restarting || closing) return;
+    close();
+    process.exit(code ?? 1);
+  });
+  return value;
+}
+let child = startServer();
+async function resetCase(caseKey: unknown[]) {
+  if (restarting || closing) throw new Error('Worker reset is unavailable');
+  restarting = true;
+  try {
+    await stopServer(child);
+    if (closing) throw new Error('Worker closing');
+    for (const suffix of ['', '-wal', '-shm'])
+      rmSync(`.data/e2e.sqlite${suffix}`, { force: true });
+    writeFileSync('.data/e2e.sqlite', fixture!);
+    rmSync(env.TRANSFORMMATE_TOKEN_FILE!, { force: true });
+    rmSync(env.UPLOADS_DIR!, { recursive: true, force: true });
+    rmSync('.next/standalone/.next/cache', { recursive: true, force: true });
+    rmSync('.next/standalone/.next/server', { recursive: true, force: true });
+    cpSync(serverSnapshot, '.next/standalone/.next/server', {
+      recursive: true,
+    });
+    workerMode = 'current';
+    navigationStatus = 0;
+    holdInstall = false;
+    held.splice(0).forEach((release) => release());
+    generation++;
+    child = startServer(caseKey);
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline && !closing) {
+      const ready = await new Promise<boolean>((done) => {
+        const probe = request(
+          { hostname: '127.0.0.1', port: backendPort, path: '/login' },
+          (response) => {
+            response.resume();
+            done(response.statusCode === 200);
+          },
+        );
+        probe.on('error', () => done(false));
+        probe.setTimeout(1000, () => {
+          probe.destroy();
+          done(false);
+        });
+        probe.end();
+      });
+      if (ready) return generation;
+      await new Promise((done) => setTimeout(done, 50));
+    }
+    throw new Error('Fresh production server did not become ready');
+  } finally {
+    restarting = false;
+  }
+}
 const server = createServer(
   {
     key: readFileSync(`${directory}/key.pem`),
     cert: readFileSync(`${directory}/cert.pem`),
   },
   (incoming, outgoing) => {
+    if (
+      isolatedWorker &&
+      incoming.url === '/__offline-test/reset' &&
+      incoming.method === 'POST'
+    ) {
+      let body = '';
+      incoming.on('data', (chunk) => {
+        body += chunk;
+        if (body.length > 4096) incoming.destroy();
+      });
+      incoming.on('end', () => {
+        let caseKey: unknown[];
+        try {
+          const parsed = JSON.parse(body).caseKey;
+          if (!Array.isArray(parsed) || parsed.length !== 4)
+            throw new Error('Invalid isolated case');
+          caseKey = parsed;
+        } catch {
+          outgoing.writeHead(400);
+          outgoing.end();
+          return;
+        }
+        void resetCase(caseKey).then(
+          (generation) => {
+            outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+            outgoing.end(JSON.stringify({ generation }));
+          },
+          (error) => {
+            console.error(error);
+            outgoing.writeHead(500);
+            outgoing.end('Synthetic case reset failed');
+          },
+        );
+      });
+      return;
+    }
     if (
       incoming.url === '/__offline-test/control' &&
       incoming.method === 'POST'
@@ -240,13 +355,10 @@ const server = createServer(
 );
 server.listen(gatewayPort, '127.0.0.1');
 function close() {
+  closing = true;
   child.kill('SIGTERM');
   upstream?.close();
   server.close();
   rmSync(directory, { recursive: true, force: true });
 }
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, close);
-child.on('exit', (code) => {
-  close();
-  process.exit(code ?? 1);
-});

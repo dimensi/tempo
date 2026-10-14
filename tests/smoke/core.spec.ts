@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../ci/isolated-test';
 import { testOrigin } from '../ci/origin';
 
 test('production real login, diary, workout save/read, offline cold read, logout purge and trainer boundary', async ({

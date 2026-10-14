@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { day as syntheticDay } from '../unit/diary/fixture';

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   cpSync,
   appendFileSync,
@@ -14,9 +15,9 @@ import { dirname, resolve } from 'node:path';
 import { requirePassingReport } from './report.mjs';
 import { runProcessGroup } from './process-group.mjs';
 
-// One case/project per disposable checkout and server. The unchanged test-side
-// SQLite paths resolve inside that checkout, as do CLI calls, uploads and tokens.
-// Real accounts/auth quotas belong to the dedicated Next process and database.
+// One disposable checkout and browser process per bounded worker. Each case
+// restores its closed synthetic fixture and private paths before a fresh Next
+// process starts; real memory auth quotas are never bypassed or reset in-place.
 export async function isolatedBrowser(run, concurrency = 2) {
   const controller = new AbortController();
   const cancel = () => controller.abort();
@@ -87,166 +88,269 @@ async function executeIsolated(run, concurrency, signal) {
       .split('\0')
       .filter((file) => /^(scripts\/ci|tests\/ci)\//.test(file)),
   );
+  function copySource(sandbox) {
+    for (const file of new Set(
+      tracked.filter(
+        (file) => !file.startsWith('node_modules') && !file.startsWith('.env'),
+      ),
+    )) {
+      mkdirSync(dirname(resolve(sandbox, file)), { recursive: true });
+      cpSync(file, resolve(sandbox, file));
+    }
+    symlinkSync(
+      resolve('node_modules'),
+      resolve(sandbox, 'node_modules'),
+      'dir',
+    );
+  }
+  // Migrate and create real synthetic credentials once. Each case receives a
+  // byte-for-byte fresh SQLite copy; its fresh server still owns real auth quotas.
+  const fixtureDirectory = mkdtempSync(`${tmpdir()}/yazio-browser-fixture-`);
+  const fixtureStart = performance.now();
+  let fixture;
+  try {
+    copySource(fixtureDirectory);
+    const status = await runProcessGroup(
+      'pnpm',
+      ['exec', 'tsx', 'scripts/prepare-e2e.ts'],
+      {
+        cwd: fixtureDirectory,
+        env: {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          GRANT_OWNER_ACCESS: 'false',
+          DATABASE_URL: 'file:./.data/e2e.sqlite',
+          BETTER_AUTH_URL: 'https://localhost:3160',
+          BETTER_AUTH_SECRET: 'offline-production-synthetic-secret-1234567890',
+          DEMO_MODE: 'false',
+          ENABLE_NUTRITION_SCHEDULER: 'false',
+          TMPDIR: fixtureDirectory,
+        },
+        signal,
+      },
+    );
+    if (status !== 0) throw new Error('Synthetic fixture preparation failed');
+    fixture = readFileSync(resolve(fixtureDirectory, '.data/e2e.sqlite'));
+    for (const suffix of ['-wal', '-shm']) {
+      try {
+        if (
+          readFileSync(resolve(fixtureDirectory, `.data/e2e.sqlite${suffix}`))
+            .length
+        )
+          throw new Error('Synthetic fixture must be closed and checkpointed');
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+    }
+  } finally {
+    rmSync(fixtureDirectory, { recursive: true, force: true });
+  }
+  const fixtureHash = createHash('sha256').update(fixture).digest('hex');
   const combined = {
     suites: [],
     stats: { expected: 0, unexpected: 0, skipped: 0, flaky: 0 },
-    isolation: { concurrency, cases: [], errors: [] },
+    isolation: {
+      concurrency,
+      fixtureSeconds: Number(
+        ((performance.now() - fixtureStart) / 1000).toFixed(3),
+      ),
+      cases: [],
+      errors: [],
+    },
   };
-  let index = 0;
-  async function worker(slot) {
-    while (index < cases.length && !signal.aborted) {
-      const selected = cases[index++];
-      const sandbox = mkdtempSync(`${tmpdir()}/yazio-browser-case-`);
-      const start = performance.now();
-      try {
-        for (const file of new Set(
-          tracked.filter(
-            (file) =>
-              !file.startsWith('node_modules') && !file.startsWith('.env'),
-          ),
-        )) {
-          mkdirSync(dirname(resolve(sandbox, file)), { recursive: true });
-          cpSync(file, resolve(sandbox, file));
-        }
-        symlinkSync(
-          resolve('node_modules'),
-          resolve(sandbox, 'node_modules'),
-          'dir',
-        );
-        // Dependencies are immutable, as in the already shared CLI node_modules.
-        // Server output/cache, SQLite and private stores remain case-local.
-        cpSync('.next/standalone', resolve(sandbox, '.next/standalone'), {
-          recursive: true,
-          filter: (source) =>
-            resolve(source) !== resolve('.next/standalone/node_modules'),
-        });
-        symlinkSync(
-          resolve('.next/standalone/node_modules'),
-          resolve(sandbox, '.next/standalone/node_modules'),
-          'dir',
-        );
-        mkdirSync(resolve(sandbox, '.tmp'), { recursive: true });
-        cpSync('.next/BUILD_ID', resolve(sandbox, '.next/BUILD_ID'));
-        cpSync('public', resolve(sandbox, 'public'), { recursive: true });
-        const gatewayPort = 3260 + slot * 2;
-        const copiedSeconds = (performance.now() - start) / 1000;
-        const status = await runProcessGroup(
-          'pnpm',
-          [
-            'exec',
-            'playwright',
-            'test',
-            '--config',
-            run.config,
-            `${selected.file}:${selected.line}`,
-            '--project',
-            selected.project,
-            '--workers=1',
-            '--grep',
-            selected.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$',
-          ],
-          {
-            cwd: sandbox,
-            env: {
-              ...process.env,
-              CI_E2E_ORIGIN: `https://localhost:${gatewayPort}`,
-              CI_E2E_BACKEND_PORT: String(gatewayPort + 1),
-              TMPDIR: resolve(sandbox, '.tmp'),
-            },
-            signal,
-          },
-        );
-        const report = JSON.parse(
-          readFileSync(
-            resolve(sandbox, `test-results/${run.family}.json`),
-            'utf8',
-          ),
-        );
-        appendFileSync(
-          'test-results/production-starts.jsonl',
-          readFileSync(
-            resolve(sandbox, 'test-results/production-starts.jsonl'),
-          ),
-        );
-        combined.suites.push(...report.suites);
-        for (const key of ['expected', 'unexpected', 'skipped', 'flaky'])
-          combined.stats[key] += report.stats[key] ?? 0;
-        mkdirSync(`test-results/${run.family}/cases`, { recursive: true });
-        writeFileSync(
-          `test-results/${run.family}/cases/${selected.id}.json`,
-          JSON.stringify(report, null, 2),
-        );
-        combined.isolation.cases.push({
-          ...selected,
-          copySeconds: Number(copiedSeconds.toFixed(3)),
-          seconds: Number(((performance.now() - start) / 1000).toFixed(2)),
-        });
-        // Every enumerated case must produce exactly one result, even intentional skips.
-        if (
-          status !== 0 ||
-          report.errors?.length ||
-          report.stats.expected + report.stats.skipped !== 1 ||
-          report.stats.unexpected ||
-          report.stats.flaky
+  const projects = [...new Set(cases.map((entry) => entry.project))];
+  if (projects.length > 2)
+    throw new Error('Isolated browser supports at most two viewport projects');
+  const groups =
+    projects.length === 2
+      ? projects.map((project) =>
+          cases.filter((entry) => entry.project === project),
         )
-          throw new Error(
-            `Isolated case failed or missing: ${selected.file}:${selected.line} (${selected.project})`,
-          );
-        const allowedMobileSkips = {
-          'e2e/workouts.spec.ts': [
-            'a save settling after Back does not redirect or repeat the write',
-            'actual draft survives conflict and access errors; unavailable storage requires explicit leave',
-            'late actual save cannot erase a reopened draft or redirect it',
-            'retained planned and actual editors hide cached drafts before real access revalidation and denial',
-          ],
-          'e2e/transformmate-ui.spec.ts': [
-            'real authenticated session throttle is retried once after its server interval',
-          ],
-        };
+      : Array.from({ length: Math.min(concurrency, cases.length) }, (_, slot) =>
+          cases.filter(
+            (_, index) => index % Math.min(concurrency, cases.length) === slot,
+          ),
+        );
+  const allowedMobileSkips = {
+    'e2e/workouts.spec.ts': [
+      'a save settling after Back does not redirect or repeat the write',
+      'actual draft survives conflict and access errors; unavailable storage requires explicit leave',
+      'late actual save cannot erase a reopened draft or redirect it',
+      'retained planned and actual editors hide cached drafts before real access revalidation and denial',
+    ],
+    'e2e/transformmate-ui.spec.ts': [
+      'real authenticated session throttle is retried once after its server interval',
+    ],
+  };
+  async function worker(selectedCases, slot) {
+    if (signal.aborted) return;
+    const sandbox = mkdtempSync(`${tmpdir()}/yazio-browser-worker-`);
+    const start = performance.now();
+    try {
+      copySource(sandbox);
+      cpSync('.next/standalone', resolve(sandbox, '.next/standalone'), {
+        recursive: true,
+        filter: (source) =>
+          resolve(source) !== resolve('.next/standalone/node_modules'),
+      });
+      symlinkSync(
+        resolve('.next/standalone/node_modules'),
+        resolve(sandbox, '.next/standalone/node_modules'),
+        'dir',
+      );
+      mkdirSync(resolve(sandbox, '.tmp'), { recursive: true });
+      cpSync('.next/BUILD_ID', resolve(sandbox, '.next/BUILD_ID'));
+      cpSync('public', resolve(sandbox, 'public'), { recursive: true });
+      mkdirSync(resolve(sandbox, '.data'), { recursive: true });
+      writeFileSync(resolve(sandbox, '.data/e2e.sqlite'), fixture);
+      const gatewayPort = 3260 + slot * 2;
+      const copiedSeconds = (performance.now() - start) / 1000;
+      const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
+      const status = await runProcessGroup(
+        'pnpm',
+        [
+          'exec',
+          'playwright',
+          'test',
+          '--config',
+          run.config,
+          ...new Set(selectedCases.map((entry) => entry.file)),
+          '--project',
+          selectedCases[0].project,
+          '--workers=1',
+          '--grep',
+          `(?:${[...new Set(selectedCases.map((entry) => escape(entry.title)))].join('|')})$`,
+        ],
+        {
+          cwd: sandbox,
+          env: {
+            ...process.env,
+            CI_E2E_ORIGIN: `https://localhost:${gatewayPort}`,
+            CI_E2E_BACKEND_PORT: String(gatewayPort + 1),
+            CI_E2E_FIXTURE_SHA256: fixtureHash,
+            CI_E2E_WORKER: 'true',
+            TMPDIR: resolve(sandbox, '.tmp'),
+          },
+          signal,
+        },
+      );
+      const report = JSON.parse(
+        readFileSync(
+          resolve(sandbox, `test-results/${run.family}.json`),
+          'utf8',
+        ),
+      );
+      const starts = readFileSync(
+        resolve(sandbox, 'test-results/production-starts.jsonl'),
+        'utf8',
+      );
+      appendFileSync('test-results/production-starts.jsonl', starts);
+      const entries = [];
+      const collect = (suites) => {
+        for (const suite of suites ?? []) {
+          for (const spec of suite.specs ?? []) {
+            for (const test of spec.tests ?? [])
+              entries.push({
+                file: spec.file,
+                line: spec.line,
+                title: spec.title,
+                project: test.projectName,
+                status: test.status,
+                seconds: (test.results?.[0]?.duration ?? 0) / 1000,
+              });
+          }
+          collect(suite.suites);
+        }
+      };
+      collect(report.suites);
+      const key = (entry) =>
+        JSON.stringify([entry.file, entry.line, entry.title, entry.project]);
+      if (
+        JSON.stringify(entries.map(key).sort()) !==
+        JSON.stringify(selectedCases.map(key).sort())
+      )
+        throw new Error('Worker report differs from enumerated selection');
+      combined.suites.push(...report.suites);
+      for (const key of ['expected', 'unexpected', 'skipped', 'flaky'])
+        combined.stats[key] += report.stats[key] ?? 0;
+      combined.isolation.cases.push(...entries);
+      combined.isolation.workers ??= [];
+      combined.isolation.workers.push({
+        slot,
+        project: selectedCases[0].project,
+        copySeconds: Number(copiedSeconds.toFixed(3)),
+        seconds: Number(((performance.now() - start) / 1000).toFixed(3)),
+        serverStarts: starts.trim().split('\n').length,
+      });
+      for (const entry of entries)
         if (
-          report.stats.skipped &&
+          entry.status === 'skipped' &&
           !(
-            selected.project === 'mobile' &&
-            allowedMobileSkips[selected.file]?.includes(selected.title)
+            entry.project === 'mobile' &&
+            allowedMobileSkips[entry.file]?.includes(entry.title)
           )
         )
-          throw new Error(
-            `Unexpected skipped isolated case: ${selected.title}`,
-          );
-        if (!report.stats.skipped)
-          requirePassingReport(report, [
-            {
-              pattern: selected.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-              project: selected.project,
-            },
-          ]);
-      } catch (error) {
-        combined.isolation.errors.push({ ...selected, message: error.message });
-      } finally {
-        // Failure traces remain available in the parent artifact directory.
-        const artifact = resolve(
-          sandbox,
-          `test-results/${run.family}/artifacts`,
-        );
+          throw new Error(`Unexpected skipped isolated case: ${entry.title}`);
+      if (
+        status !== 0 ||
+        report.errors?.length ||
+        report.stats.unexpected ||
+        report.stats.flaky
+      )
+        throw new Error('Isolated worker tests failed');
+      // Match the reset ledger to actual case keys, rather than counting starts:
+      // runtime skips may also initialize fixtures, but cannot hide a missing reset.
+      const resetKeys = starts
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line))
+        .filter((entry) => entry.generation > 0)
+        .map((entry) => JSON.stringify(entry.caseKey));
+      if (
+        new Set(resetKeys).size !== resetKeys.length ||
+        resetKeys.some(
+          (value) => !selectedCases.some((entry) => key(entry) === value),
+        ) ||
+        entries.some(
+          (entry) =>
+            entry.status !== 'skipped' && !resetKeys.includes(key(entry)),
+        )
+      )
+        throw new Error('A case did not reset its production server');
+      if (report.stats.expected) requirePassingReport(report);
+      mkdirSync(`test-results/${run.family}/workers`, { recursive: true });
+      writeFileSync(
+        `test-results/${run.family}/workers/${slot}.json`,
+        JSON.stringify(report, null, 2),
+      );
+    } catch (error) {
+      combined.isolation.errors.push({ slot, message: error.message });
+    } finally {
+      try {
         try {
-          try {
-            cpSync(
-              artifact,
-              `test-results/${run.family}/isolated/${selected.project}-${selected.line}-${selected.file.replaceAll('/', '_')}`,
-              { recursive: true },
-            );
-          } catch (error) {
-            if (error.code !== 'ENOENT') throw error;
-          }
-        } finally {
-          rmSync(sandbox, { recursive: true, force: true });
+          cpSync(
+            resolve(sandbox, `test-results/${run.family}/artifacts`),
+            `test-results/${run.family}/isolated/worker-${slot}`,
+            { recursive: true },
+          );
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error;
         }
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
       }
     }
   }
-  const results = await Promise.allSettled(
-    Array.from({ length: concurrency }, (_, slot) => worker(slot)),
-  );
+  // Concurrency1 still enumerates both projects, but runs their separate workers serially.
+  const results = [];
+  for (let start = 0; start < groups.length; start += concurrency)
+    results.push(
+      ...(await Promise.allSettled(
+        groups
+          .slice(start, start + concurrency)
+          .map((group, index) => worker(group, start + index)),
+      )),
+    );
   writeFileSync(
     `test-results/${run.family}.json`,
     JSON.stringify(combined, null, 2),

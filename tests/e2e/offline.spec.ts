@@ -1,5 +1,5 @@
 import { getSignedOutSessionWith429Retry } from './auth-session';
-import { test, expect, type Response } from '@playwright/test';
+import { test, expect, type Response } from '../ci/isolated-test';
 import { build } from 'esbuild';
 import { dateInTimezone } from '@/contracts/nutrition-sync-dates';
 let harness: string;

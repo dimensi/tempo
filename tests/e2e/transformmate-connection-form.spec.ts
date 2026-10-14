@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../ci/isolated-test';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
 import type { TransformMateConnectionStatus } from '@/contracts/transformmate-connection';

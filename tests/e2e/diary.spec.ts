@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../ci/isolated-test';
 test('authenticated diary date navigation and empty state', async ({
   page,
 }) => {

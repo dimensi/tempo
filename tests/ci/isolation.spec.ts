@@ -1,9 +1,9 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './isolated-test';
 import Database from 'better-sqlite3';
 import { testOrigin } from './origin';
-import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
 
-for (const label of ['first', 'second']) {
+for (const label of ['first', 'second', 'third', 'fourth']) {
   test(`isolated fixture mutations and real auth quota: ${label}`, async ({
     request,
   }) => {
@@ -33,6 +33,10 @@ for (const label of ['first', 'second']) {
         '2026-01-01',
         JSON.stringify([{ metric: 'weight', value: '80', unit: 'kg' }]),
         label,
+      );
+      expect(existsSync('.data/e2e-transformmate-token.json')).toBe(false);
+      expect(existsSync('.data/e2e-nutrition-uploads/isolation.txt')).toBe(
+        false,
       );
       writeFileSync('.data/e2e-transformmate-token.json', label);
       mkdirSync('.data/e2e-nutrition-uploads', { recursive: true });
