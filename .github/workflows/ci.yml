@@ -32,7 +32,10 @@ jobs:
       - run: pnpm test:ci:selection
       - run: pnpm format:check
       - name: Verify constrained CD protocol and recovery guards
-        run: python3 scripts/cd/test-cd-candidates.py
+        run: |
+          python3 scripts/cd/test-cd-candidates.py
+          python3 scripts/cd/test-runtime-config.py
+          python3 scripts/cd/test-runtime-installer.py
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm exec playwright install --with-deps chromium
@@ -60,6 +63,8 @@ jobs:
             --label "org.opencontainers.image.tree=$(git rev-parse HEAD^{tree})" .
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - run: bash scripts/docker-smoke.sh
+      - name: Disposable CD snapshot and rollback smoke
+        run: python3 scripts/cd/test-cd-candidates.py --docker
       - name: Export tested release image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: bash scripts/export-release-artifact.sh

@@ -79,6 +79,16 @@ jobs:
           DEPLOY_USER: ${{ vars.NUTRITION_DEPLOY_USER }}
           REVISION: ${{ inputs.revision || github.event.workflow_run.head_sha }}
           RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
+          S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+          S3_REGION: ${{ vars.S3_REGION }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          ANAMNESIS_LLM_API_KEY: ${{ secrets.ANAMNESIS_LLM_API_KEY }}
+          ANAMNESIS_LLM_BASE_URL: ${{ vars.ANAMNESIS_LLM_BASE_URL }}
+          ANAMNESIS_LLM_MODEL: ${{ vars.ANAMNESIS_LLM_MODEL }}
+          ANAMNESIS_LLM_TIMEOUT_MS: ${{ vars.ANAMNESIS_LLM_TIMEOUT_MS }}
+          ENABLE_ANAMNESIS_WORKER: ${{ vars.ENABLE_ANAMNESIS_WORKER }}
         run: |
           set -euo pipefail
           set +x
@@ -86,7 +96,22 @@ jobs:
           [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$DEPLOY_USER" == nutrition-deploy ]]
           key=$(mktemp)
           hosts=$(mktemp)
-          trap 'rm -f "$key" "$hosts"' EXIT
+          config_dir=$(mktemp -d "$RUNNER_TEMP/nutrition-runtime.XXXXXX")
+          trap 'rm -f "$key" "$hosts"; rm -rf "$config_dir"' EXIT
+          export RUNTIME_CONFIG_PATH="$config_dir/runtime-config.json"
+          python3 - <<'PYCONFIG'
+          import json, os
+          keys = ('S3_ENDPOINT', 'S3_REGION', 'S3_BUCKET', 'S3_ACCESS_KEY_ID',
+                  'S3_SECRET_ACCESS_KEY', 'ANAMNESIS_LLM_API_KEY', 'ANAMNESIS_LLM_BASE_URL',
+                  'ANAMNESIS_LLM_MODEL', 'ANAMNESIS_LLM_TIMEOUT_MS', 'ENABLE_ANAMNESIS_WORKER')
+          values = {key: os.environ[key] for key in keys}
+          assert all(0 < len(value) <= 2048 and all(32 <= ord(c) <= 126 and c not in "'\\" for c in value) for value in values.values()), 'Runtime configuration rejected'
+          payload = json.dumps({'version': 2, 'runtime': values}).encode('ascii')
+          assert len(payload) <= 16384, 'Runtime configuration rejected'
+          with open(os.environ['RUNTIME_CONFIG_PATH'], 'xb') as f:
+              f.write(payload)
+          PYCONFIG
+          unset S3_ENDPOINT S3_REGION S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY ANAMNESIS_LLM_API_KEY ANAMNESIS_LLM_BASE_URL ANAMNESIS_LLM_MODEL ANAMNESIS_LLM_TIMEOUT_MS ENABLE_ANAMNESIS_WORKER RUNTIME_CONFIG_PATH
           printf '%s\n' "$DEPLOY_KEY" > "$key"
           printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
           unset DEPLOY_KEY KNOWN_HOSTS
@@ -94,4 +119,4 @@ jobs:
           digest=$(python3 -c 'import json; print(json.load(open("release-artifact/manifest.json"))["archiveSHA256"])')
           current_main=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
           [[ "$current_main" == "$REVISION" ]] || { echo 'Stale main revision refused.' >&2; exit 1; }
-          tar --format=ustar -C release-artifact -cf - manifest.json image.tar.gz | ssh -p 2224 -i "$key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "nutrition-release $RUN_ID $REVISION $tree $digest"
+          tar --format=ustar -cf - -C "$config_dir" runtime-config.json -C "$GITHUB_WORKSPACE/release-artifact" manifest.json image.tar.gz | ssh -p 2224 -i "$key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "nutrition-release $RUN_ID $REVISION $tree $digest"

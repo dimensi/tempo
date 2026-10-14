@@ -8,6 +8,7 @@ image="nutrition-release:${commit:0:12}"
 [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == "$commit" ]] || exit 3
 stamp=${CD_BACKUP_STAMP:?fixed backup stamp required}
 [[ "$stamp" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]] || exit 2
+runtime_config=${CD_RUNTIME_CONFIG:?protected runtime payload required}
 compose() { docker compose --project-name nutrition --env-file runtime.env --env-file release.env -f compose.yaml -f compose.home.yaml "$@"; }
 container=$(compose ps -q app)
 previous_image=$(docker inspect "$container" --format '{{.Config.Image}}')
@@ -80,6 +81,7 @@ rollback() {
   restore_snapshot || return 1
  fi
  cp -p "$env_backup" release.env || return 1
+ /usr/local/libexec/nutrition-runtime-config.py restore "$stamp" || return 1
  compose up -d --no-build || return 1
  wait_healthy "$previous_image" "$previous_revision" || return 1
  echo "Previous exact image and healthy matching backup restored: $stamp"
@@ -102,6 +104,22 @@ recovery_armed=true
 compose stop app
 snapshot "pre-upgrade-$stamp" "$previous_image" "$previous_revision"
 backup_ready=true
+# App is stopped: reject a newly arrived import or existing local objects before
+# switching storage. worker=false alone does not prevent direct queue kicks.
+inventory=$(/usr/local/libexec/nutrition-runtime-config.py inventory "$runtime_config")
+if [[ "$inventory" == required ]]; then
+ compose run --rm --no-deps --entrypoint node app -e '
+ const fs=require("node:fs"),D=require("better-sqlite3");
+ const db=new D("/app/data/nutrition.sqlite",{readonly:true,fileMustExist:true});
+ const jobs=db.prepare("SELECT count(*) AS n FROM medical_import_jobs").get().n;
+ const documents=db.prepare("SELECT count(*) AS n FROM medical_documents").get().n;db.close();
+ function files(path){if(!fs.existsSync(path))return 0;return fs.readdirSync(path,{withFileTypes:true}).reduce((n,e)=>{if(e.isSymbolicLink())throw Error("link");return n+(e.isDirectory()?files(path+"/"+e.name):1);},0);}
+ if(jobs||documents||files("/app/uploads/object-storage")){console.error("Storage activation refused: inventory requires an operator migration plan");process.exit(1);}
+'
+elif [[ "$inventory" != unchanged ]]; then
+ exit 2
+fi
+/usr/local/libexec/nutrition-runtime-config.py apply "$stamp" "$runtime_config"
 python3 - "$commit" "$image" <<'PYENV'
 from pathlib import Path
 import sys
