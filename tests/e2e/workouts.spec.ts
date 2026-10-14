@@ -686,7 +686,9 @@ test('result page separates plan guidance, preserves missing facts and returns t
     `/workouts/sessions/${session.id}?date=${sourceDate}`,
   );
   await expect(page.getByText('4 × 0 кг', { exact: true })).toBeVisible();
-  await expect(page.getByText('Extra actual', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Extra actual', { exact: true }).first(),
+  ).toBeVisible();
   expect(
     (await workouts(page, id)).sessions.filter(
       (value) => value.planId === plan.id,

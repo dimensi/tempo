@@ -9,10 +9,12 @@ export function TeachingVideo({
   src,
   poster,
   compact = false,
+  label = m.video,
 }: {
   src: string;
   poster?: string;
   compact?: boolean;
+  label?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
@@ -20,7 +22,7 @@ export function TeachingVideo({
     if (!host.current) return;
     const element = document.createElement('video-js');
     element.classList.add('vjs-big-play-centered');
-    element.setAttribute('aria-label', m.video);
+    element.setAttribute('aria-label', label);
     host.current.appendChild(element);
     const player = videojs(element, {
       controls: true,
@@ -77,7 +79,7 @@ export function TeachingVideo({
     return () => {
       if (!player.isDisposed()) player.dispose();
     };
-  }, [src, poster]);
+  }, [src, poster, label]);
   return (
     <div>
       {failed && (

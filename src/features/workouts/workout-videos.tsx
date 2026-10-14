@@ -321,7 +321,11 @@ function ExerciseVideos({
         .filter((row) => row.state === 'ready')
         .map((row) => (
           <Stack key={row.id}>
-            <TeachingVideo src={`${base}/${row.id}/playback${query}`} compact />
+            <TeachingVideo
+              src={`${base}/${row.id}/playback${query}`}
+              label={`${m.ownVideos}: ${name}`}
+              compact
+            />
             {canUpload && (
               <Button
                 variant="subtle"
@@ -358,7 +362,11 @@ function ExerciseVideos({
                 {m.videoPreview} · {(draft.blob.size / 1024 / 1024).toFixed(1)}{' '}
                 МиБ
               </Text>
-              <TeachingVideo src={preview} compact />
+              <TeachingVideo
+                src={preview}
+                label={`${m.videoPreview}: ${name}`}
+                compact
+              />
               <Group>
                 <Button
                   mih={44}
