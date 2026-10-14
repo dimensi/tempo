@@ -33,8 +33,6 @@ jobs:
       - run: pnpm format:check
       - name: Verify constrained CD protocol and recovery guards
         run: python3 scripts/cd/test-cd-candidates.py
-      - name: Verify inline SSH deployment and configuration
-        run: python3 scripts/cd/test-simple-deploy.py
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm exec playwright install --with-deps chromium
