@@ -13,7 +13,7 @@ permissions:
   contents: read
 jobs:
   checks:
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -49,7 +49,7 @@ jobs:
           name: e2e-results
           path: test-results/
   docker:
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     permissions:
       contents: read
       packages: write
