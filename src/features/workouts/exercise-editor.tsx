@@ -19,6 +19,7 @@ import { ExerciseDetails } from './exercise-details';
 import { workoutMessages as m } from './messages';
 
 export const emptyExercise = (): WorkoutExercise => ({
+  id: crypto.randomUUID(),
   name: '',
   sets: [{ reps: 10, weightKg: null }],
 });
@@ -37,7 +38,7 @@ export function ExerciseEditor({
     <Stack>
       {value.map((exercise, index) => (
         <Paper
-          key={exercise.transformMate?.occurrenceKey ?? index}
+          key={exercise.id ?? exercise.transformMate?.occurrenceKey ?? index}
           withBorder
           p="sm"
           component="section"

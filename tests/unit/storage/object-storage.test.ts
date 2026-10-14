@@ -118,3 +118,44 @@ describe('fs object storage containment', () => {
     rmSync(root, { recursive: true, force: true });
   });
 });
+
+describe('streamed private video storage', () => {
+  const root = mkdtempSync(join(tmpdir(), 'streamed-storage-'));
+  const storage = fsObjectStorage({ rootDir: root });
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  it('streams above the buffered get cap and reads a bounded Range without materializing the file', async () => {
+    const chunk = new Uint8Array(1024 * 1024).fill(7);
+    async function* chunks() {
+      for (let i = 0; i < 101; i++) yield chunk;
+    }
+    await storage.putStream(
+      'workout-videos/test/video.mp4',
+      chunks(),
+      chunk.length * 101,
+      'video/mp4',
+    );
+    await expect(storage.get('workout-videos/test/video.mp4')).rejects.toThrow(
+      'Storage object too large',
+    );
+    const object = await storage.readStream('workout-videos/test/video.mp4', {
+      start: 100 * chunk.length,
+      end: 100 * chunk.length + 9,
+    });
+    expect(object.size).toBe(101 * chunk.length);
+    expect(
+      new Uint8Array(await new Response(object.body).arrayBuffer()),
+    ).toEqual(new Uint8Array(10).fill(7));
+  });
+  it('does not publish interrupted or incorrectly sized streams', async () => {
+    async function* short() {
+      yield new Uint8Array([1]);
+    }
+    await expect(
+      storage.putStream('workout-videos/test/bad.mp4', short(), 2, 'video/mp4'),
+    ).rejects.toThrow('Storage size mismatch');
+    await expect(storage.get('workout-videos/test/bad.mp4')).rejects.toThrow();
+    await expect(storage.readStream('../escape')).rejects.toThrow(
+      'Invalid storage key',
+    );
+  });
+});

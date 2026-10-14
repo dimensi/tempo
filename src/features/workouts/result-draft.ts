@@ -15,6 +15,7 @@ export const resultDraftSchema = z
       .array(
         z
           .object({
+            id: z.uuid().optional(),
             name: z.string().max(160),
             comment: z.string().max(4000).optional(),
             transformMate: z
@@ -58,6 +59,7 @@ export function emptyResultDraft(
     status: 'completed',
     exercises:
       workout?.exercises.map((exercise) => ({
+        id: crypto.randomUUID(),
         name: exercise.name,
         ...(exercise.transformMate
           ? { transformMate: structuredClone(exercise.transformMate) }

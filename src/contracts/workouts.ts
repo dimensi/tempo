@@ -12,6 +12,7 @@ export const workoutSetSchema = z
   .strict();
 export const workoutExerciseSchema = z
   .object({
+    id: z.uuid().optional(),
     name,
     comment: z.string().trim().max(4000).optional(),
     transformMate: z
@@ -92,6 +93,15 @@ export const workoutSessionInputSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    const ids = value.exercises.flatMap((exercise) =>
+      exercise.id ? [exercise.id] : [],
+    );
+    if (new Set(ids).size !== ids.length)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['exercises'],
+        message: 'duplicate exercise id',
+      });
     if (value.status === 'completed' && value.exercises.length === 0)
       ctx.addIssue({
         code: 'custom',

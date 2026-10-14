@@ -62,6 +62,7 @@ export function ResultForm({
       ),
     });
   const exerciseDraft = (): ResultExercise => ({
+    id: crypto.randomUUID(),
     name: '',
     sets: [{ reps: null, weightKg: null }],
   });
@@ -146,7 +147,9 @@ export function ResultForm({
               <Stack
                 component="section"
                 aria-label={`${m.exercise}: ${exercise.name || index + 1}`}
-                key={exercise.transformMate?.occurrenceKey ?? index}
+                key={
+                  exercise.id ?? exercise.transformMate?.occurrenceKey ?? index
+                }
                 gap="sm"
               >
                 <Group align="end" wrap="nowrap">

@@ -81,7 +81,7 @@ it('preserves actual and original plan snapshot across edits/deletion and actual
     'owner',
     session.id,
     session.revision,
-    { ...actual, note: 'Исправлена заметка' },
+    { ...actual, exercises: session.exercises, note: 'Исправлена заметка' },
   );
   expect(corrected.planSnapshot?.planTitle).toBe('Начальный план');
   expect(corrected.planSnapshot?.workout.exercises[0]?.sets[0]?.weightKg).toBe(
@@ -110,7 +110,10 @@ it('enforces owner query scope, optimistic revisions and refuses nonexistent pla
   expect(() =>
     repository.updateSession('other-owner', session.id, 1, actual),
   ).toThrow();
-  repository.updateSession('owner', session.id, 1, actual);
+  repository.updateSession('owner', session.id, 1, {
+    ...actual,
+    exercises: session.exercises,
+  });
   expect(() => repository.deleteSession('owner', session.id, 1)).toThrow();
 });
 it('real authorization allows granted trainer plans, rejects trainer actual writes and revoked/foreign owner reads', async () => {

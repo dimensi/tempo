@@ -98,9 +98,31 @@ it.each(['fresh', 'existing'] as const)(
       expect(sql.prepare('SELECT data FROM workout_plans').get()).toEqual({
         data: plan,
       });
-      expect(sql.prepare('SELECT data FROM workout_sessions').get()).toEqual({
-        data: session,
-      });
+      const storedSession = JSON.parse(
+        (
+          sql.prepare('SELECT data FROM workout_sessions').get() as {
+            data: string;
+          }
+        ).data,
+      );
+      if (kind === 'existing') {
+        expect(storedSession.exercises[0].id).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/,
+        );
+        const occurrenceId = storedSession.exercises[0].id;
+        migrate(database.db, { migrationsFolder: './drizzle' });
+        expect(
+          JSON.parse(
+            (
+              sql.prepare('SELECT data FROM workout_sessions').get() as {
+                data: string;
+              }
+            ).data,
+          ).exercises[0].id,
+        ).toBe(occurrenceId);
+        delete storedSession.exercises[0].id;
+      }
+      expect(storedSession).toEqual(JSON.parse(session));
       const insert = sql.prepare(
         'INSERT INTO workout_transformmate_links(id,owner_id,plan_id,workout_id,remote_training_id,state,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
       );
@@ -162,9 +184,31 @@ it.each(['fresh', 'existing'] as const)(
           .prepare('SELECT count(*) AS count FROM workout_transformmate_links')
           .get(),
       ).toEqual({ count: 3 });
-      expect(sql.prepare('SELECT data FROM workout_sessions').get()).toEqual({
-        data: session,
-      });
+      const stored = JSON.parse(
+        (
+          sql.prepare('SELECT data FROM workout_sessions').get() as {
+            data: string;
+          }
+        ).data,
+      );
+      if (kind === 'existing') {
+        expect(stored.exercises[0].id).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/,
+        );
+        const occurrenceId = stored.exercises[0].id;
+        migrate(database.db, { migrationsFolder: './drizzle' });
+        expect(
+          JSON.parse(
+            (
+              sql.prepare('SELECT data FROM workout_sessions').get() as {
+                data: string;
+              }
+            ).data,
+          ).exercises[0].id,
+        ).toBe(occurrenceId);
+        delete stored.exercises[0].id;
+      }
+      expect(stored).toEqual(JSON.parse(session));
       expect(
         sql
           .prepare('SELECT count(*) AS count FROM workout_transformmate_native')

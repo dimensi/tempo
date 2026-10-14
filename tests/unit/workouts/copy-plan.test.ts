@@ -15,6 +15,7 @@ describe('copy plan', () => {
           title: 'Ноги',
           exercises: [
             {
+              id: '00000000-0000-4000-8000-000000000002',
               name: 'Приседание',
               comment: 'Медленно',
               transformMate: {
@@ -28,6 +29,9 @@ describe('copy plan', () => {
       ],
     };
     const copied = copyPlanToDate(plan, '2026-10-24');
+    expect(copied.workouts[0]!.exercises[0]!.id).not.toBe(
+      plan.workouts[0]!.exercises[0]!.id,
+    );
     expect(copied.startsOn).toBe('2026-10-24');
     expect(copied.endsOn).toBe('2026-10-26');
     expect(copied.workouts[0]!.date).toBe('2026-10-25');

@@ -67,6 +67,7 @@
     "decimal.js": "10.6.0",
     "drizzle-orm": "^0.45.4",
     "jpeg-js": "0.4.4",
+    "mediabunny": "1.61.4",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",

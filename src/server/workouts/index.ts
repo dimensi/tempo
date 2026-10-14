@@ -94,12 +94,22 @@ export async function updateWorkoutSession(
   revision: unknown,
   input: unknown,
 ) {
-  return (await access(headers, ownerId, 'workouts:log')).updateSession(
+  const repository = await access(headers, ownerId, 'workouts:log');
+  const { sessionVideoRows, cleanupVideoRows } = await import('./videos');
+  const rows = sessionVideoRows(ownerId, id);
+  const saved = repository.updateSession(
     ownerId,
     ownerSchema.parse(id),
     revisionSchema.parse(revision),
     workoutSessionInputSchema.parse(input),
   );
+  await cleanupVideoRows(
+    rows.filter(
+      (row) =>
+        !saved.exercises.some((exercise) => exercise.id === row.exerciseId),
+    ),
+  );
+  return saved;
 }
 export async function deleteWorkoutSession(
   headers: Headers,
@@ -107,10 +117,14 @@ export async function deleteWorkoutSession(
   id: string,
   revision: unknown,
 ) {
-  return (await access(headers, ownerId, 'workouts:log')).deleteSession(
+  const repository = await access(headers, ownerId, 'workouts:log');
+  const { sessionVideoRows, cleanupVideoRows } = await import('./videos');
+  const rows = sessionVideoRows(ownerId, id);
+  repository.deleteSession(
     ownerId,
     ownerSchema.parse(id),
     revisionSchema.parse(revision),
   );
+  await cleanupVideoRows(rows);
 }
 export { WorkoutError };
