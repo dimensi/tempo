@@ -11,7 +11,7 @@ def verify_run(run, jobs, revision):
     assert run["event"] == "push" and run["head_branch"] == "main"
     assert run["head_sha"] == revision
     assert run["status"] == "completed" and run["conclusion"] == "success"
-    for name in ("checks", "docker"):
+    for name in ("docker",):
         matches = [job for job in jobs["jobs"] if job["name"] == name]
         assert len(matches) == 1
         assert matches[0]["status"] == "completed" and matches[0]["conclusion"] == "success"

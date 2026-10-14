@@ -47,6 +47,8 @@ Do not add backward compatibility. Replace obsolete routes, interfaces and contr
 
 Run: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:e2e`. For infra changes build the image and run the disposable Docker smoke test. No fictional success scripts or claimed unrun checks.
 
+MANDATORY BEFORE EVERY MERGE INTO `main`: run all three complete E2E suites on the final revision being merged: `pnpm test:e2e`, `pnpm test:e2e --config tests/nutrition-sync/e2e.config.ts`, and `pnpm test:e2e --config tests/transformmate-sync/e2e.config.ts`. All three must pass; do not merge if any suite fails, is skipped, or has not been run. Rerun them after any subsequent changes or rebase. Record the tested commit SHA, commands and results in the PR or merge report. CI does not run for PRs and main deployment does not run E2E, so neither replaces this mandatory pre-merge verification. Merge still requires the task's authorization.
+
 One agent = one branch = one Git worktree. Never commit directly to main. Keep PRs narrow; describe changed behavior, contracts/migrations, checks actually run, risks and remaining limitations. Do not commit `.env`, databases, tokens, uploads, test artifacts or production data. Never merge/deploy without the task's authorization. Do not invent product schemas or normalization algorithms.
 
 <!-- BEGIN:nextjs-agent-rules -->

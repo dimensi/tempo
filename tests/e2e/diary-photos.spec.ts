@@ -124,13 +124,16 @@ test('real diary photos and comments persist; trainer is read-only and revoked U
     ).status(),
   ).toBe(403);
 
-  await page.getByLabel('Комментарий').fill(`Комментарий к ${date}`);
+  const activeDiary = page.getByRole('main').filter({ visible: true });
+  await activeDiary.getByLabel('Комментарий').fill(`Комментарий к ${date}`);
   const commentResponse = page.waitForResponse(
     (value) =>
       value.url().endsWith('/api/comments') &&
       value.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+  await activeDiary
+    .getByRole('button', { name: 'Отправить', exact: true })
+    .click();
   expect((await commentResponse).ok()).toBe(true);
   await page.reload();
   await expect(

@@ -1,5 +1,21 @@
 import hashlib, json, re, importlib.machinery, importlib.util, io, os, pathlib, subprocess, sys, tarfile, tempfile, time
 BASE=pathlib.Path(__file__).resolve().parent
+verify_spec=importlib.util.spec_from_file_location("verify",BASE/"nutrition-ci-verify.py")
+verify=importlib.util.module_from_spec(verify_spec);verify_spec.loader.exec_module(verify)
+revision="a"*40
+run=dict(event="push",head_branch="main",head_sha=revision,status="completed",conclusion="success")
+docker=dict(name="docker",status="completed",conclusion="success")
+for checks in ([],[dict(name="checks",status="completed",conclusion="skipped")]):
+    verify.verify_run(run,{"jobs":[docker]+checks},revision)
+for field,value in (("event","pull_request"),("head_branch","feature"),("head_sha","b"*40),("status","in_progress"),("conclusion","failure")):
+    try:verify.verify_run(run|{field:value},{"jobs":[docker]},revision)
+    except AssertionError:pass
+    else:raise AssertionError("Invalid release run accepted: "+field)
+for jobs in ([],[docker,docker],[docker|dict(conclusion="failure")],[docker|dict(status="in_progress")]):
+    try:verify.verify_run(run,{"jobs":jobs},revision)
+    except AssertionError:pass
+    else:raise AssertionError("Invalid Docker build accepted")
+print("PASS: main Docker build accepted without checks; wrong event/branch/SHA, incomplete/failed run and invalid Docker jobs rejected")
 loader=importlib.machinery.SourceFileLoader("candidate",str(BASE/"nutrition-cd.py.candidate"));spec=importlib.util.spec_from_loader(loader.name,loader);m=importlib.util.module_from_spec(spec);loader.exec_module(m)
 def archive(kind=tarfile.REGTYPE):
     b=io.BytesIO()

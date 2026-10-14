@@ -2,50 +2,9 @@ name: CI
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: Exhaustive production regression (manual only)
-        required: true
-        type: choice
-        options: [full]
 permissions:
   contents: read
 jobs:
-  checks:
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: pnpm/action-setup@v6.1.0
-      - uses: actions/setup-node@v7.1.0
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Select authoritative changed areas
-        env:
-          CI_BEFORE: ${{ github.event.before }}
-          CI_MODE: ${{ github.event_name == 'workflow_dispatch' && 'full' || 'selected' }}
-        run: node scripts/ci/select.mjs
-      - run: pnpm test:ci:selection
-      - run: pnpm format:check
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm exec playwright install chromium
-      - run: pnpm test
-      - run: pnpm build
-      - name: Mandatory production smoke and selected or manual-full area gates
-        env:
-          CI_E2E_CONCURRENCY: 2
-        run: pnpm test:ci:browsers
-      - uses: actions/upload-artifact@v7.0.2
-        if: always()
-        continue-on-error: true
-        with:
-          name: e2e-results
-          path: test-results/
   docker:
     runs-on: self-hosted
     permissions:
@@ -60,8 +19,7 @@ jobs:
             --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             --label "org.opencontainers.image.tree=$(git rev-parse HEAD^{tree})" .
-      - run: bash scripts/docker-smoke.sh
-      - name: Publish tested image to GHCR
+      - name: Publish built image to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}

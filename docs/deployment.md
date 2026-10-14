@@ -48,50 +48,20 @@ Verify migrations, health, login/logout and owner/trainer feature access through
 
 For disposable image validation, build `docker build -t nutrition-foundation .`, then run `bash scripts/docker-smoke.sh`. Host tools `pdfinfo`, `pdffonts` and `pdftotext` are required. The script owns a separate `nutrition-smoke` project/volumes and verifies owner CLI, Secure cookies, restart persistence, online backup/restore, persistent uploads and synthetic Cyrillic PDF rendering with embedded fonts. Its volume cleanup must never target production.
 
-## Reuse the CI-tested image
+## Reuse the CI-built image
 
-PRs use review and targeted local checks; GitHub CI does not run on PRs or
-feature-branch pushes. Formatting, lint, type checks, full unit/integration tests,
-production build, mandatory production smoke, selected area gates,
-and Docker build/smoke run once on the main-push
-workflow. Production stays on its previous stable image until that entire main
-workflow completes successfully. A failed or incomplete main workflow blocks
-deployment, even if the Docker job has already uploaded an artifact. Local
-checks remain targeted to the change; do not repeat the full gate or rebuild the
-exported image during deployment.
+CI does not run on pull requests or feature-branch pushes. Main-push CI only
+builds the Docker image and publishes it to GHCR with its full commit SHA tag.
+The application build remains inside Docker. Formatting, lint, type checks,
+unit/integration tests, browser gates and disposable Docker smoke do not run in
+the deployment workflow. All three full E2E suites must pass on the final
+revision before every merge into main; see AGENTS.md.
 
-Successful main-push Docker jobs retain `nutrition-release-<full Git SHA>` for
-seven days. The immutable GitHub artifact contains `image.tar.gz` and
-`manifest.json` (revision, Git tree, image tag/ID, archive SHA-256, ordered RootFS
-diff IDs and runtime configuration). The image
-is exported after disposable Docker smoke succeeds, with OCI revision/tree
-labels; PR jobs never export release images. Release approval also requires the
-`checks` job to pass on that same main SHA. Do not use an artifact from a run
-whose other checks failed or are still running.
-
-Using existing GitHub CLI authentication, download the selected successful
-main-push run in one command (replace the run ID and full SHA):
-
-```sh
-gh run download RUN_ID --repo dimensi/yazio-dashboard --name nutrition-release-FULL_SHA --dir release-artifact
-```
-
-Confirm the run's event is `push`, branch is `main`, head SHA matches the manifest
-and both CI jobs passed. Verify `archiveSHA256` against `sha256sum image.tar.gz`,
-then transfer this directory using the existing `ssh home-server` / `scp`
-connection. On the server, `gunzip -c image.tar.gz | docker load` imports the
-already tested image without rebuilding. Inspect the loaded manifest `imageTag`
-and require its ordered `.RootFS.Layers` to equal `rootFSDiffIDs`, and its
-`.Config` fields `Env`, `Entrypoint`, `Cmd`, `User`, `WorkingDir`, `ExposedPorts`
-and `Labels` to equal `runtimeConfig` (including OCI revision/tree labels).
-The original `imageId` records CI provenance only: Docker storage backends can
-report different IDs for the same loaded archive, so it is not a cross-engine
-acceptance constraint. Trust the manifest only from the selected completed,
-successful main-push GitHub run, and verify the archive checksum before loading.
-Pin that exact tag in the operator's Compose image override, retaining the prior
-image, configuration and volumes. Follow the backup, approved recreation and
-HTTPS acceptance steps above; no duplicate build or full suite is needed on the
-server. No registry publication or new credentials are involved.
+CD requires the completed successful main-push run and its successful `docker`
+job on the current main SHA. It pulls that exact GHCR image without rebuilding,
+verifies image/revision and health, and retains the existing backup and failure
+handling. No `checks` job is required. See [deployment details](deployment-cd.md)
+for the current SSH cutover and recovery limitations.
 
 ## Consistent backup and rollback
 
