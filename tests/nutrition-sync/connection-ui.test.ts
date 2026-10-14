@@ -165,7 +165,9 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
         .getByRole('textbox', { name: 'Существующий токен JSON', exact: true })
         .count(),
     ).toBe(0);
-    const beginning = owner.getByLabel('Загрузить данные начиная с…');
+    const beginning = owner
+      .getByLabel('Загрузить данные начиная с…')
+      .filter({ visible: true });
     const connectRequests: string[] = [];
     owner.on('request', (request) => {
       if (request.url().endsWith('/api/yazio/connect'))
@@ -324,7 +326,9 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     await delayed.goto(origin + '/settings#connection', {
       waitUntil: 'commit',
     });
-    const delayedStart = delayed.getByLabel('Загрузить данные начиная с…');
+    const delayedStart = delayed
+      .getByLabel('Загрузить данные начиная с…')
+      .filter({ visible: true });
     await delayedStart.waitFor();
     expect(await delayedStart.isDisabled()).toBe(true);
     expect(
@@ -436,7 +440,10 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     expect(await secret.inputValue()).toBe('');
     const departing = await ownerContext.newPage();
     await departing.goto(origin + '/settings#connection');
-    await departing.getByLabel('Загрузить данные начиная с…').fill(chosenFrom);
+    await departing
+      .getByLabel('Загрузить данные начиная с…')
+      .filter({ visible: true })
+      .fill(chosenFrom);
     await departing
       .getByRole('textbox', { name: 'Email аккаунта YAZIO', exact: true })
       .fill('synthetic-close-browser@example.test');
