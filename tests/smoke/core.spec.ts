@@ -86,6 +86,11 @@ test('production real login, diary, workout save/read, offline cold read, logout
     page.getByRole('button', { name: 'Изменить', exact: true }),
   ).toBeDisabled();
   await context.setOffline(false);
+  // Reconnect verifies real authorization and reloads the offline document.
+  // Await that transition before starting a competing navigation.
+  await expect(
+    page.getByRole('link', { name: 'Изменить план', exact: true }),
+  ).toBeVisible();
   await page.goto('/diary');
   const navigation = page.getByRole('button', {
     name: 'Навигация',
