@@ -194,7 +194,12 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
         extractionConfidence: null,
       }));
 
-    let reason = primary.reviewReason;
+    // Причина проверки проверяется по всей группе: нераспознанная роль у
+    // любого повтора страницы переводит группу в ручную проверку.
+    let reason =
+      primary.reviewReason ??
+      group.map((item) => item.reviewReason).find(Boolean) ??
+      null;
     if (
       !reason &&
       primary.autoVerifiable &&

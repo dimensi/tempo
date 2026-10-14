@@ -62,7 +62,23 @@ export function ReviewEditor({ ownerId }: { ownerId: string }) {
     };
   }, [url]);
 
+  function startEditing(entry: ReviewEntry) {
+    setEditing(entry.review.id);
+    setValue(
+      entry.observation.value.kind === 'numeric'
+        ? entry.observation.value.value.replace('.', ',')
+        : entry.observation.value.value,
+    );
+    setDate(entry.observation.collectedAt?.slice(0, 10) ?? '');
+  }
+
   async function confirm(entry: ReviewEntry) {
+    // Подтверждение без даты невозможно по контракту: открываем правку.
+    if (editing !== entry.review.id && entry.observation.collectedAt === null) {
+      startEditing(entry);
+      setError(m.reviews.fields.date + ': ' + m.reviews.editing.toLowerCase());
+      return;
+    }
     const correction = medicalObservationCorrectionSchema.safeParse({
       expectedRevision: entry.observation.revision,
       markerId: entry.observation.markerId,

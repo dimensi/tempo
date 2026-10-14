@@ -22,18 +22,22 @@ async function signIn(
       headers: { origin },
       data: { email, password },
     });
-  let response = await signInRequest();
-  if (response.status() === 429) {
+  // Троттлинг входа нагревается соседними спеками полного прогона:
+  // ждём retry-after и повторяем, пока сервер не примет вход.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const response = await signInRequest();
+    if (response.status() !== 429) {
+      expect(response.ok()).toBe(true);
+      return (await getSessionWith429Retry(page.request)).user;
+    }
     const seconds = Number(
       response.headers()['x-retry-after'] ??
         response.headers()['retry-after'] ??
         10,
     );
     await new Promise((resolve) => setTimeout(resolve, (seconds + 1) * 1000));
-    response = await signInRequest();
   }
-  expect(response.ok()).toBe(true);
-  return (await getSessionWith429Retry(page.request)).user;
+  throw new Error('Sign-in remained throttled after retries');
 }
 
 interface ImportJob {
@@ -78,7 +82,9 @@ test('owner imports the reference PDF and trainer receives only granted access',
   const ownerQuery = `ownerId=${owner.id}`;
 
   // Тренер получает доступ через настоящее приглашение (trainer_access).
-  const trainerEmail = `anamnesis-${test.info().project.name}@example.test`;
+  // Проекты и повторы делят одну e2e-базу: аккаунт уникален для каждого
+  // запуска, чтобы приглашение оставалось одноразовым.
+  const trainerEmail = `anamnesis-${test.info().project.name}-${Date.now()}@example.test`;
   const invitation = await page.request.post('/api/trainers/invitations', {
     headers: { origin },
     data: { ownerId: owner.id, email: trainerEmail },
@@ -103,6 +109,17 @@ test('owner imports the reference PDF and trainer receives only granted access',
   );
   const trainerQuery = `ownerId=${owner.id}`;
 
+  // Независимый precondition: документы владельца до загрузки. Первый прогон
+  // проекта начинается с пустым архивом; повторы и mobile-проект застают
+  // файл уже загруженным (проекты делят одну e2e-базу).
+  const before = (await (
+    await page.request.get(`/api/anamnesis/documents?${ownerQuery}`)
+  ).json()) as Array<{ id: string; filename: string }>;
+  const existing = before.find(
+    (item) =>
+      item.filename === 'synthetic-lab.pdf' || item.filename === 'copy.pdf',
+  );
+
   // Загрузка контрольного документа «Синтетическая лаборатория».
   const upload = await page.request.post(
     `/api/anamnesis/documents/uploads?${ownerQuery}`,
@@ -120,10 +137,21 @@ test('owner imports the reference PDF and trainer receives only granted access',
   expect(upload.status()).toBe(201);
   const document = (await upload.json()) as {
     document: { id: string; pageCount: number };
+    importJob: { id: string; status: string } | null;
     duplicate: boolean;
   };
-  expect(document.duplicate).toBe(false);
   expect(document.document.pageCount).toBe(3);
+  if (existing) {
+    // Файл уже в архиве: повторная загрузка обязана вернуть тот же документ
+    // без нового задания импорта.
+    expect(document.duplicate).toBe(true);
+    expect(document.document.id).toBe(existing.id);
+    expect(document.importJob).toBeNull();
+  } else {
+    expect(document.duplicate).toBe(false);
+    expect(document.importJob).not.toBeNull();
+    await waitForImport(page, owner.id);
+  }
 
   // Повторная загрузка того же файла не создаёт дубль.
   const duplicate = await page.request.post(
@@ -139,11 +167,15 @@ test('owner imports the reference PDF and trainer receives only granted access',
       },
     },
   );
-  expect(((await duplicate.json()) as { duplicate: boolean }).duplicate).toBe(
-    true,
-  );
+  const duplicateResponse = (await duplicate.json()) as {
+    document: { id: string };
+    duplicate: boolean;
+  };
+  expect(duplicateResponse.duplicate).toBe(true);
+  expect(duplicateResponse.document.id).toBe(document.document.id);
 
-  // Фоновый импорт завершается; ТЗ §9 — шесть измерений, пять показателей.
+  // ТЗ §9 — шесть измерений, пять показателей. Данные либо только что
+  // импортированы, либо уже лежат в базе от предыдущего прогона проекта.
   const job = await waitForImport(page, owner.id);
   expect(job.status).toBe('completed');
   const markers = (await (

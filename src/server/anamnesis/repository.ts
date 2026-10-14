@@ -267,6 +267,9 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
         .all();
     },
     // Точное совпадение для дедупликации между документами.
+    // Симметрично точности дат: точное совпадение — тот же день (префикс
+    // в любую сторону) либо обе даты неизвестны, при равных значении,
+    // единице и лаборатории.
     findExactObservation: (
       ownerId: string,
       match: {
@@ -276,34 +279,38 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
         originalUnit: string | null;
         laboratoryName: string | null;
       },
-    ) =>
-      db
-        .select()
-        .from(medicalObservations)
-        .where(
-          and(
-            eq(medicalObservations.ownerId, ownerId),
-            eq(medicalObservations.markerId, match.markerId),
-            ne(medicalObservations.verification, 'rejected'),
-            // День без времени: разная точность дат — то же измерение.
-            match.collectedAt === null
-              ? isNull(medicalObservations.collectedAt)
-              : like(
-                  medicalObservations.collectedAt,
-                  `${match.collectedAt.slice(0, 10)}%`,
-                ),
-            eq(medicalObservations.valueJson, match.value),
-            match.originalUnit === null
-              ? isNull(medicalObservations.originalUnit)
-              : eq(medicalObservations.originalUnit, match.originalUnit),
-            match.laboratoryName === null
-              ? isNull(medicalObservations.laboratoryName)
-              : eq(medicalObservations.laboratoryName, match.laboratoryName),
-          ),
-        )
-        .get(),
+    ) => {
+      const day = match.collectedAt?.slice(0, 10) ?? null;
+      return (
+        db
+          .select()
+          .from(medicalObservations)
+          .where(
+            and(
+              eq(medicalObservations.ownerId, ownerId),
+              eq(medicalObservations.markerId, match.markerId),
+              ne(medicalObservations.verification, 'rejected'),
+              eq(medicalObservations.valueJson, match.value),
+              match.originalUnit === null
+                ? isNull(medicalObservations.originalUnit)
+                : eq(medicalObservations.originalUnit, match.originalUnit),
+              match.laboratoryName === null
+                ? isNull(medicalObservations.laboratoryName)
+                : eq(medicalObservations.laboratoryName, match.laboratoryName),
+            ),
+          )
+          .all()
+          .find((row) => {
+            const stored = row.collectedAt ?? null;
+            if (day === null || stored === null) return day === stored;
+            return stored.startsWith(day) || day.startsWith(stored);
+          }) ?? null
+      );
+    },
     // Кандидаты на возможный дубль: тот же показатель и день (точное
     // совпадение даты или её префикс при разной точности).
+    // Симметрично точности дат: день кандидата покрывает сохранённые
+    // месяц/дату и наоборот (LIKE односторонний, фильтруем в JS).
     findObservationsByMarkerAndDay: (
       ownerId: string,
       markerId: string,
@@ -317,10 +324,13 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
             eq(medicalObservations.ownerId, ownerId),
             eq(medicalObservations.markerId, markerId),
             ne(medicalObservations.verification, 'rejected'),
-            like(medicalObservations.collectedAt, `${day}%`),
           ),
         )
-        .all(),
+        .all()
+        .filter((row) => {
+          const stored = row.collectedAt ?? '';
+          return stored.startsWith(day) || day.startsWith(stored);
+        }),
     updateObservation: (
       ownerId: string,
       id: string,

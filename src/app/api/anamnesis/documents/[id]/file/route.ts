@@ -1,6 +1,7 @@
 import {
   getAnamnesisDocumentFile,
   anamnesisErrorResponse,
+  contentDisposition,
 } from '@/server/anamnesis';
 
 export const runtime = 'nodejs';
@@ -18,12 +19,11 @@ export async function GET(request: Request, context: Context) {
       new URL(request.url).searchParams.get('ownerId') ?? '',
       (await context.params).id,
     );
-    const safeName = filename.replace(/[\r\n"]/g, '') || 'document.pdf';
     return new Response(new Uint8Array(bytes), {
       headers: {
         ...privateHeaders,
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="${safeName}"`,
+        'Content-Disposition': contentDisposition(filename, 'inline'),
       },
     });
   } catch (error) {

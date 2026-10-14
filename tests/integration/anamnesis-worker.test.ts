@@ -328,6 +328,31 @@ describe('review routing for uncertain recognition', () => {
               sourceKind: 'current_result',
               reference: null,
             },
+            {
+              // Повтор амилазы: валидная роль, попадает в группу первой.
+              name: 'Альфа-амилаза панкреатическая',
+              rawText: 'Альфа-амилаза панкреатическая 52,0 Ед/л',
+              pageNumber: 1,
+              value: '52,0',
+              comparator: 'eq',
+              unit: 'Ед/л',
+              collectedAt: '15.01.2027',
+              sourceKind: 'current_result',
+              reference: null,
+            },
+            {
+              // Тот же повтор с нераспознанной ролью: группа обязана уйти
+              // в проверку, даже если первичный элемент валиден.
+              name: 'Альфа-амилаза панкреатическая',
+              rawText: 'Альфа-амилаза панкреатическая 52,0 Ед/л',
+              pageNumber: 2,
+              value: '52,0',
+              comparator: 'eq',
+              unit: 'Ед/л',
+              collectedAt: '15.01.2027',
+              sourceKind: 'ещё какая-то роль',
+              reference: null,
+            },
           ],
         }),
       },
@@ -373,6 +398,16 @@ describe('review routing for uncertain recognition', () => {
       (review) => review.observationId === ast.id,
     );
     expect(astReview?.reason).toBe('unknown_source_kind');
+
+    // Нераспознанная роль в повторе группы переводит всю группу в проверку.
+    const amylase = observations.find(
+      (row) => row.markerId === 'pancreatic-amylase',
+    )!;
+    expect(amylase.verification).toBe('needs_review');
+    expect(
+      allReviews.find((review) => review.observationId === amylase.id)?.reason,
+    ).toBe('unknown_source_kind');
+    expect(repo.listSources(amylase.id)).toHaveLength(2);
 
     // Другое значение того же дня — противоречие, не автосохранение.
     const bilirubin = observations.filter(

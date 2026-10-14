@@ -45,6 +45,7 @@ import {
   canonicalUnit,
   unitsCanonicallyEqual,
 } from './pipeline';
+import { ReportError } from '@/server/pdf/errors';
 
 export class AnamnesisError extends Error {
   constructor(public status: number) {
@@ -586,19 +587,23 @@ export async function reprocessAnamnesisDocument(
   const document = repo.findDocument(ownerId, id);
   if (!document) throw new AnamnesisError(404);
   const now = Date.now();
-  repo.deleteImportedObservations(id);
-  const job = repo.insertJob({
-    id: anamnesisId(),
-    ownerId,
-    documentId: id,
-    status: 'queued',
-    stage: 'upload_validation',
-    attempts: 0,
-    lastError: null,
-    leaseUntil: null,
-    createdAt: now,
-    updatedAt: now,
-  });
+  // Удаление старых результатов и постановка задания атомарны: без задания
+  // данные не должны пропадать.
+  const job = getDatabase().sqlite.transaction(() => {
+    repo.deleteImportedObservations(id);
+    return repo.insertJob({
+      id: anamnesisId(),
+      ownerId,
+      documentId: id,
+      status: 'queued',
+      stage: 'upload_validation',
+      attempts: 0,
+      lastError: null,
+      leaseUntil: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+  })();
   kickAnamnesisImport();
   return jobDto(job);
 }
@@ -872,6 +877,17 @@ export async function deleteAnamnesisReport(
   if (row?.storageKey) await getObjectStorage().remove(row.storageKey);
 }
 
+// RFC 5987: кириллица в filename ломает заголовок, дополняем filename*.
+export function contentDisposition(
+  filename: string,
+  type: 'inline' | 'attachment',
+): string {
+  const safe = filename.replace(/[\r\n"]/g, '') || 'anamnesis.pdf';
+  const encoded = encodeURIComponent(safe);
+  const ascii = safe.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
+  return `${type}; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}
+
 export function checkAnamnesisOrigin(request: Request): void {
   if (!hasTrustedOrigin(request)) throw new AnamnesisError(403);
 }
@@ -883,9 +899,11 @@ export function anamnesisErrorResponse(error: unknown): Response {
       status:
         error instanceof AnamnesisError
           ? error.status
-          : error instanceof SyntaxError || error instanceof ZodError
-            ? 400
-            : 500,
+          : error instanceof ReportError
+            ? error.status
+            : error instanceof SyntaxError || error instanceof ZodError
+              ? 400
+              : 500,
     },
   );
 }
