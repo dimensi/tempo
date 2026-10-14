@@ -19,6 +19,7 @@ import { build } from 'esbuild';
 import { startUpstream } from '../transformmate-sync/upstream';
 import { testOrigin } from '../ci/origin';
 import { verifyFixtureSnapshot } from '../ci/fixture-snapshot';
+import { serverSnapshot as createServerSnapshot } from '../ci/server-snapshot';
 import { stopServer } from '../ci/stop-server';
 const family = process.argv[2] ?? 'offline';
 const gatewayPort = Number(new URL(testOrigin).port);
@@ -100,6 +101,7 @@ const env: NodeJS.ProcessEnv = {
   PATH: process.env.PATH,
   HOME: process.env.HOME,
   TMPDIR: process.env.TMPDIR,
+  YAZIO_BROWSER_PROCESS_TOKEN: process.env.YAZIO_BROWSER_PROCESS_TOKEN,
   PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH,
   DATABASE_URL: 'file:./.data/e2e.sqlite',
   BETTER_AUTH_URL: `https://localhost:${gatewayPort}`,
@@ -122,7 +124,7 @@ const env: NodeJS.ProcessEnv = {
 rmSync(env.TRANSFORMMATE_TOKEN_FILE!, { force: true });
 if (family !== 'nutrition-connection')
   rmSync(env.UPLOADS_DIR!, { force: true, recursive: true });
-const upstream = family === 'transformmate' ? await startUpstream() : undefined;
+let upstream = family === 'transformmate' ? await startUpstream() : undefined;
 const fixtureHash = process.env.CI_E2E_FIXTURE_SHA256;
 if (fixtureHash) verifyFixtureSnapshot(family, fixtureHash);
 if (family !== 'nutrition-connection' && !fixtureHash)
@@ -140,6 +142,9 @@ let generation = 0;
 const serverSnapshot = resolve('.next/e2e-server-snapshot');
 if (isolatedWorker)
   cpSync('.next/standalone/.next/server', serverSnapshot, { recursive: true });
+const restoreServer = isolatedWorker
+  ? createServerSnapshot(serverSnapshot)
+  : undefined;
 function startServer(caseKey?: unknown[]) {
   const value = spawn(process.execPath, ['.next/standalone/server.js'], {
     env: {
@@ -189,19 +194,35 @@ let child = startServer();
 async function resetCase(caseKey: unknown[]) {
   if (restarting || closing) throw new Error('Worker reset is unavailable');
   restarting = true;
+  const timings: Record<string, number> = {};
+  const begin = performance.now();
+  let phase = begin;
+  const mark = (name: string) => {
+    const now = performance.now();
+    timings[name] = Number((now - phase).toFixed(3));
+    phase = now;
+  };
   try {
     await stopServer(child);
+    mark('stop');
     if (closing) throw new Error('Worker closing');
     for (const suffix of ['', '-wal', '-shm'])
       rmSync(`.data/e2e.sqlite${suffix}`, { force: true });
     writeFileSync('.data/e2e.sqlite', fixture!);
+    mark('sqlite');
     rmSync(env.TRANSFORMMATE_TOKEN_FILE!, { force: true });
     rmSync(env.UPLOADS_DIR!, { recursive: true, force: true });
+    if (upstream) {
+      upstream.closeAllConnections();
+      await new Promise<void>((done, reject) =>
+        upstream!.close((error) => (error ? reject(error) : done())),
+      );
+      upstream = await startUpstream();
+    }
+    mark('filesystem');
     rmSync('.next/standalone/.next/cache', { recursive: true, force: true });
-    rmSync('.next/standalone/.next/server', { recursive: true, force: true });
-    cpSync(serverSnapshot, '.next/standalone/.next/server', {
-      recursive: true,
-    });
+    restoreServer!('.next/standalone/.next/server');
+    mark('next');
     workerMode = 'current';
     navigationStatus = 0;
     holdInstall = false;
@@ -225,7 +246,15 @@ async function resetCase(caseKey: unknown[]) {
         });
         probe.end();
       });
-      if (ready) return generation;
+      if (ready) {
+        mark('start');
+        timings.total = Number((performance.now() - begin).toFixed(3));
+        appendFileSync(
+          'test-results/reset-timings.jsonl',
+          JSON.stringify(timings) + '\n',
+        );
+        return generation;
+      }
       await new Promise((done) => setTimeout(done, 50));
     }
     throw new Error('Fresh production server did not become ready');

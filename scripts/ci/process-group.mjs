@@ -4,15 +4,20 @@ import { fileURLToPath } from 'node:url';
 // A Linux subreaper retains detached orphans even if their parent exits before
 // a polling interval. It reaps the entire owned tree before returning.
 export async function runProcessGroup(command, args, options) {
-  if (process.platform !== 'linux')
-    throw new Error(
-      'Isolated CI cleanup requires Linux child subreaper support',
-    );
+  if (!['linux', 'darwin'].includes(process.platform))
+    throw new Error('Isolated browser cleanup supports Linux and macOS');
   if (options.signal?.aborted) throw new Error('Browser run cancelled');
   const child = spawn(
     'python3',
     [
-      fileURLToPath(new URL('./process-supervisor.py', import.meta.url)),
+      fileURLToPath(
+        new URL(
+          process.platform === 'darwin'
+            ? './macos-process-supervisor.py'
+            : './process-supervisor.py',
+          import.meta.url,
+        ),
+      ),
       command,
       ...args,
     ],

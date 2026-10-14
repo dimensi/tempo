@@ -64,6 +64,8 @@ pnpm dev
 
 Для E2E сначала `pnpm exec playwright install chromium`. Тесты запускают свой development server на 3100 (или `E2E_PORT`, например `E2E_PORT=3127 pnpm test:e2e`) и пересоздают только `.data/e2e.sqlite`. CI для PR отключён; на main выполняются только сборка Docker-образа и публикация в GHCR, затем CD. Перед каждым merge в main обязательны все три полных E2E-набора из AGENTS.md.
 
+Для локального изолированного прогона General, Offline и TransformMate на macOS/Linux после одной сборки: `node scripts/ci/benchmark-browser.mjs 4 local-1`. Число workers — от 1 до 4, метка прогона должна быть уникальной. [Методика, сохранённые гарантии и замеры](docs/testing/browser-performance.md).
+
 `pnpm start` требует предварительно применённых миграций и production-конфигурации: HTTPS `BETTER_AUTH_URL`, сильный секрет и `DEMO_MODE=false`. Для локального HTTPS используйте reverse proxy. Для повседневной разработки используйте `pnpm dev`.
 
 ## TransformMate API probe

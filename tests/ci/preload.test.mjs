@@ -18,11 +18,18 @@ const run = (overrides, code = '') =>
   );
 test('synthetic production preload admits only exact disposable configuration', () => {
   assert.equal(run({}).status, 0);
+  for (const port of [3260, 3262, 3264, 3266])
+    assert.equal(
+      run({ BETTER_AUTH_URL: `https://localhost:${port}` }).status,
+      0,
+    );
   for (const overrides of [
     { NODE_ENV: 'development' },
     { CI_SYNTHETIC_PROVIDER: '' },
     { DATABASE_URL: 'file:./.data/production.sqlite' },
     { BETTER_AUTH_URL: 'https://nutrition.dimensi.dev' },
+    { BETTER_AUTH_URL: 'https://localhost:3268' },
+    { BETTER_AUTH_URL: 'https://localhost:3260/private' },
     { TRANSFORMMATE_TOKEN_FILE: '/tmp/real-token.json' },
     { TRANSFORMMATE_FIREBASE_REFRESH_TOKEN: 'real' },
   ])
@@ -59,4 +66,32 @@ test('only exact two synthetic preview GET paths omit JWT; real API, query, cred
     { env, encoding: 'utf8' },
   );
   assert.equal(result.status, 0, result.stderr);
+});
+
+test('each synthetic worker forwards to its own loopback upstream', () => {
+  for (let slot = 0; slot < 4; slot++) {
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `
+      import assert from 'node:assert/strict';
+      let forwarded;
+      globalThis.fetch = async input => { forwarded = String(input); return new Response('fixture'); };
+      await import('./tests/transformmate-sync/fetch-preload.cjs');
+      await fetch('https://transformmate.pht.space/synthetic-preview/new.png');
+      assert.equal(forwarded, 'http://127.0.0.1:${3360 + slot}/transformmate/synthetic-preview/new.png');
+    `,
+      ],
+      {
+        env: {
+          ...env,
+          BETTER_AUTH_URL: `https://localhost:${3260 + slot * 2}`,
+        },
+        encoding: 'utf8',
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+  }
 });

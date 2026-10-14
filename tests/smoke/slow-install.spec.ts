@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../ci/isolated-test';
 
 test('held initial offline install cannot delay real logout behind a cache lock', async ({
   page,

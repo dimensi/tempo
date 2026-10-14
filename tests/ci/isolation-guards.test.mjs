@@ -4,10 +4,10 @@ import { spawnSync } from 'node:child_process';
 import { isolatedBrowser } from '../../scripts/ci/isolated-browser.mjs';
 
 test('parallel browser runner cannot silently exceed measured concurrency', async () => {
-  for (const concurrency of [0, 3, 8, NaN])
+  for (const concurrency of [0, 5, 8, NaN, 1.5])
     await assert.rejects(
       isolatedBrowser({}, concurrency),
-      /concurrency must be 1 or 2/,
+      /concurrency must be between 1 and 4/,
     );
 });
 
@@ -27,7 +27,7 @@ test('configurable browser origins admit only dedicated local HTTPS gateways', (
         encoding: 'utf8',
       },
     );
-  for (const port of [3160, 3260, 3262])
+  for (const port of [3160, 3260, 3262, 3264, 3266])
     assert.equal(read(`https://localhost:${port}`).status, 0);
   for (const origin of [
     'https://production.example:3260',

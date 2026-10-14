@@ -1,4 +1,4 @@
-import { testOrigin } from '../ci/origin';
+import { testOrigin, testUpstreamOrigin } from '../ci/origin';
 import { getSessionWith429Retry } from '../e2e/auth-session';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
@@ -8,7 +8,7 @@ import {
   expect,
   type Page,
   type APIRequestContext,
-} from '@playwright/test';
+} from '../ci/isolated-test';
 import type { WorkoutPlan, WorkoutPlanInput } from '@/contracts/workouts';
 import type { TransformMateSyncData } from '@/contracts/transformmate';
 import { transformMateConnectionStatusSchema } from '@/contracts/transformmate-connection';
@@ -20,10 +20,10 @@ async function control(
   id?: number,
 ) {
   const response = action
-    ? await request.post('http://127.0.0.1:3158/control', {
+    ? await request.post(`${testUpstreamOrigin}/control`, {
         data: { action, id },
       })
-    : await request.get('http://127.0.0.1:3158/control');
+    : await request.get(`${testUpstreamOrigin}/control`);
   expect(response.ok()).toBe(true);
   return (await response.json()) as {
     posts: unknown[];
@@ -345,7 +345,7 @@ test('owner connects through masked settings, persists rotation, rejects wrong b
     (await (await page.request.get('/api/transformmate/status')).json()).data
       .configured,
   ).toBe(false);
-  await request.post('http://127.0.0.1:3158/control', {
+  await request.post(`${testUpstreamOrigin}/control`, {
     data: { action: 'cachedauthdelay', delay: 0 },
   });
   await connect(page);
@@ -829,12 +829,12 @@ test('real cookies protect safe catalog and private synthetic ranged video', asy
     }
     expect((await trainer.request.get(catalog)).status()).toBe(403);
     expect((await trainer.request.get(video)).status()).toBe(403);
-    await request.post('http://127.0.0.1:3158/control', {
+    await request.post(`${testUpstreamOrigin}/control`, {
       data: { action: 'cachedauthdelay', delay: 0 },
     });
   } finally {
     if (grantedTrainerId) grant(owner, grantedTrainerId, false);
-    await request.post('http://127.0.0.1:3158/control', {
+    await request.post(`${testUpstreamOrigin}/control`, {
       data: { action: 'cachedauthdelay', delay: 0 },
     });
     await context.close();

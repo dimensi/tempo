@@ -1,26 +1,8 @@
+import { signInFixture } from '../ci/real-auth';
 import { test, expect, type Page } from '../ci/isolated-test';
 
 async function login(page: Page) {
-  await page.goto('/login');
-  await page.getByLabel('Электронная почта').fill('owner@example.test');
-  await page
-    .getByRole('textbox', { name: 'Пароль', exact: true })
-    .fill('Test-only-password-12345');
-  const response = page.waitForResponse((value) =>
-    value.url().endsWith('/api/auth/sign-in/email'),
-  );
-  await page.getByRole('button', { name: 'Войти', exact: true }).click();
-  const result = await response;
-  if (result.status() === 429) {
-    const seconds = Number(
-      result.headers()['retry-after'] ??
-        result.headers()['x-retry-after'] ??
-        10,
-    );
-    await page.waitForTimeout((seconds + 1) * 1000);
-    await page.getByRole('button', { name: 'Войти', exact: true }).click();
-  }
-  await expect(page).toHaveURL('/');
+  return signInFixture(page, 'owner');
 }
 
 test('section navigation keeps form values through anchors and history', async ({

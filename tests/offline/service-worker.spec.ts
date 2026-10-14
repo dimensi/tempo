@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../ci/isolated-test';
 import { build } from 'esbuild';
 import { readFileSync, readdirSync } from 'node:fs';
 let harness: string;
