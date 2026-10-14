@@ -59,7 +59,7 @@ export function s3ObjectStorage(config: S3StorageConfig) {
           throw new Error('Storage object too large');
         chunks.push(chunk);
       }
-      return Buffer.concat(chunks);
+      return new Uint8Array(Buffer.concat(chunks));
     },
     async remove(key: string): Promise<void> {
       await client.send(
