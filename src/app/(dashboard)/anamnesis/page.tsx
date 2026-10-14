@@ -5,7 +5,7 @@ import { anamnesisMessages as m } from '@/features/anamnesis';
 import { getAnamnesisOverview } from '@/server/anamnesis';
 import { AnamnesisOverviewCards } from '@/features/anamnesis';
 import Link from 'next/link';
-import { Alert, Stack, Text } from '@mantine/core';
+import { Alert, Button, Group, Stack, Text } from '@mantine/core';
 
 export const metadata = { title: m.title };
 
@@ -32,6 +32,13 @@ export default async function Page() {
   if (!overview) return null;
   return (
     <Stack gap="lg" data-testid="anamnesis-page">
+      {access.session.user.role === 'OWNER' && (
+        <Group>
+          <Button component={Link} href="/anamnesis/documents" mih={44}>
+            {m.documents.upload}
+          </Button>
+        </Group>
+      )}
       <AnamnesisOverviewCards overview={overview} />
       {!overview.documents && !overview.observations ? (
         <Text>{m.overview.empty}</Text>
