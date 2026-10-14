@@ -358,3 +358,264 @@ it('keeps multiple recordings on the occurrence after rename/reorder and cleans 
     sessionId = previousSession;
   }
 });
+
+async function cleanupFixture(ready: boolean) {
+  state.session = { user: { id: 'owner', role: 'OWNER' } };
+  const occurrence = randomUUID();
+  const session = repository.createSession('owner', {
+    date: '2026-10-14',
+    title: '',
+    note: '',
+    status: 'completed',
+    exercises: [
+      {
+        id: occurrence,
+        name: 'Synthetic cleanup',
+        sets: [{ reps: 10, weightKg: null }],
+      },
+    ],
+  });
+  const previousSession = sessionId;
+  sessionId = session.id;
+  const bytes = await readFile('tests/fixtures/workout-videos/synthetic.mp4');
+  const row = await api.createVideo(
+    request('', 'POST', {
+      sessionId,
+      exerciseId: occurrence,
+      size: bytes.length,
+      duration: 2,
+    }),
+  );
+  await api.uploadVideoPart(request('', 'PUT', bytes), row.id, 0);
+  if (ready) await api.finalizeVideo(request('', 'POST'), row.id);
+  return {
+    session,
+    row,
+    restore: () => {
+      sessionId = previousSession;
+    },
+  };
+}
+it.each([true, false])(
+  'retains the parent and video manifest when deleting a %s ready session fails, then retries successfully',
+  async (ready) => {
+    const workoutApi = await import('@/server/workouts');
+    const fixture = await cleanupFixture(ready);
+    const failureKey = `workout-videos/${fixture.row.id}/${ready ? 'video.mp4' : 'part-0'}`;
+    const remove = storage.remove.bind(storage);
+    let failed = false;
+    const spy = vi.spyOn(storage, 'remove').mockImplementation(async (key) => {
+      if (!failed && key === failureKey) {
+        failed = true;
+        throw new Error('Transient S3 delete failure');
+      }
+      return remove(key);
+    });
+    try {
+      await expect(
+        workoutApi.deleteWorkoutSession(
+          new Headers(),
+          'owner',
+          sessionId,
+          fixture.session.revision + 1,
+        ),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(spy).not.toHaveBeenCalled();
+      await expect(
+        workoutApi.deleteWorkoutSession(
+          new Headers(),
+          'owner',
+          sessionId,
+          fixture.session.revision,
+        ),
+      ).rejects.toThrow('Transient S3 delete failure');
+      expect(
+        repository.list('owner').sessions.find((item) => item.id === sessionId)
+          ?.revision,
+      ).toBe(fixture.session.revision);
+      expect((await api.listVideos(request())).map((item) => item.id)).toEqual([
+        fixture.row.id,
+      ]);
+      expect(await storage.get(failureKey)).toBeDefined();
+      await workoutApi.deleteWorkoutSession(
+        new Headers(),
+        'owner',
+        sessionId,
+        fixture.session.revision,
+      );
+      await expect(api.listVideos(request())).rejects.toMatchObject({
+        status: 404,
+      });
+      await expect(storage.get(failureKey)).rejects.toThrow();
+      expect(api.sessionVideoRows('owner', sessionId)).toEqual([]);
+    } finally {
+      spy.mockRestore();
+      fixture.restore();
+    }
+  },
+);
+it('retains an exercise and its video manifest on cleanup failure so the same revision can retry the edit', async () => {
+  const workoutApi = await import('@/server/workouts');
+  const fixture = await cleanupFixture(true);
+  const data = {
+    date: fixture.session.date,
+    title: '',
+    note: '',
+    status: 'skipped' as const,
+    exercises: [],
+  };
+  const spy = vi
+    .spyOn(storage, 'remove')
+    .mockRejectedValueOnce(new Error('Transient S3 delete failure'));
+  try {
+    await expect(
+      workoutApi.updateWorkoutSession(
+        new Headers(),
+        'owner',
+        sessionId,
+        fixture.session.revision,
+        data,
+      ),
+    ).rejects.toThrow('Transient S3 delete failure');
+    expect(
+      repository.list('owner').sessions.find((item) => item.id === sessionId)
+        ?.exercises,
+    ).toEqual(fixture.session.exercises);
+    expect((await api.listVideos(request()))[0]?.id).toBe(fixture.row.id);
+    const saved = await workoutApi.updateWorkoutSession(
+      new Headers(),
+      'owner',
+      sessionId,
+      fixture.session.revision,
+      data,
+    );
+    expect(saved.exercises).toEqual([]);
+    expect(saved.revision).toBe(fixture.session.revision + 1);
+    expect(api.sessionVideoRows('owner', sessionId)).toEqual([]);
+    await expect(
+      storage.get(`workout-videos/${fixture.row.id}/video.mp4`),
+    ).rejects.toThrow();
+  } finally {
+    spy.mockRestore();
+    fixture.restore();
+  }
+});
+it('retries failed ready-video part cleanup without losing the manifest or rewriting the published object', async () => {
+  const fixture = await cleanupFixture(false);
+  const original = await readFile(
+    'tests/fixtures/workout-videos/synthetic.mp4',
+  );
+  const padding = Buffer.alloc(VIDEO_PART_BYTES + 32);
+  padding.writeUInt32BE(padding.length);
+  padding.write('free', 4);
+  const bytes = Buffer.concat([original, padding]);
+  const row = await api.createVideo(
+    request('', 'POST', {
+      sessionId,
+      exerciseId: fixture.row.exerciseId,
+      size: bytes.length,
+      duration: 2,
+    }),
+  );
+  await api.uploadVideoPart(
+    request('', 'PUT', bytes.subarray(0, VIDEO_PART_BYTES)),
+    row.id,
+    0,
+  );
+  await api.uploadVideoPart(
+    request('', 'PUT', bytes.subarray(VIDEO_PART_BYTES)),
+    row.id,
+    1,
+  );
+  const remove = storage.remove.bind(storage);
+  let failed = false;
+  const removeSpy = vi
+    .spyOn(storage, 'remove')
+    .mockImplementation(async (key) => {
+      if (!failed && key === `workout-videos/${row.id}/part-1`) {
+        failed = true;
+        throw new Error('Transient S3 delete failure');
+      }
+      return remove(key);
+    });
+  const putSpy = vi.spyOn(storage, 'putStream');
+  try {
+    await expect(
+      api.finalizeVideo(request('', 'POST'), row.id),
+    ).rejects.toThrow('Transient S3 delete failure');
+    const saved = (await api.listVideos(request())).find(
+      (item) => item.id === row.id,
+    )!;
+    expect(saved.state).toBe('ready');
+    expect(saved.parts).toEqual([0, 1]);
+    await expect(
+      storage.get(`workout-videos/${row.id}/part-0`),
+    ).rejects.toThrow();
+    expect(await storage.get(`workout-videos/${row.id}/part-1`)).toBeDefined();
+    expect(
+      Buffer.from(
+        await storage.get(`workout-videos/${row.id}/video.mp4`),
+      ).equals(bytes),
+    ).toBe(true);
+    const retried = await api.finalizeVideo(request('', 'POST'), row.id);
+    expect(retried.state).toBe('ready');
+    expect(retried.parts).toEqual([]);
+    expect(putSpy).toHaveBeenCalledTimes(1);
+    await expect(
+      storage.get(`workout-videos/${row.id}/part-1`),
+    ).rejects.toThrow();
+    await api.finalizeVideo(request('', 'POST'), row.id);
+    expect(putSpy).toHaveBeenCalledTimes(1);
+  } finally {
+    removeSpy.mockRestore();
+    putSpy.mockRestore();
+    fixture.restore();
+  }
+});
+it('serializes new uploads behind parent cleanup so deleting the parent cannot cascade a concurrent upload manifest', async () => {
+  const workoutApi = await import('@/server/workouts');
+  const fixture = await cleanupFixture(true);
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const remove = storage.remove.bind(storage);
+  const spy = vi
+    .spyOn(storage, 'remove')
+    .mockImplementationOnce(async (key) => {
+      entered();
+      await held;
+      return remove(key);
+    });
+  try {
+    const deletion = workoutApi.deleteWorkoutSession(
+      new Headers(),
+      'owner',
+      sessionId,
+      fixture.session.revision,
+    );
+    await started;
+    const creation = api.createVideo(
+      request('', 'POST', {
+        sessionId,
+        exerciseId: fixture.row.exerciseId,
+        size: 256,
+        duration: 2,
+      }),
+    );
+    const rejected = expect(creation).rejects.toMatchObject({ status: 404 });
+    // Let the queued request finish parsing before releasing the storage operation.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    release();
+    await deletion;
+    await rejected;
+    expect(api.sessionVideoRows('owner', sessionId)).toEqual([]);
+  } finally {
+    release();
+    spy.mockRestore();
+    fixture.restore();
+  }
+});

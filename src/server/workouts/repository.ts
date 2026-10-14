@@ -237,6 +237,15 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
         );
       });
     },
+    assertSessionRevision(ownerId: string, id: string, revision: number) {
+      const row = db
+        .select()
+        .from(workoutSessions)
+        .where(sessionScope(ownerId, id))
+        .get();
+      if (!row) throw new WorkoutError(404);
+      if (row.revision !== revision) throw new WorkoutError(409);
+    },
     deleteSession(ownerId: string, id: string, revision: number) {
       const result = db
         .delete(workoutSessions)

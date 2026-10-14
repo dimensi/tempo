@@ -95,21 +95,24 @@ export async function updateWorkoutSession(
   input: unknown,
 ) {
   const repository = await access(headers, ownerId, 'workouts:log');
-  const { sessionVideoRows, cleanupVideoRows } = await import('./videos');
-  const rows = sessionVideoRows(ownerId, id);
-  const saved = repository.updateSession(
-    ownerId,
-    ownerSchema.parse(id),
-    revisionSchema.parse(revision),
-    workoutSessionInputSchema.parse(input),
-  );
-  await cleanupVideoRows(
-    rows.filter(
-      (row) =>
-        !saved.exercises.some((exercise) => exercise.id === row.exerciseId),
-    ),
-  );
-  return saved;
+  const sessionId = ownerSchema.parse(id);
+  const expectedRevision = revisionSchema.parse(revision);
+  const data = workoutSessionInputSchema.parse(input);
+  if (data.exercises.some((exercise) => !exercise.id))
+    throw new WorkoutError(409);
+  const { sessionVideoRows, cleanupVideoRows, withSessionVideoLock } =
+    await import('./videos');
+  return withSessionVideoLock(ownerId, sessionId, async () => {
+    repository.assertSessionRevision(ownerId, sessionId, expectedRevision);
+    // Keep the parent and occurrence valid until every object removal succeeds.
+    await cleanupVideoRows(
+      sessionVideoRows(ownerId, sessionId).filter(
+        (row) =>
+          !data.exercises.some((exercise) => exercise.id === row.exerciseId),
+      ),
+    );
+    return repository.updateSession(ownerId, sessionId, expectedRevision, data);
+  });
 }
 export async function deleteWorkoutSession(
   headers: Headers,
@@ -118,13 +121,15 @@ export async function deleteWorkoutSession(
   revision: unknown,
 ) {
   const repository = await access(headers, ownerId, 'workouts:log');
-  const { sessionVideoRows, cleanupVideoRows } = await import('./videos');
-  const rows = sessionVideoRows(ownerId, id);
-  repository.deleteSession(
-    ownerId,
-    ownerSchema.parse(id),
-    revisionSchema.parse(revision),
-  );
-  await cleanupVideoRows(rows);
+  const sessionId = ownerSchema.parse(id);
+  const expectedRevision = revisionSchema.parse(revision);
+  const { sessionVideoRows, cleanupVideoRows, withSessionVideoLock } =
+    await import('./videos');
+  return withSessionVideoLock(ownerId, sessionId, async () => {
+    repository.assertSessionRevision(ownerId, sessionId, expectedRevision);
+    // FK cascade must only run after all object deletions are confirmed.
+    await cleanupVideoRows(sessionVideoRows(ownerId, sessionId));
+    repository.deleteSession(ownerId, sessionId, expectedRevision);
+  });
 }
 export { WorkoutError };

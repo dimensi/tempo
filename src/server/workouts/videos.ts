@@ -27,6 +27,24 @@ async function serialize<T>(id: string, action: () => Promise<T>): Promise<T> {
     if (locks.get(id) === task) locks.delete(id);
   }
 }
+/** Shared by parent mutations and every video write; the app supports one Node process. */
+export function withSessionVideoLock<T>(
+  ownerId: string,
+  sessionId: string,
+  action: () => Promise<T>,
+) {
+  return serialize(`session:${ownerId}:${sessionId}`, action);
+}
+async function serializeVideoWrite<T>(
+  request: Request,
+  id: string,
+  action: () => Promise<T>,
+) {
+  const row = await rowFor(request, id, true);
+  return withSessionVideoLock(row.ownerId, row.sessionId, () =>
+    serialize(id, action),
+  );
+}
 type Row = typeof workoutVideos.$inferSelect;
 const key = (row: Row, part?: number) =>
   `workout-videos/${row.id}/${part === undefined ? 'video.mp4' : `part-${part}`}`;
@@ -100,57 +118,60 @@ export async function listVideos(request: Request) {
 export async function createVideo(request: Request) {
   const ownerId = await access(request, true);
   const input = videoCreateSchema.parse(await readWorkoutJson(request));
-  const session = target(ownerId, input.sessionId, input.exerciseId);
-  if (session.data.status !== 'completed') throw new WorkoutError(409);
-  const rows = getDatabase()
-    .db.select()
-    .from(workoutVideos)
-    .where(eq(workoutVideos.ownerId, ownerId))
-    .all();
-  await cleanupVideoRows(
-    rows.filter(
+  return withSessionVideoLock(ownerId, input.sessionId, async () => {
+    await access(request, true);
+    const session = target(ownerId, input.sessionId, input.exerciseId);
+    if (session.data.status !== 'completed') throw new WorkoutError(409);
+    const rows = getDatabase()
+      .db.select()
+      .from(workoutVideos)
+      .where(eq(workoutVideos.ownerId, ownerId))
+      .all();
+    await cleanupVideoRows(
+      rows.filter(
+        (row) =>
+          row.state === 'uploading' &&
+          row.createdAt < Date.now() - 24 * 60 * 60 * 1000,
+      ),
+    );
+    const currentRows = rows.filter(
       (row) =>
-        row.state === 'uploading' &&
-        row.createdAt < Date.now() - 24 * 60 * 60 * 1000,
-    ),
-  );
-  const currentRows = rows.filter(
-    (row) =>
-      row.state === 'ready' ||
-      row.createdAt >= Date.now() - 24 * 60 * 60 * 1000,
-  );
-  // Bounded owner quota, including abandoned attempts; no unbounded private object growth.
-  if (
-    currentRows.filter((row) => row.state === 'uploading').length >= 10 ||
-    currentRows.filter(
-      (row) =>
-        row.sessionId === input.sessionId &&
-        row.exerciseId === input.exerciseId,
-    ).length >= 8
-  )
-    throw new WorkoutError(409);
-  return dto(
-    getDatabase()
-      .db.insert(workoutVideos)
-      .values({
-        ...input,
-        id: randomUUID(),
-        ownerId,
-        duration: Math.ceil(input.duration),
-        state: 'uploading',
-        parts: {},
-        createdAt: Date.now(),
-      })
-      .returning()
-      .get(),
-  );
+        row.state === 'ready' ||
+        row.createdAt >= Date.now() - 24 * 60 * 60 * 1000,
+    );
+    // Bounded owner quota, including abandoned attempts; no unbounded private object growth.
+    if (
+      currentRows.filter((row) => row.state === 'uploading').length >= 10 ||
+      currentRows.filter(
+        (row) =>
+          row.sessionId === input.sessionId &&
+          row.exerciseId === input.exerciseId,
+      ).length >= 8
+    )
+      throw new WorkoutError(409);
+    return dto(
+      getDatabase()
+        .db.insert(workoutVideos)
+        .values({
+          ...input,
+          id: randomUUID(),
+          ownerId,
+          duration: Math.ceil(input.duration),
+          state: 'uploading',
+          parts: {},
+          createdAt: Date.now(),
+        })
+        .returning()
+        .get(),
+    );
+  });
 }
 export async function uploadVideoPart(
   request: Request,
   id: string,
   part: number,
 ) {
-  return serialize(id, async () => {
+  return serializeVideoWrite(request, id, async () => {
     const row = await rowFor(request, id, true);
     const count = Math.ceil(row.size / VIDEO_PART_BYTES);
     if (
@@ -204,9 +225,9 @@ export async function uploadVideoPart(
   });
 }
 export async function finalizeVideo(request: Request, id: string) {
-  return serialize(id, async () => {
+  return serializeVideoWrite(request, id, async () => {
     const row = await rowFor(request, id, true);
-    if (row.state === 'ready') return dto(row);
+    if (row.state === 'ready') return dto(await cleanupReadyVideoParts(row));
     const count = Math.ceil(row.size / VIDEO_PART_BYTES);
     if (Object.keys(row.parts).length !== count) throw new WorkoutError(409);
     const storage = getObjectStorage();
@@ -238,13 +259,23 @@ export async function finalizeVideo(request: Request, id: string) {
       .where(eq(workoutVideos.id, id))
       .returning()
       .get();
-    for (let part = 0; part < count; part++)
-      await storage.remove(key(row, part));
-    return dto(saved);
+    return dto(await cleanupReadyVideoParts(saved));
   });
 }
+/** Keep the complete part manifest until all idempotent removals succeed. */
+async function cleanupReadyVideoParts(row: Row) {
+  if (!Object.keys(row.parts).length) return row;
+  for (const part of Object.keys(row.parts))
+    await getObjectStorage().remove(key(row, Number(part)));
+  return getDatabase()
+    .db.update(workoutVideos)
+    .set({ parts: {} })
+    .where(eq(workoutVideos.id, row.id))
+    .returning()
+    .get();
+}
 export async function deleteVideo(request: Request, id: string) {
-  return serialize(id, async () => {
+  return serializeVideoWrite(request, id, async () => {
     const row = await rowFor(request, id, true);
     const storage = getObjectStorage();
     await storage.remove(key(row));
