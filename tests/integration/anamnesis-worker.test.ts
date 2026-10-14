@@ -172,6 +172,60 @@ describe('anamnesis import worker on the reference PDF', () => {
     },
   );
 
+  it('renews a processing lease while waiting for multi-page extraction and clears its heartbeat', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    let release!: () => void;
+    let started!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const extracting = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const initialLease = Date.now() + 300000;
+    repo.insertJob({
+      id: 'job-long-extraction',
+      ownerId: 'owner',
+      documentId: 'document-1',
+      status: 'processing',
+      stage: 'upload_validation',
+      attempts: 1,
+      lastError: null,
+      leaseUntil: initialLease,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    const slowWorker = createAnamnesisWorker({
+      database,
+      storage: fsObjectStorage({ rootDir: storageRoot }),
+      provider: {
+        name: 'delayed-fixture',
+        extract: async () => {
+          started();
+          await waiting;
+          return fixtureExtractionResult();
+        },
+      },
+    });
+    const processing = slowWorker.processJob('job-long-extraction');
+    try {
+      await extracting;
+      await vi.advanceTimersByTimeAsync(300001);
+      const renewed = repo.findJobById('job-long-extraction')!;
+      expect(renewed.status).toBe('processing');
+      expect(renewed.leaseUntil).toBeGreaterThan(initialLease);
+      expect(renewed.leaseUntil).toBeGreaterThan(Date.now());
+      release();
+      await processing;
+      expect(repo.findJobById('job-long-extraction')!.leaseUntil).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      release();
+      await processing;
+      vi.useRealTimers();
+    }
+  });
+
   it('marks scanned pages as ocr-applied', async () => {
     const { medicalDocumentPages } =
       await import('@/server/db/schema/anamnesis');

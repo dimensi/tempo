@@ -1,4 +1,5 @@
 import 'server-only';
+import { z } from 'zod';
 import { readServerEnv } from '@/server/env';
 import {
   extractionResultSchema,
@@ -57,88 +58,161 @@ function parseModelJson(text: string): unknown {
   return JSON.parse(stripped);
 }
 
+const PAGE_MAX_TOKENS = 16384;
+// The provider's constrained decoder cannot compile the full validation schema.
+// Keep field shapes/enums on the wire; apply all original bounds locally below.
+const extractionJsonSchema: unknown = JSON.parse(
+  JSON.stringify(
+    z.toJSONSchema(extractionResultSchema),
+    (key, value: unknown) =>
+      [
+        '$schema',
+        'minimum',
+        'maximum',
+        'minLength',
+        'maxLength',
+        'minItems',
+        'maxItems',
+      ].includes(key)
+        ? undefined
+        : value,
+  ),
+);
+
 function openRouterProvider(config: {
   baseUrl: string;
   apiKey: string;
   model: string;
   timeoutMs: number;
 }): AnamnesisExtractionProvider {
-  return {
-    name: 'openrouter',
-    async extract({ pages }) {
-      const content: unknown[] = [
-        {
-          type: 'text',
-          text: `Страницы документа (номер и текст):\n${pages
-            .map(
-              (page) =>
-                `— страница ${page.pageNumber} —\n${page.lines.join('\n') || '(текстового слоя нет, смотри изображение)'}`,
-            )
-            .join('\n\n')}`,
+  async function extractPage(
+    page: ExtractionRequestPage,
+  ): Promise<ExtractionResult> {
+    const content: unknown[] = [
+      {
+        type: 'text',
+        text: `Распознай только страницу ${page.pageNumber}. Каждый напечатанный результат верни один раз. Не продолжай таблицу и не дополняй отсутствующие строки. Если данных нет, верни пустой observations. pageNumber у всех результатов должен быть ${page.pageNumber}.\n${page.lines.join('\n') || '(текстового слоя нет, смотри изображение)'}`,
+      },
+    ];
+    if (page.imageJpeg)
+      content.push({
+        type: 'image_url',
+        image_url: {
+          url: `data:image/jpeg;base64,${page.imageJpeg.toString('base64')}`,
         },
-      ];
-      for (const page of pages)
-        if (page.imageJpeg)
-          content.push({
-            type: 'image_url',
-            image_url: {
-              url: `data:image/jpeg;base64,${page.imageJpeg.toString('base64')}`,
-            },
-          });
-      const body = JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content },
-        ],
-        temperature: 0,
-        response_format: { type: 'json_object' },
       });
-      let lastError: 'UPSTREAM' | 'BAD_RESPONSE' = 'UPSTREAM';
-      for (let attempt = 0; attempt < 2; attempt++) {
-        let response: Response;
-        try {
-          response = await fetch(`${config.baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${config.apiKey}`,
-            },
-            body,
-            signal: AbortSignal.timeout(config.timeoutMs),
-          });
-        } catch {
-          lastError = 'UPSTREAM';
-          continue;
-        }
+    const body = JSON.stringify({
+      model: config.model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content },
+      ],
+      temperature: 0,
+      max_tokens: PAGE_MAX_TOKENS,
+      provider: { require_parameters: true },
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'laboratory_page',
+          strict: true,
+          schema: extractionJsonSchema,
+        },
+      },
+    });
+    let lastError: 'UPSTREAM' | 'BAD_RESPONSE' = 'UPSTREAM';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let response: Response;
+      let payload: unknown;
+      try {
+        response = await fetch(`${config.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${config.apiKey}`,
+          },
+          body,
+          signal: AbortSignal.timeout(config.timeoutMs),
+        });
         if (response.status >= 500 || response.status === 429) {
           lastError = 'UPSTREAM';
           continue;
         }
         if (!response.ok) throw new AnamnesisProviderError('UPSTREAM', false);
-        const payload: unknown = await response.json().catch(() => null);
-        const text =
-          payload &&
-          typeof payload === 'object' &&
-          'choices' in payload &&
-          Array.isArray((payload as { choices: unknown }).choices)
-            ? ((
-                payload as {
-                  choices: Array<{ message?: { content?: unknown } }>;
-                }
-              ).choices[0]?.message?.content ?? null)
-            : null;
-        if (typeof text !== 'string' || !text.trim()) {
+        payload = await response.json();
+      } catch (error) {
+        if (error instanceof AnamnesisProviderError) throw error;
+        lastError = error instanceof SyntaxError ? 'BAD_RESPONSE' : 'UPSTREAM';
+        continue;
+      }
+      if (!payload || typeof payload !== 'object') {
+        lastError = 'BAD_RESPONSE';
+        continue;
+      }
+      if ('error' in payload) {
+        const error = payload.error as { code?: unknown } | null;
+        const code = Number(error?.code);
+        if (code === 429 || code >= 500) {
+          lastError = 'UPSTREAM';
+          continue;
+        }
+        throw new AnamnesisProviderError('UPSTREAM', false);
+      }
+      const choice =
+        'choices' in payload && Array.isArray(payload.choices)
+          ? (payload.choices[0] as
+              | { finish_reason?: unknown; message?: { content?: unknown } }
+              | undefined)
+          : undefined;
+      // A valid JSON prefix is not a completed extraction. Never persist truncated output.
+      if (
+        choice?.finish_reason === 'length' ||
+        choice?.finish_reason === 'content_filter'
+      )
+        throw new AnamnesisProviderError('BAD_RESPONSE', false);
+      if (
+        choice?.finish_reason !== 'stop' ||
+        typeof choice.message?.content !== 'string'
+      ) {
+        lastError = 'BAD_RESPONSE';
+        continue;
+      }
+      try {
+        const parsed = extractionResultSchema.safeParse(
+          parseModelJson(choice.message.content),
+        );
+        if (
+          !parsed.success ||
+          parsed.data.observations.some(
+            (item) => item.pageNumber !== page.pageNumber,
+          )
+        ) {
           lastError = 'BAD_RESPONSE';
           continue;
         }
-        try {
-          return parseModelJson(text);
-        } catch {
-          lastError = 'BAD_RESPONSE';
-        }
+        return parsed.data;
+      } catch {
+        lastError = 'BAD_RESPONSE';
       }
-      throw new AnamnesisProviderError(lastError, lastError === 'UPSTREAM');
+    }
+    throw new AnamnesisProviderError(lastError, lastError === 'UPSTREAM');
+  }
+  return {
+    name: 'openrouter',
+    async extract({ pages }) {
+      const results: ExtractionResult[] = [];
+      for (const page of pages) results.push(await extractPage(page));
+      const combined = extractionResultSchema.safeParse({
+        laboratory:
+          results.find((result) => result.laboratory !== null)?.laboratory ??
+          null,
+        title: results.find((result) => result.title !== null)?.title ?? null,
+        issuedAt:
+          results.find((result) => result.issuedAt !== null)?.issuedAt ?? null,
+        observations: results.flatMap((result) => result.observations),
+      });
+      if (!combined.success)
+        throw new AnamnesisProviderError('BAD_RESPONSE', false);
+      return combined.data;
     },
   };
 }
