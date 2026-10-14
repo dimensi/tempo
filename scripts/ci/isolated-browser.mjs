@@ -113,9 +113,19 @@ async function executeIsolated(run, concurrency, signal) {
           resolve(sandbox, 'node_modules'),
           'dir',
         );
+        // Dependencies are immutable, as in the already shared CLI node_modules.
+        // Server output/cache, SQLite and private stores remain case-local.
         cpSync('.next/standalone', resolve(sandbox, '.next/standalone'), {
           recursive: true,
+          filter: (source) =>
+            resolve(source) !== resolve('.next/standalone/node_modules'),
         });
+        symlinkSync(
+          resolve('.next/standalone/node_modules'),
+          resolve(sandbox, '.next/standalone/node_modules'),
+          'dir',
+        );
+        mkdirSync(resolve(sandbox, '.tmp'), { recursive: true });
         cpSync('.next/BUILD_ID', resolve(sandbox, '.next/BUILD_ID'));
         cpSync('public', resolve(sandbox, 'public'), { recursive: true });
         const gatewayPort = 3260 + slot * 2;
@@ -141,6 +151,7 @@ async function executeIsolated(run, concurrency, signal) {
               ...process.env,
               CI_E2E_ORIGIN: `https://localhost:${gatewayPort}`,
               CI_E2E_BACKEND_PORT: String(gatewayPort + 1),
+              TMPDIR: resolve(sandbox, '.tmp'),
             },
             signal,
           },
