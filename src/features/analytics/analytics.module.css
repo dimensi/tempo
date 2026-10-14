@@ -1,0 +1,111 @@
+.root {
+  --mantine-color-dimmed: light-dark(
+    var(--mantine-color-gray-7),
+    var(--mantine-color-gray-5)
+  );
+  --mantine-color-anchor: light-dark(
+    var(--mantine-color-teal-9),
+    var(--mantine-color-teal-4)
+  );
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.section {
+  min-width: 0;
+  padding: var(--mantine-spacing-lg);
+}
+.overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--mantine-spacing-xl);
+}
+.overviewItem {
+  min-width: 0;
+}
+.headline {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.nutritionGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+  gap: var(--mantine-spacing-xl);
+}
+.chart {
+  min-width: 0;
+}
+.toolbar {
+  gap: var(--mantine-spacing-sm);
+}
+.periodButtons {
+  flex-wrap: wrap;
+}
+.dateField {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+.metricDesktop {
+  display: block;
+}
+.metricMobile {
+  display: none;
+}
+.macroBar {
+  display: flex;
+  height: 16px;
+  overflow: hidden;
+  border-radius: var(--mantine-radius-sm);
+}
+.macroSegment {
+  min-width: 0;
+}
+.stat {
+  min-width: 0;
+}
+@media (max-width: 64em) {
+  .periodButtons {
+    width: 100%;
+  }
+  .section {
+    padding: var(--mantine-spacing-md);
+  }
+  .overview {
+    grid-template-columns: 1fr;
+    gap: var(--mantine-spacing-md);
+  }
+  .overviewItem {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: var(--mantine-spacing-sm);
+    align-items: start;
+  }
+  .overviewItem > :first-child {
+    grid-column: 1 / -1;
+  }
+  .headline {
+    font-size: 1.625rem;
+  }
+  .nutritionGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .metricDesktop {
+    display: none;
+  }
+  .metricMobile {
+    display: block;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .root *,
+  .root *::before,
+  .root *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}
+
+.root :global(.mantine-Input-input) {
+  min-height: 44px;
+}

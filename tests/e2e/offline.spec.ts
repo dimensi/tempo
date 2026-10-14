@@ -1,6 +1,7 @@
 import { getSignedOutSessionWith429Retry } from './auth-session';
 import { test, expect, type Response } from '@playwright/test';
 import { build } from 'esbuild';
+import { dateInTimezone } from '@/contracts/nutrition-sync-dates';
 let harness: string;
 test.beforeAll(async () => {
   harness = (
@@ -48,14 +49,20 @@ test('offline rolling calendar read prunes old records and photo blobs transacti
   page,
   context,
 }) => {
+  // UTC is Oct 13 here, while Europe/Moscow is Oct 14. Keep storage
+  // operations in the browser timezone to exercise the real calendar boundary.
   await inject(page);
-  await page.evaluate(call('seed()'));
+  await page.evaluate(
+    call("seed(undefined, Date.parse('2026-10-13T23:30:00Z'))"),
+  );
   expect(await page.evaluate(call('commitOldPhoto()'))).toBe(0);
   expect(await page.evaluate(call('rawCounts()'))).toEqual({
     bundle: 1,
     photos: 0,
   });
-  await page.evaluate(call('seed()'));
+  await page.evaluate(
+    call("seed(undefined, Date.parse('2026-10-13T23:30:00Z'))"),
+  );
   await page.evaluate(call("alterNative('boundary')"));
   await context.setOffline(true);
   try {
@@ -163,7 +170,13 @@ test('two tabs hide private DOM and enlarged offline photo synchronously before 
   await second.evaluate(call('listen()'));
   await context.setOffline(true);
   try {
-    await page.goto(`/diary?date=${new Date().toISOString().slice(0, 10)}`);
+    const date = dateInTimezone(
+      new Date(await page.evaluate(call('now'))),
+      await page.evaluate(
+        () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+      ),
+    );
+    await page.goto(`/diary?date=${date}`);
     await page.getByRole('button', { name: /^Увеличить фото:/ }).click();
     const portal = page
       .getByRole('dialog', { name: 'Фото приёма пищи' })

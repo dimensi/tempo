@@ -3,12 +3,10 @@ import { Alert, Stack, Title } from '@mantine/core';
 import { requireSession } from '@/server/auth/guards';
 import { getAccessibleOwnerId } from '@/server/access/owner';
 import { getAnalytics, AnalyticsError } from '@/server/analytics';
-import { getStepsSummary, HealthReadError } from '@/server/health';
-import { StepsPanel } from '@/features/health';
 import {
   AnalyticsDashboard,
   analyticsMessages as m,
-  presetRange,
+  AnalyticsTimezone,
 } from '@/features/analytics';
 export const metadata = { title: m.title };
 export default async function Page({
@@ -21,24 +19,21 @@ export default async function Page({
   const ownerId = await getAccessibleOwnerId(requestHeaders);
   if (!ownerId) return <Alert color="orange">{m.forbidden}</Alert>;
   const params = await searchParams;
-  const today = new Date().toISOString().slice(0, 10);
-  const range =
-    params.from !== undefined || params.to !== undefined
-      ? { from: params.from, to: params.to }
-      : presetRange('week', today);
+  if (params.timezone === undefined)
+    return <AnalyticsTimezone from={params.from} to={params.to} />;
   let data;
-  let steps;
   try {
-    data = await getAnalytics(requestHeaders, ownerId, range);
-    steps = await getStepsSummary(requestHeaders, range);
+    data = await getAnalytics(
+      requestHeaders,
+      ownerId,
+      { from: params.from, to: params.to },
+      params.timezone,
+    );
   } catch (error) {
     const message =
-      (error instanceof AnalyticsError || error instanceof HealthReadError) &&
-      error.status === 400
+      error instanceof AnalyticsError && error.status === 400
         ? m.rangeError
-        : (error instanceof AnalyticsError ||
-              error instanceof HealthReadError) &&
-            error.status === 403
+        : error instanceof AnalyticsError && error.status === 403
           ? m.forbidden
           : m.loadError;
     return (
@@ -50,13 +45,9 @@ export default async function Page({
     );
   }
   return (
-    <Stack gap="lg" style={{ minWidth: 0 }}>
-      <AnalyticsDashboard
-        key={`${data.summary.range.from}:${data.summary.range.to}`}
-        {...data}
-        today={today}
-      />
-      <StepsPanel summary={steps} />
-    </Stack>
+    <AnalyticsDashboard
+      key={`${data.range.from}:${data.range.to}:${data.timezone}`}
+      data={data}
+    />
   );
 }

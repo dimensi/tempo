@@ -40,7 +40,11 @@ test('real diary: week browsing, date selection, history and distant jump', asyn
   await expect(selected).toHaveAttribute('href', '/diary?date=2024-02-29');
   let dataRequests = 0;
   page.on('request', (request) => {
-    if (request.url().includes('/diary?')) dataRequests++;
+    const url = new URL(request.url());
+    // Shell prefetch of the date-less route is unrelated to browsing weeks.
+    // Count all dated requests, including prefetch, so fetching a day still fails.
+    if (url.pathname === '/diary' && url.searchParams.has('date'))
+      dataRequests++;
   });
   await nav.getByRole('button', { name: 'Следующая неделя' }).click();
   await expect(

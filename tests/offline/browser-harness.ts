@@ -216,9 +216,13 @@ Object.assign(window, {
     async seed(
       variant?:
         'zero-entry' | 'empty' | 'photo-only' | 'totals' | 'linked-plan',
+      time?: number,
     ) {
-      now = Date.now();
-      const snapshot = offlineFixture(now);
+      now = time ?? Date.now();
+      const snapshot = offlineFixture(
+        now,
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+      );
       const id = 'I'.repeat(43);
       snapshot.photos.items = [
         {
@@ -298,12 +302,12 @@ Object.assign(window, {
       return (await storage.read(now)).photos.length;
     },
     async commitOldPhoto() {
-      const cached = await storage.read(now, 'UTC');
+      const cached = await storage.read(now);
       const bundle = cached.bundle!;
       const old = shiftDate(bundle.snapshot.from, -1);
       for (const photo of bundle.snapshot.photos.items) photo.date = old;
-      await storage.commit(bundle, cached.photos, now, 'UTC');
-      return (await storage.read(now, 'UTC')).photos.length;
+      await storage.commit(bundle, cached.photos, now);
+      return (await storage.read(now)).photos.length;
     },
     async upgradeOnline() {
       const snapshot = offlineFixture(now);
@@ -430,7 +434,7 @@ Object.assign(window, {
       return result;
     },
     async details(time = now) {
-      const value = await storage.read(time, 'UTC');
+      const value = await storage.read(time);
       const snapshot = value.bundle?.snapshot;
       return {
         enabled: value.metadata.enabled,
