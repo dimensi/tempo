@@ -14,6 +14,7 @@ test('manual full regression cannot publish an image or auto-start CD', () => {
   assert.match(publish, /docker tag nutrition-foundation/);
   assert.match(publish, /docker push "\$image"/);
   assert.doesNotMatch(ci, /export-release-artifact|nutrition-release-/);
+  assert.doesNotMatch(ci, /test-cd-candidates\.py/);
   assert.match(cd, /github.event.workflow_run.event == 'push'/);
   assert.match(
     cd,
