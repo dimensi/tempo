@@ -7,23 +7,37 @@ import {
   rmSync,
 } from 'node:fs';
 import { requirePassingReport } from './report.mjs';
+import { isolatedBrowser } from './isolated-browser.mjs';
 const selection = JSON.parse(
   readFileSync('test-results/ci-selection.json', 'utf8'),
 );
 const general = {
-  nutrition: 'authenticated diary date navigation and empty state',
-  workouts:
-    'owner creates plan, logs actual, edits and deletes plan without changing history',
-  measurements: 'owner creates, edits and deletes a manual measurement',
-  analytics: 'scoped analytics API, coverage, controls',
-  reports: 'persisted diary and private photo PDF API',
-  comments: 'measurement and actual-session comments compose',
-  shell:
-    'section navigation keeps form values|owner shell, all pages, theme persistence, mobile overflow and logout',
+  nutrition: ['diary.*spec.ts', 'overview.*spec.ts'],
+  workouts: ['workouts.spec.ts', 'transformmate.*spec.ts'],
+  measurements: ['measurements.spec.ts'],
+  analytics: ['analytics.spec.ts'],
+  reports: ['reports.*spec.ts'],
+  comments: ['comment-ui.spec.ts', 'collaboration.spec.ts'],
+  shell: [
+    'foundation.spec.ts',
+    'health.spec.ts',
+    'mobile-inputs.spec.ts',
+    'trainer-navigation.spec.ts',
+    'settings-navigation.spec.ts',
+    'invite-accept.spec.ts',
+  ],
 };
+const slowAuth =
+  'real authenticated session throttle is retried once after its server interval';
 const runs = [
   {
+    family: 'isolation',
+    config: 'tests/ci/isolation.config.ts',
+    isolated: true,
+  },
+  {
     family: 'smoke',
+    isolated: true,
     config: 'tests/smoke/production.config.ts',
     requiredCases: [
       'production real login',
@@ -33,15 +47,24 @@ const runs = [
   },
 ];
 if (selection.mode === 'full') {
-  runs.push({ family: 'general', config: 'playwright.config.ts' });
+  runs.push({
+    family: 'general',
+    config: 'playwright.config.ts',
+    isolated: true,
+  });
 } else {
-  const patterns = selection.areas.map((area) => general[area]).filter(Boolean);
-  if (patterns.length)
+  const files = [
+    ...new Set(selection.areas.flatMap((area) => general[area] ?? [])),
+  ];
+  if (files.length)
     runs.push({
       family: 'general',
       config: 'playwright.config.ts',
-      grep: patterns.join('|'),
-      requiredCases: patterns.flatMap((pattern) => pattern.split('|')),
+      ...(Object.keys(general).every((area) => selection.areas.includes(area))
+        ? {}
+        : { files }),
+      grepInvert: slowAuth,
+      isolated: true,
     });
 }
 if (selection.mode === 'full' || selection.areas.includes('offline'))
@@ -98,7 +121,16 @@ for (const run of runs) {
         run.config,
         ...(run.grep ? ['--grep', run.grep] : []),
       ];
-  const result = spawnSync('pnpm', args, { stdio: 'inherit' });
+  let result;
+  if (run.isolated) {
+    try {
+      await isolatedBrowser(run, Number(process.env.CI_E2E_CONCURRENCY ?? 2));
+      result = { status: 0 };
+    } catch (error) {
+      console.error(error);
+      result = { status: 1 };
+    }
+  } else result = spawnSync('pnpm', args, { stdio: 'inherit' });
   evidence.productionStarts = readFileSync(
     'test-results/production-starts.jsonl',
     'utf8',

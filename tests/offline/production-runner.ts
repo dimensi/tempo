@@ -15,10 +15,16 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { build } from 'esbuild';
 import { startUpstream } from '../transformmate-sync/upstream';
+import { testOrigin } from '../ci/origin';
 const family = process.argv[2] ?? 'offline';
+const gatewayPort = Number(new URL(testOrigin).port);
+const backendPort = Number(process.env.CI_E2E_BACKEND_PORT ?? 3161);
+if (backendPort !== gatewayPort + 1)
+  throw new Error('E2E backend must match its disposable gateway');
 if (
   ![
     'general',
+    'isolation',
     'nutrition',
     'nutrition-connection',
     'transformmate',
@@ -91,7 +97,7 @@ const env: NodeJS.ProcessEnv = {
   HOME: process.env.HOME,
   TMPDIR: process.env.TMPDIR,
   DATABASE_URL: 'file:./.data/e2e.sqlite',
-  BETTER_AUTH_URL: 'https://localhost:3160',
+  BETTER_AUTH_URL: `https://localhost:${gatewayPort}`,
   BETTER_AUTH_SECRET: 'offline-production-synthetic-secret-1234567890',
   DEMO_MODE: 'false',
   ENABLE_NUTRITION_SCHEDULER: 'false',
@@ -121,7 +127,7 @@ const child = spawn(process.execPath, ['scripts/start.mjs'], {
   env: {
     ...env,
     NODE_ENV: 'production',
-    PORT: '3161',
+    PORT: String(backendPort),
     HOSTNAME: '127.0.0.1',
     ...(family === 'nutrition-connection'
       ? {
@@ -214,7 +220,7 @@ const server = createServer(
     const upstream = request(
       {
         hostname: '127.0.0.1',
-        port: 3161,
+        port: backendPort,
         method: incoming.method,
         path: incoming.url,
         headers: { ...incoming.headers, 'x-forwarded-proto': 'https' },
@@ -231,7 +237,7 @@ const server = createServer(
     incoming.pipe(upstream);
   },
 );
-server.listen(3160, '127.0.0.1');
+server.listen(gatewayPort, '127.0.0.1');
 function close() {
   child.kill('SIGTERM');
   upstream?.close();
