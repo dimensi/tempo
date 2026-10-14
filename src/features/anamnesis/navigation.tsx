@@ -5,6 +5,14 @@ import { usePathname } from 'next/navigation';
 import { Button, Group } from '@mantine/core';
 import { anamnesisMessages as m } from './messages';
 
+export function AnamnesisUploadLink() {
+  return (
+    <Button component={Link} href="/anamnesis/documents" mih={44}>
+      {m.documents.upload}
+    </Button>
+  );
+}
+
 export function AnamnesisNavigation({ owner }: { owner: boolean }) {
   const pathname = usePathname();
   const items = [
