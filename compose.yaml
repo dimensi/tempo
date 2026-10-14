@@ -21,9 +21,9 @@ services:
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       # Провайдер распознавания: без ключа внешняя обработка не выполняется.
-      ANAMNESIS_LLM_BASE_URL: ${ANAMNESIS_LLM_BASE_URL:-https://api.z.ai/api/coding/paas/v4}
-      ANAMNESIS_LLM_API_KEY: ${ANAMNESIS_LLM_API_KEY:-}
-      ANAMNESIS_LLM_MODEL: ${ANAMNESIS_LLM_MODEL:-glm-4.5v}
+      ANAMNESIS_LLM_BASE_URL: ${ANAMNESIS_LLM_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANAMNESIS_LLM_MODEL: ${ANAMNESIS_LLM_MODEL:-google/gemini-2.5-flash-lite}
       ANAMNESIS_LLM_TIMEOUT_MS: ${ANAMNESIS_LLM_TIMEOUT_MS:-120000}
       # Только периодический таймер очереди; загрузка/переобработка запускают
       # обработку напрямую и без таймера.

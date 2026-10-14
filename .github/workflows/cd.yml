@@ -65,7 +65,7 @@ jobs:
           S3_BUCKET: ${{ vars.S3_BUCKET }}
           S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-          ANAMNESIS_LLM_API_KEY: ${{ secrets.ANAMNESIS_LLM_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           ANAMNESIS_LLM_BASE_URL: ${{ vars.ANAMNESIS_LLM_BASE_URL }}
           ANAMNESIS_LLM_MODEL: ${{ vars.ANAMNESIS_LLM_MODEL }}
           ANAMNESIS_LLM_TIMEOUT_MS: ${{ vars.ANAMNESIS_LLM_TIMEOUT_MS }}
@@ -96,9 +96,9 @@ jobs:
           python3 - <<'PYENV'
           import os
           fixed = {'S3_ENDPOINT': 'http://192.168.1.90:8333', 'S3_REGION': 'us-east-1', 'S3_BUCKET': 'apps',
-                   'ANAMNESIS_LLM_BASE_URL': 'https://api.z.ai/api/coding/paas/v4', 'ANAMNESIS_LLM_MODEL': 'glm-5.3-flash',
+                   'ANAMNESIS_LLM_BASE_URL': 'https://openrouter.ai/api/v1', 'ANAMNESIS_LLM_MODEL': 'google/gemini-2.5-flash-lite',
                    'ANAMNESIS_LLM_TIMEOUT_MS': '120000', 'ENABLE_ANAMNESIS_WORKER': 'false'}
-          keys = (*fixed, 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'ANAMNESIS_LLM_API_KEY')
+          keys = (*fixed, 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'OPENROUTER_API_KEY')
           values = {key: os.environ[key] for key in keys}
           assert all(values[key] == value for key, value in fixed.items()), 'Unapproved runtime setting'
           assert all(0 < len(value) <= 2048 and all(32 <= ord(c) <= 126 and c not in "'\\" for c in value) for value in values.values()), 'Invalid runtime setting'
@@ -107,7 +107,7 @@ jobs:
               output.write(''.join(f"{key}='{value}'\n" for key, value in values.items()))
           PYENV
           printf '%s' "$GH_TOKEN" > "$scratch/registry-token"
-          unset GH_TOKEN S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY ANAMNESIS_LLM_API_KEY
+          unset GH_TOKEN S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY OPENROUTER_API_KEY
           ssh -p 2224 "${ssh_args[@]}" "$dest" "umask 077; test -r /opt/compose/yazio-dashboard/runtime.env && mkdir -m 700 '$stage'"
           scp -P 2224 "${ssh_args[@]}" compose.yaml compose.home.yaml "$scratch/.env.deploy" "$scratch/registry-token" "$dest:$stage/"
           ssh -p 2224 "${ssh_args[@]}" "$dest" "bash -s -- '$REVISION' '$deploy_run' '$GITHUB_ACTOR'" <<'REMOTE'

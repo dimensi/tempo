@@ -33,12 +33,12 @@ volume deletion, pruning, auth bootstrap or secret rotation is performed.
 The current auth secret therefore remains server-local.
 
 `nutrition-production` supplies Secrets `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`,
-`ANAMNESIS_LLM_API_KEY` and Variables `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
+`OPENROUTER_API_KEY` and Variables `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
 `ANAMNESIS_LLM_BASE_URL`, `ANAMNESIS_LLM_MODEL`, `ANAMNESIS_LLM_TIMEOUT_MS`,
 `ENABLE_ANAMNESIS_WORKER`. They retain the approved values:
 S3 `http://192.168.1.90:8333`, region `us-east-1`, private bucket `apps`;
-Coding Plan `https://api.z.ai/api/coding/paas/v4`, `glm-5.3-flash`, timeout `120000`,
-worker `false`. There is no paid API fallback or thinking override.
+OpenRouter `https://openrouter.ai/api/v1`, `google/gemini-2.5-flash-lite`, timeout `120000`,
+worker `false`. There is no fallback to the subscription provider or thinking override.
 Env serialization rejects controls, single quotes and backslashes rather than
 accepting ambiguous dotenv escapes; literal dollars/hash/double quotes are quoted.
 Secrets are never added to Git, images, artifacts or command arguments.

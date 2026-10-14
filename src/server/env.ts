@@ -20,10 +20,14 @@ const schema = z.object({
   S3_ACCESS_KEY_ID: z.string().min(1).max(128).optional(),
   S3_SECRET_ACCESS_KEY: z.string().min(1).max(128).optional(),
   ANAMNESIS_LLM_BASE_URL: z
-    .url()
-    .default('https://api.z.ai/api/coding/paas/v4'),
-  ANAMNESIS_LLM_API_KEY: z.string().min(1).max(256).optional(),
-  ANAMNESIS_LLM_MODEL: z.string().min(1).max(64).default('glm-4.5v'),
+    .literal('https://openrouter.ai/api/v1')
+    .default('https://openrouter.ai/api/v1'),
+  OPENROUTER_API_KEY: z.string().min(1).max(256).optional(),
+  ANAMNESIS_LLM_MODEL: z
+    .string()
+    .min(1)
+    .max(64)
+    .default('google/gemini-2.5-flash-lite'),
   ANAMNESIS_LLM_TIMEOUT_MS: z.coerce
     .number()
     .int()
