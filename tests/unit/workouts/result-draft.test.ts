@@ -26,6 +26,7 @@ describe('actual result drafts', () => {
   it('uses the plan as guidance without inventing actual reps, weight or comments', () => {
     const draft = emptyResultDraft(planned.date, planned);
     expect(draft.exercises[0]).toEqual({
+      id: expect.any(String),
       name: 'Squat',
       transformMate: planned.exercises[0]!.transformMate,
       sets: [{ reps: null, weightKg: null }],

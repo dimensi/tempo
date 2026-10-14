@@ -1,3 +1,4 @@
+import { clearVideoDrafts } from '@/lib/workout-video-draft';
 import {
   offlineLimits,
   offlineSnapshotSchema,
@@ -246,7 +247,10 @@ export async function purgeOfflineDevice() {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
-      storage.purge(Date.now(), previousEpoch),
+      Promise.all([
+        storage.purge(Date.now(), previousEpoch),
+        clearVideoDrafts(),
+      ]),
       new Promise((_, reject) => {
         timer = setTimeout(
           () => reject(new OfflineStorageError('unavailable')),

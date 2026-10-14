@@ -156,6 +156,10 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
     createSession(ownerId: string, input: WorkoutSessionCreate) {
       return db.transaction((tx) => {
         const { planId, plannedWorkoutId, ...actual } = input;
+        actual.exercises = actual.exercises.map((exercise) => ({
+          ...exercise,
+          id: exercise.id ?? randomUUID(),
+        }));
         let planSnapshot: (typeof workoutSessions.$inferSelect)['data']['planSnapshot'] =
           null;
         if (planId && plannedWorkoutId) {
@@ -206,11 +210,18 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
           .get();
         if (!existing) throw new WorkoutError(404);
         if (existing.revision !== revision) throw new WorkoutError(409);
+        // A missing occurrence ID cannot be matched safely by name or array position.
+        if (input.exercises.some((exercise) => !exercise.id))
+          throw new WorkoutError(409);
         return sessionDto(
           tx
             .update(workoutSessions)
             .set({
-              data: { ...existing.data, ...input },
+              data: {
+                ...existing.data,
+                ...input,
+                exercises: input.exercises,
+              },
               date: input.date,
               revision: revision + 1,
               updatedAt: new Date().toISOString(),
@@ -225,6 +236,15 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
             .get(),
         );
       });
+    },
+    assertSessionRevision(ownerId: string, id: string, revision: number) {
+      const row = db
+        .select()
+        .from(workoutSessions)
+        .where(sessionScope(ownerId, id))
+        .get();
+      if (!row) throw new WorkoutError(404);
+      if (row.revision !== revision) throw new WorkoutError(409);
     },
     deleteSession(ownerId: string, id: string, revision: number) {
       const result = db

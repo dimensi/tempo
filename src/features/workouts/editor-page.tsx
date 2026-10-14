@@ -23,6 +23,7 @@ import classes from './workout-ui.module.css';
 
 const draftExercise = z
   .object({
+    id: z.uuid().optional(),
     name: z.string().max(160),
     comment: z.string().max(4000).optional(),
     transformMate: z

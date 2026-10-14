@@ -22,6 +22,7 @@ export function copyPlanToDate(
       date: shift(workout.date),
       exercises: workout.exercises.map((exercise) => ({
         ...structuredClone(exercise),
+        id: crypto.randomUUID(),
         ...(exercise.transformMate
           ? {
               transformMate: {

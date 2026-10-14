@@ -93,6 +93,8 @@ ID token обновляется автоматически; `TRANSFORMMATE_ID_TO
 фактические результаты сохраняются отдельно от ручной истории. Безопасные ограничения,
 статусы и настройка описаны в [интеграции TransformMate](docs/architecture/transformmate-integration.md).
 
+Сохранённые результаты завершённых тренировок поддерживают [приватные видео выполнения](docs/architecture/workout-videos.md): выбор на телефоне, сжатие на устройстве, превью и возобновляемая загрузка в общее хранилище с доступом владельца и разрешённого тренера.
+
 ## Развёртывание
 
 Preview доступен на [nutrition.dimensi.dev](https://nutrition.dimensi.dev). Исходная проверенная preview revision — `b8b8a1cd154063b713db417a7ab2c2d3d9388a8c`; это историческая точка проверки, а не указание текущего latest после обновлений. Оператор фиксирует точную deployed revision и image ID/digest при каждом релизе; изменения main автоматически не развёртываются. На home-server stack расположен в `/opt/compose/yazio-dashboard`, Compose project — `nutrition`. Server-local `compose.home.yaml` подключает external network `web` с alias `nutrition` и убирает host port; Caddy направляет публичный HTTPS hostname на приложение.

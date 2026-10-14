@@ -11,6 +11,16 @@ interface ObjectStorage {
   put(key: string, bytes: Uint8Array, contentType?: string): Promise<void>;
   get(key: string): Promise<Uint8Array>;
   remove(key: string): Promise<void>;
+  putStream(
+    key: string,
+    body: AsyncIterable<Uint8Array>,
+    size: number,
+    contentType: string,
+  ): Promise<void>;
+  readStream(
+    key: string,
+    range?: { start: number; end: number },
+  ): Promise<{ body: ReadableStream<Uint8Array>; size: number }>;
 }
 ```
 
@@ -59,11 +69,11 @@ put/get/remove в обеих реализациях — containment обязат
 Текущее развёртывание и чек-лист проверки — в
 [anamnesis-storage.md](anamnesis-storage.md).
 
-## Ограничение для будущих видео
+## Видео и потоковый доступ
 
-Базовый интерфейс переиспользуется как есть, но рассчитан на малые объекты:
-`Uint8Array` целиком в памяти, буферизованная запись и лимит `get` 100 МиБ.
-Для больших видео нужен отдельный слой поверх того же модуля — streaming
-(ReadableStream) и/или multipart upload, свои лимиты и прогресс; в текущий
-интерфейс он не добавлялся. Новые потребители картинок ограничение не
-затрагивает.
+Buffered `put/get` остаются для малых объектов; `get` ограничен 100 МиБ.
+Видео используют `putStream` с известным размером и `readStream` с single Range
+через тот же fs/S3 adapter. При Range поле `size` описывает длину ответа S3
+либо полного файла fs; размер полного видео берётся из проверенных metadata
+в БД. Доступ к объектам выполняется только через авторизованные API.
+[Формат, chunks/resume, UUID, авторизация и ограничения](workout-videos.md).

@@ -8,6 +8,16 @@ import { s3ObjectStorage } from './s3';
 export interface ObjectStorage {
   put(key: string, bytes: Uint8Array, contentType?: string): Promise<void>;
   get(key: string): Promise<Uint8Array>;
+  putStream(
+    key: string,
+    body: AsyncIterable<Uint8Array>,
+    size: number,
+    contentType: string,
+  ): Promise<void>;
+  readStream(
+    key: string,
+    range?: { start: number; end: number },
+  ): Promise<{ body: ReadableStream<Uint8Array>; size: number }>;
   remove(key: string): Promise<void>;
 }
 

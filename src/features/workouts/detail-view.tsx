@@ -32,6 +32,7 @@ import {
 import type { TransformMateSyncItem } from '@/contracts/transformmate';
 import type { TransformMateNativeItem } from '@/contracts/transformmate-native';
 import { workoutTitle } from '@/lib/workout-title';
+import { WorkoutVideos } from './workout-videos';
 import { ExerciseTable } from './exercise-table';
 import { WorkoutReadContent } from './read-content';
 import { WorkoutSync } from './transformmate-sync';
@@ -262,6 +263,9 @@ export function WorkoutDetailView({
           note={detail.session.note}
           comments={renderComments?.(detail.session.id)}
         />
+      )}
+      {session && (
+        <WorkoutVideos ownerId={ownerId} session={session} canUpload={canLog} />
       )}
       {detail.kind === 'native' && (
         <WorkoutReadContent

@@ -94,12 +94,25 @@ export async function updateWorkoutSession(
   revision: unknown,
   input: unknown,
 ) {
-  return (await access(headers, ownerId, 'workouts:log')).updateSession(
-    ownerId,
-    ownerSchema.parse(id),
-    revisionSchema.parse(revision),
-    workoutSessionInputSchema.parse(input),
-  );
+  const repository = await access(headers, ownerId, 'workouts:log');
+  const sessionId = ownerSchema.parse(id);
+  const expectedRevision = revisionSchema.parse(revision);
+  const data = workoutSessionInputSchema.parse(input);
+  if (data.exercises.some((exercise) => !exercise.id))
+    throw new WorkoutError(409);
+  const { sessionVideoRows, cleanupVideoRows, withSessionVideoLock } =
+    await import('./videos');
+  return withSessionVideoLock(ownerId, sessionId, async () => {
+    repository.assertSessionRevision(ownerId, sessionId, expectedRevision);
+    // Keep the parent and occurrence valid until every object removal succeeds.
+    await cleanupVideoRows(
+      sessionVideoRows(ownerId, sessionId).filter(
+        (row) =>
+          !data.exercises.some((exercise) => exercise.id === row.exerciseId),
+      ),
+    );
+    return repository.updateSession(ownerId, sessionId, expectedRevision, data);
+  });
 }
 export async function deleteWorkoutSession(
   headers: Headers,
@@ -107,10 +120,16 @@ export async function deleteWorkoutSession(
   id: string,
   revision: unknown,
 ) {
-  return (await access(headers, ownerId, 'workouts:log')).deleteSession(
-    ownerId,
-    ownerSchema.parse(id),
-    revisionSchema.parse(revision),
-  );
+  const repository = await access(headers, ownerId, 'workouts:log');
+  const sessionId = ownerSchema.parse(id);
+  const expectedRevision = revisionSchema.parse(revision);
+  const { sessionVideoRows, cleanupVideoRows, withSessionVideoLock } =
+    await import('./videos');
+  return withSessionVideoLock(ownerId, sessionId, async () => {
+    repository.assertSessionRevision(ownerId, sessionId, expectedRevision);
+    // FK cascade must only run after all object deletions are confirmed.
+    await cleanupVideoRows(sessionVideoRows(ownerId, sessionId));
+    repository.deleteSession(ownerId, sessionId, expectedRevision);
+  });
 }
 export { WorkoutError };
