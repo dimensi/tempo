@@ -19,7 +19,7 @@ const ANAMNESIS_OPERATIONAL_KEYS = [
   'S3_ACCESS_KEY_ID',
   'S3_SECRET_ACCESS_KEY',
   'ANAMNESIS_LLM_BASE_URL',
-  'ANAMNESIS_LLM_API_KEY',
+  'OPENROUTER_API_KEY',
   'ANAMNESIS_LLM_MODEL',
   'ANAMNESIS_LLM_TIMEOUT_MS',
   'ENABLE_ANAMNESIS_WORKER',
@@ -61,14 +61,12 @@ describe('compose template passes anamnesis operational env through', () => {
   });
 
   it('forwards ANAMNESIS_LLM_* without enabling external processing', () => {
-    expect(appEnv.get('ANAMNESIS_LLM_API_KEY')).toBe(
-      '${ANAMNESIS_LLM_API_KEY:-}',
-    );
+    expect(appEnv.get('OPENROUTER_API_KEY')).toBe('${OPENROUTER_API_KEY:-}');
     expect(appEnv.get('ANAMNESIS_LLM_BASE_URL')).toBe(
-      '${ANAMNESIS_LLM_BASE_URL:-https://api.z.ai/api/coding/paas/v4}',
+      '${ANAMNESIS_LLM_BASE_URL:-https://openrouter.ai/api/v1}',
     );
     expect(appEnv.get('ANAMNESIS_LLM_MODEL')).toBe(
-      '${ANAMNESIS_LLM_MODEL:-glm-4.5v}',
+      '${ANAMNESIS_LLM_MODEL:-google/gemini-2.5-flash-lite}',
     );
     expect(appEnv.get('ANAMNESIS_LLM_TIMEOUT_MS')).toBe(
       '${ANAMNESIS_LLM_TIMEOUT_MS:-120000}',
@@ -106,7 +104,7 @@ describe('server env defaults stay local and offline', () => {
     const env = readServerEnv(baseEnv);
     expect(env.S3_ENDPOINT).toBeUndefined();
     expect(env.S3_ACCESS_KEY_ID).toBeUndefined();
-    expect(env.ANAMNESIS_LLM_API_KEY).toBeUndefined();
+    expect(env.OPENROUTER_API_KEY).toBeUndefined();
     expect(env.ENABLE_ANAMNESIS_WORKER).toBe('false');
   });
 
@@ -116,11 +114,11 @@ describe('server env defaults stay local and offline', () => {
       ...baseEnv,
       S3_ENDPOINT: '',
       S3_ACCESS_KEY_ID: '',
-      ANAMNESIS_LLM_API_KEY: '',
+      OPENROUTER_API_KEY: '',
       ENABLE_ANAMNESIS_WORKER: 'false',
     });
     expect(env.S3_ENDPOINT).toBeUndefined();
-    expect(env.ANAMNESIS_LLM_API_KEY).toBeUndefined();
+    expect(env.OPENROUTER_API_KEY).toBeUndefined();
   });
 
   it('applies the schema timeout default when the passthrough is empty', async () => {

@@ -39,8 +39,8 @@ const SYNTHETIC = {
   S3_BUCKET: 'synthetic-bucket',
   S3_ACCESS_KEY_ID: 'synthetic-access-key-id',
   S3_SECRET_ACCESS_KEY: 'synthetic-secret-access-key',
-  ANAMNESIS_LLM_BASE_URL: 'https://llm.invalid/v4',
-  ANAMNESIS_LLM_API_KEY: 'synthetic-llm-key',
+  ANAMNESIS_LLM_BASE_URL: 'https://openrouter.ai/api/v1',
+  OPENROUTER_API_KEY: 'synthetic-llm-key',
   ANAMNESIS_LLM_MODEL: 'synthetic-model',
   ANAMNESIS_LLM_TIMEOUT_MS: '60000',
   ENABLE_ANAMNESIS_WORKER: 'false',
@@ -55,7 +55,7 @@ const OPERATIONAL_KEYS = [
   'S3_ACCESS_KEY_ID',
   'S3_SECRET_ACCESS_KEY',
   'ANAMNESIS_LLM_BASE_URL',
-  'ANAMNESIS_LLM_API_KEY',
+  'OPENROUTER_API_KEY',
   'ANAMNESIS_LLM_MODEL',
   'ANAMNESIS_LLM_TIMEOUT_MS',
   'ENABLE_ANAMNESIS_WORKER',
@@ -211,7 +211,7 @@ describe('docker compose config guard (synthetic env, both files)', () => {
       const resolved = await resolveServerEnv(app);
       expect(resolved.S3_ENDPOINT).toBe('http://s3.invalid:8333');
       expect(resolved.S3_BUCKET).toBe('synthetic-bucket');
-      expect(resolved.ANAMNESIS_LLM_API_KEY).toBe('synthetic-llm-key');
+      expect(resolved.OPENROUTER_API_KEY).toBe('synthetic-llm-key');
       expect(resolved.ANAMNESIS_LLM_TIMEOUT_MS).toBe(60000);
       expect(resolved.ENABLE_ANAMNESIS_WORKER).toBe('false');
     },
@@ -235,14 +235,14 @@ describe('docker compose config guard (synthetic env, both files)', () => {
       expect(env.S3_ENDPOINT).toBe('');
       expect(env.S3_ACCESS_KEY_ID).toBe('');
       expect(env.S3_SECRET_ACCESS_KEY).toBe('');
-      expect(env.ANAMNESIS_LLM_API_KEY).toBe('');
+      expect(env.OPENROUTER_API_KEY).toBe('');
       expect(env.ENABLE_ANAMNESIS_WORKER).toBe('false');
       expect(env.S3_REGION).toBe('us-east-1');
       expect(env.S3_BUCKET).toBe('apps');
 
       const resolved = await resolveServerEnv(env);
       expect(resolved.S3_ENDPOINT).toBeUndefined();
-      expect(resolved.ANAMNESIS_LLM_API_KEY).toBeUndefined();
+      expect(resolved.OPENROUTER_API_KEY).toBeUndefined();
       expect(resolved.ENABLE_ANAMNESIS_WORKER).toBe('false');
       expect(resolved.ANAMNESIS_LLM_TIMEOUT_MS).toBe(120000);
     },
@@ -260,7 +260,7 @@ describe('docker compose config guard (synthetic env, both files)', () => {
             S3_ACCESS_KEY_ID: '',
             S3_SECRET_ACCESS_KEY: '',
             ANAMNESIS_LLM_BASE_URL: '',
-            ANAMNESIS_LLM_API_KEY: '',
+            OPENROUTER_API_KEY: '',
             ANAMNESIS_LLM_MODEL: '',
             ANAMNESIS_LLM_TIMEOUT_MS: '',
             ENABLE_ANAMNESIS_WORKER: '',
@@ -275,21 +275,19 @@ describe('docker compose config guard (synthetic env, both files)', () => {
       expect(app.S3_ENDPOINT).toBe('');
       expect(app.S3_ACCESS_KEY_ID).toBe('');
       expect(app.S3_SECRET_ACCESS_KEY).toBe('');
-      expect(app.ANAMNESIS_LLM_API_KEY).toBe('');
+      expect(app.OPENROUTER_API_KEY).toBe('');
       expect(app.ENABLE_ANAMNESIS_WORKER).toBe('false');
-      expect(app.ANAMNESIS_LLM_BASE_URL).toBe(
-        'https://api.z.ai/api/coding/paas/v4',
-      );
-      expect(app.ANAMNESIS_LLM_MODEL).toBe('glm-4.5v');
+      expect(app.ANAMNESIS_LLM_BASE_URL).toBe('https://openrouter.ai/api/v1');
+      expect(app.ANAMNESIS_LLM_MODEL).toBe('google/gemini-2.5-flash-lite');
       expect(app.ANAMNESIS_LLM_TIMEOUT_MS).toBe('120000');
 
       // Пустые строки = unset для схемы: безопасные defaults сохраняются.
       const resolved = await resolveServerEnv(app);
       expect(resolved.S3_ENDPOINT).toBeUndefined();
-      expect(resolved.ANAMNESIS_LLM_API_KEY).toBeUndefined();
+      expect(resolved.OPENROUTER_API_KEY).toBeUndefined();
       expect(resolved.ENABLE_ANAMNESIS_WORKER).toBe('false');
       expect(resolved.ANAMNESIS_LLM_BASE_URL).toBe(
-        'https://api.z.ai/api/coding/paas/v4',
+        'https://openrouter.ai/api/v1',
       );
       expect(resolved.ANAMNESIS_LLM_TIMEOUT_MS).toBe(120000);
     },

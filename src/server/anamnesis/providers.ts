@@ -57,14 +57,14 @@ function parseModelJson(text: string): unknown {
   return JSON.parse(stripped);
 }
 
-function glmProvider(config: {
+function openRouterProvider(config: {
   baseUrl: string;
   apiKey: string;
   model: string;
   timeoutMs: number;
 }): AnamnesisExtractionProvider {
   return {
-    name: 'glm',
+    name: 'openrouter',
     async extract({ pages }) {
       const content: unknown[] = [
         {
@@ -256,10 +256,10 @@ export function fixtureExtractionResult(): ExtractionResult {
 export function anamnesisExtractionProvider(
   env = readServerEnv(),
 ): AnamnesisExtractionProvider {
-  const base = env.ANAMNESIS_LLM_API_KEY
-    ? glmProvider({
+  const base = env.OPENROUTER_API_KEY
+    ? openRouterProvider({
         baseUrl: env.ANAMNESIS_LLM_BASE_URL,
-        apiKey: env.ANAMNESIS_LLM_API_KEY,
+        apiKey: env.OPENROUTER_API_KEY,
         model: env.ANAMNESIS_LLM_MODEL,
         timeoutMs: env.ANAMNESIS_LLM_TIMEOUT_MS,
       })
