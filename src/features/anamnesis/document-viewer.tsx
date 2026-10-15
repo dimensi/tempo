@@ -118,15 +118,17 @@ export function DocumentViewer({
               {formatAnamnesisDate(document.collectedAt ?? document.issuedAt)} ·{' '}
               {document.pageCount} стр.
             </Text>
-            <a
-              href={`/api/anamnesis/documents/${documentId}/file?${query}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Button variant="default" mih={44}>
-                {m.documents.download}
-              </Button>
-            </a>
+            {online && (
+              <a
+                href={`/api/anamnesis/documents/${documentId}/file?${query}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Button variant="default" mih={44}>
+                  {m.documents.download}
+                </Button>
+              </a>
+            )}
             {writable && (
               <Button
                 variant="light"

@@ -223,6 +223,7 @@ export function DocumentsPanel({
               label={m.documents.upload}
               placeholder="report.pdf"
               accept="application/pdf"
+              disabled={!online}
               value={file}
               onChange={setFile}
               style={{ flex: 1 }}
@@ -230,7 +231,7 @@ export function DocumentsPanel({
             <Button
               onClick={() => void upload()}
               loading={busy}
-              disabled={!file}
+              disabled={!online || !file}
               mih={44}
             >
               {m.documents.upload}

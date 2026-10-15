@@ -187,6 +187,7 @@ export function observeReadResources() {
     if (!fence) return original.call(window, input, init);
     const key = canonicalReadKey(url);
     let live: Response | undefined;
+    let validated = false;
     const signal =
       init?.signal ?? (input instanceof Request ? input.signal : undefined);
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -215,12 +216,13 @@ export function observeReadResources() {
                 );
               const parsed = schema.safeParse(await live.clone().json());
               if (!parsed.success) throw new ReadFailure('unavailable');
+              validated = true;
               return JSON.stringify(parsed.data);
             }
           : undefined,
       );
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      if (live?.ok) return live;
+      if (live?.ok && validated) return live;
       const saved = offlineReadBody(key, body);
       if (saved === undefined) throw new ReadFailure('unavailable', 404);
       return new Response(saved, {
@@ -238,7 +240,8 @@ export function observeReadResources() {
         throw error;
       if (error instanceof ReadFailure && error.reason === 'denied' && live?.ok)
         throw error;
-      if (live) return live;
+      if (live && !live.ok) return live;
+      if (live) throw error;
       if (!(error instanceof DOMException && error.name === 'AbortError'))
         reportNetworkResult(false);
       throw error;

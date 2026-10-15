@@ -165,10 +165,21 @@ it('credentials and responses outside approved schemas are not persisted', async
       Response.json({ dailyStepsGoal: 1000, token: 'synthetic-secret' }),
     );
   await install(raw);
-  expect((await window.fetch(path)).status).toBe(200);
+  await expect(window.fetch(path)).rejects.toBeDefined();
   expect(state.disk.size).toBe(0);
   state.online = false;
   await expect(window.fetch(path)).rejects.toBeDefined();
+});
+it('an invalid successful payload serves validated saved data instead of the malformed live response', async () => {
+  const raw = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 1000 }))
+    .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 'invalid' }));
+  await install(raw);
+  await window.fetch(path);
+  const response = await window.fetch(path);
+  expect(await response.json()).toEqual({ dailyStepsGoal: 1000 });
+  expect(response.headers.get('X-Tempo-Read-Source')).toBeTruthy();
 });
 it('a shared transport timeout reports unreachable even when cached data is returned', async () => {
   const timeout = new AbortController();
