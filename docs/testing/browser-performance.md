@@ -4,13 +4,26 @@ Owned scope: browser orchestration, disposable test fixtures, process cleanup,
 profiling and four scenario login helpers. No production modules, contracts,
 database schema, dependencies, workflows or deployment policies change.
 
-Build once with `pnpm build`, then run on macOS or Linux:
+For mandatory pre-merge checks use `pnpm verify:merge` (entrypoint
+`scripts/verify-merge.mjs`). It builds once and runs the complete General,
+nutrition-sync and TransformMate suites with isolated workers, rejecting any
+skipped, omitted, retried or failed case. The command records the committed SHA,
+build ID, counts and durations in `test-results/merge-verification.json` and
+never merges or deploys. It requires a clean committed working tree and defaults
+to four workers; `pnpm verify:merge 2` explicitly selects two. Workers select free
+dedicated loopback gateway/backend/provider groups, without stopping other tasks.
+Temporary worker directories are deleted, not archived. Authentication, real
+rate-limit checks and all desktop/mobile assertions remain enabled.
+
+The commands below are only historical performance measurement tools, not the
+pre-merge gate (they select Offline instead of nutrition-sync).
+Build once with `pnpm build`, then measure on macOS or Linux:
 
 ```sh
-node scripts/ci/benchmark-browser.mjs 2 two-workers
-node scripts/ci/benchmark-browser.mjs 4 four-workers-1
-node scripts/ci/benchmark-browser.mjs 4 four-workers-2
-node scripts/ci/benchmark-browser.mjs 4 four-workers-3
+node scripts/ci/measure-e2e.mjs 2 two-workers
+node scripts/ci/measure-e2e.mjs 4 four-workers-1
+node scripts/ci/measure-e2e.mjs 4 four-workers-2
+node scripts/ci/measure-e2e.mjs 4 four-workers-3
 ```
 
 Labels are unique; run measurements sequentially. The command runs the unchanged

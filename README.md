@@ -47,24 +47,27 @@ pnpm dev
 
 ## Команды и проверки
 
-| Команда                                     | Назначение                                              |
-| ------------------------------------------- | ------------------------------------------------------- |
-| `pnpm dev`                                  | Next.js development server                              |
-| `pnpm build` / `pnpm start`                 | Production build / local production server              |
-| `pnpm lint`                                 | ESLint и ограничения зависимостей features              |
-| `pnpm format` / `pnpm format:check`         | Prettier                                                |
-| `pnpm typecheck`                            | Генерация типов маршрутов и strict TypeScript           |
-| `pnpm test`                                 | Unit + SQLite integration                               |
-| `pnpm test:e2e`                             | Реальные login/logout, роли, маршруты, тема и mobile    |
-| `pnpm db:generate`                          | SQL-миграция из схемы                                   |
-| `pnpm db:migrate`                           | Версионированные миграции                               |
-| `pnpm db:seed`                              | Проверка готовности инфраструктурной базы без fake data |
-| `pnpm auth:create-user`                     | Локальное создание owner/trainer                        |
-| `pnpm db:backup /secure/path/backup.sqlite` | Online backup с учётом WAL                              |
+| Команда                                     | Назначение                                                                       |
+| ------------------------------------------- | -------------------------------------------------------------------------------- |
+| `pnpm dev`                                  | Next.js development server                                                       |
+| `pnpm build` / `pnpm start`                 | Production build / local production server                                       |
+| `pnpm lint`                                 | ESLint и ограничения зависимостей features                                       |
+| `pnpm format` / `pnpm format:check`         | Prettier                                                                         |
+| `pnpm typecheck`                            | Генерация типов маршрутов и strict TypeScript                                    |
+| `pnpm test`                                 | Unit + SQLite integration                                                        |
+| `pnpm test:e2e`                             | Реальные login/logout, роли, маршруты, тема и mobile                             |
+| `pnpm verify:merge`                         | Полная проверка перед merge: сборка и три изолированных E2E-набора, до 4 workers |
+| `pnpm db:generate`                          | SQL-миграция из схемы                                                            |
+| `pnpm db:migrate`                           | Версионированные миграции                                                        |
+| `pnpm db:seed`                              | Проверка готовности инфраструктурной базы без fake data                          |
+| `pnpm auth:create-user`                     | Локальное создание owner/trainer                                                 |
+| `pnpm db:backup /secure/path/backup.sqlite` | Online backup с учётом WAL                                                       |
 
-Для E2E сначала `pnpm exec playwright install chromium`. Тесты запускают свой development server на 3100 (или `E2E_PORT`, например `E2E_PORT=3127 pnpm test:e2e`) и пересоздают только `.data/e2e.sqlite`. CI для PR отключён; на main единый workflow `release.yml` выполняет сборку Docker-образа, публикацию в GHCR и деплой отдельными последовательными шагами. Его можно запустить вручную на main; деплой включается переменной `NUTRITION_CD_ENABLED`. Перед каждым merge в main обязательны все три полных E2E-набора из AGENTS.md.
+Для E2E сначала `pnpm exec playwright install chromium`. Перед merge используйте `pnpm verify:merge` на чистом финальном коммите. Команда сама запускает format/lint/typecheck/unit, собирает приложение один раз и выполняет все сценарии General, nutrition-sync и TransformMate изолированно, по умолчанию в 4 workers. `pnpm verify:merge 2` явно выбирает два workers. У каждого worker свои SQLite, Next, uploads и свободная группа локальных HTTPS-портов; перед каждым сценарием состояние восстанавливается. Пропуски, повторные попытки и неполное покрытие блокируют успех. Итог с SHA, build ID и длительностями — `test-results/merge-verification.json`. Это E2E-тесты, не benchmark; команда не делает merge или deploy. `pnpm test:e2e` оставлен для целевой диагностики, не для полного pre-merge прогона с общей БД.
 
-Для локального изолированного прогона General, Offline и TransformMate на macOS/Linux после одной сборки: `node scripts/ci/benchmark-browser.mjs 4 local-1`. Число workers — от 1 до 4, метка прогона должна быть уникальной. [Методика, сохранённые гарантии и замеры](docs/testing/browser-performance.md).
+CI для PR отключён; на main единый workflow `release.yml` выполняет сборку Docker-образа, публикацию в GHCR и деплой отдельными последовательными шагами. Его можно запустить вручную на main; деплой включается переменной `NUTRITION_CD_ENABLED`. После подтверждённого merge агент обязан удалить свои ветки и worktree вместе с временными данными, без архивирования; чужие и несохранённые пользовательские изменения не удаляются.
+
+Для отдельных замеров скорости E2E General, Offline и TransformMate после сборки: `node scripts/ci/measure-e2e.mjs 4 local-1`. Это вспомогательный измеритель, не pre-merge команда: его наборы отличаются. [Методика и замеры](docs/testing/browser-performance.md).
 
 `pnpm start` требует предварительно применённых миграций и production-конфигурации: HTTPS `BETTER_AUTH_URL`, сильный секрет и `DEMO_MODE=false`. Для локального HTTPS используйте reverse proxy. Для повседневной разработки используйте `pnpm dev`.
 

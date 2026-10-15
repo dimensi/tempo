@@ -1,6 +1,6 @@
 import { testOrigin } from '../ci/origin';
 import { execFileSync } from 'node:child_process';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../ci/isolated-test';
 import {
   nutritionDaySchema,
   safeMealPhotoViewSchema,

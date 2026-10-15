@@ -1,5 +1,9 @@
 const origin = process.env.BETTER_AUTH_URL;
-if (!/^https:\/\/localhost:(3160|3260|3262|3264|3266)$/.test(origin ?? ''))
+if (
+  !/^https:\/\/localhost:(3160|32(?:6[02468]|7[02468]|8[02468]|90))$/.test(
+    origin ?? '',
+  )
+)
   throw new Error('Unsafe synthetic runtime origin');
 const gatewayPort = Number(new URL(origin).port);
 const upstreamPort =

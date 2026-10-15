@@ -17,6 +17,7 @@ import { runProcessGroup } from './process-group.mjs';
 import { partitionCases } from './partition-cases.mjs';
 import { summarizeResets } from './reset-statistics.mjs';
 import { caseTitlePattern } from './case-selection.mjs';
+import { selectGateways } from './browser-ports.mjs';
 
 // One disposable checkout and browser process per bounded worker. Each case
 // restores its closed synthetic fixture and private paths before a fresh Next
@@ -163,6 +164,7 @@ async function executeIsolated(run, concurrency, signal) {
     },
   };
   const groups = partitionCases(cases, concurrency);
+  const gateways = await selectGateways(groups.length);
   const allowedMobileSkips = {
     'smoke/slow-install.spec.ts': [
       'held initial offline install cannot delay real logout behind a cache lock',
@@ -201,7 +203,7 @@ async function executeIsolated(run, concurrency, signal) {
       cpSync('public', resolve(sandbox, 'public'), { recursive: true });
       mkdirSync(resolve(sandbox, '.data'), { recursive: true });
       writeFileSync(resolve(sandbox, '.data/e2e.sqlite'), fixture);
-      const gatewayPort = 3260 + slot * 2;
+      const gatewayPort = gateways[slot];
       const copiedSeconds = (performance.now() - start) / 1000;
       const status = await runProcessGroup(
         'pnpm',

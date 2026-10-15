@@ -7,7 +7,7 @@ const concurrency = Number(process.argv[2]);
 const label = process.argv[3];
 if (![1, 2, 3, 4].includes(concurrency) || !/^[a-zA-Z0-9-]+$/.test(label ?? ''))
   throw new Error(
-    'Usage: node scripts/ci/benchmark-browser.mjs <1..4> <unique-label>',
+    'Usage: node scripts/ci/measure-e2e.mjs <1..4> <unique-label>',
   );
 const directory = `test-results/benchmarks/${label}`;
 mkdirSync('test-results/benchmarks', { recursive: true });

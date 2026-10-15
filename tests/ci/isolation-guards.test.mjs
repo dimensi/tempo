@@ -27,12 +27,14 @@ test('configurable browser origins admit only dedicated local HTTPS gateways', (
         encoding: 'utf8',
       },
     );
-  for (const port of [3160, 3260, 3262, 3264, 3266])
+  for (const port of [3160, 3260, 3262, 3264, 3266, 3268, 3290])
     assert.equal(read(`https://localhost:${port}`).status, 0);
   for (const origin of [
     'https://production.example:3260',
     'http://localhost:3260',
     'https://localhost:3000',
+    'https://localhost:3261',
+    'https://localhost:3292',
     'https://user:password@localhost:3260',
     'https://localhost:3260/private',
     'https://localhost:3260?x=1',

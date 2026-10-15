@@ -18,7 +18,7 @@ const run = (overrides, code = '') =>
   );
 test('synthetic production preload admits only exact disposable configuration', () => {
   assert.equal(run({}).status, 0);
-  for (const port of [3260, 3262, 3264, 3266])
+  for (const port of [3260, 3262, 3264, 3266, 3268, 3290])
     assert.equal(
       run({ BETTER_AUTH_URL: `https://localhost:${port}` }).status,
       0,
@@ -28,7 +28,7 @@ test('synthetic production preload admits only exact disposable configuration', 
     { CI_SYNTHETIC_PROVIDER: '' },
     { DATABASE_URL: 'file:./.data/production.sqlite' },
     { BETTER_AUTH_URL: 'https://nutrition.dimensi.dev' },
-    { BETTER_AUTH_URL: 'https://localhost:3268' },
+    { BETTER_AUTH_URL: 'https://localhost:3292' },
     { BETTER_AUTH_URL: 'https://localhost:3260/private' },
     { TRANSFORMMATE_TOKEN_FILE: '/tmp/real-token.json' },
     { TRANSFORMMATE_FIREBASE_REFRESH_TOKEN: 'real' },
@@ -69,7 +69,7 @@ test('only exact two synthetic preview GET paths omit JWT; real API, query, cred
 });
 
 test('each synthetic worker forwards to its own loopback upstream', () => {
-  for (let slot = 0; slot < 4; slot++) {
+  for (let slot = 0; slot < 16; slot++) {
     const result = spawnSync(
       process.execPath,
       [

@@ -4,7 +4,12 @@ const origin = new URL(testOrigin);
 if (
   origin.protocol !== 'https:' ||
   origin.hostname !== 'localhost' ||
-  ![3160, 3260, 3262, 3264, 3266].includes(Number(origin.port)) ||
+  !(
+    Number(origin.port) === 3160 ||
+    (Number(origin.port) >= 3260 &&
+      Number(origin.port) <= 3290 &&
+      Number(origin.port) % 2 === 0)
+  ) ||
   origin.username ||
   origin.password ||
   origin.pathname !== '/' ||

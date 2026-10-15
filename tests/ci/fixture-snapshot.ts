@@ -7,9 +7,14 @@ export function verifyFixtureSnapshot(
   directory = process.cwd(),
 ) {
   if (
-    !['general', 'smoke', 'isolation', 'offline', 'transformmate'].includes(
-      family,
-    ) ||
+    ![
+      'general',
+      'smoke',
+      'isolation',
+      'offline',
+      'transformmate',
+      'nutrition',
+    ].includes(family) ||
     !/^[a-f0-9]{64}$/.test(hash)
   )
     throw new Error(
