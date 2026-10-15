@@ -24,7 +24,7 @@ Manual measurements atomically enqueue through the existing YAZIO outbox. That w
 
 ## Logout
 
-Logout checks pending/review/sending operations before starting auth cleanup and again under the auth mutation + sending locks. The dialog offers staying to synchronize or explicitly deleting device records and logging out. Failed storage cleanup prevents a false deletion claim. A normal successful logout clears the write state. Interrupted/expired-session records remain fenced to the original owner partition; a different account cannot display/send them or adopt their queue. No pending record is silently aged out.
+Logout checks pending/review/sending operations before starting auth cleanup and again under the auth mutation + sending locks. The dialog offers staying to synchronize or explicitly deleting device records and logging out. Storage failure never prevents authentication sign-out: the existing durable blocker conceals retained copies, and owner partition checks prevent another account from displaying or sending them. Cleanup failure does not claim that retained data was physically deleted. A normal successful logout clears the write state. Interrupted/expired-session records remain fenced to the original owner partition; a different account cannot display/send them or adopt their queue. No pending record is silently aged out.
 
 ## Targeted verification and manual scenario
 

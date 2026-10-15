@@ -17,7 +17,12 @@ export function OfflineLifecycle({ role }: { role: string }) {
     if (role !== 'OWNER') void purgeOfflineDevice().catch(() => {});
     let running = false;
     const sync = () => {
-      if (role !== 'OWNER' || running || document.visibilityState === 'hidden')
+      if (
+        role !== 'OWNER' ||
+        running ||
+        !navigator.onLine ||
+        document.visibilityState === 'hidden'
+      )
         return;
       running = true;
       void controller
