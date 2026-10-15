@@ -183,10 +183,9 @@ node scripts/ci/compare-benchmarks.mjs \
 - Additional real isolation checks passed with 2 and 4 workers (4 cases each),
   including colliding SQLite/private paths and the genuine 31st-request HTTP 429.
   Production smoke passed all 6 desktop/mobile cases, no skips or retries.
-- `node --test tests/ci/*.test.mjs`: 42 passed, 1 pre-existing failure.
-  `tests/ci/workflow.test.mjs` expects the pre-PR-#97 CI workflow; the same test
-  also fails in the baseline checkout. Its assertion and CI/CD policy were left
-  unchanged as requested. This is not counted as a passing check.
+- `node --test tests/ci/*.test.mjs`: all 42 remaining tests passed, no skips.
+  The obsolete `tests/ci/workflow.test.mjs` policy snapshot was removed at the
+  user's explicit request. CI/CD workflow files remain unchanged.
 - Test-only files and documentation changed. No production code, migrations,
   dependency changes, workflow changes, merge or deployment.
 
