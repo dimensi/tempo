@@ -29,6 +29,8 @@ import {
 } from '@/contracts/yazio-body';
 import { MeasurementPrecisionWarnings } from './precision-warnings';
 import type { WeightHistory } from '@/contracts/health';
+import { writeMessages } from '@/config/offline-write-messages';
+import { saveDeviceWrite, syncDeviceWrites } from '@/lib/offline-write-client';
 import { formatDecimal } from '@/lib/number-display';
 function responseError(status: number) {
   return status === 401
@@ -41,12 +43,14 @@ function responseError(status: number) {
 }
 export function MeasurementsPanel({
   ownerId,
+  deviceWrites = false,
   writable,
   weightHistory,
   renderComments,
 }: {
   ownerId: string;
   writable: boolean;
+  deviceWrites?: boolean;
   weightHistory: WeightHistory;
   renderComments?: (measurementId: string) => ReactNode;
 }) {
@@ -57,6 +61,7 @@ export function MeasurementsPanel({
   const [readDenied, setReadDenied] = useState(false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [editingOriginal, setEditingOriginal] = useState<Measurement>();
   const [editing, setEditing] = useState<string>();
   const [deleting, setDeleting] = useState<string>();
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -172,6 +177,7 @@ export function MeasurementsPanel({
   }
   function reset() {
     setEditing(undefined);
+    setEditingOriginal(undefined);
     setValues({});
     setNote('');
   }
@@ -194,6 +200,38 @@ export function MeasurementsPanel({
     setBusy(true);
     setError(undefined);
     try {
+      if (deviceWrites) {
+        let base: string | undefined;
+        if (editingOriginal) {
+          const normalized = measurementInputSchema.parse({
+            measuredAt: editingOriginal.measuredAt,
+            values: editingOriginal.values,
+            note: editingOriginal.note,
+          });
+          base = Array.from(
+            new Uint8Array(
+              await crypto.subtle.digest(
+                'SHA-256',
+                new TextEncoder().encode(JSON.stringify(normalized)),
+              ),
+            ),
+          )
+            .map((value) => value.toString(16).padStart(2, '0'))
+            .join('');
+        }
+        const operation = await saveDeviceWrite(
+          { kind: 'measurement', data: parsed.data },
+          editing,
+          base,
+        );
+        setItems((old) => [
+          ...old.filter((item) => item.id !== operation.recordId),
+          { ...parsed.data, id: operation.recordId, ownerId, sync: [] },
+        ]);
+        reset();
+        void syncDeviceWrites().catch(() => {});
+        return;
+      }
       const r = await fetch(
         editing
           ? `/api/measurements/${editing}?ownerId=${encodeURIComponent(ownerId)}`
@@ -216,7 +254,7 @@ export function MeasurementsPanel({
       );
       reset();
     } catch {
-      setError(m.error);
+      setError(deviceWrites ? writeMessages.error : m.error);
     } finally {
       setBusy(false);
     }
@@ -454,6 +492,7 @@ export function MeasurementsPanel({
                         disabled={busy}
                         onClick={() => {
                           setEditing(item.id);
+                          setEditingOriginal(item);
                           setDate(item.measuredAt);
                           setNote(item.note ?? '');
                           setValues(

@@ -4,6 +4,7 @@ import { ApplicationShell } from '@/components/layout/application-shell';
 import { ContentLayout } from '@/components/layout/content-layout';
 import { OfflineRouteCapture } from './offline-route-capture';
 import { OfflineBoundary } from '@/app/offline-application';
+import { DeviceWrites } from './device-writes';
 import { OfflineLifecycle } from '@/features/offline';
 export const dynamic = 'force-dynamic';
 export default async function DashboardLayout({
@@ -21,7 +22,10 @@ export default async function DashboardLayout({
         demo={readServerEnv().DEMO_MODE === 'true'}
       >
         <ContentLayout>
-          <OfflineBoundary role={session.user.role}>{children}</OfflineBoundary>
+          <OfflineBoundary role={session.user.role}>
+            <DeviceWrites role={session.user.role} />
+            {children}
+          </OfflineBoundary>
         </ContentLayout>
       </ApplicationShell>
     </>

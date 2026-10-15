@@ -18,12 +18,14 @@ import {
 } from '@/features/nutrition/read';
 import { WorkoutReadContent, workoutMessages } from '@/features/workouts/read';
 import {
+  OfflineWrites,
   getOfflineController,
   offlineMessages as m,
   interceptOfflineLinks,
   offlineNavigate,
   useOfflineLocation,
 } from '@/features/offline';
+import { syncDeviceWrites } from '@/lib/offline-write-client';
 import { revealOfflineContent } from '@/lib/offline-device';
 import { workoutTitle } from '@/lib/workout-title';
 import type { OfflineSnapshot } from '@/contracts/offline';
@@ -133,6 +135,8 @@ function OfflineRouteContent() {
         {disabled}
       </Stack>
     );
+  } else if (pathname === '/measurements') {
+    content = <OfflineWrites kind="measurement" />;
   } else if (pathname === '/workouts') {
     content = (
       <Stack>
@@ -140,9 +144,6 @@ function OfflineRouteContent() {
           <Title order={1} size="h2">
             {workoutMessages.title}
           </Title>
-          <Button disabled mih={44} size="compact-sm">
-            {workoutMessages.newWorkout}
-          </Button>
         </Group>
         <DateNavigation
           key={date}
@@ -153,7 +154,7 @@ function OfflineRouteContent() {
         <Button disabled variant="subtle" mih={44}>
           {workoutMessages.syncRefresh}
         </Button>
-        {disabled}
+        <OfflineWrites kind="workout" />
         {!snapshot?.workoutDates.includes(date) ? (
           unknown
         ) : (
@@ -413,6 +414,7 @@ export function OfflineApplication({ brandSrc }: { brandSrc: string }) {
   useEffect(() => {
     const reconnect = async () => {
       await getOfflineController().activate(true, true);
+      await syncDeviceWrites().catch(() => {});
       location.reload();
     };
     window.addEventListener('online', reconnect);

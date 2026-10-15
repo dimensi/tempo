@@ -1,0 +1,41 @@
+# Owner offline writes (v1)
+
+Scope: local workout sessions (sets, weights, repetitions, date, title, notes) and manual measurements only. The ordinary OWNER result/measurement forms commit to the same queue as the disconnected capture forms on `/workouts` and `/measurements`. Trainer writes keep the existing authorized online path. Native TransformMate workouts, settings, documents, uploads, deletes and other people's data are outside this queue. No auth configuration, permissions, CI or deployment changes.
+
+## Persistence and synchronization
+
+`src/contracts/offline-write.ts` defines an owner-partitioned, UUID operation and record ID, original version, YAZIO connection epoch and validated discriminated payload. `src/lib/offline-write-queue.ts` stores the edited record and immutable operation in **one strict IndexedDB read/write transaction**, resolving only on completion. An aborted/quota transaction publishes neither result nor success. The form remains populated on failure. Normal reload/tab closure retains committed data; browser/user eviction is not preventable. Storage/Web Locks must be available, otherwise saving fails explicitly.
+
+The write database (`yazio-offline-writes-v1`) is separate from the read database. Read-cache purge cannot delete writes. Calendar retention removes only old acknowledged manual measurements; pending/review variants are never removed by age. Workouts follow the existing independent workout retention. Pending operations are capped at 1000 and the whole state at 4 MiB; old acknowledged operation history may be compacted to 100 entries, while server receipts remain durable. The authenticated catalog is bounded to 500 manual measurements and 500 local sessions, with explicit failure rather than truncation.
+
+The existing shared auth/device lock fences local saves, reads and sending. A second exclusive same-origin Web Lock serializes sending across tabs. Local saves do not wait for network requests. IndexedDB serializes concurrent edits. Operations for the same record wait for their predecessor, which supplies the acknowledged base version before the next operation's first send. Other records can continue when one record needs review. Transport/5xx/429 failures use bounded exponential delays (2-second basis, 5 attempts, 5-minute ceiling); validation/access/conflict errors require review. A persisted `sending` state is recovered using the same UUID and body. Manual rechecking of uncertain outcomes also replays that UUID; it cannot create a duplicate alternative blindly.
+
+Opening, returning to a visible application, focus, online events and a 15-second foreground timer attempt synchronization. Background Sync is not used. At most 10 operations are sent per pass. Identity is verified online before device records are displayed, and before draining; each server request independently derives the OWNER and checks owner-scoped permissions. Client owner selection is never accepted. Offline reads use the existing device gate and do not grant server authorization. Auth/provider mutation, denial and BFCache concealment hide the write UI, including entered fields.
+
+## Server atomicity and conflicts
+
+`GET /api/offline/writes` returns a private/no-store owner catalog without owner IDs or credentials. `POST` requires the configured trusted Origin, genuine OWNER session, owner-scoped `workouts:log` and `measurements:write`, matching HMAC owner partition and valid v1 input. The server applies a result and its owner+operation receipt in one synchronous SQLite transaction. Replaying an accepted operation returns its original receipt even after later changes; reusing the UUID with another body fails. Migration `0012_offline_write_receipts.sql` adds only the receipt table, foreign key and composite primary key.
+
+Workouts use their existing monotonically increasing revisions. Manual measurement versions are SHA-256 of their canonical validated editable contents, so writes from the ordinary API are also detected. The form retains the version from when editing started, even if a background refresh arrives. Creation against an occupied ID or update against a changed/missing record conflicts. A linked workout creation also checks its original plan revision and snapshots the plan through the existing repository. Offline edits cannot remove exercise occurrences that could own private videos. Adding/removing occurrences in an existing session keeps the existing online save path and video cleanup; the queue covers result edits to existing occurrences.
+
+A conflict preserves the local variant and offers either the current server variant or an **explicit separate local record**; it never silently overwrites. Unknown/validation/access outcomes offer rechecking with the same operation ID, not a potentially duplicate create. Offline newly entered workouts are independent local sessions; native TransformMate writes remain online-only.
+
+Manual measurements atomically enqueue through the existing YAZIO outbox. That worker reads the remote date summary before writing and reconciles uncertain outcomes; the browser does not assume provider idempotency or retry the provider API. A changed YAZIO schedule epoch rejects a not-yet-applied measurement for review, while an existing receipt can still be acknowledged. Local workout results are not published to TransformMate. “Синхронизировано” acknowledges the application's durable local server record; YAZIO delivery has its existing separate measurement status.
+
+## Logout
+
+Logout checks pending/review/sending operations before starting auth cleanup and again under the auth mutation + sending locks. The dialog offers staying to synchronize or explicitly deleting device records and logging out. Failed storage cleanup prevents a false deletion claim. A normal successful logout clears the write state. Interrupted/expired-session records remain fenced to the original owner partition; a different account cannot display/send them or adopt their queue. No pending record is silently aged out.
+
+## Targeted verification and manual scenario
+
+Only these checks are authorized for this task: the four `tests/unit/offline-write-*.test.ts` files, `pnpm typecheck`, `pnpm lint`. Unit tests cover commit/abort boundaries with a controlled IndexedDB test double, storage reopening, cache purge separation, quota rejection, bounded retries, lost responses, sending recovery, dependent ordering, stale versions, account changes isolated SQLite receipt atomicity and API authorization orchestration with mocked collaborators. They do not establish real browser/device behavior. No full test suite, integration suite, build, E2E, Playwright, Actions or deployment was run. Full fresh/existing-database migration rehearsal remains unrun under this task's check limits.
+
+Manual acceptance scenario (provided, not executed):
+
+1. On a test instance with migration 0012 applied, sign in as OWNER online, visit `/workouts` and `/measurements`, and allow the device copy/catalog to load.
+2. Disable the network. On `/workouts`, use “Записать тренировку” in “Записи на устройстве”; enter an exercise, weight and repetitions, and save. On `/measurements`, enter a manual measurement and save. Both must show “Сохранено на устройстве” before proceeding.
+3. Close the application/tab completely. Reopen its ordinary URL while still offline. Both local records and values must be present.
+4. Restore the network and return to the foreground. Allow synchronization (foreground retry checks every 15 seconds). Both records must become “Синхронизировано”. Reload the online history and confirm exactly one session and one manual measurement, including after another reopen/reconnect.
+5. Additional manual checks: lose the POST response after server acceptance; edit the same record on another device before reconnecting; use two tabs; attempt logout while pending; simulate storage quota. Verify one server record, preserved conflict variants, explicit logout choice and retained form input respectively.
+
+Workflow inspection: current `ci.yml` runs only for pushes to `main`; `cd.yml` follows that main CI or manual dispatch and may deploy when enabled. Do not push to main or invoke workflows. A feature-branch push/PR has no automatic workflow trigger in the inspected revision.

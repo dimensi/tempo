@@ -19,6 +19,8 @@ import type {
 } from '@/contracts/workouts';
 import { workoutSessionSchema } from '@/contracts/workouts';
 import { subscribeOfflineBlocked } from '@/lib/offline-device';
+import { writeMessages } from '@/config/offline-write-messages';
+import { saveDeviceWrite, syncDeviceWrites } from '@/lib/offline-write-client';
 import { workoutTitle } from '@/lib/workout-title';
 import {
   clearWorkoutDraft,
@@ -177,6 +179,34 @@ export function WorkoutResultsPage({
     setBusy(true);
     setError(null);
     try {
+      const sameOccurrences =
+        !existing ||
+        JSON.stringify(existing.exercises.map((item) => item.id).sort()) ===
+          JSON.stringify(value.exercises.map((item) => item.id).sort());
+      if (userId === ownerId && sameOccurrences) {
+        await saveDeviceWrite(
+          {
+            kind: 'workout',
+            data: {
+              ...value,
+              ...(planId && planned
+                ? { planId, plannedWorkoutId: planned.id }
+                : {}),
+            },
+            ...(planRevision ? { planRevision } : {}),
+          },
+          existing?.id ?? requestId.current,
+          existing ? String(existing.revision) : undefined,
+        ).catch(() => {
+          throw new Error(writeMessages.error);
+        });
+        clearWorkoutDraft(key);
+        dirty.current = false;
+        void syncDeviceWrites().catch(() => {});
+        if (mounted.current && current === generation.current)
+          router.push(`/workouts?date=${returnDate}`);
+        return;
+      }
       const response = await fetch(
         `/api/workouts/sessions${existing ? `/${existing.id}` : ''}?ownerId=${encodeURIComponent(ownerId)}`,
         {

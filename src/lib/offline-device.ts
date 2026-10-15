@@ -156,11 +156,14 @@ export function notifyOfflineBlocked() {
 export function concealOfflineContent() {
   if (typeof document !== 'undefined')
     for (const node of document.querySelectorAll<HTMLElement>(
-      '[data-offline-private]',
+      '[data-offline-private], [data-offline-write-private]',
     ))
       node.hidden = true;
 }
-export function revealOfflineContent(fence: CacheFence) {
+export function revealOfflineContent(
+  fence: CacheFence,
+  selector = '[data-offline-private]',
+) {
   try {
     const gate = readGate(browserGateStorage());
     if (
@@ -170,9 +173,7 @@ export function revealOfflineContent(fence: CacheFence) {
       gate.epoch !== fence.deviceEpoch
     )
       return;
-    for (const node of document.querySelectorAll<HTMLElement>(
-      '[data-offline-private]',
-    ))
+    for (const node of document.querySelectorAll<HTMLElement>(selector))
       node.hidden = false;
   } catch {
     concealOfflineContent();
