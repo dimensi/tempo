@@ -17,12 +17,13 @@ test('only an exact closed fixture in an isolated family can skip synthetic prep
       'smoke',
       'isolation',
       'offline',
+      'nutrition',
       'transformmate',
     ])
       expect(() =>
         verifyFixtureSnapshot(family, hash, directory),
       ).not.toThrow();
-    for (const family of ['nutrition', 'unknown'])
+    for (const family of ['unknown'])
       expect(() => verifyFixtureSnapshot(family, hash, directory)).toThrow(
         'isolated browser families',
       );
