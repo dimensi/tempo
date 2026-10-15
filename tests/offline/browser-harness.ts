@@ -255,6 +255,7 @@ Object.assign(window, {
         const date = snapshot.to;
         const day = snapshot.diary[0]!;
         snapshot.views.summary = {
+          dailyStepsGoal: 10000,
           from: shiftDate(date, -365),
           to: date,
           workouts: {

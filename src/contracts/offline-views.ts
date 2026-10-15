@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { nutritionTotalsSchema } from './nutrition';
 import { measurementValueSchema } from './measurements';
 import { weightHistorySchema } from './health';
+import { stepsGoalSchema } from './steps-goal';
 
 const date = z.iso.date();
 const stamp = z.iso.datetime();
@@ -16,6 +17,7 @@ export const offlineViewsSchema = z.strictObject({
   // Compact observations only; no meals, notes, attachments or upstream URLs.
   summary: z
     .strictObject({
+      dailyStepsGoal: stepsGoalSchema.shape.dailyStepsGoal,
       from: date,
       to: date,
       workouts: z.strictObject({

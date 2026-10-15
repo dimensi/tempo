@@ -679,6 +679,10 @@ test('saved sections show ordinary content and the complete report without netwo
     await expect(
       page.getByLabel('Часовой пояс', { exact: true }),
     ).toBeDisabled();
+    await expect(page.getByLabel('Цель шагов', { exact: true })).toHaveValue(
+      '10000',
+    );
+    await expect(page.getByLabel('Цель шагов', { exact: true })).toBeDisabled();
     const date = new Date().toISOString().slice(0, 10);
     await page.goto(`/diary?date=${date}`);
     await expect(

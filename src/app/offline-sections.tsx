@@ -1,6 +1,7 @@
 'use client';
 import { useSyncExternalStore } from 'react';
 import { Alert, Button, Stack, Text, TextInput, Title } from '@mantine/core';
+import { stepsGoalMessages } from '@/contracts/steps-goal';
 import type { OfflineSnapshot } from '@/contracts/offline';
 import { analyticsRangeSchema } from '@/contracts/analytics';
 import { Overview } from '@/features/overview/read';
@@ -229,6 +230,14 @@ export function OfflineSection({
               value={settings.initialFrom ?? m.noData}
               disabled
             />
+            <TextInput
+              label={stepsGoalMessages.title}
+              value={
+                snapshot?.views.summary?.dailyStepsGoal?.toString() ??
+                stepsGoalMessages.disabled
+              }
+              disabled
+            />
             <TextInput label={m.timezone} value={settings.timezone} disabled />
             <TextInput
               label={m.automaticSync}
@@ -315,6 +324,7 @@ function OfflineReport({ snapshot }: { snapshot: OfflineSnapshot }) {
         return saved ? [saved] : [];
       })}
       offlineSteps={snapshot.dailySteps}
+      offlineStepsGoal={snapshot.views.summary?.dailyStepsGoal ?? null}
       offlinePhotos={snapshot.photos.items.map((photo) => ({
         id: photo.id,
         date: photo.date,

@@ -260,6 +260,7 @@ it('renders a complete local report with foods, absent days and missing photo by
   const html = renderReportHtml(
     { ...request, period: 'custom', end: '2026-10-11' },
     {
+      dailyStepsGoal: 10000,
       days: [day],
       steps: [{ date: request.start, steps: 0, source: 'YAZIO' }],
       photos: [

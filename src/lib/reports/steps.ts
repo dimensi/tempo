@@ -1,4 +1,3 @@
-import 'server-only';
 import Decimal from 'decimal.js';
 import type { StepsSummary } from '@/contracts/health';
 const Exact = Decimal.clone({ precision: 40 });

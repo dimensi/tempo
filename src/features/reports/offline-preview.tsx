@@ -12,11 +12,13 @@ import { reportMessages as m } from '@/config/reports';
 export type OfflineReportPhoto = SafeMealPhotoView & { bytes: Blob | null };
 export function OfflineReportPreview({
   request,
+  dailyStepsGoal,
   days,
   steps,
   photos,
 }: {
   request: ReportRequest;
+  dailyStepsGoal: number | null;
   days: NutritionDay[];
   steps: { date: string; steps: number | null }[];
   photos: OfflineReportPhoto[];
@@ -26,7 +28,7 @@ export function OfflineReportPreview({
     photos: OfflineReportPhoto[];
     html: string;
   } | null>(null);
-  const key = `${request.ownerId}:${request.period}:${request.start}:${request.end}`;
+  const key = `${request.ownerId}:${request.period}:${request.start}:${request.end}:${dailyStepsGoal}`;
   useEffect(() => {
     let active = true;
     const within = (date: string) =>
@@ -61,6 +63,7 @@ export function OfflineReportPreview({
       }),
     ).then((images) => {
       const dataset: ReportDataset = {
+        dailyStepsGoal,
         days: days.filter((day) => within(day.date)),
         steps: steps
           .filter((day) => within(day.date))
@@ -77,7 +80,7 @@ export function OfflineReportPreview({
     return () => {
       active = false;
     };
-  }, [key, request, days, steps, photos]);
+  }, [key, request, dailyStepsGoal, days, steps, photos]);
   const html = copy?.key === key && copy.photos === photos ? copy.html : '';
   return (
     <>

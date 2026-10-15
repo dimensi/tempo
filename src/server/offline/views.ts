@@ -208,6 +208,14 @@ export function readOfflineViews(input: {
   }[];
   return offlineViewsSchema.parse({
     summary: {
+      dailyStepsGoal:
+        (
+          sqlite
+            .prepare(
+              'SELECT daily_steps_goal AS goal FROM owner_settings WHERE owner_id = ?',
+            )
+            .get(ownerId) as { goal: number | null } | undefined
+        )?.goal ?? null,
       from: summaryFrom,
       to,
       workouts: { planned, completed },

@@ -15,6 +15,7 @@ beforeEach(() => {
   // Repository unit: a disposable SQL double, no auth server, migrations, files or provider.
   state.sqlite = new Database(':memory:');
   state.sqlite.exec(`
+    CREATE TABLE owner_settings(owner_id TEXT,daily_steps_goal INTEGER);
     CREATE TABLE nutrition_days(owner_id TEXT,date TEXT,snapshot TEXT);
     CREATE TABLE measurements(id TEXT,owner_id TEXT,measured_at TEXT,values_json TEXT,note TEXT);
     CREATE TABLE yazio_weight_entries(owner_id TEXT,external_id TEXT,provider_date TEXT,measured_date TEXT,raw_value TEXT);
@@ -171,4 +172,16 @@ it('orders same-day weights like the online reader so the newest id wins the cha
   const summary = read().summary!;
   expect(summary.weight.local.map((row) => row.value)).toEqual(['71', '72']);
   expect(summary.latestWeight).toEqual({ date: '2026-10-12', value: '72' });
+});
+
+it('keeps the existing optional report goal scoped to the owner and safe for trainer reports', () => {
+  state
+    .sqlite!.prepare('INSERT INTO owner_settings VALUES (?,?)')
+    .run('owner', 10000);
+  state
+    .sqlite!.prepare('INSERT INTO owner_settings VALUES (?,?)')
+    .run('foreign', 20000);
+  expect(read().summary?.dailyStepsGoal).toBe(10000);
+  expect(read('TRAINER').summary?.dailyStepsGoal).toBe(10000);
+  expect(read('TRAINER').settings).toBeNull();
 });

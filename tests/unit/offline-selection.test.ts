@@ -12,6 +12,7 @@ function fixture() {
   const snapshot = offlineFixture(Date.parse('2026-10-12T12:00:00Z'));
   const day = snapshot.diary[0]!;
   snapshot.views.summary = {
+    dailyStepsGoal: 10000,
     from: '2025-10-12',
     to: '2026-10-12',
     workouts: {

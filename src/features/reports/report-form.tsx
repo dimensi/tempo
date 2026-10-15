@@ -38,10 +38,12 @@ export function ReportForm({
   ownerId,
   offlineDays,
   offlineSteps = [],
+  offlineStepsGoal = null,
   offlinePhotos = [],
 }: {
   ownerId: string | null;
   offlineDays?: NutritionDay[];
+  offlineStepsGoal?: number | null;
   offlineSteps?: { date: string; steps: number | null }[];
   offlinePhotos?: OfflineReportPhoto[];
 }) {
@@ -345,6 +347,7 @@ export function ReportForm({
           return parsed.success ? (
             <OfflineReportPreview
               request={parsed.data}
+              dailyStepsGoal={offlineStepsGoal}
               days={offlineDays}
               steps={offlineSteps}
               photos={offlinePhotos}
