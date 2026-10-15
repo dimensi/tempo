@@ -834,6 +834,7 @@ test('retained diary stays paused during repeated offline menu navigation and re
       if (new URL(request.url()).pathname.startsWith('/api/nutrition/photos/'))
         photoRequests.push(request.url());
     });
+    const initialHistoryLength = await page.evaluate(() => history.length);
     for (let repeat = 0; repeat < 3; repeat++) {
       for (const [label, path] of [
         ['Обзор', '/'],
@@ -874,7 +875,13 @@ test('retained diary stays paused during repeated offline menu navigation and re
     await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
       'Обзор',
     );
-    await page.evaluate(() => history.go(-27));
+    // Embedded report previews also participate in joint browser history.
+    // Return to the original entry, rather than assuming one entry per menu click.
+    const entries = await page.evaluate(() => history.length);
+    await page.evaluate(
+      (steps) => history.go(-steps),
+      entries - initialHistoryLength,
+    );
     await expect(page).toHaveURL(`/diary?date=${data.date}`);
     await expect(
       page.getByRole('region', { name: 'Завтрак', exact: true }).locator('img'),
