@@ -23,7 +23,13 @@ export async function GET(request: Request, context: Context) {
       headers: {
         ...privateHeaders,
         'Content-Type': 'application/pdf',
-        'Content-Disposition': contentDisposition(filename, 'attachment'),
+        'Content-Security-Policy': "default-src 'none'; frame-ancestors 'self'",
+        'Content-Disposition': contentDisposition(
+          filename,
+          new URL(request.url).searchParams.get('inline') === '1'
+            ? 'inline'
+            : 'attachment',
+        ),
       },
     });
   } catch (error) {

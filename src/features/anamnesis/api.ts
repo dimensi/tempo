@@ -2,7 +2,7 @@
 
 // Общий клиентский доступ к API анамнеза: ownerId всегда в query,
 // ошибки приводятся к русским сообщениям.
-import { anamnesisMessages as m } from './messages';
+import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 
 export function anamnesisFetchError(status: number): string {
   if (status === 401) return m.errors.sessionExpired;

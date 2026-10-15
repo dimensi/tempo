@@ -259,14 +259,43 @@ export type MedicalObservationRevision = z.infer<
   typeof medicalObservationRevisionSchema
 >;
 
+export const medicalDateKeySchema = z.union([
+  z.iso.date(),
+  z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  z.literal('undated'),
+]);
 export const medicalReportRequestSchema = z
   .object({
-    markerIds: z.array(anamnesisMarkerSlug).min(1).max(50),
-    from: z.iso.date().nullable(),
-    to: z.iso.date().nullable(),
+    markerIds: z
+      .array(anamnesisMarkerSlug)
+      .min(1)
+      .max(50)
+      .refine((ids) => new Set(ids).size === ids.length),
+    dateKeys: z.array(medicalDateKeySchema).min(1).max(2000).nullable(),
   })
   .strict();
 export type MedicalReportRequest = z.infer<typeof medicalReportRequestSchema>;
+export const medicalReportCreateSchema = medicalReportRequestSchema.extend({
+  snapshotKey: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export interface MedicalReportPreview {
+  html: string;
+  pageCount: number;
+  snapshotKey: string;
+}
+export interface MedicalReportDateOption {
+  key: string;
+  count: number;
+}
+export function medicalObservationDateKey(
+  observation: Pick<MedicalObservation, 'collectedAt' | 'datePrecision'>,
+): string {
+  if (observation.datePrecision === 'unknown' || !observation.collectedAt)
+    return 'undated';
+  if (observation.datePrecision === 'month')
+    return observation.collectedAt.slice(0, 7);
+  return observation.collectedAt.slice(0, 10);
+}
 
 export const medicalReportExportSchema = z
   .object({
@@ -274,8 +303,10 @@ export const medicalReportExportSchema = z
     ownerId: id,
     createdBy: id,
     markerIds: z.array(anamnesisMarkerSlug).min(1),
-    from: z.iso.date().nullable(),
-    to: z.iso.date().nullable(),
+    dateKeys: z.array(medicalDateKeySchema).nullable(),
+    historicalPeriod: z
+      .object({ from: z.string().nullable(), to: z.string().nullable() })
+      .nullable(),
     status: z.enum(['ready', 'failed']),
     filename: z.string().min(1).max(255),
     sizeBytes: z.number().int().min(0),
@@ -329,6 +360,8 @@ export const anamnesisOverviewSchema = z
     observations: z.number().int().min(0),
     pendingReviews: z.number().int().min(0),
     activeImports: z.number().int().min(0),
+    pendingDocumentId: id.nullable(),
+    activeDocumentId: id.nullable(),
     lastCollectedAt: anamnesisPartialDate.nullable(),
   })
   .strict();

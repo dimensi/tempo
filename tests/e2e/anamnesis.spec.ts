@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import Database from 'better-sqlite3';
 import { test, expect, type Page } from '../ci/isolated-test';
 import { getSessionWith429Retry } from './auth-session';
 
@@ -83,8 +85,11 @@ test('owner imports the reference PDF and trainer receives only granted access',
 
   // The overview must expose the actual upload form without a guessed URL.
   await page.goto('/anamnesis');
-  await page.getByRole('link', { name: 'Загрузить PDF', exact: true }).click();
-  await expect(page).toHaveURL(/\/anamnesis\/documents$/);
+  await page
+    .getByRole('navigation', { name: 'Разделы анамнеза' })
+    .getByRole('link', { name: 'Документы и распознавание' })
+    .click();
+  await expect(page).toHaveURL(/\/anamnesis#documents$/);
   await expect(page.getByLabel('Загрузить PDF')).toBeVisible();
 
   // Тренер получает доступ через настоящее приглашение (trainer_access).
@@ -128,19 +133,22 @@ test('owner imports the reference PDF and trainer receives only granted access',
   );
 
   // Загрузка контрольного документа «Синтетическая лаборатория».
-  const upload = await page.request.post(
-    `/api/anamnesis/documents/uploads?${ownerQuery}`,
-    {
-      headers: { origin },
-      multipart: {
-        file: {
-          name: 'synthetic-lab.pdf',
-          mimeType: 'application/pdf',
-          buffer: fixturePdf(),
-        },
-      },
-    },
+  const uploaded = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/anamnesis/documents/uploads?') &&
+      response.request().method() === 'POST',
   );
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'synthetic-lab.pdf',
+    mimeType: 'application/pdf',
+    buffer: fixturePdf(),
+  });
+  await page
+    .getByTestId('anamnesis-documents')
+    .getByRole('button', { name: 'Загрузить PDF', exact: true })
+    .filter({ hasText: 'Загрузить PDF' })
+    .click();
+  const upload = await uploaded;
   expect(upload.status()).toBe(201);
   const document = (await upload.json()) as {
     document: { id: string; pageCount: number };
@@ -198,30 +206,90 @@ test('owner imports the reference PDF and trainer receives only granted access',
   ).toBe(2);
 
   // Обзор и таблица показателей отображают импортированные данные.
-  await page.goto('/anamnesis');
-  await expect(page.getByTestId('anamnesis-overview')).toBeVisible();
-  await page.goto('/anamnesis/markers');
+  await expect(
+    page
+      .getByTestId('anamnesis-documents')
+      .getByRole('link', { name: 'synthetic-lab.pdf', exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('navigation', { name: 'Разделы анамнеза' })
+    .getByRole('link', { name: 'Показатели' })
+    .click();
   await expect(page.getByTestId('anamnesis-marker-table')).toBeVisible();
   await expect(
     page.getByRole('cell', { name: 'Витамин D (25-OH)' }),
   ).toBeVisible();
 
+  // Synthetic pending review fixture in the disposable E2E DB; real auth, persistence and confirm API.
+  const altRows = (await (
+    await page.request.get(
+      `/api/anamnesis/markers/alt/observations?${ownerQuery}`,
+    )
+  ).json()) as Array<{ id: string }>;
+  const reviewId = randomUUID();
+  const fixtureDb = new Database('.data/e2e.sqlite');
+  try {
+    fixtureDb.pragma('busy_timeout=5000');
+    fixtureDb.transaction(() => {
+      fixtureDb
+        .prepare(
+          "UPDATE medical_observations SET verification='needs_review' WHERE id=? AND owner_id=?",
+        )
+        .run(altRows[0]!.id, owner.id);
+      fixtureDb
+        .prepare(
+          "INSERT INTO medical_review_items(id,owner_id,observation_id,document_id,reason,status,created_at) VALUES(?,?,?,?,?,'pending',?)",
+        )
+        .run(
+          reviewId,
+          owner.id,
+          altRows[0]!.id,
+          document.document.id,
+          'missing_origin',
+          Date.now(),
+        );
+    })();
+  } finally {
+    fixtureDb.close();
+  }
+  await page.goto('/anamnesis#documents');
+  await page.reload();
+  await page
+    .getByTestId('anamnesis-documents')
+    .getByRole('button', { name: 'Проверка результатов (1)', exact: true })
+    .click();
+  const reviewItem = page.getByTestId('anamnesis-review-item');
+  await expect(reviewItem).toHaveCount(1);
+  await reviewItem
+    .getByRole('button', { name: 'Подтвердить', exact: true })
+    .click();
+  await expect(reviewItem).toHaveCount(0);
+  const reviewed = (await (
+    await page.request.get(
+      `/api/anamnesis/observations/${altRows[0]!.id}?${ownerQuery}`,
+    )
+  ).json()) as { observation: { verification: string } };
+  expect(reviewed.observation.verification).toBe('user_verified');
+
   // Real report-builder interactions: checkbox events must survive deferred updates.
   const reportErrors: string[] = [];
   const onPageError = (error: Error) => reportErrors.push(error.message);
   page.on('pageerror', onPageError);
-  await page.goto('/anamnesis/reports');
+  await page
+    .getByRole('navigation', { name: 'Разделы анамнеза' })
+    .getByRole('link', { name: 'Экспорт' })
+    .click();
   const builder = page.getByTestId('anamnesis-reports');
   const allMarkers = builder.getByRole('checkbox', {
     name: 'Выбрать все показатели',
     exact: true,
   });
   const generate = builder.getByRole('button', {
-    name: 'Сгенерировать PDF',
+    name: 'Скачать PDF',
     exact: true,
   });
   await expect(allMarkers).toBeChecked();
-  await expect(builder.getByRole('checkbox', { checked: true })).toHaveCount(6);
+  await expect(builder.getByRole('checkbox', { checked: true })).toHaveCount(7);
   const alt = builder.getByRole('checkbox', {
     name: 'Аланинаминотрансфераза (1)',
     exact: true,
@@ -236,40 +304,68 @@ test('owner imports the reference PDF and trainer receives only granted access',
   await alt.check();
   await ast.check();
   await expect(allMarkers).toBeChecked();
-  await builder
-    .getByRole('button', { name: 'Снять выбор', exact: true })
-    .click();
+  await expect(
+    builder.getByRole('button', { name: 'Снять выбор' }),
+  ).toHaveCount(0);
+  await allMarkers.uncheck();
   await expect(generate).toBeDisabled();
-  await expect(builder.getByRole('checkbox', { checked: true })).toHaveCount(0);
   await allMarkers.focus();
   await page.keyboard.press('Space');
   await expect(allMarkers).toBeChecked();
-  await allMarkers.uncheck();
-  await expect(generate).toBeDisabled();
-  await allMarkers.check();
-  await builder.getByLabel('С даты', { exact: true }).fill('2027-01-15');
-  await builder.getByLabel('По дату', { exact: true }).fill('2027-01-31');
-  await builder
-    .getByRole('button', { name: 'Вся история', exact: true })
-    .click();
-  await expect(builder.getByLabel('С даты', { exact: true })).toHaveValue('');
-  await expect(builder.getByLabel('По дату', { exact: true })).toHaveValue('');
+  const allHistory = builder.getByRole('checkbox', {
+    name: 'Вся история',
+    exact: true,
+  });
+  await allHistory.uncheck();
+  const dateChoices = builder
+    .getByRole('group', { name: 'Даты измерений' })
+    .getByRole('checkbox');
+  await expect(dateChoices).toHaveCount(2);
+  await dateChoices.first().uncheck();
+  // Mounted forms survive TOC navigation and browser history.
+  const toc = page.getByRole('navigation', { name: 'Разделы анамнеза' });
+  await toc.getByRole('link', { name: 'Показатели', exact: true }).click();
+  await page.goBack();
+  await expect(page).toHaveURL(/#export$/);
+  await expect(dateChoices.first()).not.toBeChecked();
+  await dateChoices.first().check();
+  await expect(
+    page
+      .frameLocator('iframe[title="Предпросмотр"]')
+      .locator('.observation-row'),
+  ).toHaveCount(6);
+  await allHistory.check();
+  await expect(generate).toBeEnabled({ timeout: 30000 });
+  const frame = page.frameLocator('iframe[title="Предпросмотр"]');
+  await expect(frame.locator('.report-page')).toHaveCount(1);
+  await expect(frame.locator('.observation-row')).toHaveCount(6);
   const exported = page.waitForResponse(
     (response) =>
       response.url().includes('/api/anamnesis/reports?') &&
       response.request().method() === 'POST',
   );
+  const downloaded = page.waitForEvent('download', { timeout: 30000 });
   await generate.click();
   const exportResponse = await exported;
   expect(exportResponse.status()).toBe(201);
-  expect(exportResponse.request().postDataJSON()).toEqual({
-    markerIds: markers.map((item) => item.marker.id),
-    from: null,
-    to: null,
+  expect(exportResponse.request().postDataJSON()).toMatchObject({
+    markerIds: markers.map((item) => item.marker.id).sort(),
+    dateKeys: null,
+    snapshotKey: expect.stringMatching(/^[a-f0-9]{64}$/),
   });
+  expect((await downloaded).suggestedFilename()).toMatch(/\.pdf$/);
   const allReport = (await exportResponse.json()) as { id: string };
-  const ready = builder.getByRole('alert').filter({ hasText: 'PDF готов' });
-  await expect(ready.getByRole('link', { name: 'Скачать' })).toBeVisible();
+  const savedReport = builder.getByTestId(`medical-report-${allReport.id}`);
+  await expect(savedReport).toBeVisible();
+  await savedReport.getByRole('button').click();
+  await expect(
+    builder.getByRole('link', { name: 'Открыть в новой вкладке' }),
+  ).toHaveAttribute('href', /inline=1/);
+  const inline = await page.request.get(
+    `/api/anamnesis/reports/${allReport.id}/file?${ownerQuery}&inline=1`,
+  );
+  expect(inline.headers()['content-disposition']).toMatch(/^inline/);
+  expect(inline.headers()['cache-control']).toContain('no-store');
   const allFile = await page.request.get(
     `/api/anamnesis/reports/${allReport.id}/file?${ownerQuery}`,
   );
@@ -283,7 +379,7 @@ test('owner imports the reference PDF and trainer receives only granted access',
     )
     .toBe(true);
   await expect(generate).toBeEnabled();
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await builder.locator('iframe').first().scrollIntoViewIfNeeded();
   await page.screenshot({
     path: `/tmp/tempo-report-selection-${test.info().project.name}.png`,
     fullPage: true,
@@ -292,11 +388,26 @@ test('owner imports the reference PDF and trainer receives only granted access',
   page.off('pageerror', onPageError);
 
   // Отчёт генерируется и скачивается.
+  const previewResponse = await page.request.post(
+    `/api/anamnesis/reports/preview?${ownerQuery}`,
+    {
+      headers: { origin },
+      data: { markerIds: ['vitamin-d-25oh'], dateKeys: null },
+    },
+  );
+  expect(previewResponse.status()).toBe(200);
+  const singlePreview = (await previewResponse.json()) as {
+    snapshotKey: string;
+  };
   const report = await page.request.post(
     `/api/anamnesis/reports?${ownerQuery}`,
     {
       headers: { origin },
-      data: { markerIds: ['vitamin-d-25oh'], from: null, to: null },
+      data: {
+        markerIds: ['vitamin-d-25oh'],
+        dateKeys: null,
+        snapshotKey: singlePreview.snapshotKey,
+      },
     },
   );
   expect(report.status()).toBe(201);
@@ -327,7 +438,7 @@ test('owner imports the reference PDF and trainer receives only granted access',
     ).status(),
   ).toBe(403);
   await trainerPage.goto('/anamnesis');
-  await expect(trainerPage.getByTestId('anamnesis-overview')).toBeVisible();
+  await expect(trainerPage.getByTestId('anamnesis-page')).toBeVisible();
   await expect(
     trainerPage.getByRole('link', { name: 'Загрузить PDF', exact: true }),
   ).toHaveCount(0);
@@ -379,5 +490,143 @@ test('owner imports the reference PDF and trainer receives only granted access',
     ).status(),
   ).toBe(403);
 
+  const deniedPreview = await trainerPage.request.post(
+    `/api/anamnesis/reports/preview?${trainerQuery}`,
+    {
+      headers: { origin },
+      data: { markerIds: ['vitamin-d-25oh'], dateKeys: null },
+    },
+  );
+  expect(deniedPreview.status()).toBe(403);
+  const deniedDates = await trainerPage.request.post(
+    `/api/anamnesis/reports/dates?${trainerQuery}`,
+    {
+      headers: { origin },
+      data: { markerIds: ['vitamin-d-25oh'], dateKeys: null },
+    },
+  );
+  expect(deniedDates.status()).toBe(403);
+  const stale = await page.request.post(
+    `/api/anamnesis/reports?${ownerQuery}`,
+    {
+      headers: { origin },
+      data: {
+        markerIds: ['vitamin-d-25oh'],
+        dateKeys: null,
+        snapshotKey: '0'.repeat(64),
+      },
+    },
+  );
+  expect(stale.status()).toBe(409);
+  // A real data revision invalidates an earlier preview, even when selection is unchanged.
+  const observationsResponse = await page.request.get(
+    `/api/anamnesis/markers/vitamin-d-25oh/observations?${ownerQuery}`,
+  );
+  const observations = (await observationsResponse.json()) as Array<
+    import('../../src/contracts/anamnesis').MedicalObservation
+  >;
+  const observation = observations[0]!;
+  const changedMonth =
+    observation.collectedAt === '2026-08' ? '2026-07' : '2026-08';
+  const changed = await page.request.patch(
+    `/api/anamnesis/observations/${observation.id}?${ownerQuery}`,
+    {
+      headers: { origin },
+      data: {
+        expectedRevision: observation.revision,
+        markerId: observation.markerId,
+        value: observation.value,
+        originalUnit: observation.originalUnit,
+        collectedAt: changedMonth,
+        datePrecision: 'month',
+        referenceRange: observation.referenceRange,
+      },
+    },
+  );
+  expect(changed.status()).toBe(200);
+  const outdated = await page.request.post(
+    `/api/anamnesis/reports?${ownerQuery}`,
+    {
+      headers: { origin },
+      data: {
+        markerIds: ['vitamin-d-25oh'],
+        dateKeys: null,
+        snapshotKey: singlePreview.snapshotKey,
+      },
+    },
+  );
+  expect(outdated.status()).toBe(409);
+  const availableDates = await page.request.post(
+    `/api/anamnesis/reports/dates?${ownerQuery}`,
+    {
+      headers: { origin },
+      data: { markerIds: ['vitamin-d-25oh'], dateKeys: null },
+    },
+  );
+  expect(await availableDates.json()).toContainEqual({
+    key: changedMonth,
+    count: 1,
+  });
+  // Unknown precision stays an undated group; the UI must not invent a day.
+  const dateFixture = new Database('.data/e2e.sqlite');
+  try {
+    dateFixture
+      .prepare(
+        "UPDATE medical_observations SET collected_at=NULL,date_precision='unknown',revision=revision+1 WHERE id=? AND owner_id=?",
+      )
+      .run(observation.id, owner.id);
+  } finally {
+    dateFixture.close();
+  }
+  await page.reload();
+  await allHistory.uncheck();
+  await expect(
+    builder.getByRole('checkbox', { name: 'Без даты (1)', exact: true }),
+  ).toBeChecked();
+  await expect(generate).toBeEnabled({ timeout: 30000 });
+  // Delayed previews cannot overwrite the latest selection; denial clears both preview and saved files.
+  const oldHtml = await builder
+    .locator('iframe')
+    .first()
+    .getAttribute('srcdoc');
+  let releaseOld!: () => void;
+  const held = new Promise<void>((resolve) => {
+    releaseOld = resolve;
+  });
+  let previewRequests = 0;
+  await page.route('**/api/anamnesis/reports/preview?*', async (route) => {
+    const index = ++previewRequests;
+    if (index === 1) await held;
+    await route.fulfill({
+      status: 200,
+      json: {
+        html: `<p id="preview-version">${index}</p>`,
+        pageCount: 1,
+        snapshotKey: '1'.repeat(64),
+      },
+    });
+  });
+  expect(oldHtml).toContain('report-pages');
+  await alt.uncheck();
+  await expect.poll(() => previewRequests).toBe(1);
+  await ast.uncheck();
+  await expect(
+    page
+      .frameLocator('iframe[title="Предпросмотр"]')
+      .locator('#preview-version'),
+  ).toHaveText('2');
+  releaseOld();
+  await expect(
+    page
+      .frameLocator('iframe[title="Предпросмотр"]')
+      .locator('#preview-version'),
+  ).toHaveText('2');
+  await page.unroute('**/api/anamnesis/reports/preview?*');
+  await page.route('**/api/anamnesis/reports/preview?*', (route) =>
+    route.fulfill({ status: 403, json: { error: 'FORBIDDEN' } }),
+  );
+  await alt.check();
+  await expect(builder.locator('iframe')).toHaveCount(0);
+  await expect(builder.getByRole('alert')).toBeVisible();
   await trainerContext.close();
 });

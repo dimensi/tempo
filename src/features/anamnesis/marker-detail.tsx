@@ -21,7 +21,7 @@ import {
   type MedicalMarker,
   type MedicalObservation,
 } from '@/contracts/anamnesis';
-import { anamnesisMessages as m } from './messages';
+import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import { MarkerAssessmentBadge } from './marker-table';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
 
@@ -148,6 +148,9 @@ export function MarkerDetail({
 
   return (
     <Stack data-testid="anamnesis-marker-detail">
+      <a href="/anamnesis#markers">
+        {m.title} · {m.workspace.markers}
+      </a>
       <Title order={1}>{marker?.name ?? markerId}</Title>
       {error && (
         <Alert color="red" role="alert">
