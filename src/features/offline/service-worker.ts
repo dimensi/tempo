@@ -78,11 +78,13 @@ worker.addEventListener('fetch', (event) => {
   if (url.origin !== location.origin) return;
   if (url.pathname.startsWith('/api/') || request.headers.get('RSC') === '1') {
     event.respondWith(
-      fetch(request).then((response) => {
-        if (response.status === 401 || response.status === 403)
-          event.waitUntil(purge());
-        return response;
-      }),
+      fetch(request)
+        .then((response) => {
+          if (response.status === 401 || response.status === 403)
+            event.waitUntil(purge());
+          return response;
+        })
+        .catch(() => Response.error()),
       // Fetch failures propagate to the requesting client. The client owns
       // transport state; cancelled RSC/prefetches must not mark it offline.
     );

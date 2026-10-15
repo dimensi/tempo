@@ -790,3 +790,116 @@ test('HTTP cache preparation failures keep live data, a single connection status
     data.db.close();
   }
 });
+
+test('retained diary stays paused during repeated offline menu navigation and reads local photo bytes', async ({
+  page,
+  context,
+}) => {
+  const data = seedReal();
+  try {
+    await signIn(page);
+    const uploaded = await page.request.post(
+      `/api/nutrition/photos?${new URLSearchParams({ ownerId: data.ownerId, date: data.date, daytime: 'breakfast' })}`,
+      {
+        headers: {
+          Origin: String(test.info().project.use.baseURL),
+          'Content-Type': 'image/png',
+        },
+        data: Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a8O8AAAAASUVORK5CYII=',
+          'base64',
+        ),
+      },
+    );
+    expect(uploaded.status()).toBe(201);
+    await page.goto(`/diary?date=${data.date}`);
+    await waitSaved(page);
+    await expect
+      .poll(() => page.evaluate('window.offlineTest.read(Date.now())'))
+      .toMatchObject({ photos: 1 });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => {
+      if (
+        /width\(0\).*height\(0\)|width\(-1\).*height\(-1\)/.test(message.text())
+      )
+        errors.push(message.text());
+    });
+    await context.setOffline(true);
+    await expect(
+      page.getByRole('region', { name: 'Завтрак', exact: true }).locator('img'),
+    ).toHaveAttribute('src', /^blob:/);
+    const photoRequests: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname.startsWith('/api/nutrition/photos/'))
+        photoRequests.push(request.url());
+    });
+    const initialHistoryLength = await page.evaluate(() => history.length);
+    for (let repeat = 0; repeat < 3; repeat++) {
+      for (const [label, path] of [
+        ['Обзор', '/'],
+        ['Дневник питания', '/diary'],
+        ['Замеры', '/measurements'],
+        ['Анамнез', '/anamnesis'],
+        ['Аналитика', '/analytics'],
+        ['Отчёты', '/reports'],
+        ['Настройки', '/settings'],
+        ['Тренировки', '/workouts'],
+        ['Обзор', '/'],
+      ]) {
+        await openNavigation(page);
+        await page.getByRole('link', { name: label, exact: true }).click();
+        await expect(page).toHaveURL((url) => url.pathname === path);
+        await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
+          label!,
+        );
+        await page.evaluate(
+          () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(resolve)),
+            ),
+        );
+        expect(new URL(page.url()).pathname).toBe(path);
+        await expect(
+          page
+            .getByRole('status')
+            .filter({ hasText: 'Сеть или сервер недоступны' }),
+        ).toHaveCount(1);
+      }
+    }
+    await page.goBack();
+    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
+      'Тренировки',
+    );
+    await page.goForward();
+    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
+      'Обзор',
+    );
+    // Embedded report previews also participate in joint browser history.
+    // Return to the original entry, rather than assuming one entry per menu click.
+    const entries = await page.evaluate(() => history.length);
+    await page.evaluate(
+      (steps) => history.go(-steps),
+      entries - initialHistoryLength,
+    );
+    await expect(page).toHaveURL(`/diary?date=${data.date}`);
+    await expect(
+      page.getByRole('region', { name: 'Завтрак', exact: true }).locator('img'),
+    ).toHaveAttribute('src', /^blob:/);
+    await expect
+      .poll(() =>
+        page
+          .getByRole('region', { name: 'Завтрак', exact: true })
+          .locator('img')
+          .evaluate(
+            (image: HTMLImageElement) =>
+              image.complete && image.naturalWidth > 0,
+          ),
+      )
+      .toBe(true);
+    expect(photoRequests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    data.db.close();
+  }
+});

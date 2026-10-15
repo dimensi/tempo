@@ -1,8 +1,9 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useOfflineLocation, isOfflineRoute } from '@/lib/offline-routing';
+import { useReadOnline } from '@/lib/use-read-online';
 import { authClient } from '@/lib/auth-client';
 import {
   withOfflineDevicePurge,
@@ -17,6 +18,10 @@ import {
   withWriteLock,
 } from '@/lib/offline-write-client';
 import { ApplicationShellFrame } from './application-shell-frame';
+function MenuLink(props: ComponentProps<typeof Link>) {
+  const online = useReadOnline();
+  return <Link {...props} prefetch={online ? undefined : false} />;
+}
 export function ApplicationShell(props: {
   children: React.ReactNode;
   role: string;
@@ -97,7 +102,7 @@ export function ApplicationShell(props: {
       <ApplicationShellFrame
         {...props}
         pathname={pathname}
-        linkComponent={Link}
+        linkComponent={MenuLink}
         cleanupError={cleanupError}
         logoutDisabled={!online}
         onLogout={() => logout()}
