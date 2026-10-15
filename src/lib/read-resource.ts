@@ -30,6 +30,13 @@ export class ReadResourceStore<T> {
   private flights = new Map<string, Promise<T>>();
   private listeners = new Map<string, Set<() => void>>();
   private epoch = 0;
+  private revisions = new Map<string, number>();
+  async invalidate(key: string) {
+    this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
+    this.flights.delete(key);
+    this.publish(key, { coverage: 'missing', refreshing: false });
+    await this.persistence.remove?.(key).catch(() => {});
+  }
   constructor(
     private persistence: ReadPersistence<T>,
     private now = Date.now,
@@ -103,20 +110,26 @@ export class ReadResourceStore<T> {
   async restore(key: string) {
     if (this.snapshot(key).data !== undefined) return;
     const epoch = this.epoch;
+    const revision = this.revisions.get(key);
+    const valid = () =>
+      epoch === this.epoch && revision === this.revisions.get(key);
     const value = await this.persistence.read(key).catch(() => undefined);
-    if (value && this.epoch === epoch && this.snapshot(key).data === undefined)
+    if (value && valid() && this.snapshot(key).data === undefined)
       this.seed(key, value.data, value.savedAt, 'storage');
   }
   async read(key: string, loader?: () => Promise<T>): Promise<T> {
     const existing = loader ? this.flights.get(key) : undefined;
     if (existing) return existing;
     const epoch = this.epoch;
+    const revision = this.revisions.get(key);
+    const valid = () =>
+      epoch === this.epoch && revision === this.revisions.get(key);
     const flight = (async () => {
       let state = this.snapshot(key);
       const memory = state.data !== undefined;
       if (state.data === undefined) {
         const saved = await this.persistence.read(key).catch(() => undefined);
-        if (epoch !== this.epoch) throw new ReadFailure('denied');
+        if (!valid()) throw new ReadFailure('denied');
         if (saved && this.snapshot(key).data === undefined) {
           this.seed(key, saved.data, saved.savedAt, 'storage');
           state = this.snapshot(key);
@@ -140,17 +153,17 @@ export class ReadResourceStore<T> {
       this.publish(key, { ...state, refreshing: true, error: undefined });
       try {
         const data = await loader();
-        if (epoch !== this.epoch) throw new ReadFailure('denied');
+        if (!valid()) throw new ReadFailure('denied');
         const savedAt = this.now();
         this.seed(key, data, savedAt);
         // Persistence is best effort; the live screen must survive quota/eviction.
         await this.persistence
           .write(key, { data, savedAt, touchedAt: savedAt })
           .catch(() => {});
-        if (epoch !== this.epoch) throw new ReadFailure('denied');
+        if (!valid()) throw new ReadFailure('denied');
         return data;
       } catch (error) {
-        if (epoch !== this.epoch) throw new ReadFailure('denied');
+        if (!valid()) throw new ReadFailure('denied');
         const reason = error instanceof ReadFailure ? error.reason : 'network';
         if (
           reason === 'denied' ||

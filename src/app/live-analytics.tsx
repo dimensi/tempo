@@ -15,11 +15,13 @@ export function LiveAnalytics({
 }) {
   const [data, setData] = useState(initial);
   const refresh = useReadRefresh();
+  const [initialAt] = useState(Date.now);
   useEffect(() => {
     const controller = getOfflineController();
     const update = () => {
-      const snapshot = controller.getSnapshot().bundle?.snapshot;
-      if (!snapshot) return;
+      const bundle = controller.getSnapshot().bundle;
+      const snapshot = bundle?.snapshot;
+      if (!snapshot || !bundle || bundle.savedAt <= initialAt) return;
       // A bounded cache cannot replace a wider successful server result online.
       if (
         initial.range.from < (snapshot.views.summary?.from ?? '') ||
@@ -42,6 +44,6 @@ export function LiveAnalytics({
     const stop = controller.subscribe(update);
     void Promise.resolve().then(update);
     return stop;
-  }, [initial, refresh]);
+  }, [initial, initialAt, refresh]);
   return <AnalyticsDashboard data={data} navigationSlot={navigationSlot} />;
 }

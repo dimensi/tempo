@@ -126,3 +126,15 @@ it('storage faults and quota failure do not discard the successful live model', 
   });
   expect(await store.read('day')).toEqual({ value: 5 });
 });
+it('invalidation removes saved details and fences an already running response', async () => {
+  const { store, disk } = setup();
+  const response = Promise.withResolvers<{ value: number }>();
+  store.seed('document', { value: 1 });
+  disk.set('document', { data: { value: 1 }, savedAt: 1, touchedAt: 1 });
+  const pending = store.read('document', () => response.promise);
+  await store.invalidate('document');
+  response.resolve({ value: 1 });
+  await expect(pending).rejects.toMatchObject({ reason: 'denied' });
+  expect(store.snapshot('document').data).toBeUndefined();
+  expect(disk.has('document')).toBe(false);
+});

@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/offline-controller', () => ({
   getOfflineController: () => ({
+    removeFile: vi.fn(async () => {}),
     getSnapshot: () => ({
       status: 'ready',
       bundle: {
@@ -84,6 +85,7 @@ afterEach(() => {
   cleanup?.();
   cleanup = undefined;
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 async function install(fetcher: typeof fetch) {
   vi.stubGlobal('window', { fetch: fetcher });
@@ -167,4 +169,49 @@ it('credentials and responses outside approved schemas are not persisted', async
   expect(state.disk.size).toBe(0);
   state.online = false;
   await expect(window.fetch(path)).rejects.toBeDefined();
+});
+it('a shared transport timeout reports unreachable even when cached data is returned', async () => {
+  const timeout = new AbortController();
+  vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+  const raw = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 1000 }))
+    .mockImplementationOnce(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('timeout', 'AbortError')),
+          );
+        }),
+    );
+  await install(raw);
+  const { reportNetworkResult } = await import('@/lib/network-state');
+  vi.mocked(reportNetworkResult).mockClear();
+  await window.fetch(path);
+  const pending = window.fetch(path);
+  await Promise.resolve();
+  await Promise.resolve();
+  timeout.abort();
+  expect(await (await pending).json()).toEqual({ dailyStepsGoal: 1000 });
+  expect(reportNetworkResult).toHaveBeenCalledWith(false);
+});
+it('document deletion removes both details and observations from memory and persistent storage', async () => {
+  const { clientReads, invalidateMedicalDocument } = await install(vi.fn());
+  for (const key of [
+    '/api/anamnesis/documents/doc?ownerId=owner',
+    '/api/anamnesis/documents/doc/observations?ownerId=owner',
+  ]) {
+    clientReads.seed(key, '{}');
+    state.disk.set('owner:' + key, { key, body: '{}' });
+  }
+  await invalidateMedicalDocument('doc', 'owner');
+  expect(state.disk.size).toBe(0);
+  expect(
+    clientReads.snapshot('/api/anamnesis/documents/doc?ownerId=owner').data,
+  ).toBeUndefined();
+  expect(
+    clientReads.snapshot(
+      '/api/anamnesis/documents/doc/observations?ownerId=owner',
+    ).data,
+  ).toBeUndefined();
 });

@@ -20,6 +20,7 @@ import { getOfflineController } from './offline-controller';
 import { reportNetworkResult } from './network-state';
 
 let scope = '';
+let medicalRevision = 0;
 let fence: CacheFence | undefined;
 const persistence = {
   async read(key: string): Promise<PersistedRead<string> | undefined> {
@@ -89,6 +90,27 @@ export const clientReads = new ReadResourceStore<string>(
     size: (value) => new TextEncoder().encode(value).length,
   },
 );
+export async function invalidateMedicalDocument(
+  documentId: string,
+  ownerId: string,
+) {
+  bindScope();
+  medicalRevision++;
+  const query = `?${new URLSearchParams({ ownerId })}`;
+  const base = `/api/anamnesis/documents/${encodeURIComponent(documentId)}`;
+  await Promise.all(
+    [
+      base + query,
+      base + '/observations' + query,
+      '/api/anamnesis/documents' + query,
+      '/api/offline/anamnesis-local',
+    ].map((key) => clientReads.invalidate(key)),
+  );
+  summaryVerified = '';
+  await getOfflineController()
+    .removeFile(`medical-document:${documentId}`)
+    .catch(() => {});
+}
 export function canonicalReadKey(url: URL) {
   const search = new URLSearchParams(url.search);
   search.sort();
@@ -174,10 +196,16 @@ export function observeReadResources() {
         navigator.onLine
           ? async () => {
               // A caller's abort must not cancel a request shared with another reader.
-              live = await original.call(window, input, {
-                ...init,
-                signal: AbortSignal.timeout(15000),
-              });
+              try {
+                live = await original.call(window, input, {
+                  ...init,
+                  signal: AbortSignal.timeout(15000),
+                });
+              } catch (error) {
+                // This signal belongs to the shared transport, never to a caller.
+                reportNetworkResult(false);
+                throw error;
+              }
               if (!live.ok)
                 throw new ReadFailure(
                   live.status === 401 || live.status === 403
@@ -233,6 +261,7 @@ export function prepareMedicalReads(force = false) {
   if (state.status !== 'ready' || !state.bundle || !navigator.onLine)
     return Promise.resolve();
   const current = state.bundle.snapshot;
+  const revision = medicalRevision;
   const key = `${current.partition}:${current.connectionGeneration}:${state.bundle.savedAt}`;
   if (!force && summaryVerified === key) return Promise.resolve();
   summaryFlight = (async () => {
@@ -249,6 +278,7 @@ export function prepareMedicalReads(force = false) {
     )
       return;
     const data = offlineAnamnesisSchema.parse(payload.data);
+    if (revision !== medicalRevision) return;
     const latest = getOfflineController().getSnapshot().bundle?.snapshot;
     if (
       latest?.partition !== current.partition ||
@@ -263,10 +293,12 @@ export function prepareMedicalReads(force = false) {
       ['reports', data.reports],
     ] as const)
       if (
+        revision === medicalRevision &&
         clientReads.snapshot(`/api/anamnesis/${name}?${query}`).source !==
-        'network'
+          'network'
       )
         await seedClientRead(`/api/anamnesis/${name}?${query}`, value, current);
+    if (revision !== medicalRevision) return;
     await seedClientRead('/api/offline/anamnesis-local', data, current);
     summaryVerified = key;
   })()

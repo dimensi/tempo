@@ -1,4 +1,5 @@
 'use client';
+import { invalidateMedicalDocument } from '@/lib/client-read';
 import { useReadResource } from '@/lib/use-read-resource';
 import { medicalDocumentSchema } from '@/contracts/anamnesis';
 import { z } from 'zod';
@@ -181,6 +182,7 @@ export function DocumentsPanel({
       await fetchAnamnesis(`/api/anamnesis/documents/${id}?${query}`, {
         method: 'DELETE',
       });
+      await invalidateMedicalDocument(id, ownerId);
       setItems((old) => old.filter((item) => item.id !== id));
       setDeleting(undefined);
       notifyAnamnesisChanged();
