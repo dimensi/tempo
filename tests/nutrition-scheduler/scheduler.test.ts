@@ -121,10 +121,27 @@ afterEach(() => {
 });
 
 describe('durable owner schedule', () => {
-  it.each(['SYNC_FAILED', 'PHOTO_INCOMPLETE'] as const)(
-    'retains %s and its retry deadline when a manual historical range is fully skipped',
-    async (lastError) => {
-      const { service, upstream } = setup();
+  it.each(
+    (['SYNC_FAILED', 'PHOTO_INCOMPLETE'] as const).flatMap((lastError) =>
+      (['none', 'steps', 'weight', 'body'] as const).flatMap((pendingPart) =>
+        [false, true].map((fails) => ({ lastError, pendingPart, fails })),
+      ),
+    ),
+  )(
+    'retains $lastError and retry deadline with only $pendingPart pending (fails=$fails)',
+    async ({ lastError, pendingPart, fails }) => {
+      const { deps, upstream } = setup();
+      const bodySync = vi.fn<
+        NonNullable<NutritionSchedulerDependencies['bodySync']>
+      >(async () => {});
+      if (fails) {
+        vi.mocked(upstream.healthSummary).mockRejectedValue(
+          new Error('synthetic'),
+        );
+        vi.mocked(upstream.weight).mockRejectedValue(new Error('synthetic'));
+        bodySync.mockRejectedValue(new Error('synthetic'));
+      }
+      const service = createNutritionScheduler({ ...deps, bodySync });
       service.enable('owner', input);
       const previous = {
         lastError,
@@ -144,6 +161,7 @@ describe('durable owner schedule', () => {
         steps: true,
         weight: true,
         body: true,
+        ...(pendingPart === 'none' ? {} : { [pendingPart]: false }),
       });
       const result = await service.run('owner', history, {
         mode: 'manual',
@@ -151,14 +169,17 @@ describe('durable owner schedule', () => {
       });
       expect(result.skippedDates).toEqual([history.from]);
       expect(result.completedDates).toEqual([]);
-      for (const method of [
-        'items',
-        'summary',
-        'images',
-        'healthSummary',
-        'weight',
-      ] as const)
+      for (const method of ['items', 'summary', 'images'] as const)
         expect(upstream[method]).not.toHaveBeenCalled();
+      expect(upstream.healthSummary).toHaveBeenCalledTimes(
+        pendingPart === 'steps' || pendingPart === 'weight' ? 1 : 0,
+      );
+      expect(upstream.weight).toHaveBeenCalledTimes(
+        pendingPart === 'weight' ? 1 : 0,
+      );
+      expect(bodySync.mock.calls[0]?.[1]).toEqual(
+        pendingPart === 'body' ? [history.from] : [],
+      );
       expect(
         database.db
           .select()

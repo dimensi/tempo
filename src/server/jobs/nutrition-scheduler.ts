@@ -461,11 +461,11 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         )
         .catch(() => {});
       assertCurrent();
-      const selectedWork = [...work.values()].some((parts) =>
-        syncParts.some((part) => parts[part]),
+      const selectedFoodOrPhotos = [...work.values()].some(
+        (parts) => parts.food || parts.photos,
       );
-      // A checkpoint-only no-op proves nothing about a previous failed sync.
-      if (selectedWork)
+      // Auxiliary reads and checkpoint-only no-ops cannot verify food/photo health.
+      if (selectedFoodOrPhotos)
         complete(
           !foodSucceeded
             ? 'SYNC_FAILED'
