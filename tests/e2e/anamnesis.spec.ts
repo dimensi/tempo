@@ -206,6 +206,91 @@ test('owner imports the reference PDF and trainer receives only granted access',
     page.getByRole('cell', { name: 'Витамин D (25-OH)' }),
   ).toBeVisible();
 
+  // Real report-builder interactions: checkbox events must survive deferred updates.
+  const reportErrors: string[] = [];
+  const onPageError = (error: Error) => reportErrors.push(error.message);
+  page.on('pageerror', onPageError);
+  await page.goto('/anamnesis/reports');
+  const builder = page.getByTestId('anamnesis-reports');
+  const allMarkers = builder.getByRole('checkbox', {
+    name: 'Выбрать все показатели',
+    exact: true,
+  });
+  const generate = builder.getByRole('button', {
+    name: 'Сгенерировать PDF',
+    exact: true,
+  });
+  await expect(allMarkers).toBeChecked();
+  await expect(builder.getByRole('checkbox', { checked: true })).toHaveCount(6);
+  const alt = builder.getByRole('checkbox', {
+    name: 'Аланинаминотрансфераза (1)',
+    exact: true,
+  });
+  const ast = builder.getByRole('checkbox', {
+    name: 'Аспартатаминотрансфераза (1)',
+    exact: true,
+  });
+  await alt.uncheck();
+  await expect(allMarkers).toHaveJSProperty('indeterminate', true);
+  await ast.uncheck();
+  await alt.check();
+  await ast.check();
+  await expect(allMarkers).toBeChecked();
+  await builder
+    .getByRole('button', { name: 'Снять выбор', exact: true })
+    .click();
+  await expect(generate).toBeDisabled();
+  await expect(builder.getByRole('checkbox', { checked: true })).toHaveCount(0);
+  await allMarkers.focus();
+  await page.keyboard.press('Space');
+  await expect(allMarkers).toBeChecked();
+  await allMarkers.uncheck();
+  await expect(generate).toBeDisabled();
+  await allMarkers.check();
+  await builder.getByLabel('С даты', { exact: true }).fill('2027-01-15');
+  await builder.getByLabel('По дату', { exact: true }).fill('2027-01-31');
+  await builder
+    .getByRole('button', { name: 'Вся история', exact: true })
+    .click();
+  await expect(builder.getByLabel('С даты', { exact: true })).toHaveValue('');
+  await expect(builder.getByLabel('По дату', { exact: true })).toHaveValue('');
+  const exported = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/anamnesis/reports?') &&
+      response.request().method() === 'POST',
+  );
+  await generate.click();
+  const exportResponse = await exported;
+  expect(exportResponse.status()).toBe(201);
+  expect(exportResponse.request().postDataJSON()).toEqual({
+    markerIds: markers.map((item) => item.marker.id),
+    from: null,
+    to: null,
+  });
+  const allReport = (await exportResponse.json()) as { id: string };
+  const ready = builder.getByRole('alert').filter({ hasText: 'PDF готов' });
+  await expect(ready.getByRole('link', { name: 'Скачать' })).toBeVisible();
+  const allFile = await page.request.get(
+    `/api/anamnesis/reports/${allReport.id}/file?${ownerQuery}`,
+  );
+  expect(allFile.status()).toBe(200);
+  expect((await allFile.body()).subarray(0, 5).toString()).toBe('%PDF-');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBe(true);
+  await expect(generate).toBeEnabled();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: `/tmp/tempo-report-selection-${test.info().project.name}.png`,
+    fullPage: true,
+  });
+  expect(reportErrors).toEqual([]);
+  page.off('pageerror', onPageError);
+
   // Отчёт генерируется и скачивается.
   const report = await page.request.post(
     `/api/anamnesis/reports?${ownerQuery}`,
