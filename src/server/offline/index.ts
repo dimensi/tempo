@@ -55,8 +55,10 @@ async function guard(
 ) {
   let latest = expected;
   const ownerId = await getAccessibleOwnerId(headers);
-  if (!ownerId || (expectedOwnerId && ownerId !== expectedOwnerId))
+  if (!ownerId || (expectedOwnerId && ownerId !== expectedOwnerId)) {
+    checkSession(await getAuth().api.getSession({ headers }), expected);
     throw new OfflineError(403, 'OFFLINE_ACCESS_DENIED');
+  }
   for (const permission of [
     'nutrition:read',
     'measurements:read',

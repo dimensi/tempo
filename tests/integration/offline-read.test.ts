@@ -450,10 +450,27 @@ it('disconnect/reconnect during final authorization cannot release stale TM gene
 it('session expiry shortened during final authorization caps TTL even when a later check renews it', async () => {
   const original = guards.authorize;
   const expiry = Date.now() + 60000;
-  let count = 0;
+  const repo = repository.offlineRepository();
+  let readComplete = false;
+  let shortened = false;
+  let renewed = false;
+  vi.spyOn(repository, 'offlineRepository').mockReturnValue({
+    ...repo,
+    read: (...args) => {
+      const result = repo.read(...args);
+      readComplete = true;
+      return result;
+    },
+  });
   vi.spyOn(guards, 'authorize').mockImplementation(async (...args) => {
     const access = await original(...args);
-    if (++count === 10 && access.ok) {
+    if (
+      readComplete &&
+      args[1] === 'nutrition:read' &&
+      !shortened &&
+      access.ok
+    ) {
+      shortened = true;
       database.sqlite
         .prepare('UPDATE session SET expires_at = ? WHERE id = ?')
         .run(expiry, access.session.session.id);
@@ -464,10 +481,14 @@ it('session expiry shortened during final authorization caps TTL even when a lat
       expect(current).not.toBeNull();
       return { ...access, session: current! };
     }
+    if (shortened && access.ok)
+      renewed ||= new Date(access.session.session.expiresAt).getTime() > expiry;
     return access;
   });
   const response = await snapshotGET(request(ownerHeaders));
   expect(response.status).toBe(200);
+  expect(shortened).toBe(true);
+  expect(renewed).toBe(true);
   const value = await response.json();
   expect(Date.parse(value.sessionExpiresAt)).toBe(expiry);
   expect(Date.parse(value.expiresAt)).toBe(expiry);
@@ -659,7 +680,7 @@ it('native snapshot final disconnect and revoked permission after binding await 
   }
 });
 
-it('native schema upgrade retains the pre-native authenticated generation hash format', async () => {
+it('owner generation binds reader, role, subject and session and changes on disconnect', async () => {
   const { store } = await seedNativeHistory();
   try {
     const session = (await getAuth().api.getSession({
@@ -669,13 +690,15 @@ it('native schema upgrade retains the pre-native authenticated generation hash f
     const response = await identityGET(request(ownerHeaders, 'identity'));
     expect(response.status).toBe(200);
     const value = await response.json();
-    const legacy = createHmac(
+    const expectedGeneration = createHmac(
       'sha256',
       'offline-only-synthetic-secret-at-least-32-characters',
     )
       .update(
         JSON.stringify([
           'offline-connection/v1',
+          ownerId,
+          'OWNER',
           ownerId,
           session.session.id,
           epoch,
@@ -684,18 +707,20 @@ it('native schema upgrade retains the pre-native authenticated generation hash f
         ]),
       )
       .digest('base64url');
-    expect(value.connectionGeneration).toBe(legacy);
+    expect(value.connectionGeneration).toBe(expectedGeneration);
     await store.disconnect();
     const disconnected = await (
       await identityGET(request(ownerHeaders, 'identity'))
     ).json();
-    const legacyDisconnected = createHmac(
+    const expectedDisconnected = createHmac(
       'sha256',
       'offline-only-synthetic-secret-at-least-32-characters',
     )
       .update(
         JSON.stringify([
           'offline-connection/v1',
+          ownerId,
+          'OWNER',
           ownerId,
           session.session.id,
           epoch,
@@ -704,7 +729,11 @@ it('native schema upgrade retains the pre-native authenticated generation hash f
         ]),
       )
       .digest('base64url');
-    expect(disconnected.connectionGeneration).toBe(legacyDisconnected);
+    expect(disconnected.connectionGeneration).toBe(expectedDisconnected);
+    expect(disconnected.connectionGeneration).not.toBe(
+      value.connectionGeneration,
+    );
+    expect(disconnected.partition).toBe(value.partition);
   } finally {
     database.sqlite.prepare('DELETE FROM workout_transformmate_native').run();
   }
