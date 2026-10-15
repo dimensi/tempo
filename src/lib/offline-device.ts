@@ -826,7 +826,7 @@ export function observeOfflineDenials() {
         response.ok &&
         !url.pathname.startsWith('/api/offline/') &&
         !/\/(?:video|preview|playback|parts)(?:\/|$)/.test(url.pathname) &&
-        /^\/api\/(?:nutrition|measurements|workouts|health|overview|yazio|transformmate|comments)(?:\/|$)/.test(
+        /^\/api\/(?:nutrition|measurements|workouts|health|overview|yazio|transformmate|comments|settings)(?:\/|$)/.test(
           url.pathname,
         ) &&
         ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(method)

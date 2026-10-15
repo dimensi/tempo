@@ -546,6 +546,10 @@ Object.assign(window, {
         enabled: value.metadata.enabled,
       };
     },
+    async savedGoal() {
+      return (await storage.read(Date.now())).bundle?.snapshot.views.summary
+        ?.dailyStepsGoal;
+    },
     async stale() {
       try {
         await storage.commit(

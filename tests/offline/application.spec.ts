@@ -161,6 +161,24 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
         { timeout: 15000 },
       )
       .toBe(true);
+    expect(
+      await page.evaluate(
+        async () =>
+          (
+            await fetch('/api/settings/steps-goal', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ dailyStepsGoal: 12345 }),
+            })
+          ).status,
+      ),
+    ).toBe(200);
+    await page.addScriptTag({ content: harness });
+    await expect
+      .poll(() => page.evaluate('window.offlineTest.savedGoal()'), {
+        timeout: 15000,
+      })
+      .toBe(12345);
     await context.setOffline(true);
     // The already-open genuine Next route switches before any cold document fallback.
     await expect(
@@ -277,6 +295,9 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
     await expect(
       page.getByLabel('Часовой пояс', { exact: true }),
     ).toBeDisabled();
+    await expect(page.getByLabel('Цель шагов', { exact: true })).toHaveValue(
+      '12345',
+    );
     expect(writes).toEqual([]);
     data.db
       .prepare('UPDATE session SET expires_at=0 WHERE user_id=?')
@@ -296,6 +317,9 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
     data.db
       .prepare('DELETE FROM nutrition_days WHERE owner_id=? AND date=?')
       .run(data.ownerId, data.date);
+    data.db
+      .prepare('DELETE FROM owner_settings WHERE owner_id=?')
+      .run(data.ownerId);
     data.db
       .prepare('DELETE FROM workout_sessions WHERE id IN (?,?)')
       .run('offline-real-session', 'offline-older-session');

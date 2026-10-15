@@ -51,6 +51,15 @@ it('server unavailability is reported even when the network interface is present
   expect(env.loaded()).toBe(0);
   env.stop();
 });
+it('refreshes safe settings after successful goal reads and saves', async () => {
+  const env = windowDouble(
+    vi.fn(async () => Response.json({ dailyStepsGoal: 10000 })),
+  );
+  await env.target.fetch('/api/settings/steps-goal');
+  await env.target.fetch('/api/settings/steps-goal', { method: 'PUT' });
+  expect(env.loaded()).toBe(2);
+  env.stop();
+});
 it('keeps report runtime errors local while reporting an unavailable document gateway', async () => {
   const responses = [
     Response.json({ error: 'Renderer unavailable' }, { status: 503 }),
