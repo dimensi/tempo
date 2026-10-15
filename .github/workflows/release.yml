@@ -1,65 +1,54 @@
-name: Nutrition CD
+name: Release
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      run_id:
-        description: Successful main CI run ID
-        required: true
-      revision:
-        description: Exact 40-character main Git SHA
-        required: true
 permissions:
   contents: read
-  actions: read
-  packages: read
 concurrency:
   group: nutrition-production
   cancel-in-progress: false
 jobs:
-  deploy:
-    # Off until the approved host installation and secure key handoff are verified.
-    if: ${{ vars.NUTRITION_CD_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')) }}
-    runs-on: self-hosted
+  release:
+    if: github.ref == 'refs/heads/main'
     environment: nutrition-production
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - name: Require authoritative successful main image build
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
-          REVISION: ${{ inputs.revision || github.event.workflow_run.head_sha }}
-        run: |
-          set -euo pipefail
-          [[ "$RUN_ID" =~ ^[0-9]+$ && "$REVISION" =~ ^[0-9a-f]{40}$ ]]
-          umask 077
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > run.json
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" > jobs.json
-          python3 - <<'PYVERIFY'
-          import json, os
-          run = json.load(open('run.json'))
-          assert run['event'] == 'push' and run['head_branch'] == 'main'
-          assert run['head_sha'] == os.environ['REVISION']
-          assert run['status'] == 'completed' and run['conclusion'] == 'success'
-          jobs = json.load(open('jobs.json'))['jobs']
-          for name in ('docker',):
-              found = [j for j in jobs if j['name'] == name]
-              assert len(found) == 1 and found[0]['status'] == 'completed' and found[0]['conclusion'] == 'success'
-          PYVERIFY
       - uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ inputs.revision || github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Build exact checked-out revision
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          docker build -t nutrition-foundation \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.tree=$(git rev-parse HEAD^{tree})" .
+      - name: Publish built image to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          export DOCKER_CONFIG=$(mktemp -d)
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:latest"
+          docker tag nutrition-foundation "$image"
+          docker push "$image"
       - name: Copy env and Compose, then pull and start over SSH
+        if: vars.NUTRITION_CD_ENABLED == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           DEPLOY_KEY: ${{ secrets.NUTRITION_DEPLOY_KEY }}
           KNOWN_HOSTS: ${{ vars.NUTRITION_DEPLOY_KNOWN_HOSTS }}
           DEPLOY_HOST: ${{ vars.NUTRITION_DEPLOY_HOST }}
           DEPLOY_USER: ${{ vars.NUTRITION_DEPLOY_USER }}
-          REVISION: ${{ inputs.revision || github.event.workflow_run.head_sha }}
-          RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
+          REVISION: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
           S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
           S3_REGION: ${{ vars.S3_REGION }}
           S3_BUCKET: ${{ vars.S3_BUCKET }}
@@ -102,7 +91,7 @@ jobs:
           values = {key: os.environ[key] for key in keys}
           assert all(values[key] == value for key, value in fixed.items()), 'Unapproved runtime setting'
           assert all(0 < len(value) <= 2048 and all(32 <= ord(c) <= 126 and c not in "'\\" for c in value) for value in values.values()), 'Invalid runtime setting'
-          values.update(NUTRITION_IMAGE='ghcr.io/' + os.environ['GITHUB_REPOSITORY'].lower() + ':' + os.environ['REVISION'], DEPLOYED_COMMIT=os.environ['REVISION'])
+          values.update(NUTRITION_IMAGE='ghcr.io/' + os.environ['GITHUB_REPOSITORY'].lower() + ':latest', DEPLOYED_COMMIT=os.environ['REVISION'])
           with open(os.environ['DEPLOY_ENV_PATH'], 'x') as output:
               output.write(''.join(f"{key}='{value}'\n" for key, value in values.items()))
           PYENV
@@ -110,7 +99,7 @@ jobs:
           unset GH_TOKEN S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY OPENROUTER_API_KEY
           ssh -p 2224 "${ssh_args[@]}" "$dest" "umask 077; test -r /opt/compose/yazio-dashboard/runtime.env && mkdir -m 700 '$stage'"
           scp -P 2224 "${ssh_args[@]}" compose.yaml compose.home.yaml "$scratch/.env.deploy" "$scratch/registry-token" "$dest:$stage/"
-          ssh -p 2224 "${ssh_args[@]}" "$dest" "bash -s -- '$REVISION' '$deploy_run' '$GITHUB_ACTOR'" <<'REMOTE'
+          ssh -p 2224 "${ssh_args[@]}" "$dest" "bash -s -- '$REVISION' '$deploy_run' '$GITHUB_ACTOR' '$GITHUB_REPOSITORY'" <<'REMOTE'
           set -euo pipefail
           set +x
           umask 077
@@ -147,7 +136,7 @@ jobs:
           # Use the application's existing online-backup CLI before migrations.
           docker exec "$old_container" node scripts/backup.mjs "/app/data/pre-deploy-$run-$revision.sqlite"
           if [[ ! -f .env.deploy ]] || ! cmp -s <(sed -n '/^S3_/p' .env.deploy) <(sed -n '/^S3_/p' "$stage/.env.deploy"); then
-            old_image=$(docker inspect "$old_container" --format '{{.Config.Image}}')
+            old_image=$(docker inspect "$old_container" --format '{{.Image}}')
             stopped=true
             docker stop "$old_container" >/dev/null
             docker run --rm --network none --volumes-from "$old_container:ro" --entrypoint node "$old_image" -e '
@@ -172,4 +161,8 @@ jobs:
           [[ "$(docker inspect "$current" --format '{{.Config.Image}}')" == "$image" ]]
           [[ "$(docker inspect "$current" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == "$revision" ]]
           [[ "$(curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' https://tempo.dimensi.dev/api/health)" == 200 ]]
+          # Prune only this application's unused images, after all health checks pass.
+          docker image prune --all --force --filter "label=org.opencontainers.image.source=https://github.com/$4"
+          # Keep recent build cache so routine releases can still reuse layers.
+          docker builder prune --all --force --filter until=168h
           REMOTE
