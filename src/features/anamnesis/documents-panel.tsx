@@ -2,7 +2,7 @@
 
 import { ReviewEditor } from './review-editor';
 import { notifyAnamnesisChanged, useAnamnesisRevision } from './refresh';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   Alert,
@@ -26,6 +26,7 @@ export function DocumentsPanel({
   writable: boolean;
 }) {
   const revision = useAnamnesisRevision();
+  const previousJobs = useRef(new Map<string, MedicalImportJob>());
   const [pending, setPending] = useState<Record<string, number>>({});
   const [jobs, setJobs] = useState<MedicalImportJob[]>([]);
   const [reviewing, setReviewing] = useState<string>();
@@ -75,21 +76,19 @@ export function DocumentsPanel({
           { cache: 'no-store' },
         );
         if (!active) return;
-        setJobs((old) => {
-          if (
-            old.some(
-              (job) =>
-                ['queued', 'processing'].includes(job.status) &&
-                next.some(
-                  (item) =>
-                    item.id === job.id &&
-                    !['queued', 'processing'].includes(item.status),
-                ),
-            )
-          )
-            queueMicrotask(notifyAnamnesisChanged);
-          return next;
+        const completedChanged = next.some((job) => {
+          const previous = previousJobs.current.get(job.id);
+          return (
+            !['queued', 'processing'].includes(job.status) &&
+            (!previous ||
+              previous.status !== job.status ||
+              previous.updatedAt !== job.updatedAt)
+          );
         });
+        previousJobs.current = new Map(next.map((job) => [job.id, job]));
+        setJobs(next);
+        // Also refresh when a fast import completed before its first poll.
+        if (completedChanged) notifyAnamnesisChanged();
         if (next.some((job) => ['queued', 'processing'].includes(job.status)))
           timer = setTimeout(() => void poll(), 2000);
       } catch {
