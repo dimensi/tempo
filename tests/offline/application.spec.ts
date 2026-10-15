@@ -503,3 +503,119 @@ test('linked TransformMate literal facts remain visible exactly once in plan day
     await context.setOffline(false);
   }
 });
+
+test('owner results and manual measurements survive offline tab closure and synchronize once across two tabs', async ({
+  page,
+  context,
+}) => {
+  await signIn(page);
+  await page.goto('/workouts');
+  await waitSaved(page);
+  const identity = await page.request.get('/api/auth/get-session');
+  const ownerId = (await identity.json()).user.id as string;
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(
+          () =>
+            new Promise<boolean>((resolve) => {
+              const request = indexedDB.open('yazio-offline-writes-v1', 1);
+              request.onsuccess = () => {
+                const db = request.result;
+                const tx = db.transaction('state', 'readonly');
+                const get = tx.objectStore('state').get('current');
+                get.onsuccess = () => resolve(Boolean(get.result?.partition));
+                tx.oncomplete = () => db.close();
+              };
+            }),
+        ),
+      { timeout: 30000 },
+    )
+    .toBe(true);
+  const name = `Offline durable ${test.info().project.name}`;
+  await context.setOffline(true);
+  await page.goto('/workouts');
+  let panel = page.locator('[data-offline-write-private]');
+  await panel
+    .getByRole('button', { name: 'Записать тренировку', exact: true })
+    .click();
+  await panel.getByLabel('Упражнение').fill(name);
+  await panel.getByLabel('Вес, кг', { exact: true }).fill('42.5');
+  await panel.getByLabel('Повторения', { exact: true }).fill('9');
+  await panel
+    .getByRole('button', { name: 'Сохранить на устройстве', exact: true })
+    .click();
+  await expect(
+    panel.getByText('Сохранено на устройстве', { exact: true }),
+  ).toBeVisible();
+  await page.goto('/measurements');
+  panel = page.locator('[data-offline-write-private]');
+  await panel
+    .getByRole('button', { name: 'Записать замер', exact: true })
+    .click();
+  await panel.getByLabel('Вес, кг', { exact: true }).fill('73.25');
+  await panel.getByLabel('Заметка', { exact: true }).fill(name);
+  await panel
+    .getByRole('button', { name: 'Сохранить на устройстве', exact: true })
+    .click();
+  await expect(
+    panel.getByText('Сохранено на устройстве', { exact: true }),
+  ).toBeVisible();
+  await page.close();
+  const reopened = await context.newPage();
+  await reopened.goto('/workouts');
+  await expect(reopened.locator('[data-offline-write-private]')).toContainText(
+    name,
+  );
+  await expect(reopened.locator('[data-offline-write-private]')).toContainText(
+    '42.5 × 9',
+  );
+  const second = await context.newPage();
+  await second.goto('/measurements');
+  await expect(second.locator('[data-offline-write-private]')).toContainText(
+    '73.25',
+  );
+  await expect(
+    second.getByText('Сохранено на устройстве', { exact: true }),
+  ).toBeVisible();
+  await context.setOffline(false);
+  await expect
+    .poll(
+      async () => {
+        const sessions = await reopened.request.get(
+          `/api/workouts?ownerId=${ownerId}`,
+        );
+        return (await sessions.json()).data.sessions.filter(
+          (item: { exercises: { name: string }[] }) =>
+            item.exercises.some((exercise) => exercise.name === name),
+        ).length;
+      },
+      { timeout: 45000 },
+    )
+    .toBe(1);
+  await expect
+    .poll(
+      async () => {
+        const measurements = await reopened.request.get(
+          `/api/measurements?ownerId=${ownerId}`,
+        );
+        return (await measurements.json()).filter(
+          (item: { note: string | null }) => item.note === name,
+        ).length;
+      },
+      { timeout: 45000 },
+    )
+    .toBe(1);
+  await reopened.goto('/workouts');
+  await expect(
+    reopened
+      .locator('[data-offline-write-private]')
+      .getByText('Синхронизировано', { exact: true }),
+  ).toBeVisible();
+  await second.reload();
+  await expect(
+    second
+      .locator('[data-offline-write-private]')
+      .getByText('Синхронизировано', { exact: true }),
+  ).toBeVisible();
+});

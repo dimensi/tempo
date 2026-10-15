@@ -16,23 +16,28 @@ const payload = z.discriminatedUnion('kind', [
 export const offlineWriteSchema = z
   .object({
     id: z.uuid(),
-    recordId: z.uuid(),
+    recordId: z.string().min(1).max(128),
     partition: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
     yazioEpoch: z.number().int().nonnegative().nullable(),
     base: z.string().max(100).nullable(),
     payload,
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) =>
+      value.base !== null || z.uuid().safeParse(value.recordId).success,
+    { message: 'New record requires a UUID' },
+  );
 export const writeRecordSchema = z
   .object({
-    id: z.uuid(),
+    id: z.string().min(1).max(128),
     version: z.string().max(100),
     payload,
   })
   .strict();
 export const writeCatalogSchema = z
   .object({
-    partition: offlineWriteSchema.shape.partition,
+    partition: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
     yazioEpoch: z.number().int().nonnegative().nullable(),
     records: z.array(writeRecordSchema).max(1000),
   })

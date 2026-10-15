@@ -31,7 +31,27 @@ export async function withWriteLock<T>(action: () => Promise<T>) {
 async function eligible() {
   const storage = new OfflineStorage();
   try {
-    return (await storage.currentFence()).partition;
+    try {
+      return (await storage.currentFence()).partition;
+    } catch (error) {
+      if (!navigator.onLine) throw error;
+      // A foreground save must not depend on the read cache finishing its service-worker download.
+      // Only a fresh authenticated OWNER identity may establish the device gate.
+      const response = await fetch('/api/offline/identity', {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) throw error;
+      const identity = offlineIdentitySchema.parse(await response.json());
+      const metadata = await storage.metadata();
+      if (metadata.enabled && metadata.partition !== identity.partition)
+        throw error;
+      const fence = await storage.enable(
+        identity.partition,
+        identity.connectionGeneration,
+      );
+      return fence.partition;
+    }
   } finally {
     await storage.close();
   }
@@ -184,4 +204,15 @@ export async function revealDeviceWrites(partition: string) {
       await storage.close();
     }
   });
+}
+
+export async function synchronizeDeviceWrite(operation: OfflineWrite) {
+  await syncDeviceWrites().catch(() => {});
+  const state = await writeStore.read();
+  if (state.partition !== operation.partition) return null;
+  return (
+    state.operations.find(
+      (item) => item.operation.id === operation.id && item.status === 'synced',
+    )?.result ?? null
+  );
 }

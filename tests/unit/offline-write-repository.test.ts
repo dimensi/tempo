@@ -5,7 +5,10 @@ import * as schema from '@/server/db/schema';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { readFileSync, readdirSync } from 'node:fs';
 import { offlineWriteRepository } from '@/server/offline/write-repository';
-import { offlineWriteSchema } from '@/contracts/offline-write';
+import {
+  offlineWriteSchema,
+  writeCatalogSchema,
+} from '@/contracts/offline-write';
 const databases: Database.Database[] = [];
 afterEach(() => databases.splice(0).forEach((database) => database.close()));
 // Repository unit fixture: only the tables used by this repository, no auth/server/provider runtime.
@@ -151,4 +154,37 @@ it('does not forward a queued measurement into a changed YAZIO connection, but s
   expect(() => repository.apply('owner', operation())).toThrow();
   expect(repository.apply('owner', accepted)).toEqual(first);
   expect(repository.catalog('owner')).toHaveLength(1);
+});
+
+it('accepts existing application record IDs while requiring UUIDs for new offline records', () => {
+  const { sqlite, repository } = fixture();
+  sqlite
+    .prepare(
+      'INSERT INTO measurements (id,owner_id,measured_at,values_json,note) VALUES (?,?,?,?,?)',
+    )
+    .run(
+      'existing-record',
+      'owner',
+      '2026-10-15',
+      JSON.stringify([{ metric: 'weight', value: '75', unit: 'kg' }]),
+      null,
+    );
+  const records = repository.catalog('owner');
+  expect(
+    writeCatalogSchema.parse({
+      partition: 'a'.repeat(43),
+      yazioEpoch: null,
+      records,
+    }).records[0]!.id,
+  ).toBe('existing-record');
+  const update = offlineWriteSchema.parse({
+    ...operation(),
+    recordId: 'existing-record',
+    base: records[0]!.version,
+  });
+  expect(repository.apply('owner', update).id).toBe('existing-record');
+  expect(
+    offlineWriteSchema.safeParse({ ...operation(), recordId: 'new-non-uuid' })
+      .success,
+  ).toBe(false);
 });

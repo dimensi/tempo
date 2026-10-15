@@ -1,6 +1,6 @@
 # Owner offline writes (v1)
 
-Scope: local workout sessions (sets, weights, repetitions, date, title, notes) and manual measurements only. The ordinary OWNER result/measurement forms commit to the same queue as the disconnected capture forms on `/workouts` and `/measurements`. Trainer writes keep the existing authorized online path. Native TransformMate workouts, settings, documents, uploads, deletes and other people's data are outside this queue. No auth configuration, permissions, CI or deployment changes.
+Scope: local workout sessions (sets, weights, repetitions, date, title, notes) and manual measurements only. The ordinary OWNER result/measurement forms commit to the same queue as the disconnected capture forms on `/workouts` and `/measurements`. Online forms then attempt foreground synchronization and retain the existing detail navigation after acknowledgement; a pending result remains available in the device queue. Trainer writes keep the existing authorized online path. Native TransformMate workouts, settings, documents, uploads, deletes and other people's data are outside this queue. No auth configuration, permissions, CI or deployment changes.
 
 ## Persistence and synchronization
 
@@ -28,7 +28,9 @@ Logout checks pending/review/sending operations before starting auth cleanup and
 
 ## Targeted verification and manual scenario
 
-Only these checks are authorized for this task: the four `tests/unit/offline-write-*.test.ts` files, `pnpm typecheck`, `pnpm lint`. Unit tests cover commit/abort boundaries with a controlled IndexedDB test double, storage reopening, cache purge separation, quota rejection, bounded retries, lost responses, sending recovery, dependent ordering, stale versions, account changes isolated SQLite receipt atomicity and API authorization orchestration with mocked collaborators. They do not establish real browser/device behavior. No full test suite, integration suite, build, E2E, Playwright, Actions or deployment was run. Full fresh/existing-database migration rehearsal remains unrun under this task's check limits.
+The initial implementation used focused unit tests. Release verification now includes formatting, lint, typecheck, the complete unit/integration suite, a production build and all three mandatory E2E suites (general, YAZIO, TransformMate), plus the offline browser family and YAZIO connection integration. The PR records the exact tested revision, commands and actual outcomes. Unit tests cover commit/abort boundaries with a controlled IndexedDB test double, storage reopening, cache purge separation, quota rejection, bounded retries, lost responses, sending recovery, dependent ordering, stale versions, account changes, isolated SQLite receipt atomicity and API guards. A real browser scenario records both types offline, closes/reopens the tab and reconnects two tabs, asserting exactly one server record of each type. Browser viewports do not establish physical-device behavior.
+
+Migration rehearsal uses disposable local databases: both a fresh database and an existing 12-migration database reach 13 migrations with `PRAGMA integrity_check = ok`; the existing synthetic measurement is preserved. Production data is never used as a fixture.
 
 Manual acceptance scenario (provided, not executed):
 

@@ -20,7 +20,10 @@ import type {
 import { workoutSessionSchema } from '@/contracts/workouts';
 import { subscribeOfflineBlocked } from '@/lib/offline-device';
 import { writeMessages } from '@/config/offline-write-messages';
-import { saveDeviceWrite, syncDeviceWrites } from '@/lib/offline-write-client';
+import {
+  saveDeviceWrite,
+  synchronizeDeviceWrite,
+} from '@/lib/offline-write-client';
 import { workoutTitle } from '@/lib/workout-title';
 import {
   clearWorkoutDraft,
@@ -184,7 +187,7 @@ export function WorkoutResultsPage({
         JSON.stringify(existing.exercises.map((item) => item.id).sort()) ===
           JSON.stringify(value.exercises.map((item) => item.id).sort());
       if (userId === ownerId && sameOccurrences) {
-        await saveDeviceWrite(
+        const operation = await saveDeviceWrite(
           {
             kind: 'workout',
             data: {
@@ -202,9 +205,13 @@ export function WorkoutResultsPage({
         });
         clearWorkoutDraft(key);
         dirty.current = false;
-        void syncDeviceWrites().catch(() => {});
+        const saved = await synchronizeDeviceWrite(operation);
         if (mounted.current && current === generation.current)
-          router.push(`/workouts?date=${returnDate}`);
+          router.push(
+            saved
+              ? `/workouts/sessions/${saved.id}?date=${returnDate}`
+              : `/workouts?date=${returnDate}`,
+          );
         return;
       }
       const response = await fetch(

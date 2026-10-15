@@ -136,7 +136,7 @@ function OfflineRouteContent() {
       </Stack>
     );
   } else if (pathname === '/measurements') {
-    content = <OfflineWrites kind="measurement" />;
+    content = <Title order={1}>{m.sectionTitle(pathname)}</Title>;
   } else if (pathname === '/workouts') {
     content = (
       <Stack>
@@ -154,7 +154,6 @@ function OfflineRouteContent() {
         <Button disabled variant="subtle" mih={44}>
           {workoutMessages.syncRefresh}
         </Button>
-        <OfflineWrites kind="workout" />
         {!snapshot?.workoutDates.includes(date) ? (
           unknown
         ) : (
@@ -266,6 +265,12 @@ function OfflineRouteContent() {
       <Text size="sm" role="status">
         {m.offline}
       </Text>
+      {(pathname === '/workouts' || pathname === '/measurements') && (
+        <OfflineWrites
+          key={pathname}
+          kind={pathname === '/workouts' ? 'workout' : 'measurement'}
+        />
+      )}
       {state.status === 'checking' || state.status === 'saving' ? (
         <Text role="status">{m.checking}</Text>
       ) : state.error ? (

@@ -24,7 +24,7 @@ async function login(page: Page, role: 'owner' | 'trainer', origin: string) {
   return (await getSessionWith429Retry(page.request)).user.id;
 }
 
-test('owner denial explains access and retains the complete draft', async ({
+test('owner denial retains the complete local result for review', async ({
   page,
   baseURL,
 }) => {
@@ -38,27 +38,57 @@ test('owner denial explains access and retains the complete draft', async ({
   await page
     .getByLabel('Заметка', { exact: true })
     .fill('Preserved synthetic draft');
-  await page.route('**/api/measurements?*', (route) =>
+  await page.route('**/api/offline/writes', (route) =>
     route.request().method() === 'POST'
       ? route.fulfill({ status: 403, json: { error: 'Forbidden' } })
       : route.continue(),
   );
+  const denied = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/offline/writes') &&
+      response.request().method() === 'POST',
+  );
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page.getByRole('main').getByRole('alert')).toContainText(
-    'Сохранение замеров запрещено',
-  );
-  await expect(page.getByRole('main').getByRole('alert')).not.toContainText(
-    'Проверьте',
-  );
-  await expect(
-    page.getByRole('main').getByLabel('Вес (кг)', { exact: true }),
-  ).toHaveValue('72.125');
-  await expect(page.getByRole('main').getByLabel('Дата замера')).toHaveValue(
-    '2026-10-11',
-  );
-  await expect(
-    page.getByRole('main').getByLabel('Заметка', { exact: true }),
-  ).toHaveValue('Preserved synthetic draft');
+  expect((await denied).status()).toBe(403);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            const request = indexedDB.open('yazio-offline-writes-v1', 1);
+            request.onsuccess = () => {
+              const db = request.result;
+              const tx = db.transaction('state', 'readonly');
+              const get = tx.objectStore('state').get('current');
+              get.onsuccess = () =>
+                resolve(
+                  get.result.operations.find(
+                    (item: {
+                      operation: { payload: { data: { note: string } } };
+                    }) =>
+                      item.operation.payload.data.note ===
+                      'Preserved synthetic draft',
+                  ),
+                );
+              tx.oncomplete = () => db.close();
+            };
+          }),
+      ),
+    )
+    .toMatchObject({
+      status: 'review',
+      reason: 'access',
+      operation: {
+        payload: {
+          kind: 'measurement',
+          data: {
+            measuredAt: '2026-10-11',
+            note: 'Preserved synthetic draft',
+            values: [{ metric: 'weight', value: '72.125', unit: 'kg' }],
+          },
+        },
+      },
+    });
 });
 
 test('granted trainer reads measurements without write controls and cannot write directly', async ({

@@ -30,7 +30,10 @@ import {
 import { MeasurementPrecisionWarnings } from './precision-warnings';
 import type { WeightHistory } from '@/contracts/health';
 import { writeMessages } from '@/config/offline-write-messages';
-import { saveDeviceWrite, syncDeviceWrites } from '@/lib/offline-write-client';
+import {
+  saveDeviceWrite,
+  synchronizeDeviceWrite,
+} from '@/lib/offline-write-client';
 import { formatDecimal } from '@/lib/number-display';
 function responseError(status: number) {
   return status === 401
@@ -224,12 +227,12 @@ export function MeasurementsPanel({
           editing,
           base,
         );
+        await synchronizeDeviceWrite(operation);
         setItems((old) => [
           ...old.filter((item) => item.id !== operation.recordId),
           { ...parsed.data, id: operation.recordId, ownerId, sync: [] },
         ]);
         reset();
-        void syncDeviceWrites().catch(() => {});
         return;
       }
       const r = await fetch(
