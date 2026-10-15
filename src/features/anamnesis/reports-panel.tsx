@@ -167,7 +167,7 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
   }, [query, revision, refresh, readRefresh]);
   useEffect(() => {
     const controller = new AbortController();
-    if (!markerIds.length) return;
+    if (!online || !markerIds.length) return;
     void fetchAnamnesis<MedicalReportDateOption[]>(
       `/api/anamnesis/reports/dates?${query}`,
       {
@@ -203,7 +203,7 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
       });
     return () => controller.abort();
     // Date options depend on marker selection, not on the selected dates.
-  }, [markerIds, query, revision, datesKey]);
+  }, [markerIds, query, revision, datesKey, online]);
   useEffect(() => {
     const controller = new AbortController();
     const version = ++generation.current;
@@ -429,12 +429,14 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
             <Button variant="default" onClick={() => setSaved(item.id)}>
               {m.workspace.view}
             </Button>
-            <Button
-              component="a"
-              href={`/api/anamnesis/reports/${item.id}/file?${query}`}
-            >
-              {m.reports.download}
-            </Button>
+            {online && (
+              <Button
+                component="a"
+                href={`/api/anamnesis/reports/${item.id}/file?${query}`}
+              >
+                {m.reports.download}
+              </Button>
+            )}
             <OfflineFile
               id={`medical-report:${item.id}`}
               label={item.filename ?? m.reports.download}

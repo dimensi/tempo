@@ -1,4 +1,5 @@
 'use client';
+import { networkReachable } from '@/lib/network-state';
 import { useSyncExternalStore } from 'react';
 const listeners = new Set<() => void>();
 let version = 0;
@@ -54,7 +55,11 @@ export function interceptOfflineLinks() {
     )
       return;
     // Explicit editor navigation may use Next/server delivery once connectivity is verified.
-    if (navigator.onLine && /\/(?:edit|results|new)$/.test(url.pathname))
+    if (
+      navigator.onLine &&
+      networkReachable() &&
+      /\/(?:edit|results|new)$/.test(url.pathname)
+    )
       return;
     event.preventDefault();
     offlineNavigate(url.href);
