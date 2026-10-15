@@ -124,6 +124,9 @@ test('owned preview negative requests coalesce across remounts, new revision ret
     name: 'Группы мышц',
     exact: true,
   });
+  // Close the exercise popover before targeting the filter underneath it.
+  await input.press('Escape');
+  await expect(option).not.toBeVisible();
   await groups.click();
   await page
     .getByRole('option', { name: 'Demo muscle group', exact: true })
