@@ -6,7 +6,7 @@ export function browserPlan(selection) {
       'workout-videos.spec.ts',
       'transformmate.*spec.ts',
     ],
-    measurements: ['measurements.spec.ts'],
+    measurements: ['measurements.spec.ts', 'steps-goal.spec.ts'],
     analytics: ['analytics.spec.ts'],
     anamnesis: ['anamnesis.spec.ts'],
     reports: ['reports.*spec.ts'],

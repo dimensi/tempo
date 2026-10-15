@@ -76,7 +76,10 @@ test('full keeps genuine auth wait; selected measurements include every mapped s
     targeted.map((run) => run.family),
     ['isolation', 'smoke', 'general'],
   );
-  assert.deepEqual(targeted[2].files, ['measurements.spec.ts']);
+  assert.deepEqual(targeted[2].files, [
+    'measurements.spec.ts',
+    'steps-goal.spec.ts',
+  ]);
 });
 
 for (const path of [

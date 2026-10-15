@@ -1,11 +1,33 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { interceptOfflineLinks, isOfflineRoute } from '@/lib/offline-routing';
+import {
+  interceptOfflineLinks,
+  isOfflineRoute,
+  offlineNavigate,
+} from '@/lib/offline-routing';
 import { reportNetworkResult } from '@/lib/network-state';
+import { purgeOfflineDevice } from '@/lib/offline-device';
+import { ownerConfirmedYazioWeightPolicyVersion } from '@/contracts/yazio-weight-policy';
+
+vi.mock('@/lib/offline-device', () => ({
+  purgeOfflineDevice: vi.fn(async () => {}),
+}));
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.mocked(purgeOfflineDevice).mockClear();
   reportNetworkResult(true);
+});
+
+it('preserves scroll when cached navigation requests it', () => {
+  const pushState = vi.fn();
+  const scrollTo = vi.fn();
+  vi.stubGlobal('location', new URL('https://tempo.test/diary'));
+  vi.stubGlobal('history', { pushState });
+  vi.stubGlobal('window', { scrollTo });
+  offlineNavigate('/diary?date=2026-10-16', false, false);
+  expect(pushState).toHaveBeenCalledOnce();
+  expect(scrollTo).not.toHaveBeenCalled();
 });
 it.each([
   '/',
@@ -59,7 +81,14 @@ it('matches a saved route to its exact URL so ordinary navigation cannot inherit
   expect(isOfflineRoute(null)).toBe(false);
 });
 
-function navigationDouble() {
+function navigationDouble(
+  hasSaved: (url: URL) => boolean | Promise<boolean> = () => false,
+  expectedIdentity?: () => {
+    partition: string;
+    connectionGeneration: string;
+    role: 'OWNER' | 'TRAINER';
+  },
+) {
   let click!: (event: MouseEvent) => void;
   const pushState = vi.fn();
   const navigate = vi.fn();
@@ -76,7 +105,7 @@ function navigationDouble() {
   vi.stubGlobal('location', new URL('https://tempo.test/diary'));
   vi.stubGlobal('history', { pushState });
   vi.stubGlobal('navigator', { onLine: true });
-  const stop = interceptOfflineLinks();
+  const stop = interceptOfflineLinks(hasSaved, undefined, expectedIdentity);
   return {
     pushState,
     navigate,
@@ -98,25 +127,173 @@ function navigationDouble() {
     },
   };
 }
-it('keeps the current screen until an actual response allows live navigation', async () => {
-  const request = vi.fn(async () => new Response(null, { status: 503 }));
-  vi.stubGlobal('fetch', request);
-  const env = navigationDouble();
-  env.click('/');
+it('shows a saved destination before identity and RSC settle', async () => {
+  let release!: (response: Response) => void;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    ),
+  );
+  const env = navigationDouble((url) => url.pathname === '/analytics');
+  env.click('/analytics');
+  expect(env.pushState).toHaveBeenCalledWith(
+    { tempoOfflineRoute: '/analytics' },
+    '',
+    '/analytics',
+  );
   expect(env.navigate).not.toHaveBeenCalled();
-  await vi.waitFor(() => expect(env.navigate).toHaveBeenCalledWith('/'));
-  expect(env.pushState).not.toHaveBeenCalled();
+
+  release(new Response('{}'));
+  await vi.waitFor(() =>
+    expect(env.navigate).toHaveBeenCalledWith('/analytics'),
+  );
   env.stop();
 });
-it('opens saved data when onLine stays true and the transport never settles', async () => {
-  vi.useFakeTimers();
+it('shows an asynchronously restored destination while identity remains stalled', async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => new Promise<Response>(() => {})),
   );
+  const restored = Promise.withResolvers<boolean>();
+  const env = navigationDouble(() => restored.promise);
+  env.click('/anamnesis');
+  expect(env.pushState).not.toHaveBeenCalled();
+  restored.resolve(true);
+  await vi.waitFor(() => expect(env.pushState).toHaveBeenCalledOnce());
+  expect(env.navigate).not.toHaveBeenCalled();
+  env.stop();
+});
+it.each([401, 403, 409])(
+  'does not resume live navigation after identity denial %s',
+  async (status) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status })),
+    );
+    const env = navigationDouble(() => true);
+    env.click('/analytics');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(env.pushState).toHaveBeenCalledOnce();
+    expect(env.navigate).not.toHaveBeenCalled();
+    if (status === 409)
+      await vi.waitFor(() => expect(purgeOfflineDevice).toHaveBeenCalledOnce());
+    else expect(purgeOfflineDevice).not.toHaveBeenCalled();
+    env.stop();
+  },
+);
+it('resumes a verified captured link without replaying its click', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response('{}')),
+  );
+  const resumeVerified = vi.fn();
+  let click!: (event: MouseEvent) => void;
+  const replay = vi.fn();
+  vi.stubGlobal('document', {
+    addEventListener: (_: string, fn: typeof click) => {
+      click = fn;
+    },
+    removeEventListener: vi.fn(),
+  });
+  vi.stubGlobal(
+    'window',
+    Object.assign(new EventTarget(), { scrollTo: vi.fn() }),
+  );
+  vi.stubGlobal('location', new URL('https://tempo.test/diary'));
+  vi.stubGlobal('history', { pushState: vi.fn() });
+  vi.stubGlobal('navigator', { onLine: true });
+  const stop = interceptOfflineLinks(() => true, resumeVerified);
+  click({
+    button: 0,
+    target: {
+      closest: () => ({
+        href: 'https://tempo.test/anamnesis',
+        dataset: { tempoReadLink: 'true' },
+        click: replay,
+      }),
+    },
+    preventDefault: vi.fn(),
+  } as unknown as MouseEvent);
+  await vi.waitFor(() =>
+    expect(resumeVerified).toHaveBeenCalledWith(
+      new URL('https://tempo.test/anamnesis'),
+    ),
+  );
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(replay).not.toHaveBeenCalled();
+  stop();
+});
+it('purges instead of resuming when a successful identity belongs to another fence', async () => {
+  const previous = {
+    partition: 'a'.repeat(43),
+    connectionGeneration: 'b'.repeat(43),
+    role: 'OWNER' as const,
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      Response.json({
+        contractVersion: 2,
+        weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
+        partition: 'c'.repeat(43),
+        connectionGeneration: 'd'.repeat(43),
+        role: 'OWNER',
+        serverNow: '2026-10-16T12:00:00.000Z',
+        sessionExpiresAt: '2026-10-16T13:00:00.000Z',
+        expiresAt: '2026-10-16T13:00:00.000Z',
+      }),
+    ),
+  );
+  const env = navigationDouble(
+    () => true,
+    () => previous,
+  );
+  env.click('/analytics');
+  await vi.waitFor(() => expect(purgeOfflineDevice).toHaveBeenCalledOnce());
+  expect(env.navigate).not.toHaveBeenCalled();
+  env.stop();
+});
+it('leaves an ordinary online link alone when no copy is saved', () => {
+  const request = vi.fn(async () => new Response(null, { status: 503 }));
+  vi.stubGlobal('fetch', request);
   const env = navigationDouble();
+  const preventDefault = env.click('/');
+  expect(preventDefault).not.toHaveBeenCalled();
+  expect(env.navigate).not.toHaveBeenCalled();
+  expect(request).not.toHaveBeenCalled();
+  expect(env.pushState).not.toHaveBeenCalled();
+  env.stop();
+});
+it('cancels an older saved-route probe before yielding a newer unsaved link', () => {
+  const requests: Array<{ signal?: AbortSignal }> = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((_input, init) => {
+      requests.push(init ?? {});
+      return new Promise<Response>(() => {});
+    }),
+  );
+  let saved = true;
+  const env = navigationDouble(() => saved);
+  env.click('/analytics');
+  saved = false;
+  const preventDefault = env.click('/diary?date=2026-10-16');
+  expect(preventDefault).not.toHaveBeenCalled();
+  expect(requests[0]?.signal?.aborted).toBe(true);
+  env.stop();
+});
+it('opens saved data while onLine stays true and the identity probe never settles', () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Promise<Response>(() => {})),
+  );
+  const env = navigationDouble(() => true);
   env.click('/');
-  await vi.advanceTimersByTimeAsync(2001);
   expect(env.navigate).not.toHaveBeenCalled();
   expect(env.pushState).toHaveBeenCalledWith(
     { tempoOfflineRoute: '/' },
@@ -131,7 +308,7 @@ it('only the latest navigation can commit after slow responses', async () => {
     'fetch',
     vi.fn(() => new Promise<Response>((resolve) => releases.push(resolve))),
   );
-  const env = navigationDouble();
+  const env = navigationDouble(() => true);
   env.click('/');
   env.click('/analytics');
   releases[1]!(new Response('{}'));
@@ -141,7 +318,7 @@ it('only the latest navigation can commit after slow responses', async () => {
   releases[0]!(new Response('{}'));
   await Promise.resolve();
   expect(env.navigate).toHaveBeenCalledTimes(1);
-  expect(env.pushState).not.toHaveBeenCalled();
+  expect(env.pushState).toHaveBeenCalledTimes(2);
   env.stop();
 });
 it('leaves hash, modified clicks and prevented events alone', () => {
@@ -165,13 +342,13 @@ it('Back cancels a pending probe so its response cannot navigate forward again',
         }),
     ),
   );
-  const env = navigationDouble();
+  const env = navigationDouble(() => true);
   env.click('/');
   window.dispatchEvent(new Event('popstate'));
   release(new Response('{}'));
   await Promise.resolve();
   await Promise.resolve();
   expect(env.navigate).not.toHaveBeenCalled();
-  expect(env.pushState).not.toHaveBeenCalled();
+  expect(env.pushState).toHaveBeenCalledOnce();
   env.stop();
 });

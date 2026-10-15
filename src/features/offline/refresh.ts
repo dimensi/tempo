@@ -1,4 +1,4 @@
-import { concealOfflineContent } from '@/lib/offline-device';
+import { concealOfflineContentForPageHide } from '@/lib/offline-device';
 import type { OfflineController } from '@/lib/offline-controller';
 import { networkReachable } from '@/lib/network-state';
 export function attachOfflineRefresh(controller: OfflineController) {
@@ -7,7 +7,6 @@ export function attachOfflineRefresh(controller: OfflineController) {
   let lastSourceSave = 0;
   let scheduled: ReturnType<typeof setTimeout> | undefined;
   const refresh = () => {
-    concealOfflineContent();
     clearTimeout(scheduled);
     scheduled = setTimeout(
       () => void controller.activate(navigator.onLine, true),
@@ -19,13 +18,16 @@ export function attachOfflineRefresh(controller: OfflineController) {
     else hide();
   };
   const hide = () => {
-    concealOfflineContent();
     controller.suspend();
     clearTimeout(scheduled);
   };
-  const offline = () => {
+  const pageHide = () => {
+    concealOfflineContentForPageHide();
     hide();
-    refresh();
+  };
+  const offline = () => {
+    clearTimeout(scheduled);
+    void controller.activate(false, true);
   };
   const localNavigation = () => {
     clearTimeout(scheduled);
@@ -63,7 +65,7 @@ export function attachOfflineRefresh(controller: OfflineController) {
   window.addEventListener('tempo:offline-navigation', localNavigation);
   window.addEventListener('focus', refresh);
   window.addEventListener('pageshow', refresh);
-  window.addEventListener('pagehide', hide);
+  window.addEventListener('pagehide', pageHide);
   document.addEventListener('visibilitychange', visible);
   const interval = setInterval(() => {
     if (document.visibilityState === 'visible')
@@ -80,7 +82,7 @@ export function attachOfflineRefresh(controller: OfflineController) {
     window.removeEventListener('tempo:offline-navigation', localNavigation);
     window.removeEventListener('focus', refresh);
     window.removeEventListener('pageshow', refresh);
-    window.removeEventListener('pagehide', hide);
+    window.removeEventListener('pagehide', pageHide);
     document.removeEventListener('visibilitychange', visible);
   };
 }

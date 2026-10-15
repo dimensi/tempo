@@ -32,6 +32,7 @@ import {
 } from '@/contracts/workouts';
 import { today } from './forms';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { requestReadNavigation } from '@/components/shared/read-link';
 import { z } from 'zod';
 import { workoutTitle } from '@/lib/workout-title';
 import { DateNavigation } from '@/components/shared/date-navigation';
@@ -158,8 +159,12 @@ function ScopedWorkoutsDashboard({
   const searchParams = useSearchParams();
   const selectedDate = z.iso.date().safeParse(searchParams.get('date'));
   const date = selectedDate.success ? selectedDate.data : today();
-  const setDate = (value: string) =>
-    router.replace(`/workouts?date=${value}`, { scroll: false });
+  const setDate = (value: string) => {
+    const href = `/workouts?date=${value}`;
+    requestReadNavigation(href, { replace: true, scroll: false }, () =>
+      router.replace(href, { scroll: false }),
+    );
+  };
   const [copy, setCopy] = useState<{
     plan: WorkoutPlan;
     workout: PlannedWorkout;

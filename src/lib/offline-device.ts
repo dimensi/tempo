@@ -112,6 +112,7 @@ interface DeviceGate {
 }
 let memoryBlocked = false;
 let pendingDeviceMutations = 0;
+let pageRestorePending = false;
 function hasMutationIntent(storage = browserGateStorage()) {
   if (pendingDeviceMutations) return true;
   if (!storage) throw new OfflineStorageError('unavailable');
@@ -166,6 +167,13 @@ export function concealOfflineContent() {
     ))
       node.hidden = true;
 }
+export function concealOfflineContentForPageHide() {
+  pageRestorePending = true;
+  concealOfflineContent();
+}
+export function isOfflinePageRestorePending() {
+  return pageRestorePending;
+}
 export function revealOfflineContent(
   fence: CacheFence,
   selector = '[data-offline-private]',
@@ -181,6 +189,7 @@ export function revealOfflineContent(
       return;
     for (const node of document.querySelectorAll<HTMLElement>(selector))
       node.hidden = false;
+    if (selector === '[data-offline-private]') pageRestorePending = false;
   } catch {
     concealOfflineContent();
   }

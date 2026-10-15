@@ -26,6 +26,7 @@ const testAliases = {
   'overview-nutrition-chart.spec.ts': ['nutrition', 'providers'],
   'transformmate-ui.spec.ts': ['workouts', 'providers'],
   'transformmate-connection-form.spec.ts': ['workouts', 'providers'],
+  'steps-goal.spec.ts': ['measurements', 'reports', 'shell'],
 };
 const crosscuttingSpecs = new Set([
   'foundation.spec.ts', // All pages, authentication, logout and role boundaries.

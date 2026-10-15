@@ -12,4 +12,6 @@ Sync is explicitly requested, bounded and serialized per owner in the process. T
 
 Mantine is the only UI system; diary, measurements, workouts and analytics use authorized loaders. Uploads remain private, with no public storage-key or upstream-URL DTOs. The production image includes locked Chromium and a Cyrillic-capable font with PDF runtime smoke validation; a main merge does not establish which revision is deployed.
 
+Saved private reads use the continuous [local-first UI](local-first-ui.md): a fenced browser projection appears before background identity/RSC work, while refresh, connectivity and access remain independent states. Confirmed denial still conceals and purges private data synchronously.
+
 The home preview has its own deployed revision and server-local config. Real authentication and synthetic upstream tests do not establish live YAZIO sync while the token remains unset. See [deployment](../deployment.md) and [YAZIO integration](yazio.md).

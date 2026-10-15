@@ -66,6 +66,7 @@ export function OfflineAnamnesis({ url, owner }: { url: URL; owner: boolean }) {
           ownerId={data.ownerId}
           documentId={decodeURIComponent(document[1])}
           writable={owner}
+          preferSaved
         />
       ) : (
         <AnamnesisWorkspace
