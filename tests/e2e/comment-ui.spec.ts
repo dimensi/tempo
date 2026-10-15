@@ -247,6 +247,9 @@ test('measurement and actual-session comments compose after CRUD with real train
     }
     const stalePanel = trainer.getByTestId(`session-${workoutId}`);
     await stalePanel.getByLabel('Комментарий').fill('Revoked write');
+    await expect(stalePanel.getByLabel('Комментарий')).toHaveValue(
+      'Revoked write',
+    );
     expect(
       (await page.request.delete('/api/trainers', { data: scope })).ok(),
     ).toBe(true);
@@ -280,9 +283,7 @@ test('measurement and actual-session comments compose after CRUD with real train
       trainer.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
     ).toBeVisible();
     await expect(stalePanel).not.toBeVisible();
-    await expect(stalePanel.getByLabel('Комментарий')).toHaveValue(
-      'Revoked write',
-    );
+    await expect(stalePanel.getByLabel('Комментарий')).not.toBeVisible();
     await expect(
       stalePanel.locator('p').filter({ hasText: /^Revoked write$/ }),
     ).toHaveCount(0);

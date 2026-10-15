@@ -801,15 +801,21 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
   const id = await ownerId(page);
   const path = '/workouts/sessions/new?date=2026-10-19';
   await page.goto(path);
-  await page
-    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
-    .fill('Delayed actual');
-  await page
-    .getByRole('option', {
+  const exerciseInput = page.getByRole('combobox', {
+    name: 'Добавить упражнение',
+    exact: true,
+  });
+  await exerciseInput.scrollIntoViewIfNeeded();
+  await exerciseInput.click();
+  await exerciseInput.fill('Delayed actual');
+  await expect(
+    page.getByRole('option', {
       name: 'Добавить вручную: Delayed actual',
       exact: true,
-    })
-    .click();
+    }),
+  ).toBeVisible();
+  await exerciseInput.press('ArrowDown');
+  await exerciseInput.press('Enter');
   const reps = page.getByRole('textbox', { name: /Факт · Повторения/ });
   await reps.fill('6');
   let release!: () => void,
