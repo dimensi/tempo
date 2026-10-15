@@ -504,8 +504,11 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect((await context.request.get(scopedUrl)).status()).toBe(403);
     await trainerPage.reload();
     await expect(
+      trainerPage.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
+    ).toBeVisible();
+    await expect(
       trainerPage.getByRole('button', { name: 'Скачать PDF' }),
-    ).toBeDisabled();
+    ).toHaveCount(0);
   } finally {
     if (trainerId)
       await page.request.delete('/api/trainers', {
