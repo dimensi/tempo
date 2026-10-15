@@ -1,4 +1,6 @@
 'use client';
+import { useReadOnline } from '@/lib/use-read-online';
+import { networkReachable } from '@/lib/network-state';
 import { useState, useSyncExternalStore, useEffect } from 'react';
 import {
   Alert,
@@ -43,6 +45,7 @@ export function YazioSettingsForm({
     account: YazioAccount | null;
   };
 }) {
+  const online = useReadOnline();
   const [status, setStatus] = useState(initial);
   const ready = useSyncExternalStore(
     subscribeToHydration,
@@ -124,6 +127,7 @@ export function YazioSettingsForm({
     };
   }, [ready, status.configured, busy]);
   async function submit(path: string, body: unknown) {
+    if (!navigator.onLine || !networkReachable()) return;
     if (path === '/api/yazio/connect' || path === '/api/yazio/sync') {
       try {
         resolveSyncPeriod(
@@ -220,6 +224,7 @@ export function YazioSettingsForm({
   const startControl = (
     <>
       <TextInput
+        readOnly={!online}
         label={messages.from}
         type="date"
         value={start}
@@ -231,7 +236,7 @@ export function YazioSettingsForm({
           setResult('rangeInvalid');
         }}
         max={today || undefined}
-        disabled={!ready || busy}
+        disabled={!online || !ready || busy}
       />
       <Text size="sm" c="dimmed">
         {messages.today}. {messages.rangeHelp}
@@ -261,15 +266,17 @@ export function YazioSettingsForm({
       >
         <Stack>
           <TextInput
+            readOnly={!online}
             label={messages.email}
             type="email"
             autoComplete="off"
             value={email}
             onChange={(event) => setEmail(event.currentTarget.value)}
             required
-            disabled={!ready || busy || !status.tokenFileConfigured}
+            disabled={!online || !ready || busy || !status.tokenFileConfigured}
           />
           <PasswordInput
+            readOnly={!online}
             label={messages.password}
             autoComplete="off"
             value={password}
@@ -278,7 +285,7 @@ export function YazioSettingsForm({
               'aria-label': messages.passwordVisibility,
             }}
             required
-            disabled={!ready || busy || !status.tokenFileConfigured}
+            disabled={!online || !ready || busy || !status.tokenFileConfigured}
           />
           {startControl}
           <Button
@@ -361,7 +368,7 @@ export function YazioSettingsForm({
               mt="sm"
               color="red"
               variant="light"
-              disabled={!ready || busy}
+              disabled={!online || !ready || busy}
               onClick={() => setDisconnectOpen(true)}
             >
               {messages.disconnect}
@@ -384,6 +391,7 @@ export function YazioSettingsForm({
               </Button>
               <Button
                 color="red"
+                disabled={!online}
                 loading={busy}
                 onClick={() => {
                   setDisconnectOpen(false);
@@ -401,7 +409,7 @@ export function YazioSettingsForm({
         {status.configured && startControl}
         {status.configured && (
           <Button
-            disabled={!ready || busy}
+            disabled={!online || !ready || busy}
             loading={busy}
             onClick={() => void submit('/api/yazio/sync', periodRequest())}
           >
@@ -436,6 +444,7 @@ export function YazioSettingsForm({
                 >
                   <Stack>
                     <Textarea
+                      readOnly={!online}
                       label={messages.token}
                       value={token}
                       onChange={(event) => setToken(event.currentTarget.value)}
@@ -443,12 +452,19 @@ export function YazioSettingsForm({
                       spellCheck={false}
                       minRows={4}
                       required
-                      disabled={!ready || busy || !status.tokenFileConfigured}
+                      disabled={
+                        !online || !ready || busy || !status.tokenFileConfigured
+                      }
                     />
                     <Button
                       type="submit"
                       loading={busy}
-                      disabled={!ready || !status.tokenFileConfigured || !token}
+                      disabled={
+                        !online ||
+                        !ready ||
+                        !status.tokenFileConfigured ||
+                        !token
+                      }
                     >
                       {messages.save}
                     </Button>
@@ -466,18 +482,19 @@ export function YazioSettingsForm({
                 >
                   <Stack>
                     <TextInput
+                      readOnly={!online}
                       label={messages.to}
                       description={messages.today}
                       type="date"
                       value={to}
                       onChange={(event) => setTo(event.currentTarget.value)}
                       max={today || undefined}
-                      disabled={!ready || busy}
+                      disabled={!online || !ready || busy}
                     />
                     <Button
                       type="submit"
                       loading={busy}
-                      disabled={!ready || !status.configured}
+                      disabled={!online || !ready || !status.configured}
                     >
                       {messages.period}
                     </Button>

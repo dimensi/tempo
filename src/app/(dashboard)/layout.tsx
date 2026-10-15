@@ -1,3 +1,4 @@
+import { ReadNavigation } from './read-navigation';
 import { requireSession } from '@/server/auth/guards';
 import { readServerEnv } from '@/server/env';
 import { ApplicationShell } from '@/components/layout/application-shell';
@@ -15,6 +16,7 @@ export default async function DashboardLayout({
   const session = await requireSession();
   return (
     <>
+      <ReadNavigation />
       <OfflineLifecycle role={session.user.role} />
       <OfflineRouteCapture role={session.user.role} />
       <ApplicationShell

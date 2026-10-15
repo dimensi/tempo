@@ -1,4 +1,6 @@
 'use client';
+import { useReadOnline } from '@/lib/use-read-online';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -19,6 +21,8 @@ function TargetCommentsPanel({
   ownerId: string;
   target: CommentTarget;
 }) {
+  const online = useReadOnline();
+  const readRefresh = useReadRefresh();
   const [rows, setRows] = useState<CommentDto[]>([]);
   const [body, setBody] = useState('');
   const [parentId, setParentId] = useState<string>();
@@ -44,7 +48,7 @@ function TargetCommentsPanel({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [ownerId, targetType, targetId]);
+  }, [ownerId, targetType, targetId, readRefresh]);
   async function refresh() {
     const q = new URLSearchParams({ ownerId, type: targetType, targetId });
     const response = await fetch(`/api/comments?${q}`);
@@ -52,6 +56,7 @@ function TargetCommentsPanel({
     setRows(await response.json());
   }
   async function save() {
+    if (!online) return;
     setBusy(true);
     setError(false);
     try {
@@ -129,7 +134,7 @@ function TargetCommentsPanel({
                 <Button
                   mih={44}
                   variant="subtle"
-                  disabled={busy}
+                  disabled={!online || busy}
                   onClick={() => {
                     setParentId(row.id);
                     setEditing(undefined);
@@ -144,7 +149,7 @@ function TargetCommentsPanel({
                   <Button
                     mih={44}
                     variant="subtle"
-                    disabled={busy}
+                    disabled={!online || busy}
                     onClick={() => {
                       setEditing(row.id);
                       setParentId(undefined);
@@ -157,7 +162,7 @@ function TargetCommentsPanel({
                     mih={44}
                     variant="subtle"
                     color="red"
-                    disabled={busy}
+                    disabled={!online || busy}
                     onClick={() => void remove(row.id)}
                   >
                     {m.remove}

@@ -86,6 +86,11 @@ export class OfflineController {
     this.lastVerifiedAt = 0;
     this.set({ ...empty, status: 'disabled' });
   };
+  suspend = () => {
+    this.revision++;
+    this.pending?.abort();
+    this.lastVerifiedAt = 0;
+  };
   private block = () => {
     this.optedIn = false;
     this.invalidate();
@@ -94,7 +99,7 @@ export class OfflineController {
     this.pending?.abort();
     this.pending = new AbortController();
     const revision = ++this.revision;
-    this.set({ ...empty, status });
+    this.set({ ...this.state, status });
     return {
       revision,
       signal: AbortSignal.any([
@@ -476,6 +481,14 @@ export class OfflineController {
       return;
     }
     if (
+      error instanceof OfflineStorageError &&
+      ['quota', 'unavailable'].includes(error.reason) &&
+      this.state.bundle
+    ) {
+      this.set({ ...this.state, status: 'error', error: 'unavailable' });
+      return;
+    }
+    if (
       error instanceof OfflineStorageError ||
       !(error instanceof OfflineReadError)
     ) {
@@ -510,6 +523,9 @@ export class OfflineController {
       url.origin !== location.origin ||
       !(
         url.pathname === '/api/reports' ||
+        /^\/api\/anamnesis\/(?:documents|reports)\/[^/]+\/file$/.test(
+          url.pathname,
+        ) ||
         /^\/api\/workouts\/(?:videos\/[A-Za-z0-9-]+\/playback|transformmate\/exercises\/[1-9][0-9]*\/video)$/.test(
           url.pathname,
         )

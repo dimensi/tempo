@@ -1,6 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useReadRefresh } from '@/lib/use-read-refresh';
+import { useReadOnline } from '@/lib/use-read-online';
+import { offlineMessages } from '@/config/offline';
 import {
   Alert,
   Button,
@@ -17,6 +20,9 @@ import {
 } from '@/contracts/steps-goal';
 
 export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
+  const online = useReadOnline();
+  const revision = useReadRefresh();
+  const [observed, setObserved] = useState(initial.dailyStepsGoal);
   const [enabled, setEnabled] = useState(initial.dailyStepsGoal !== null);
   const [amount, setAmount] = useState<string | number>(
     initial.dailyStepsGoal ?? 10000,
@@ -33,6 +39,33 @@ export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
         : NaN
     : null;
   const dirty = candidate !== saved;
+  const draft = useRef({ dirty, saved });
+  useEffect(() => {
+    draft.current = { dirty, saved };
+  }, [dirty, saved]);
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/settings/steps-goal')
+      .then(async (response) => {
+        if (!response.ok) return;
+        const current = stepsGoalSchema.parse(
+          await response.json(),
+        ).dailyStepsGoal;
+        if (!active) return;
+        setObserved(current);
+        if (!draft.current.dirty) {
+          setSaved(current);
+          setEnabled(current !== null);
+          setAmount(current ?? 10000);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [revision]);
+  const conflict = observed !== saved;
+
   return (
     <section id="steps-goal" tabIndex={-1} aria-labelledby="steps-goal-title">
       <Stack gap="md" maw={560}>
@@ -45,6 +78,7 @@ export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
         <form
           onSubmit={async (event) => {
             event.preventDefault();
+            if (!online || conflict) return;
             const parsed = stepsGoalSchema.safeParse({
               dailyStepsGoal: candidate,
             });
@@ -69,6 +103,7 @@ export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
                 );
               const result = stepsGoalSchema.parse(await response.json());
               setSaved(result.dailyStepsGoal);
+              setObserved(result.dailyStepsGoal);
               setNotice(result.dailyStepsGoal === null ? m.disabled : m.saved);
             } catch (failure) {
               setError(
@@ -87,6 +122,7 @@ export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
               checked={enabled}
               disabled={pending}
               onChange={(event) => {
+                if (!online) return;
                 setEnabled(event.currentTarget.checked);
                 setNotice(null);
                 setError(null);
@@ -95,6 +131,7 @@ export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
             />
             {enabled && (
               <NumberInput
+                readOnly={!online}
                 label={m.amount}
                 value={amount}
                 onChange={(value) => {
@@ -114,6 +151,9 @@ export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
                 error={error === m.invalid ? error : undefined}
               />
             )}
+            {conflict && (
+              <Alert color="orange">{offlineMessages.draftConflict}</Alert>
+            )}
             {error && error !== m.invalid && (
               <Alert color="red" role="alert">
                 {error}
@@ -127,7 +167,7 @@ export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
             <Button
               type="submit"
               loading={pending}
-              disabled={!dirty}
+              disabled={!dirty || !online || conflict}
               style={{ alignSelf: 'flex-start' }}
             >
               {m.save}

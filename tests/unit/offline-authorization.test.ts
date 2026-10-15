@@ -7,6 +7,8 @@ const state = vi.hoisted(() => ({
   subject: 'owner',
   denied: false,
   expiresAt: new Date(Date.now() + 3600000),
+  markerGrants: ['marker'],
+  documentGrants: ['document'],
   subjectCalls: 0,
   switchAt: Infinity,
   read: vi.fn(() => ({
@@ -28,6 +30,12 @@ function session() {
     session: { id: 'session', expiresAt: state.expiresAt },
   };
 }
+vi.mock('@/server/anamnesis/repository', () => ({
+  anamnesisRepository: () => ({
+    markerGrantIds: () => new Set(state.markerGrants),
+    documentGrantIds: () => new Set(state.documentGrants),
+  }),
+}));
 vi.mock('@/server/auth', () => ({
   getAuth: () => ({ api: { getSession: async () => session() } }),
 }));
@@ -94,6 +102,8 @@ const snapshotUrl = new URL(
 );
 beforeEach(() => {
   Object.assign(state, {
+    markerGrants: ['marker'],
+    documentGrants: ['document'],
     role: 'TRAINER',
     actor: 'trainer',
     subject: 'owner',
@@ -169,4 +179,18 @@ it('a subject switch while local binding awaits fails closed', async () => {
     status: 403,
   });
   expect(state.read).not.toHaveBeenCalled();
+});
+
+it('medical marker/document revocation changes the reader generation while OWNER queue identity stays stable', async () => {
+  const first = await offlineIdentity(headers, identityUrl);
+  state.markerGrants = [];
+  const markerRevoked = await offlineIdentity(headers, identityUrl);
+  expect(markerRevoked.partition).toBe(first.partition);
+  expect(markerRevoked.connectionGeneration).not.toBe(
+    first.connectionGeneration,
+  );
+  state.documentGrants = [];
+  expect(
+    (await offlineIdentity(headers, identityUrl)).connectionGeneration,
+  ).not.toBe(markerRevoked.connectionGeneration);
 });

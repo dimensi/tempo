@@ -47,7 +47,15 @@ export function interceptOfflineLinks() {
     );
     if (!link || link.target || link.download) return;
     const url = new URL(link.href, location.href);
-    if (url.origin !== location.origin) return;
+    if (
+      url.origin !== location.origin ||
+      url.pathname.startsWith('/api/') ||
+      url.pathname === '/login'
+    )
+      return;
+    // Explicit editor navigation may use Next/server delivery once connectivity is verified.
+    if (navigator.onLine && /\/(?:edit|results|new)$/.test(url.pathname))
+      return;
     event.preventDefault();
     offlineNavigate(url.href);
   };

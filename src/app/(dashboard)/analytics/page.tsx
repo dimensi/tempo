@@ -1,10 +1,10 @@
+import { LiveAnalytics } from '@/app/live-analytics';
 import { headers } from 'next/headers';
 import { Alert, Stack, Title } from '@mantine/core';
 import { requireSession } from '@/server/auth/guards';
 import { getAccessibleOwnerId } from '@/server/access/owner';
 import { getAnalytics, AnalyticsError } from '@/server/analytics';
 import {
-  AnalyticsDashboard,
   analyticsMessages as m,
   AnalyticsTimezone,
   PeriodControl,
@@ -46,9 +46,9 @@ export default async function Page({
     );
   }
   return (
-    <AnalyticsDashboard
+    <LiveAnalytics
       key={`${data.range.from}:${data.range.to}:${data.timezone}`}
-      data={data}
+      initial={data}
       navigationSlot={
         <PeriodControl
           range={data.range}

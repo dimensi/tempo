@@ -1,9 +1,14 @@
 'use client';
+import { useReadResource } from '@/lib/use-read-resource';
+import { medicalDocumentSchema } from '@/contracts/anamnesis';
+import { z } from 'zod';
+import { useReadOnline } from '@/lib/use-read-online';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 
 import { ReviewEditor } from './review-editor';
 import { notifyAnamnesisChanged, useAnamnesisRevision } from './refresh';
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { ReadLink as Link } from '@/components/shared/read-link';
 import {
   Alert,
   Button,
@@ -25,6 +30,8 @@ export function DocumentsPanel({
   ownerId: string;
   writable: boolean;
 }) {
+  const online = useReadOnline();
+  const readRefresh = useReadRefresh();
   const revision = useAnamnesisRevision();
   const previousJobs = useRef(new Map<string, MedicalImportJob>());
   const [pending, setPending] = useState<Record<string, number>>({});
@@ -39,6 +46,14 @@ export function DocumentsPanel({
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<string>();
   const query = ownerIdQuery(ownerId);
+  useReadResource(
+    `/api/anamnesis/documents?${query}`,
+    (value) => z.array(medicalDocumentSchema).parse(value),
+    (value) => {
+      setItems(value);
+      setLoading(false);
+    },
+  );
 
   useEffect(() => {
     let active = true;
@@ -64,9 +79,10 @@ export function DocumentsPanel({
     return () => {
       active = false;
     };
-  }, [query, revision]);
+  }, [query, revision, readRefresh]);
 
   useEffect(() => {
+    if (!online) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
@@ -100,10 +116,10 @@ export function DocumentsPanel({
       active = false;
       clearTimeout(timer);
     };
-  }, [query, revision]);
+  }, [query, revision, online]);
 
   useEffect(() => {
-    if (!writable) return;
+    if (!writable || !online) return;
     const controller = new AbortController();
     void fetchAnamnesis<Array<{ review: { documentId: string } }>>(
       `/api/anamnesis/reviews?${query}`,
@@ -121,10 +137,10 @@ export function DocumentsPanel({
         if (!controller.signal.aborted) setError(m.errors.load);
       });
     return () => controller.abort();
-  }, [query, revision, writable]);
+  }, [query, revision, writable, online]);
 
   async function upload() {
-    if (!file) return;
+    if (!file || !online) return;
     setBusy(true);
     setError(undefined);
     setNotice(undefined);

@@ -139,7 +139,7 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
         async () => {
           await page.addScriptTag({ content: harness });
           return page.evaluate(async () => {
-            const request = indexedDB.open('yazio-offline-read-v1', 2);
+            const request = indexedDB.open('yazio-offline-read-v1', 3);
             return new Promise((resolve) => {
               request.onsuccess = () => {
                 const db = request.result;
@@ -451,7 +451,7 @@ test('old workout detail bookmark without a query does not bypass the rolling re
     await expect
       .poll(() =>
         page.evaluate(async () => {
-          const request = indexedDB.open('yazio-offline-read-v1', 2);
+          const request = indexedDB.open('yazio-offline-read-v1', 3);
           return new Promise((resolve) => {
             request.onsuccess = () => {
               const db = request.result;

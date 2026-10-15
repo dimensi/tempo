@@ -3,6 +3,7 @@ import {
   useEffect,
   useLayoutEffect,
   useState,
+  useRef,
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
@@ -25,7 +26,6 @@ import {
   offlineNavigate,
   useOfflineLocation,
 } from '@/features/offline';
-import { syncDeviceWrites } from '@/lib/offline-write-client';
 import {
   OfflineSection,
   OfflineComments,
@@ -33,16 +33,11 @@ import {
   OfflineFiles,
 } from './offline-sections';
 import { savedDiaryDay } from './offline-model';
-import { recoverOnlineRoute } from '@/lib/offline-recovery';
+import { reconnectReads } from '@/lib/offline-reconnect';
 import { networkStatusEvent } from '@/lib/network-state';
 import { revealOfflineContent } from '@/lib/offline-device';
 import { workoutTitle } from '@/lib/workout-title';
 import type { OfflineSnapshot } from '@/contracts/offline';
-function reopenOnlineRoute() {
-  location.replace(
-    location.pathname === '/offline/index.html' ? '/' : location.href,
-  );
-}
 function OfflineRouteContent() {
   const url = useOfflineLocation();
   const controller = getOfflineController();
@@ -63,10 +58,6 @@ function OfflineRouteContent() {
           ),
         )
       : [];
-  useEffect(() => {
-    if (state.error === 'denied' && navigator.onLine)
-      location.replace('/login');
-  }, [state.error]);
   useLayoutEffect(() => {
     if (state.bundle) revealOfflineContent(state.bundle.fence);
   }, [state]);
@@ -280,14 +271,20 @@ function OfflineRouteContent() {
   return (
     <Stack gap="lg">
       <OfflineReadStatus offlineMode />
-      {state.error && <Alert color="orange">{m[state.error]}</Alert>}
+      {state.error && (
+        <Alert color="orange">
+          {m[state.error]}
+          {state.error === 'denied' && <a href="/login">{m.signInAgain}</a>}
+        </Alert>
+      )}
       {(pathname === '/workouts' || pathname === '/measurements') && (
         <OfflineWrites
           key={pathname}
           kind={pathname === '/workouts' ? 'workout' : 'measurement'}
         />
       )}
-      {state.status === 'checking' || state.status === 'saving' ? (
+      {!snapshot &&
+      (state.status === 'checking' || state.status === 'saving') ? (
         <Text role="status">{m.checking}</Text>
       ) : snapshot ? (
         <div data-offline-private hidden>
@@ -314,9 +311,7 @@ function OfflineReadStatus({ offlineMode = false }: { offlineMode?: boolean }) {
     return () => clearInterval(timer);
   }, []);
   const retry = async () => {
-    if (offlineMode && (await recoverOnlineRoute(location.href, controller)))
-      reopenOnlineRoute();
-    else if (!offlineMode) await controller.activate(true, true);
+    await reconnectReads();
   };
   return (
     <Stack gap={4}>
@@ -504,11 +499,8 @@ export function OfflineApplication({ brandSrc }: { brandSrc: string }) {
     controller.getServerSnapshot,
   );
   useEffect(() => {
-    const reconnect = async () => {
-      if (await recoverOnlineRoute(location.href, controller)) {
-        await syncDeviceWrites().catch(() => {});
-        reopenOnlineRoute();
-      }
+    const reconnect = () => {
+      void reconnectReads();
     };
     window.addEventListener('online', reconnect);
     return () => window.removeEventListener('online', reconnect);
@@ -534,59 +526,85 @@ export function OfflineBoundary({
   children: ReactNode;
   role: string;
 }) {
-  const [disconnected, setOffline] = useState(false);
-  const controller = getOfflineController();
-  const state = useSyncExternalStore(
-    controller.subscribe,
-    controller.getSnapshot,
-    controller.getServerSnapshot,
-  );
-  const offline = disconnected || state.status === 'offline';
+  // The mounted Next screen owns its form state. Connectivity must never replace it.
+  const url = useOfflineLocation();
+  const [mounted, setMounted] = useState(() => ({
+    children,
+    href:
+      typeof location === 'undefined'
+        ? null
+        : location.pathname + location.search,
+  }));
+  if (mounted.children !== children)
+    setMounted({
+      children,
+      href:
+        typeof location === 'undefined'
+          ? null
+          : location.pathname + location.search,
+    });
+  const current = url ? url.pathname + url.search : null;
+  const [offline, setOffline] = useState(false);
+  const [denied, setDenied] = useState(false);
+  const verifiedPartition = useRef<string | null>(null);
   useEffect(() => {
-    let verifying = false;
-    const lost = () => {
-      setOffline(true);
-      void getOfflineController().activate(false);
-    };
-    const connected = async () => {
-      if (!offline || verifying) return;
-      verifying = true;
-      const recovered = await recoverOnlineRoute(location.href, controller);
-      verifying = false;
-      if (recovered) reopenOnlineRoute();
+    const blocked = () => setDenied(true);
+    const verified = getOfflineController().subscribe(() => {
+      const state = getOfflineController().getSnapshot();
+      if (state.status === 'ready' && state.bundle) {
+        const partition = state.bundle.fence.partition;
+        if (
+          verifiedPartition.current &&
+          verifiedPartition.current !== partition
+        ) {
+          setDenied(true);
+          return;
+        }
+        verifiedPartition.current = partition;
+        setDenied(false);
+        setOffline(false);
+      } else if (
+        state.error === 'denied' ||
+        (state.status === 'disabled' && verifiedPartition.current)
+      )
+        setDenied(true);
+    });
+    window.addEventListener('tempo:read-access-denied', blocked);
+    const lost = () => setOffline(true);
+    const connected = () => {
+      void reconnectReads().then(() => {
+        if (getOfflineController().getSnapshot().status === 'ready')
+          setOffline(false);
+      });
     };
     const observed = (event: Event) => {
       if (!(event as CustomEvent<boolean>).detail) lost();
-      // Successful responses are reflected by the controller after full scope verification.
     };
     if (!navigator.onLine) lost();
     window.addEventListener('offline', lost);
     window.addEventListener('online', connected);
     window.addEventListener(networkStatusEvent, observed);
     return () => {
+      verified();
+      window.removeEventListener('tempo:read-access-denied', blocked);
       window.removeEventListener('offline', lost);
       window.removeEventListener('online', connected);
       window.removeEventListener(networkStatusEvent, observed);
     };
-  }, [offline, controller]);
-  useEffect(() => (offline ? interceptOfflineLinks() : undefined), [offline]);
+  }, []);
+  const showingSavedRoute = current !== null && mounted.href !== current;
   useEffect(
-    () =>
-      controller.subscribe(() => {
-        if (controller.getSnapshot().status === 'offline') setOffline(true);
-      }),
-    [controller],
+    () => (offline || showingSavedRoute ? interceptOfflineLinks() : undefined),
+    [offline, showingSavedRoute],
   );
-  if (!offline)
-    return (
-      <Stack gap={0}>
-        <OfflineReadStatus />
-        {children}
-      </Stack>
-    );
-  return ['OWNER', 'TRAINER'].includes(role) ? (
-    <OfflineRouteContent />
-  ) : (
-    <Alert>{m.requiresNetwork}</Alert>
+  return (
+    <Stack gap={0}>
+      <OfflineReadStatus />
+      {denied && <Alert>{m.denied}</Alert>}
+      <div hidden={showingSavedRoute || denied}>{children}</div>
+      {showingSavedRoute && !denied && ['OWNER', 'TRAINER'].includes(role) && (
+        <OfflineRouteContent />
+      )}
+    </Stack>
   );
 }

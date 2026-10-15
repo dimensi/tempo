@@ -1,0 +1,170 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+const state = vi.hoisted(() => ({
+  partition: 'owner',
+  generation: 'scope',
+  online: true,
+  disk: new Map<string, unknown>(),
+  listeners: new Set<() => void>(),
+  blocked: () => {},
+}));
+vi.mock('@/lib/offline-controller', () => ({
+  getOfflineController: () => ({
+    getSnapshot: () => ({
+      status: 'ready',
+      bundle: {
+        fence: {
+          partition: state.partition,
+          generation: 1,
+          deviceEpoch: state.generation,
+        },
+        savedAt: 100,
+        snapshot: {
+          partition: state.partition,
+          connectionGeneration: state.generation,
+          role: 'OWNER',
+        },
+      },
+    }),
+    subscribe: (callback: () => void) => {
+      state.listeners.add(callback);
+      return () => state.listeners.delete(callback);
+    },
+  }),
+}));
+vi.mock('@/lib/offline-device', () => ({
+  subscribeOfflineBlocked: (callback: () => void) => {
+    state.blocked = callback;
+    return () => {};
+  },
+  withOfflineCacheLock: async (action: () => Promise<unknown>) => {
+    await action();
+    return 'completed';
+  },
+  OfflineStorage: class {
+    readResources(fence: { partition: string }) {
+      return Promise.resolve(
+        [...state.disk.entries()]
+          .filter(([key]) => key.startsWith(fence.partition + ':'))
+          .map(([, value]) => value),
+      );
+    }
+    writeResource(fence: { partition: string }, record: { key: string }) {
+      state.disk.set(fence.partition + ':' + record.key, record);
+      return Promise.resolve();
+    }
+    removeResource(fence: { partition: string }, key: string) {
+      state.disk.delete(fence.partition + ':' + key);
+      return Promise.resolve();
+    }
+    close() {
+      return Promise.resolve();
+    }
+  },
+}));
+vi.mock('@/lib/network-state', () => ({ reportNetworkResult: vi.fn() }));
+let cleanup: (() => void) | undefined;
+beforeEach(() => {
+  vi.resetModules();
+  state.disk.clear();
+  state.listeners.clear();
+  state.partition = 'owner';
+  state.generation = 'scope';
+  state.online = true;
+  vi.stubGlobal('location', {
+    origin: 'https://tempo.test',
+    href: 'https://tempo.test/',
+  });
+  vi.stubGlobal('navigator', {
+    get onLine() {
+      return state.online;
+    },
+  });
+});
+afterEach(() => {
+  cleanup?.();
+  cleanup = undefined;
+  vi.unstubAllGlobals();
+});
+async function install(fetcher: typeof fetch) {
+  vi.stubGlobal('window', { fetch: fetcher });
+  const reader = await import('@/lib/client-read');
+  cleanup = reader.observeReadResources();
+  return reader;
+}
+const path = '/api/settings/steps-goal';
+it('successful reads populate both tiers and transport failures transparently serve validated data', async () => {
+  const raw = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 7000 }))
+    .mockRejectedValueOnce(new TypeError('offline'));
+  const { clientReads } = await install(raw);
+  expect(await (await window.fetch(path)).json()).toEqual({
+    dailyStepsGoal: 7000,
+  });
+  expect(state.disk.size).toBe(1);
+  const fallback = await window.fetch(path);
+  expect(await fallback.json()).toEqual({ dailyStepsGoal: 7000 });
+  expect(clientReads.snapshot(path)).toMatchObject({
+    source: 'memory',
+    error: 'network',
+  });
+  state.online = false;
+  expect(await (await window.fetch(path)).json()).toEqual({
+    dailyStepsGoal: 7000,
+  });
+  expect(raw).toHaveBeenCalledTimes(2);
+});
+it('one aborted caller does not cancel another reader of the same in-flight resource', async () => {
+  const result = Promise.withResolvers<Response>();
+  const raw = vi.fn<typeof fetch>(() => result.promise);
+  await install(raw);
+  const controller = new AbortController();
+  const first = window.fetch(path, { signal: controller.signal });
+  const rejected = expect(first).rejects.toMatchObject({ name: 'AbortError' });
+  const second = window.fetch(path);
+  await Promise.resolve();
+  await Promise.resolve();
+  controller.abort();
+  result.resolve(Response.json({ dailyStepsGoal: 1234 }));
+  await rejected;
+  expect(await (await second).json()).toEqual({ dailyStepsGoal: 1234 });
+  expect(raw).toHaveBeenCalledOnce();
+});
+it('late responses from another account cannot enter the current memory or disk scope', async () => {
+  const result = Promise.withResolvers<Response>();
+  const raw = vi.fn<typeof fetch>(() => result.promise);
+  const { clientReads } = await install(raw);
+  const first = window.fetch(path);
+  const rejected = expect(first).rejects.toMatchObject({ reason: 'denied' });
+  await Promise.resolve();
+  await Promise.resolve();
+  state.partition = 'other';
+  for (const listener of state.listeners) listener();
+  result.resolve(Response.json({ dailyStepsGoal: 1000 }));
+  await rejected;
+  expect(clientReads.snapshot(path).data).toBeUndefined();
+  expect(state.disk.size).toBe(0);
+});
+it('confirmed access denial is returned as denial and never disguised as an offline copy', async () => {
+  const raw = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 1000 }))
+    .mockResolvedValueOnce(new Response(null, { status: 403 }));
+  const { clientReads } = await install(raw);
+  await window.fetch(path);
+  expect((await window.fetch(path)).status).toBe(403);
+  expect(clientReads.snapshot(path).data).toBeUndefined();
+  expect(state.disk.size).toBe(0);
+});
+it('credentials and responses outside approved schemas are not persisted', async () => {
+  const raw = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json({ dailyStepsGoal: 1000, token: 'synthetic-secret' }),
+    );
+  await install(raw);
+  expect((await window.fetch(path)).status).toBe(200);
+  expect(state.disk.size).toBe(0);
+  state.online = false;
+  await expect(window.fetch(path)).rejects.toBeDefined();
+});

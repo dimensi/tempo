@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useReadRefresh } from '@/lib/use-read-refresh';
+import { nutritionDaySchema } from '@/contracts/nutrition';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Stack } from '@mantine/core';
 import { browserToday } from '@/components/shared/date-navigation-dates';
@@ -26,6 +28,23 @@ export function DiaryClient({
   ...props
 }: DiaryClientProps) {
   const router = useRouter();
+  const refresh = useReadRefresh();
+  const [currentDay, setCurrentDay] = useState(props.day);
+  useEffect(() => {
+    let active = true;
+    void fetch(
+      `/api/nutrition/days/${props.date}?ownerId=${encodeURIComponent(ownerId)}`,
+    )
+      .then(async (response) => {
+        if (!response.ok) return;
+        const value = nutritionDaySchema.parse(await response.json());
+        if (active) setCurrentDay(value);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [ownerId, props.date, refresh]);
   const params = useSearchParams();
   const hasDate =
     params.getAll('date').length === 1 &&
@@ -41,6 +60,7 @@ export function DiaryClient({
   return (
     <DiaryView
       {...props}
+      day={currentDay}
       navigationSlot={
         <Stack gap="sm">
           <DayNavigation key={props.date} date={props.date} />

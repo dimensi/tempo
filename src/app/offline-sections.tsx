@@ -1,4 +1,5 @@
 'use client';
+import { OfflineAnamnesis } from './offline-anamnesis';
 import { useSyncExternalStore } from 'react';
 import { Alert, Button, Stack, Text, TextInput, Title } from '@mantine/core';
 import { stepsGoalMessages } from '@/contracts/steps-goal';
@@ -109,6 +110,16 @@ export function OfflineSection({
         complete={snapshot?.views.catalogComplete ?? false}
       />
     );
+  if (url.pathname === '/anamnesis' || url.pathname.startsWith('/anamnesis/'))
+    return snapshot ? (
+      <OfflineAnamnesis
+        key={`${snapshot.partition}:${snapshot.connectionGeneration}`}
+        url={url}
+        owner={snapshot.role === 'OWNER'}
+      />
+    ) : (
+      unknown
+    );
   if (url.pathname === '/') {
     const data = snapshot && savedOverview(snapshot, today, timezone);
     return (
@@ -181,7 +192,6 @@ export function OfflineSection({
               {m.coverage}: {snapshot.from} — {snapshot.to}. {m.partial}
             </Text>
             <MeasurementsPanel
-              key={snapshot.serverNow}
               ownerId={snapshot.partition}
               writable={false}
               saved={savedMeasurements(snapshot)}

@@ -1,4 +1,8 @@
 'use client';
+import { OfflineFile } from '@/components/shared/offline-file';
+import { useReadOnline } from '@/lib/use-read-online';
+import { offlineMessages } from '@/config/offline';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 
 import { useEffect, useState } from 'react';
 import { Alert, Button, Group, Paper, Stack, Text, Title } from '@mantine/core';
@@ -22,6 +26,8 @@ export function DocumentViewer({
   documentId: string;
   writable: boolean;
 }) {
+  const online = useReadOnline();
+  const readRefresh = useReadRefresh();
   const [document, setDocument] = useState<MedicalDocument>();
   const [sources, setSources] = useState<
     Array<{ observation: MedicalObservation; source: MedicalObservationSource }>
@@ -43,7 +49,9 @@ export function DocumentViewer({
             observation: MedicalObservation;
             sources: MedicalObservationSource[];
           }>
-        >(`/api/anamnesis/reviews?${query}`).catch(() => []);
+        >(`/api/anamnesis/documents/${documentId}/observations?${query}`).catch(
+          () => [],
+        );
         if (active)
           setSources(
             reviews.flatMap((review) =>
@@ -52,14 +60,24 @@ export function DocumentViewer({
                 .map((source) => ({ observation: review.observation, source })),
             ),
           );
-      } catch {
-        if (active) setError(m.errors.load);
+      } catch (cause) {
+        if (active) {
+          if (
+            cause instanceof Error &&
+            'status' in cause &&
+            [401, 403].includes(Number(cause.status))
+          ) {
+            setDocument(undefined);
+            setSources([]);
+          }
+          setError(m.errors.load);
+        }
       }
     })();
     return () => {
       active = false;
     };
-  }, [documentId, query]);
+  }, [documentId, query, readRefresh]);
 
   async function reprocess() {
     setBusy(true);
@@ -76,7 +94,7 @@ export function DocumentViewer({
     }
   }
 
-  if (error)
+  if (error && !document)
     return (
       <Stack data-testid="anamnesis-document-viewer">
         <Title order={1}>{m.documents.title}</Title>
@@ -113,6 +131,7 @@ export function DocumentViewer({
               <Button
                 variant="light"
                 mih={44}
+                disabled={!online}
                 loading={busy}
                 onClick={() => void reprocess()}
               >
@@ -123,6 +142,17 @@ export function DocumentViewer({
         </Paper>
       )}
       {document && (
+        <OfflineFile
+          id={`medical-document:${document.id}`}
+          label={document.filename}
+          kind="pdf"
+          size={document.sizeBytes}
+          href={`/api/anamnesis/documents/${documentId}/file?${query}`}
+          offline={!online}
+        />
+      )}
+      {!online && <Text c="dimmed">{offlineMessages.fileRequiresSave}</Text>}
+      {document && online && (
         <Paper withBorder style={{ height: '70vh' }}>
           <object
             data={`/api/anamnesis/documents/${documentId}/file?${query}`}

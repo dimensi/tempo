@@ -25,6 +25,7 @@ const navigationPaths = new Set([
   '/',
   '/diary',
   '/analytics',
+  '/anamnesis',
   '/measurements',
   '/workouts',
   '/workouts/catalog',
@@ -87,7 +88,11 @@ worker.addEventListener('fetch', (event) => {
         .then((response) => {
           if (response.status === 401 || response.status === 403)
             event.waitUntil(purge());
-          if (response.status >= 500) event.waitUntil(unavailable());
+          if (
+            response.status >= 500 &&
+            /^\/api\/offline\/(?:identity|snapshot)$/.test(url.pathname)
+          )
+            event.waitUntil(unavailable());
           return response;
         })
         .catch((error) => {
@@ -109,6 +114,7 @@ worker.addEventListener('fetch', (event) => {
   if (
     request.mode === 'navigate' &&
     (navigationPaths.has(url.pathname) ||
+      /^\/anamnesis\/(?:markers|documents)\/[^/]+$/.test(url.pathname) ||
       /^\/workouts\/(?:plans\/[A-Za-z0-9_%~-]+\/(?:workouts\/[A-Za-z0-9_%~-]+(?:\/results)?|edit)|sessions\/[A-Za-z0-9_%~-]+(?:\/edit)?|native\/[1-9][0-9]*|links\/[A-Za-z0-9_%~-]+|new)$/.test(
         url.pathname,
       ))
