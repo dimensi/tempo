@@ -112,7 +112,7 @@ test('measurement and actual-session comments compose after CRUD with real train
     await dialog
       .getByRole('button', { name: 'Сохранить', exact: true })
       .click();
-    await expect(page).toHaveURL(/\/workouts\/sessions\//);
+    await expect(page).toHaveURL(/\/workouts\/sessions\/[0-9a-f-]{36}(?:\?|$)/);
     await page.goto('/workouts');
     const data = (
       await (await page.request.get(`/api/workouts?ownerId=${ownerId}`)).json()
