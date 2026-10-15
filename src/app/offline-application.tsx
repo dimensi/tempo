@@ -139,8 +139,6 @@ function OfflineRouteContent() {
         {disabled}
       </Stack>
     );
-  } else if (pathname === '/measurements') {
-    content = <Title order={1}>{m.sectionTitle(pathname)}</Title>;
   } else if (pathname === '/workouts') {
     content = (
       <Stack>

@@ -123,11 +123,15 @@ async function identityContext(headers: Headers, session: Session) {
   const identity: OfflineIdentity = offlineIdentitySchema.parse({
     contractVersion: 2,
     weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
-    partition: hash(secret, 'offline-reader/v2', [
-      session.user.id,
-      session.user.role,
-      ownerId,
-    ]),
+    // OWNER shares the durable write-queue identity; TRAINER remains scoped to its reader and owner.
+    partition:
+      session.user.role === 'OWNER'
+        ? hash(secret, 'offline-owner/v1', [session.user.id])
+        : hash(secret, 'offline-reader/v2', [
+            session.user.id,
+            session.user.role,
+            ownerId,
+          ]),
     // Reader, role, subject and session bind the current access scope.
     connectionGeneration: hash(secret, 'offline-connection/v1', [
       session.user.id,

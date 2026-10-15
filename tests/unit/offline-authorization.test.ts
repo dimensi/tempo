@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { beforeEach, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 const state = vi.hoisted(() => ({
@@ -132,6 +133,11 @@ it('reader, role, current owner and session are partitioned independently', asyn
   state.actor = 'owner';
   const owner = await offlineIdentity(headers, identityUrl);
   expect(owner.partition).not.toBe(trainer.partition);
+  expect(owner.partition).toBe(
+    createHmac('sha256', 'x'.repeat(64))
+      .update(JSON.stringify(['offline-owner/v1', 'owner']))
+      .digest('base64url'),
+  );
   state.role = 'TRAINER';
   state.actor = 'trainer';
   state.subject = 'other-owner';
