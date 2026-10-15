@@ -8,6 +8,8 @@ import type { NutritionUpstream } from '@/server/yazio/adapter';
 import type { yazioHealthRepository } from '@/server/yazio/health-repository';
 import { deduplicateYazioWeights } from '@/server/yazio/health-normalize';
 import { periodDates } from './nutrition-sync';
+import type { DayWork } from '@/server/yazio/sync-progress';
+import { syncReadFailure } from '@/server/yazio/sync-diagnostics';
 
 export async function syncYazioHealthPeriod(
   ownerId: string,
@@ -16,6 +18,7 @@ export async function syncYazioHealthPeriod(
   repository: Pick<ReturnType<typeof yazioHealthRepository>, 'upsert'>,
   assertCurrent: () => void,
   observedAt: string,
+  work?: ReadonlyMap<string, DayWork>,
 ): Promise<HealthSyncResult> {
   const result: HealthSyncResult = {
     completedStepsDates: [],
@@ -26,19 +29,24 @@ export async function syncYazioHealthPeriod(
   };
   const dailySteps: DailySteps[] = [];
   const weights: ImportedWeight[] = [];
-  for (const date of periodDates(period)) {
+  for (const date of work ? work.keys() : periodDates(period)) {
     assertCurrent();
+    const selected = work?.get(date) ?? { steps: true, weight: true };
+    if (!selected.steps && !selected.weight) continue;
+    const started = Date.now();
     let unitContext: string | null = null;
     try {
       const summary = await upstream.healthSummary(date);
       assertCurrent();
-      dailySteps.push(summary.dailySteps);
+      if (selected.steps) dailySteps.push(summary.dailySteps);
       unitContext = summary.unitContext;
-      result.completedStepsDates.push(date);
+      if (selected.steps) result.completedStepsDates.push(date);
     } catch {
       assertCurrent();
-      result.failedStepsDates.push(date);
+      syncReadFailure('steps-summary', date, started);
+      if (selected.steps) result.failedStepsDates.push(date);
     }
+    if (!selected.weight) continue;
     try {
       const weight = await upstream.weight(date, unitContext);
       assertCurrent();
@@ -46,6 +54,7 @@ export async function syncYazioHealthPeriod(
       result.completedWeightDates.push(date);
     } catch {
       assertCurrent();
+      syncReadFailure('weight', date, started);
       result.failedWeightDates.push(date);
     }
   }
@@ -58,6 +67,10 @@ export async function syncYazioHealthPeriod(
         dailySteps,
       },
       observedAt,
+      {
+        steps: result.completedStepsDates,
+        weight: result.completedWeightDates,
+      },
     );
   } catch {
     assertCurrent();

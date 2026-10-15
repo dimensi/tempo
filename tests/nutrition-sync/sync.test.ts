@@ -163,6 +163,7 @@ describe('whole-day synchronization', () => {
       expect(result).toMatchObject({
         state: 'partial',
         completedDates: [date],
+        skippedDates: [],
         failedDates: [],
         photoFailedDates: [date],
       });
@@ -192,6 +193,7 @@ describe('whole-day synchronization', () => {
     expect(result).toMatchObject({
       state: 'partial',
       completedDates: [date],
+      skippedDates: [],
       failedDates: [],
       photoFailedDates: [date],
     });
@@ -212,6 +214,7 @@ describe('whole-day synchronization', () => {
     ).toMatchObject({
       state: 'failed',
       completedDates: [],
+      skippedDates: [],
       failedDates: [date],
     });
     expect(repository.day('owner', date)).toEqual(old);
@@ -344,6 +347,7 @@ describe('whole-day synchronization', () => {
     expect(result).toMatchObject({
       state: 'partial',
       completedDates: [date],
+      skippedDates: [],
       failedDates: [],
       photoFailedDates: [date],
     });
@@ -403,6 +407,7 @@ describe('whole-day synchronization', () => {
     expect(result).toMatchObject({
       state: 'partial',
       completedDates: [date],
+      skippedDates: [],
       failedDates: [],
       photoFailedDates: [date],
     });

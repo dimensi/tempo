@@ -3,6 +3,7 @@ import { sameYazioBodyValue } from '@/lib/yazio-observations';
 import { bodyMetricKeys, type BodyMetric } from '@/contracts/yazio-body';
 import type { BodyUpstream } from '@/server/yazio/body-adapter';
 import type { bodyRepository, BodyJob } from '@/server/yazio/body-repository';
+import { syncReadFailure } from '@/server/yazio/sync-diagnostics';
 const delay = (attempt: number) =>
   Math.min(60 * 60_000, 30_000 * 2 ** Math.min(attempt, 7));
 export async function syncBodyJobs(
@@ -172,19 +173,26 @@ export async function pullBodyDates(
   source: BodyUpstream,
   repo: ReturnType<typeof bodyRepository>,
   assertCurrent: () => Promise<void>,
+  assertPullCurrent: (date: string) => void = () => {},
 ) {
   for (const date of dates) {
+    const started = Date.now();
     await assertCurrent();
+    assertPullCurrent(date);
     try {
       const summary = await source.summary(date);
       await assertCurrent();
-      for (const [metric, key] of Object.entries(bodyMetricKeys))
-        for (const entry of summary[key] ?? []) {
-          await assertCurrent();
-          repo.importEntry(ownerId, epoch, metric as BodyMetric, entry);
-        }
+      assertPullCurrent(date);
+      const entries = Object.entries(bodyMetricKeys).flatMap(([metric, key]) =>
+        (summary[key] ?? []).map((entry) => ({
+          metric: metric as BodyMetric,
+          entry,
+        })),
+      );
+      repo.importDay(ownerId, epoch, date, entries);
     } catch {
       await assertCurrent();
+      syncReadFailure('body', date, started);
     } // Existing local data survives an incomplete read.
   }
 }

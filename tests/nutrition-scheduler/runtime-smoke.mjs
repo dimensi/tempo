@@ -155,6 +155,7 @@ try {
         startedAt: new Date().toISOString(),
         finishedAt: null,
         completedDates: [],
+        skippedDates: [],
         failedDates: [],
         photoFailedDates: [],
       }),

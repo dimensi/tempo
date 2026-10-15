@@ -31,6 +31,7 @@ test('selected-day owner refresh deduplicates, separates photo warnings and igno
     startedAt: null,
     finishedAt: null,
     completedDates: [date],
+    skippedDates: [],
     failedDates: [],
     photoFailedDates: [date],
   };

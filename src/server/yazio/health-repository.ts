@@ -2,6 +2,7 @@ import 'server-only';
 import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
 import { yazioObservationDate } from '@/lib/yazio-observations';
 import { z } from 'zod';
+import { syncProgress } from './sync-progress';
 import { getDatabase } from '@/server/db';
 import {
   yazioDailySteps,
@@ -35,6 +36,7 @@ export function yazioHealthRepository(db = getDatabase().db) {
       ownerId: string,
       batch: { weights: ImportedWeight[]; dailySteps: DailySteps[] },
       observedAt: string,
+      completed?: { steps: string[]; weight: string[] },
     ) {
       const owner = ownerSchema.parse(ownerId);
       const observed = observedAtSchema.parse(observedAt);
@@ -85,6 +87,14 @@ export function yazioHealthRepository(db = getDatabase().db) {
               set: values,
             })
             .run();
+        }
+        // Use the same Drizzle connection/transaction as the imported observations.
+        if (completed) {
+          const progress = syncProgress({ db });
+          for (const date of completed.steps)
+            progress.set(owner, date, { steps: true });
+          for (const date of completed.weight)
+            progress.set(owner, date, { weight: true });
         }
       });
     },

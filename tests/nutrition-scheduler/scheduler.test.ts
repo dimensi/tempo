@@ -19,6 +19,7 @@ import {
 } from '@/server/jobs/nutrition-scheduler';
 import { readServerEnv } from '@/server/env';
 import { nutritionScheduleInputSchema } from '@/contracts/nutrition-schedule';
+import { syncProgress } from '@/server/yazio/sync-progress';
 
 vi.mock('server-only', () => ({}));
 let database: ReturnType<typeof openDatabase>;
@@ -120,6 +121,201 @@ afterEach(() => {
 });
 
 describe('durable owner schedule', () => {
+  function withBody(deps: NutritionSchedulerDependencies) {
+    const bodySync = vi.fn(
+      async (
+        ownerId: string,
+        dates: string[],
+        _epoch: number,
+        assertCurrent: () => void,
+      ) => {
+        for (const date of dates) {
+          assertCurrent();
+          syncProgress(deps.database).set(ownerId, date, { body: true });
+        }
+      },
+    );
+    return {
+      service: createNutritionScheduler({ ...deps, bodySync }),
+      bodySync,
+    };
+  }
+  it('persists empty historical days across reopening and makes no upstream reads for ready history', async () => {
+    const { deps, upstream, repository } = setup();
+    const { service } = withBody(deps);
+    const history = { from: '2026-10-01', to: '2026-10-12' };
+    await service.run('owner', history, {
+      mode: 'manual',
+      timezone: input.timezone,
+    });
+    const old = repository.day('owner', history.from);
+    const reopened = openDatabase(`file:${join(directory, 'test.sqlite')}`);
+    try {
+      const { service: restarted, bodySync } = withBody({
+        ...deps,
+        database: reopened,
+        repository: nutritionRepository(reopened),
+      });
+      vi.clearAllMocks();
+      await vi.advanceTimersByTimeAsync(14400000 - 1);
+      await restarted.tick();
+      expect(upstream.items).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await restarted.tick();
+      for (const method of [
+        'items',
+        'summary',
+        'images',
+        'healthSummary',
+        'weight',
+      ] as const)
+        expect(
+          vi.mocked(upstream[method]).mock.calls.map(([date]) => date),
+        ).toEqual(['2026-10-11', '2026-10-12']);
+      expect(bodySync.mock.calls[0]![1]).toEqual(['2026-10-11', '2026-10-12']);
+      expect(repository.day('owner', history.from)).toEqual(old);
+      vi.clearAllMocks();
+      const result = await restarted.run(
+        'owner',
+        { from: '2026-10-01', to: '2026-10-02' },
+        { mode: 'manual', timezone: input.timezone },
+      );
+      expect(result).toMatchObject({
+        state: 'completed',
+        completedDates: [],
+        skippedDates: ['2026-10-01', '2026-10-02'],
+      });
+      for (const method of [
+        'items',
+        'summary',
+        'images',
+        'healthSummary',
+        'weight',
+      ] as const)
+        expect(upstream[method]).not.toHaveBeenCalled();
+      expect(bodySync.mock.calls[0]![1]).toEqual([]);
+      await restarted.run(
+        'owner',
+        { from: history.from, to: history.from },
+        { mode: 'day-refresh', timezone: input.timezone },
+      );
+      expect(upstream.items).toHaveBeenCalledWith(history.from);
+      expect(upstream.images).toHaveBeenCalledWith(history.from);
+    } finally {
+      reopened.sqlite.close();
+    }
+  });
+  it('repairs historical photos without rereading food or downloading a successful unchanged slot', async () => {
+    const images = {
+      fetch: vi.fn(async (url: string) => {
+        if (url.endsWith('dinner.jpg'))
+          throw new Error('synthetic unavailable');
+        return { bytes: Buffer.from([255, 216, 255, 0]), mime: 'image/jpeg' };
+      }),
+      store: vi.fn(async () => ({
+        storageKey: 'a'.repeat(64),
+        contentHash: 'a'.repeat(64),
+      })),
+    };
+    const { deps, upstream, repository } = setup(images);
+    const { service, bodySync } = withBody(deps);
+    const date = '2026-10-01';
+    const history = { from: date, to: date };
+    vi.mocked(upstream.images).mockResolvedValue({
+      lunch: 'https://images.yazio-cdn.com/lunch.jpg',
+      dinner: 'https://images.yazio-cdn.com/dinner.jpg',
+    });
+    await service.run('owner', history, {
+      mode: 'manual',
+      timezone: input.timezone,
+    });
+    const old = repository.day('owner', date);
+    expect(syncProgress(database).get('owner', date)).toMatchObject({
+      food: true,
+      photos: false,
+      steps: true,
+      weight: true,
+      body: true,
+    });
+    vi.clearAllMocks();
+    vi.mocked(upstream.images).mockRejectedValueOnce(
+      new Error('synthetic metadata unavailable'),
+    );
+    const metadataFailure = await service.run('owner', history, {
+      mode: 'manual',
+      timezone: input.timezone,
+    });
+    expect(metadataFailure).toMatchObject({
+      state: 'partial',
+      failedDates: [],
+      skippedDates: [date],
+      photoFailedDates: [date],
+    });
+    expect(upstream.items).not.toHaveBeenCalled();
+    expect(images.fetch).not.toHaveBeenCalled();
+    expect(repository.day('owner', date)).toEqual(old);
+    expect(syncProgress(database).get('owner', date)).toMatchObject({
+      food: true,
+      photos: false,
+    });
+    vi.clearAllMocks();
+    images.fetch.mockResolvedValue({
+      bytes: Buffer.from([255, 216, 255, 0]),
+      mime: 'image/jpeg',
+    });
+    const repaired = await service.run('owner', history, {
+      mode: 'manual',
+      timezone: input.timezone,
+    });
+    expect(repaired).toMatchObject({
+      state: 'completed',
+      completedDates: [],
+      skippedDates: [date],
+      photoFailedDates: [],
+    });
+    expect(upstream.items).not.toHaveBeenCalled();
+    expect(upstream.summary).not.toHaveBeenCalled();
+    expect(upstream.healthSummary).not.toHaveBeenCalled();
+    expect(upstream.weight).not.toHaveBeenCalled();
+    expect(bodySync.mock.calls[0]![1]).toEqual([]);
+    expect(images.fetch).toHaveBeenCalledExactlyOnceWith(
+      'https://images.yazio-cdn.com/dinner.jpg',
+    );
+    expect(repository.day('owner', date)).toEqual(old);
+    expect(syncProgress(database).get('owner', date)!.photos).toBe(true);
+  });
+  it('retries failed historical steps independently of completed food, weight and body', async () => {
+    const { deps, upstream } = setup();
+    const { service, bodySync } = withBody(deps);
+    const history = { from: '2026-10-01', to: '2026-10-01' };
+    vi.mocked(upstream.healthSummary).mockRejectedValueOnce(
+      new Error('synthetic unavailable steps'),
+    );
+    await service.run('owner', history, {
+      mode: 'manual',
+      timezone: input.timezone,
+    });
+    expect(syncProgress(database).get('owner', history.from)).toMatchObject({
+      food: true,
+      photos: true,
+      steps: false,
+      weight: true,
+      body: true,
+    });
+    vi.clearAllMocks();
+    await service.run('owner', history, {
+      mode: 'manual',
+      timezone: input.timezone,
+    });
+    expect(upstream.healthSummary).toHaveBeenCalledExactlyOnceWith(
+      history.from,
+    );
+    expect(upstream.weight).not.toHaveBeenCalled();
+    expect(upstream.items).not.toHaveBeenCalled();
+    expect(upstream.images).not.toHaveBeenCalled();
+    expect(bodySync.mock.calls[0]![1]).toEqual([]);
+    expect(syncProgress(database).get('owner', history.from)!.steps).toBe(true);
+  });
   it('refreshes exactly the selected day with a durable lease without changing history, timezone or enablement', async () => {
     const { service, deps, upstream } = setup();
     service.enable('owner', input);
@@ -147,6 +343,7 @@ describe('durable owner schedule', () => {
     expect(await running).toMatchObject({
       state: 'completed',
       completedDates: [period.from],
+      skippedDates: [],
     });
     expect(upstream.items).toHaveBeenCalledTimes(1);
     expect(service.status('owner')).toMatchObject({
@@ -178,7 +375,7 @@ describe('durable owner schedule', () => {
       timezone: 'UTC',
     });
   });
-  it('persists the latest explicit manual start after narrowing history and never overwrites it hourly', async () => {
+  it('persists the latest explicit manual start after narrowing history and never overwrites it automatic', async () => {
     const { service, deps, upstream } = setup();
     await service.run(
       'owner',
@@ -193,14 +390,14 @@ describe('durable owner schedule', () => {
     const reloaded = createNutritionScheduler(deps);
     expect(reloaded.status('owner').initialFrom).toBe('2026-10-12');
     vi.mocked(upstream.items).mockClear();
-    await vi.advanceTimersByTimeAsync(3600000);
+    await vi.advanceTimersByTimeAsync(14400000);
     await reloaded.tick();
     expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
       '2026-10-12',
     ]);
     expect(reloaded.status('owner').initialFrom).toBe('2026-10-12');
   });
-  it('records successful food updates separately from photo warnings with bounded retries', async () => {
+  it('records successful food updates separately from photo warnings with four-hour retries', async () => {
     const images = {
       fetch: vi.fn(async () => ({
         bytes: Buffer.from([255, 216, 255, 0]),
@@ -236,18 +433,19 @@ describe('durable owner schedule', () => {
       timezone: input.timezone,
       initialFrom: '2026-10-12',
     });
-    await vi.advanceTimersByTimeAsync(3600000);
+    await vi.advanceTimersByTimeAsync(14400000);
     for (const [attempt, delay] of [
-      [1, 60000],
-      [2, 300000],
-      [3, 900000],
-      [3, 3600000],
+      [1, 14400000],
+      [2, 14400000],
+      [3, 14400000],
+      [3, 14400000],
     ] as const) {
       const now = Date.now();
       await service.tick();
       expect(repository.status('owner')).toMatchObject({
         state: 'partial',
         completedDates: ['2026-10-12'],
+        skippedDates: [],
         failedDates: [],
         photoFailedDates: ['2026-10-12'],
       });
@@ -276,7 +474,7 @@ describe('durable owner schedule', () => {
       attempt: 0,
       lastError: null,
       lastSuccess: new Date().toISOString(),
-      nextRunAt: new Date(Date.now() + 3600000).toISOString(),
+      nextRunAt: new Date(Date.now() + 14400000).toISOString(),
     });
   });
   it('prioritizes food failure over photo warning and retains the previous successful food timestamp', async () => {
@@ -395,6 +593,11 @@ describe('durable owner schedule', () => {
     [
       '2026-10-01',
       [
+        '2026-10-01',
+        '2026-10-02',
+        '2026-10-03',
+        '2026-10-04',
+        '2026-10-05',
         '2026-10-06',
         '2026-10-07',
         '2026-10-08',
@@ -405,11 +608,11 @@ describe('durable owner schedule', () => {
       ],
     ],
   ])(
-    'clips hourly history at persisted initialFrom %s',
+    'clips automatic history at persisted initialFrom %s',
     async (initialFrom, expected) => {
       const { service, upstream } = setup();
       service.enable('owner', { timezone: 'Europe/Moscow', initialFrom });
-      await vi.advanceTimersByTimeAsync(3600000);
+      await vi.advanceTimersByTimeAsync(14400000);
       await service.tick();
       expect(
         vi.mocked(upstream.items).mock.calls.map(([date]) => date),
@@ -422,7 +625,7 @@ describe('durable owner schedule', () => {
       timezone: 'Europe/Moscow',
       initialFrom: '2026-10-12',
     });
-    await vi.advanceTimersByTimeAsync(3600000);
+    await vi.advanceTimersByTimeAsync(14400000);
     await service.tick();
     expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
       '2026-10-12',
@@ -436,7 +639,7 @@ describe('durable owner schedule', () => {
     ]);
     expect(service.status('owner').initialFrom).toBe('2026-10-12');
   });
-  it('adopts a connected manual-first legacy owner before the first poll and runs hourly afterwards', async () => {
+  it('adopts a connected manual-first legacy owner before the first poll and runs automatic afterwards', async () => {
     const { service, upstream } = setup();
     expect(database.db.select().from(nutritionSchedule).all()).toEqual([]);
     await service.run('owner', period, {
@@ -447,12 +650,12 @@ describe('durable owner schedule', () => {
       enabled: true,
       timezone: input.timezone,
       initialFrom: period.from,
-      nextRunAt: new Date(Date.now() + 3600000).toISOString(),
+      nextRunAt: new Date(Date.now() + 14400000).toISOString(),
     });
     vi.mocked(upstream.items).mockClear();
     await service.tick();
     expect(upstream.items).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(3600000);
+    await vi.advanceTimersByTimeAsync(14400000);
     await service.tick();
     expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
       '2026-10-11',
@@ -489,11 +692,11 @@ describe('durable owner schedule', () => {
     });
     expect(deps.source).not.toHaveBeenCalled();
   });
-  it('leaves an hour for initial manual loading after connect instead of racing the browser', async () => {
+  it('leaves four hours for initial manual loading after connect instead of racing the browser', async () => {
     const { service, deps } = setup();
     service.enable('owner', input);
     expect(service.status('owner').nextRunAt).toBe(
-      new Date(Date.now() + 3600000).toISOString(),
+      new Date(Date.now() + 14400000).toISOString(),
     );
     await service.tick();
     expect(deps.store).not.toHaveBeenCalled();
@@ -516,7 +719,7 @@ describe('durable owner schedule', () => {
     // Model a stopped process without running its heartbeat, then reopen the
     // same WAL database as the replacement process. Keep its old promise only
     // to verify late results cannot corrupt the new lease/status/snapshot.
-    vi.setSystemTime(Date.now() + 3600001);
+    vi.setSystemTime(Date.now() + 14400001);
     const reopened = openDatabase(`file:${join(directory, 'test.sqlite')}`);
     try {
       const newSource = source();
@@ -593,7 +796,7 @@ describe('durable owner schedule', () => {
       photoFailedDates: [],
     });
   });
-  it('uses local today, last seven dates every hour and preserves manual history across ticks', async () => {
+  it('uses local today and yesterday every four hours and preserves manual history across ticks', async () => {
     const { service, upstream } = setup();
     service.enable('owner', input);
     await service.run(
@@ -603,20 +806,15 @@ describe('durable owner schedule', () => {
     );
     expect(service.status('owner').initialFrom).toBe('2026-09-01');
     vi.mocked(upstream.items).mockClear();
-    await vi.advanceTimersByTimeAsync(3600000);
+    await vi.advanceTimersByTimeAsync(14400000);
     await service.tick();
     expect(vi.mocked(upstream.items).mock.calls.map(([date]) => date)).toEqual([
-      '2026-10-06',
-      '2026-10-07',
-      '2026-10-08',
-      '2026-10-09',
-      '2026-10-10',
       '2026-10-11',
       '2026-10-12',
     ]);
     expect(service.status('owner').initialFrom).toBe('2026-09-01');
     await service.tick();
-    expect(upstream.items).toHaveBeenCalledTimes(7);
+    expect(upstream.items).toHaveBeenCalledTimes(2);
   });
   it('never constructs upstream without config, encrypted token, enabled schedule or owner', async () => {
     const { service, deps, store } = setup();
@@ -649,7 +847,7 @@ describe('durable owner schedule', () => {
     await service.tick();
     expect(deps.source).not.toHaveBeenCalled();
   });
-  it('holds the shared manual/hourly lease before source construction and through heartbeat', async () => {
+  it('holds the shared manual/automatic lease before source construction and through heartbeat', async () => {
     const { service, deps, upstream } = setup();
     const pending = deferred<Awaited<ReturnType<NutritionUpstream['items']>>>();
     vi.mocked(upstream.items).mockReturnValue(pending.promise);
@@ -724,18 +922,18 @@ describe('durable owner schedule', () => {
     expect(service.status('owner')).toEqual({ ...expected, running: false });
     expect(database.db.select().from(nutritionSchedule).get()!.epoch).toBe(3);
   });
-  it('uses bounded retry backoff for failed and partial results and resets after success', async () => {
+  it('uses four-hour retries for failed and partial results and resets after success', async () => {
     const { service, upstream } = setup();
     service.enable('owner', input);
-    await vi.advanceTimersByTimeAsync(3600000);
+    await vi.advanceTimersByTimeAsync(14400000);
     vi.mocked(upstream.items).mockRejectedValue(
       new Error('TOKEN PASSWORD RAW ERROR'),
     );
     for (const [attempt, delay] of [
-      [1, 60000],
-      [2, 300000],
-      [3, 900000],
-      [3, 3600000],
+      [1, 14400000],
+      [2, 14400000],
+      [3, 14400000],
+      [3, 14400000],
     ] as const) {
       const current = Date.now();
       await service.tick();
@@ -752,7 +950,7 @@ describe('durable owner schedule', () => {
     });
     await service.tick();
     expect(service.status('owner').lastError).toBe('SYNC_FAILED');
-    await vi.advanceTimersByTimeAsync(3600000);
+    await vi.advanceTimersByTimeAsync(14400000);
     vi.mocked(upstream.items).mockResolvedValue({
       products: [],
       recipe_portions: [],
@@ -763,7 +961,7 @@ describe('durable owner schedule', () => {
       attempt: 0,
       lastError: null,
       lastSuccess: new Date().toISOString(),
-      nextRunAt: new Date(Date.now() + 3600000).toISOString(),
+      nextRunAt: new Date(Date.now() + 14400000).toISOString(),
     });
   });
   it('adopts only a legacy connected owner using UTC and never mutates status GET or re-enables disconnect', async () => {
@@ -777,7 +975,7 @@ describe('durable owner schedule', () => {
       timezone: 'UTC',
       initialFrom: null,
     });
-    expect(upstream.items).toHaveBeenCalledTimes(7);
+    expect(upstream.items).toHaveBeenCalledTimes(2);
     service.disable('owner');
     vi.mocked(store.load).mockClear();
     await vi.advanceTimersByTimeAsync(7200000);
@@ -1003,7 +1201,7 @@ it('holds an expired health lease until its pending read drains and rejects late
   });
   await vi.advanceTimersByTimeAsync(0);
   const lastSuccess = service.status('owner').lastSuccess;
-  await vi.advanceTimersByTimeAsync(2 * 3600000);
+  await vi.advanceTimersByTimeAsync(2 * 14400000);
   expect(
     database.db.select().from(nutritionSchedule).get()!.leaseId,
   ).toBeTruthy();
@@ -1036,6 +1234,7 @@ it('day refresh preserves history and food success when photo metadata and healt
   expect(result).toMatchObject({
     state: 'partial',
     completedDates: [period.from],
+    skippedDates: [],
     failedDates: [],
     photoFailedDates: [period.from],
     health: {

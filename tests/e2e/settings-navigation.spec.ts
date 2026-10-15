@@ -1,9 +1,61 @@
 import { signInFixture } from '../ci/real-auth';
 import { test, expect, type Page } from '../ci/isolated-test';
+import Database from 'better-sqlite3';
 
 async function login(page: Page) {
   return signInFixture(page, 'owner');
 }
+
+test('ready historical days are shown separately from downloaded food without an empty progress counter', async ({
+  page,
+}) => {
+  const ownerId = await login(page);
+  const database = new Database('.data/e2e.sqlite');
+  const previous = database
+    .prepare('SELECT status FROM nutrition_sync_runs WHERE owner_id = ?')
+    .get(ownerId) as { status: string } | undefined;
+  try {
+    database
+      .prepare(
+        'INSERT OR REPLACE INTO nutrition_sync_runs(owner_id,status) VALUES (?,?)',
+      )
+      .run(
+        ownerId,
+        JSON.stringify({
+          state: 'completed',
+          startedAt: null,
+          finishedAt: null,
+          completedDates: [],
+          skippedDates: ['2026-10-01', '2026-10-02'],
+          failedDates: [],
+          photoFailedDates: [],
+        }),
+      );
+    await page.goto('/settings#sync');
+    await expect(
+      page.getByText('Уже загружено ранее: 2', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Загрузка еды: Загружено', { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText('(0/0)', { exact: false })).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  } finally {
+    if (previous)
+      database
+        .prepare('UPDATE nutrition_sync_runs SET status = ? WHERE owner_id = ?')
+        .run(previous.status, ownerId);
+    else
+      database
+        .prepare('DELETE FROM nutrition_sync_runs WHERE owner_id = ?')
+        .run(ownerId);
+    database.close();
+  }
+});
 
 test('section navigation keeps form values through anchors and history', async ({
   page,

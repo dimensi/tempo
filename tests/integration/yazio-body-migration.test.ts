@@ -52,7 +52,7 @@ it('migrates a synthetic ten-migration database to sixteen preserving existing r
       database.sqlite
         .prepare('SELECT count(*) as n FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ n: 16 });
+    ).toEqual({ n: 17 });
     expect(database.sqlite.prepare('SELECT * FROM measurements').all()).toEqual(
       before,
     );
@@ -74,7 +74,7 @@ it('migrates a synthetic ten-migration database to sixteen preserving existing r
       fresh.sqlite
         .prepare('SELECT count(*) as n FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ n: 16 });
+    ).toEqual({ n: 17 });
     expect(fresh.sqlite.pragma('foreign_key_check')).toEqual([]);
   } finally {
     fresh.sqlite.close();

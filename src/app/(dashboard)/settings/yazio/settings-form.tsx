@@ -515,7 +515,7 @@ export function YazioSettingsForm({
               {!status.schedule.enabled
                 ? messages.scheduleDisabled
                 : status.schedule.schedulerActive
-                  ? messages.hourly
+                  ? messages.automatic
                   : messages.schedulerInactive}
             </Text>
             {status.schedule.running && (
@@ -553,12 +553,25 @@ export function YazioSettingsForm({
           {messages.foodStatus}:{' '}
           {status.sync.state === 'partial' &&
           status.sync.failedDates.length === 0 &&
-          status.sync.completedDates.length > 0
+          (status.sync.completedDates.length > 0 ||
+            status.sync.skippedDates.length > 0)
             ? messages.states.completed
             : messages.states[status.sync.state]}{' '}
-          ({status.sync.completedDates.length}/
-          {status.sync.completedDates.length + status.sync.failedDates.length})
+          {status.sync.completedDates.length + status.sync.failedDates.length >
+            0 && (
+            <>
+              ({status.sync.completedDates.length}/
+              {status.sync.completedDates.length +
+                status.sync.failedDates.length}
+              )
+            </>
+          )}
         </Text>
+        {status.sync.skippedDates.length > 0 && (
+          <Text size="sm">
+            {messages.skipped}: {status.sync.skippedDates.length}
+          </Text>
+        )}
       </Stack>
     </Stack>
   );
