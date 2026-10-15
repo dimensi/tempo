@@ -1,6 +1,6 @@
 # Offline writes task ownership
 
-Base: origin/main cd19302 (rebased from the initial 567c387 inspection). Branch: codex/offline-writes. One agent/worktree; no delegation.
+Base: origin/main df3fe70 (rebased from the initial 567c387 inspection). Branch: codex/offline-writes. One agent/worktree; no delegation.
 
 Owned scope: offline write v1 contracts; IndexedDB queue/client; OWNER workout/measurement save adapters; offline capture/status UI; dashboard composition; pending-write logout guard; scoped offline server write API and receipt repository; receipt schema/generated migration; optional stable session ID in the existing workout repository; focused unit tests and offline-write documentation.
 
