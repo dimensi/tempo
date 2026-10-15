@@ -808,14 +808,25 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
     });
     await exerciseInput.scrollIntoViewIfNeeded();
     await exerciseInput.click();
+    const searched = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === '/api/workouts/transformmate/exercises' &&
+        url.searchParams.get('q') === 'Delayed actual'
+      );
+    });
     await exerciseInput.fill('Delayed actual');
+    await (await searched).finished();
+    // A late catalog/layout update can move focus on a retained mobile page.
+    // Reopen after the actual response rather than racing the dropdown render.
+    await exerciseInput.click();
+    await exerciseInput.press('ArrowDown');
     await expect(
       page.getByRole('option', {
         name: 'Добавить вручную: Delayed actual',
         exact: true,
       }),
     ).toBeVisible();
-    await exerciseInput.press('ArrowDown');
     await exerciseInput.press('Enter');
   }
   await addExercise();
