@@ -14,6 +14,7 @@ const database = openDatabase('file::memory:');
 vi.mock('@/server/db', () => ({ getDatabase: () => database }));
 const { createReportHandler } = await import('@/server/pdf/http');
 const source = {
+  getSteps: async () => [],
   getNutritionDays: vi.fn(async () => [syntheticDay()]),
   listPhotos: async () => [],
   readPhoto: async () => {
@@ -74,6 +75,7 @@ it('rechecks grant after data generation and refuses to release bytes after mid-
     .run();
   const revoked = createReportHandler(() => ({
     ...source,
+    getSteps: async () => [],
     getNutritionDays: async () => {
       database.db.delete(trainerAccess).run();
       return [syntheticDay()];
@@ -95,6 +97,7 @@ it('returns access denied when source authorization fails after mid-flight revoc
     .run();
   const revoked = createReportHandler(() => ({
     ...source,
+    getSteps: async () => [],
     getNutritionDays: async () => {
       database.db.delete(trainerAccess).run();
       throw new Error('Private upstream detail');

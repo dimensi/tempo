@@ -1,7 +1,10 @@
 import 'server-only';
+import type { StepsSummary } from '@/contracts/health';
+import { getStepsSummary } from '@/server/health/readers';
 import type { NutritionDay, SafeMealPhotoView } from '@/contracts/nutrition';
 import type { ReportRequest } from '@/contracts/reports';
 import { ReportError } from '@/server/pdf/errors';
+import { getAccessibleOwnerId } from '@/server/access/owner';
 import * as nutrition from '@/server/nutrition';
 
 export interface ReportDataSource {
@@ -13,6 +16,12 @@ export interface ReportDataSource {
     end: string,
     signal: AbortSignal,
   ): Promise<NutritionDay[]>;
+  getSteps(
+    ownerId: string,
+    start: string,
+    end: string,
+    signal: AbortSignal,
+  ): Promise<StepsSummary['days']>;
   listPhotos(
     ownerId: string,
     start: string,
@@ -30,11 +39,22 @@ export interface ReportDataSource {
 }
 export type ReportDataset = {
   days: NutritionDay[];
+  steps: StepsSummary['days'];
   photos: Array<SafeMealPhotoView & { dataUri: string }>;
 };
 // Composition seam for source C. No silent demo fallback or global test setter.
 export function reportDataSource(headers: Headers): ReportDataSource {
-  return createNutritionReportSource(headers, nutrition);
+  return {
+    ...createNutritionReportSource(headers, nutrition),
+    async getSteps(ownerId, start, end, signal) {
+      signal.throwIfAborted();
+      if ((await getAccessibleOwnerId(headers)) !== ownerId)
+        throw new ReportError('INVALID', 403);
+      const summary = await getStepsSummary(headers, { from: start, to: end });
+      signal.throwIfAborted();
+      return summary.days;
+    },
+  };
 }
 export type ReportScope = Pick<ReportRequest, 'ownerId' | 'start' | 'end'>;
 
@@ -59,7 +79,7 @@ export interface NutritionReportApi {
 export function createNutritionReportSource(
   headers: Headers,
   api: NutritionReportApi,
-): ReportDataSource {
+): Omit<ReportDataSource, 'getSteps'> {
   return {
     async getNutritionDays(ownerId, start, end, signal) {
       signal.throwIfAborted();

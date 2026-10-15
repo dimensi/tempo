@@ -189,7 +189,15 @@ it('renders the specified one-page compact day and six records, then measures ph
       const page = await context.newPage();
       const html = renderReportHtml(
         request,
-        { days: scenario.days, photos: scenario.photos },
+        {
+          steps: scenario.days.map((day, index) => ({
+            date: day.date,
+            steps: index === 0 ? 0 : null,
+            source: index === 0 ? ('YAZIO' as const) : null,
+          })),
+          days: scenario.days,
+          photos: scenario.photos,
+        },
         fonts,
       );
       await prepareReportPage(page, html);
@@ -410,6 +418,8 @@ it('renders the specified one-page compact day and six records, then measures ph
         encoding: 'utf8',
       });
       expect(text).not.toContain('mass-unavailable');
+      expect(text).toMatch(/Шаги:\s+0/);
+      if (scenario.name === 'two-days') expect(text).toMatch(/Шаги:\s+—/);
       if (scenario.name === 'empty') expect(text).toContain('Нет записей');
       else if (scenario.name === 'totals-only') {
         expect(text).not.toContain('Нет записей');
@@ -462,6 +472,7 @@ it('renders the specified one-page compact day and six records, then measures ph
       observedAt: '2026-10-11T12:00:00Z',
     };
     const adapter: ReportDataSource = {
+      getSteps: async () => [],
       getNutritionDays: async () => [baseline],
       listPhotos: async () => [metadata],
       readPhoto: async () => ({

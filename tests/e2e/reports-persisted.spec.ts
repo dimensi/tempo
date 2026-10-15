@@ -83,6 +83,9 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     db.prepare(
       'INSERT INTO nutrition_days(owner_id,date,snapshot,fetched_at) VALUES(?,?,?,?)',
     ).run(ownerId, date, JSON.stringify(day), '2026-10-11T00:00:00Z');
+    db.prepare(
+      'INSERT INTO yazio_daily_steps(owner_id,date,steps,observed_at) VALUES(?,?,?,?)',
+    ).run(ownerId, date, 12345, '2026-10-11T00:00:00Z');
   } finally {
     db.close();
   }
@@ -209,6 +212,9 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       page.getByRole('button', { name: 'Предпросмотр HTML' }),
     ).toHaveCount(0);
     const preview = page.frameLocator('iframe[title="Предпросмотр HTML"]');
+    await expect(preview.locator('.daily-steps')).toHaveText(
+      /Шаги: 12[\s\u00a0]345/,
+    );
     await expect(
       preview.getByText('Яйцо · запись 1', { exact: true }),
     ).toBeVisible();
@@ -298,6 +304,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await download.saveAs(path);
     expect(download.suggestedFilename()).toBe(`nutrition-${date}-${date}.pdf`);
     const text = execFileSync('pdftotext', [path, '-'], { encoding: 'utf8' });
+    expect(text).toMatch(/Шаги:\s+12[\s\u00a0]345/);
     expect(text).toContain('Яйцо');
     expect(text).toContain('—');
     expect(text).toContain('12,52');
@@ -508,6 +515,9 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     );
     const db = new Database('.data/e2e.sqlite');
     try {
+      db.prepare(
+        'DELETE FROM yazio_daily_steps WHERE owner_id=? AND date=?',
+      ).run(ownerId, date);
       db.prepare('DELETE FROM nutrition_days WHERE owner_id=? AND date=?').run(
         ownerId,
         date,
