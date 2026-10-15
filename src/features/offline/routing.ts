@@ -11,7 +11,7 @@ export function offlineNavigate(href: string, replace = false) {
   const url = new URL(href, location.href);
   if (url.origin !== location.origin) return;
   history[replace ? 'replaceState' : 'pushState'](
-    null,
+    { tempoOfflineRoute: true },
     '',
     url.pathname + url.search + url.hash,
   );

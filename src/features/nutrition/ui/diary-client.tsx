@@ -29,7 +29,8 @@ export function DiaryClient({
 }: DiaryClientProps) {
   const router = useRouter();
   const refresh = useReadRefresh();
-  const [currentDay, setCurrentDay] = useState(props.day);
+  const [model, setModel] = useState({ seed: props.day, day: props.day });
+  if (model.seed !== props.day) setModel({ seed: props.day, day: props.day });
   useEffect(() => {
     let active = true;
     void fetch(
@@ -38,13 +39,13 @@ export function DiaryClient({
       .then(async (response) => {
         if (!response.ok) return;
         const value = nutritionDaySchema.parse(await response.json());
-        if (active) setCurrentDay(value);
+        if (active) setModel({ seed: props.day, day: value });
       })
       .catch(() => {});
     return () => {
       active = false;
     };
-  }, [ownerId, props.date, refresh]);
+  }, [ownerId, props.date, props.day, refresh]);
   const params = useSearchParams();
   const hasDate =
     params.getAll('date').length === 1 &&
@@ -60,7 +61,7 @@ export function DiaryClient({
   return (
     <DiaryView
       {...props}
-      day={currentDay}
+      day={model.day}
       navigationSlot={
         <Stack gap="sm">
           <DayNavigation key={props.date} date={props.date} />

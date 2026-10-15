@@ -272,7 +272,10 @@ test('measurement and actual-session comments compose after CRUD with real train
       .getByRole('button', { name: 'Отправить', exact: true })
       .click();
     expect((await denied).status()).toBe(403);
-    await expect(stalePanel.getByRole('alert')).toBeVisible();
+    await expect(
+      trainer.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
+    ).toBeVisible();
+    await expect(stalePanel).not.toBeVisible();
     await expect(stalePanel.getByLabel('Комментарий')).toHaveValue(
       'Revoked write',
     );

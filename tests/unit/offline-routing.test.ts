@@ -31,7 +31,11 @@ it.each(['/workouts/one/edit', '/workouts/one/results', '/workouts/new'])(
     reportNetworkResult(false);
     click(event);
     expect(preventDefault).toHaveBeenCalledOnce();
-    expect(pushState).toHaveBeenCalledWith(null, '', path);
+    expect(pushState).toHaveBeenCalledWith(
+      { tempoOfflineRoute: true },
+      '',
+      path,
+    );
     reportNetworkResult(true);
     click(event);
     expect(preventDefault).toHaveBeenCalledOnce();

@@ -528,39 +528,42 @@ export function OfflineBoundary({
 }) {
   // The mounted Next screen owns its form state. Connectivity must never replace it.
   const url = useOfflineLocation();
-  const [mounted, setMounted] = useState(() => ({
-    children,
-    href:
-      typeof location === 'undefined'
-        ? null
-        : location.pathname + location.search,
-  }));
-  if (mounted.children !== children)
-    setMounted({
-      children,
-      href:
-        typeof location === 'undefined'
-          ? null
-          : location.pathname + location.search,
-    });
-  const current = url ? url.pathname + url.search : null;
   const [offline, setOffline] = useState(false);
   const [denied, setDenied] = useState(false);
   const verifiedPartition = useRef<string | null>(null);
+  const verifiedGeneration = useRef<string | null>(null);
   useEffect(() => {
     const blocked = () => setDenied(true);
+    let checkingAccess = false;
+    const recheck = () => {
+      if (checkingAccess || !navigator.onLine) return;
+      checkingAccess = true;
+      const controller = getOfflineController();
+      void controller
+        .activate(true, true)
+        .then(async () => {
+          if (controller.getSnapshot().status === 'disabled')
+            await controller.activate(true, true);
+        })
+        .finally(() => {
+          checkingAccess = false;
+        });
+    };
     const verified = getOfflineController().subscribe(() => {
       const state = getOfflineController().getSnapshot();
       if (state.status === 'ready' && state.bundle) {
         const partition = state.bundle.fence.partition;
         if (
           verifiedPartition.current &&
-          verifiedPartition.current !== partition
+          (verifiedPartition.current !== partition ||
+            verifiedGeneration.current !==
+              state.bundle.snapshot.connectionGeneration)
         ) {
           setDenied(true);
           return;
         }
         verifiedPartition.current = partition;
+        verifiedGeneration.current = state.bundle.snapshot.connectionGeneration;
         setDenied(false);
         setOffline(false);
       } else if (
@@ -570,6 +573,7 @@ export function OfflineBoundary({
         setDenied(true);
     });
     window.addEventListener('tempo:read-access-denied', blocked);
+    window.addEventListener('tempo:read-access-recheck', recheck);
     const lost = () => setOffline(true);
     const connected = () => {
       void reconnectReads().then(() => {
@@ -587,12 +591,16 @@ export function OfflineBoundary({
     return () => {
       verified();
       window.removeEventListener('tempo:read-access-denied', blocked);
+      window.removeEventListener('tempo:read-access-recheck', recheck);
       window.removeEventListener('offline', lost);
       window.removeEventListener('online', connected);
       window.removeEventListener(networkStatusEvent, observed);
     };
   }, []);
-  const showingSavedRoute = current !== null && mounted.href !== current;
+  // Next's layout children can retain their identity across normal navigation.
+  // Only an explicitly intercepted history entry belongs to the saved shell.
+  const showingSavedRoute =
+    url !== null && history.state?.tempoOfflineRoute === true;
   useEffect(
     () => (offline || showingSavedRoute ? interceptOfflineLinks() : undefined),
     [offline, showingSavedRoute],
@@ -600,7 +608,11 @@ export function OfflineBoundary({
   return (
     <Stack gap={0}>
       <OfflineReadStatus />
-      {denied && <Alert>{m.denied}</Alert>}
+      {denied && (
+        <Alert>
+          {m.denied} <a href="/login">{m.signInAgain}</a>
+        </Alert>
+      )}
       <div hidden={showingSavedRoute || denied}>{children}</div>
       {showingSavedRoute && !denied && ['OWNER', 'TRAINER'].includes(role) && (
         <OfflineRouteContent />

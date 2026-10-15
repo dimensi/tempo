@@ -949,7 +949,12 @@ export function observeOfflineDenials() {
         (response.status === 401 || response.status === 403)
       ) {
         window.dispatchEvent(new Event('tempo:read-access-denied'));
-        void purgeOfflineDevice().catch(() => {});
+        void purgeOfflineDevice()
+          .catch(() => {})
+          .then(() => {
+            if (!/^\/api\/offline\/(?:identity|snapshot)$/.test(url.pathname))
+              window.dispatchEvent(new Event('tempo:read-access-recheck'));
+          });
       }
     } catch {
       /* Observing status never changes a request or response. */
