@@ -1,12 +1,18 @@
 'use client';
 import { networkReachable, reportNetworkResult } from '@/lib/network-state';
 import { purgeOfflineDevice } from '@/lib/offline-device';
+import { offlineIdentitySchema } from '@/contracts/offline';
 import { fetchWithDeadline } from './fetch-with-deadline';
 import { isOfflineNavigationPath } from './offline-navigation-paths';
 import { useSyncExternalStore } from 'react';
 const listeners = new Set<() => void>();
 let version = 0;
 let pendingNavigation: AbortController | undefined;
+interface SavedReadIdentity {
+  partition: string;
+  connectionGeneration: string;
+  role: 'OWNER' | 'TRAINER';
+}
 function changed() {
   version++;
   for (const listener of listeners) listener();
@@ -49,12 +55,14 @@ export function navigateReadRoute({
   hasSaved,
   showSaved,
   resumeLive,
+  expectedIdentity,
   valid = () => true,
 }: {
   url: URL;
   hasSaved: (url: URL) => boolean;
   showSaved: () => void;
   resumeLive: () => void;
+  expectedIdentity?: SavedReadIdentity | null;
   valid?: () => boolean;
 }) {
   pendingNavigation?.abort();
@@ -82,9 +90,26 @@ export function navigateReadRoute({
     },
     2000,
   ).then(
-    (response) => {
+    async (response) => {
       if (attempt.signal.aborted || !valid()) return;
       if (response.ok) {
+        if (expectedIdentity) {
+          const result = offlineIdentitySchema.safeParse(
+            await response.json().catch(() => null),
+          );
+          if (!result.success) return;
+          const identity = result.data;
+          if (
+            identity.partition !== expectedIdentity.partition ||
+            identity.connectionGeneration !==
+              expectedIdentity.connectionGeneration ||
+            identity.role !== expectedIdentity.role
+          ) {
+            void purgeOfflineDevice().catch(() => {});
+            return;
+          }
+        }
+        if (attempt.signal.aborted || !valid()) return;
         reportNetworkResult(true);
         resumeLive();
         return;
@@ -109,6 +134,7 @@ export function navigateReadRoute({
 export function interceptOfflineLinks(
   hasSaved: (url: URL) => boolean = () => false,
   resumeVerified?: (url: URL) => void,
+  expectedIdentity?: () => SavedReadIdentity | null,
 ) {
   let resuming: HTMLAnchorElement | undefined;
   const click = (event: MouseEvent) => {
@@ -144,6 +170,7 @@ export function interceptOfflineLinks(
         offlineNavigate(url.href);
         window.dispatchEvent(new Event('tempo:offline-navigation'));
       },
+      expectedIdentity: expectedIdentity?.(),
       resumeLive: () => {
         if (resumeVerified) {
           resumeVerified(url);

@@ -12,6 +12,16 @@ import { hasSavedReadRoute } from '@/lib/saved-read-route';
 export function ReadNavigation() {
   const router = useRouter();
   useEffect(() => {
+    const savedIdentity = () => {
+      const snapshot = getOfflineController().getSnapshot().bundle?.snapshot;
+      return snapshot
+        ? {
+            partition: snapshot.partition,
+            connectionGeneration: snapshot.connectionGeneration,
+            role: snapshot.role,
+          }
+        : null;
+    };
     const hasSaved = (url: URL) => {
       const state = getOfflineController().getSnapshot();
       return (
@@ -25,6 +35,7 @@ export function ReadNavigation() {
       navigateReadRoute({
         url,
         hasSaved,
+        expectedIdentity: savedIdentity(),
         showSaved: () => {
           offlineNavigate(
             url.href,
@@ -39,8 +50,10 @@ export function ReadNavigation() {
             : router.push(href, { scroll: options?.scroll }),
       });
     });
-    const stopLinks = interceptOfflineLinks(hasSaved, (url) =>
-      router.push(url.pathname + url.search + url.hash),
+    const stopLinks = interceptOfflineLinks(
+      hasSaved,
+      (url) => router.push(url.pathname + url.search + url.hash),
+      savedIdentity,
     );
     return () => {
       stopLinks();

@@ -6,6 +6,7 @@ import {
 } from '@/lib/offline-routing';
 import { reportNetworkResult } from '@/lib/network-state';
 import { purgeOfflineDevice } from '@/lib/offline-device';
+import { ownerConfirmedYazioWeightPolicyVersion } from '@/contracts/yazio-weight-policy';
 
 vi.mock('@/lib/offline-device', () => ({
   purgeOfflineDevice: vi.fn(async () => {}),
@@ -80,7 +81,14 @@ it('matches a saved route to its exact URL so ordinary navigation cannot inherit
   expect(isOfflineRoute(null)).toBe(false);
 });
 
-function navigationDouble(hasSaved: (url: URL) => boolean = () => false) {
+function navigationDouble(
+  hasSaved: (url: URL) => boolean = () => false,
+  expectedIdentity?: () => {
+    partition: string;
+    connectionGeneration: string;
+    role: 'OWNER' | 'TRAINER';
+  },
+) {
   let click!: (event: MouseEvent) => void;
   const pushState = vi.fn();
   const navigate = vi.fn();
@@ -97,7 +105,7 @@ function navigationDouble(hasSaved: (url: URL) => boolean = () => false) {
   vi.stubGlobal('location', new URL('https://tempo.test/diary'));
   vi.stubGlobal('history', { pushState });
   vi.stubGlobal('navigator', { onLine: true });
-  const stop = interceptOfflineLinks(hasSaved);
+  const stop = interceptOfflineLinks(hasSaved, undefined, expectedIdentity);
   return {
     pushState,
     navigate,
@@ -200,6 +208,36 @@ it('resumes a verified captured link without replaying its click', async () => {
   expect(fetch).toHaveBeenCalledOnce();
   expect(replay).not.toHaveBeenCalled();
   stop();
+});
+it('purges instead of resuming when a successful identity belongs to another fence', async () => {
+  const previous = {
+    partition: 'a'.repeat(43),
+    connectionGeneration: 'b'.repeat(43),
+    role: 'OWNER' as const,
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      Response.json({
+        contractVersion: 2,
+        weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
+        partition: 'c'.repeat(43),
+        connectionGeneration: 'd'.repeat(43),
+        role: 'OWNER',
+        serverNow: '2026-10-16T12:00:00.000Z',
+        sessionExpiresAt: '2026-10-16T13:00:00.000Z',
+        expiresAt: '2026-10-16T13:00:00.000Z',
+      }),
+    ),
+  );
+  const env = navigationDouble(
+    () => true,
+    () => previous,
+  );
+  env.click('/analytics');
+  await vi.waitFor(() => expect(purgeOfflineDevice).toHaveBeenCalledOnce());
+  expect(env.navigate).not.toHaveBeenCalled();
+  env.stop();
 });
 it('keeps the current screen until an actual response allows live navigation', async () => {
   const request = vi.fn(async () => new Response(null, { status: 503 }));

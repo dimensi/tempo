@@ -28,6 +28,9 @@ it('recognizes only core routes whose requested data is already saved', () => {
   expect(saved('/diary?date=2026-10-12')).toBe(true);
   expect(saved('/diary?date=2026-09-01')).toBe(false);
   expect(saved('/measurements')).toBe(true);
+  expect(saved('/workouts/catalog')).toBe(true);
+  expect(saved('/reports')).toBe(true);
+  expect(saved('/settings')).toBe(false);
   expect(saved('/analytics?from=2026-10-01&to=2026-10-12&timezone=UTC')).toBe(
     true,
   );
@@ -36,6 +39,21 @@ it('recognizes only core routes whose requested data is already saved', () => {
   );
   expect(saved('/workouts?date=2026-10-12')).toBe(true);
   expect(saved('/workouts?date=2026-09-01')).toBe(false);
+});
+
+it('recognizes settings only when their saved projection exists', () => {
+  const snapshot = offlineFixture(Date.parse('2026-10-12T12:00:00Z'));
+  snapshot.views.settings = {
+    yazioConnected: true,
+    transformMateConnected: false,
+    initialFrom: '2026-10-01',
+    timezone: 'Europe/Moscow',
+    automaticSync: false,
+    lastSuccess: null,
+  };
+  expect(
+    hasSavedReadRoute(snapshot, new URL('/settings', 'https://tempo.test')),
+  ).toBe(true);
 });
 
 it('keeps mutation routes on the live path', () => {

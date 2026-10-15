@@ -502,10 +502,23 @@ export function OfflineApplication({ brandSrc }: { brandSrc: string }) {
   );
   useEffect(
     () =>
-      interceptOfflineLinks((destination) => {
-        const snapshot = controller.getSnapshot().bundle?.snapshot;
-        return !!snapshot && hasSavedReadRoute(snapshot, destination);
-      }),
+      interceptOfflineLinks(
+        (destination) => {
+          const snapshot = controller.getSnapshot().bundle?.snapshot;
+          return !!snapshot && hasSavedReadRoute(snapshot, destination);
+        },
+        undefined,
+        () => {
+          const snapshot = controller.getSnapshot().bundle?.snapshot;
+          return snapshot
+            ? {
+                partition: snapshot.partition,
+                connectionGeneration: snapshot.connectionGeneration,
+                role: snapshot.role,
+              }
+            : null;
+        },
+      ),
     [controller],
   );
   useEffect(() => {

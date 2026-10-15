@@ -15,6 +15,9 @@ export function hasSavedReadRoute(snapshot: OfflineSnapshot, url: URL) {
       (day) => day.date === selectedDate(url, snapshot.to),
     );
   if (url.pathname === '/measurements') return true;
+  if (url.pathname === '/workouts/catalog') return true;
+  if (url.pathname === '/settings') return snapshot.views.settings !== null;
+  if (url.pathname === '/reports') return true;
   if (url.pathname === '/analytics') {
     const summary = snapshot.views.summary;
     if (!summary) return false;
