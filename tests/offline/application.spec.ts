@@ -196,7 +196,10 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
       .getByRole('link', { name: 'К тренировкам', exact: true })
       .click();
     await expect(page).toHaveURL(new RegExp(`/workouts\\?date=${data.date}`));
-    await page.getByRole('link', { name: 'Открыть', exact: true }).click();
+    await page
+      .getByRole('link', { name: 'Открыть', exact: true })
+      .and(page.locator('a[href^="/workouts/sessions/offline-real-session?"]'))
+      .click();
     await expect(page).toHaveURL(
       new RegExp(`/workouts/sessions/offline-real-session\\?date=${data.date}`),
     );
