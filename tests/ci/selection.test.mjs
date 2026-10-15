@@ -50,6 +50,11 @@ test('exact test aliases scope settings and feature specs without matching futur
     'workouts',
     'providers',
   ]);
+  assert.deepEqual(selectAreas(['tests/e2e/steps-goal.spec.ts']).areas, [
+    'measurements',
+    'reports',
+    'shell',
+  ]);
   assert.deepEqual(
     selectAreas(['tests/e2e/settings-future.spec.ts']).areas,
     areas,
