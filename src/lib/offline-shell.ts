@@ -4,10 +4,13 @@ export async function prepareOfflineShell(signal: AbortSignal) {
   signal.throwIfAborted();
   await new Promise<void>((resolve, reject) => {
     let settled = false;
+    let channel: MessageChannel | undefined;
     const finish = (error?: unknown) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      channel?.port1.close();
+      channel?.port2.close();
       signal.removeEventListener('abort', abort);
       if (error !== undefined) reject(error);
       else resolve();
@@ -28,6 +31,26 @@ export async function prepareOfflineShell(signal: AbortSignal) {
         navigator.serviceWorker.register('/offline-sw.js', { scope: '/' }),
       )
       .then(() => (signal.aborted ? undefined : navigator.serviceWorker.ready))
-      .then(() => finish(), finish);
+      .then((registration) => {
+        if (signal.aborted) return;
+        channel = new MessageChannel();
+        const close = () => {
+          channel?.port1.close();
+          channel?.port2.close();
+        };
+        signal.addEventListener('abort', close, { once: true });
+        channel.port1.onmessage = (event) => {
+          close();
+          signal.removeEventListener('abort', close);
+          finish(
+            event.data?.contractVersion === 2
+              ? undefined
+              : new Error('Offline shell update pending'),
+          );
+        };
+        registration?.active?.postMessage({ type: 'OFFLINE_SHELL_VERSION' }, [
+          channel.port2,
+        ]);
+      }, finish);
   });
 }

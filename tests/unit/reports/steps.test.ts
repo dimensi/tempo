@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
-import { summarizeSteps, stepsProgress } from '@/server/pdf/steps';
-import { renderReportHtml } from '@/server/pdf/template';
+import { summarizeSteps, stepsProgress } from '@/lib/reports/steps';
+import { renderReportHtml } from '@/lib/reports/template';
 import { syntheticDay } from './fixtures';
 
 it('keeps zero and gaps distinct, excludes missing dates from the average and sums safely', () => {

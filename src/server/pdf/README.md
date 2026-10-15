@@ -12,7 +12,7 @@ Numerical text uses the shared `formatDecimal` presentation helper: ordinary val
 
 Daily HTML and PDF sections prominently show steps from the existing authenticated health reader for the same owner and calendar range. The source checks that the requested owner matches the session's accessible owner before reading; the health reader enforces `measurements:read` with owner scope. Zero steps remain zero; missing values display `—`. No steps are inferred from nutrition or converted to calories. The optional current owner goal is read with `reports:export`, never taken from the export query. A missing goal hides goal/progress entirely. Period summaries average only observed days (including real zeros) and disclose coverage. The current goal applies to historical dates in newly generated reports.
 
-Task scope: `src/server/pdf`, `src/features/reports/messages.ts` and report tests; existing v1 report/nutrition/health contracts, no schema changes. Acceptance: real PDF text contains date-specific steps, zero and unknown remain distinct, canonical day still fits A4, owner/trainer guards remain enforced.
+Task scope: `src/server/pdf`, `src/config/reports.ts` and report tests; existing v1 report/nutrition/health contracts, no schema changes. Acceptance: real PDF text contains date-specific steps, zero and unknown remain distinct, canonical day still fits A4, owner/trainer guards remain enforced.
 
 The handler passes request headers to the adapter; Chromium never receives them. The reports page uses `getAccessibleOwnerId(await headers())` from `@/server/access/owner`. No trainer owner-ID input is exposed; a missing grant disables export controls. The helper does not replace the route guard.
 

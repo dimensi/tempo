@@ -8,7 +8,7 @@ import { syntheticDay } from '../unit/reports/fixtures';
 vi.mock('server-only', () => ({}));
 import { generateReport, withReportSlot } from '@/server/pdf/service';
 import { readReportFonts } from '@/server/pdf/fonts';
-import { renderReportHtml } from '@/server/pdf/template';
+import { renderReportHtml } from '@/lib/reports/template';
 import { prepareReportPage, renderPdfReport } from '@/server/pdf/renderer';
 import type { ReportDataSource } from '@/server/pdf/source';
 import type { ReportRequest } from '@/contracts/reports';

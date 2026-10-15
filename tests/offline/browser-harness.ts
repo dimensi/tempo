@@ -7,8 +7,8 @@ import {
   subscribeOfflineBlocked,
   withOfflineDevicePurge,
 } from '../../src/lib/offline-device';
-import { OfflineController } from '../../src/features/offline/controller';
-import { prepareOfflineShell } from '../../src/features/offline/shell';
+import { OfflineController } from '../../src/lib/offline-controller';
+import { prepareOfflineShell } from '../../src/lib/offline-shell';
 import { offlineFixture } from './fixtures';
 const storage = new OfflineStorage();
 let lastFence: Awaited<ReturnType<typeof storage.enable>>;
@@ -215,7 +215,12 @@ Object.assign(window, {
     },
     async seed(
       variant?:
-        'zero-entry' | 'empty' | 'photo-only' | 'totals' | 'linked-plan',
+        | 'zero-entry'
+        | 'empty'
+        | 'photo-only'
+        | 'totals'
+        | 'linked-plan'
+        | 'sections',
       time?: number,
     ) {
       now = time ?? Date.now();
@@ -246,13 +251,88 @@ Object.assign(window, {
         ],
         { type: 'image/png' },
       );
+      if (variant === 'sections') {
+        const date = snapshot.to;
+        const day = snapshot.diary[0]!;
+        snapshot.views.summary = {
+          dailyStepsGoal: 10000,
+          from: shiftDate(date, -365),
+          to: date,
+          workouts: {
+            planned: { date, title: 'Synthetic plan' },
+            completed: { date, title: 'Synthetic actual' },
+          },
+          latestWeight: { date, value: '72.125' },
+          nutrition: [
+            {
+              date,
+              fetchedAt: day.fetchedAt,
+              totals: day.totals,
+              knownTotals: day.knownTotals,
+              hasEntries: true,
+            },
+          ],
+          body: snapshot.measurements.map((row) => ({
+            id: row.key,
+            measuredAt: row.measuredAt,
+            values: row.values,
+          })),
+          bodyComplete: true,
+          weight: {
+            range: { from: shiftDate(date, -365), to: date },
+            local: [
+              {
+                measuredAt: date,
+                value: '72.125',
+                unit: 'kg',
+                source: 'LOCAL',
+              },
+            ],
+            imported: [],
+          },
+          steps: snapshot.dailySteps.map(({ date, steps, observedAt }) => ({
+            date,
+            steps,
+            observedAt,
+          })),
+        };
+        snapshot.views.settings = {
+          yazioConnected: true,
+          transformMateConnected: false,
+          initialFrom: date,
+          timezone: 'UTC',
+          automaticSync: true,
+          lastSuccess: snapshot.serverNow,
+        };
+        snapshot.views.comments = [
+          {
+            key: 'comment',
+            target: `/diary?date=${date}`,
+            date,
+            parentKey: null,
+            authorName: 'Synthetic coach',
+            body: 'Saved offline comment',
+            createdAt: snapshot.serverNow,
+          },
+        ];
+        snapshot.views.catalog = [
+          {
+            id: 123,
+            name: 'Saved catalog exercise',
+            description: 'Saved description',
+            muscleGroups: ['Legs'],
+            fetchedAt: snapshot.serverNow,
+            hasVideo: false,
+          },
+        ];
+      }
       if (variant === 'linked-plan') {
         snapshot.transformMateFacts[0]!.plannedHref =
           snapshot.plannedWorkouts[0]!.href;
         snapshot.transformMateFacts[0]!.nativeHref =
           snapshot.nativeTrainings[0]!.href;
       }
-      if (variant && variant !== 'linked-plan') {
+      if (variant && variant !== 'linked-plan' && variant !== 'sections') {
         const day = snapshot.diary[0]!;
         day.totals.calories = '123.456';
         for (const meal of day.meals) {
@@ -278,7 +358,9 @@ Object.assign(window, {
         else snapshot.photos.items = [];
       }
       const storedPhotos =
-        variant && variant !== 'linked-plan' ? [] : [{ id, bytes }];
+        variant && variant !== 'linked-plan' && variant !== 'sections'
+          ? []
+          : [{ id, bytes }];
       lastFence = await storage.enable(
         snapshot.partition,
         snapshot.connectionGeneration,
@@ -294,7 +376,10 @@ Object.assign(window, {
           sessionExpiresAt: now + 1200000,
           snapshot,
           missingPhotos: variant === 'photo-only' ? [id] : [],
-          photoBytes: variant && variant !== 'linked-plan' ? 0 : bytes.size,
+          photoBytes:
+            variant && variant !== 'linked-plan' && variant !== 'sections'
+              ? 0
+              : bytes.size,
         },
         storedPhotos,
         now,
@@ -370,7 +455,7 @@ Object.assign(window, {
     },
     async alterNative(mode: 'old-format' | 'pre-native' | 'boundary') {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open('yazio-offline-read-v1', 1);
+        const request = indexedDB.open('yazio-offline-read-v1', 2);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
@@ -418,7 +503,7 @@ Object.assign(window, {
     },
     async rawCounts() {
       const db = await new Promise<IDBDatabase>((resolve) => {
-        const request = indexedDB.open('yazio-offline-read-v1', 1);
+        const request = indexedDB.open('yazio-offline-read-v1', 2);
         request.onsuccess = () => resolve(request.result);
       });
       const result = await new Promise<{ bundle: number; photos: number }>(
@@ -461,6 +546,10 @@ Object.assign(window, {
         photos: value.photos.length,
         enabled: value.metadata.enabled,
       };
+    },
+    async savedGoal() {
+      return (await storage.read(Date.now())).bundle?.snapshot.views.summary
+        ?.dailyStepsGoal;
     },
     async stale() {
       try {

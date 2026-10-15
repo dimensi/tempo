@@ -16,6 +16,8 @@ export default defineConfig([
                 '@/features/*/*',
                 '!@/features/nutrition/read',
                 '!@/features/workouts/read',
+                '!@/features/overview/read',
+                '!@/features/analytics/read',
               ],
               message:
                 'Import only a feature public entry point; shared contracts belong in src/contracts.',

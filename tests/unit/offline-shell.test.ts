@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { prepareOfflineShell } from '@/features/offline/shell';
+import { prepareOfflineShell } from '@/lib/offline-shell';
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -77,7 +77,16 @@ test('successful readiness cleans the deadline and already-aborted work never re
   vi.useFakeTimers();
   const register = vi.fn(() => Promise.resolve());
   vi.stubGlobal('navigator', {
-    serviceWorker: { register, ready: Promise.resolve() },
+    serviceWorker: {
+      register,
+      ready: Promise.resolve({
+        active: {
+          postMessage(_message: unknown, ports: MessagePort[]) {
+            ports[0]!.postMessage({ contractVersion: 2 });
+          },
+        },
+      }),
+    },
   });
   await prepareOfflineShell(new AbortController().signal);
   expect(vi.getTimerCount()).toBe(0);
@@ -87,4 +96,19 @@ test('successful readiness cleans the deadline and already-aborted work never re
     name: 'AbortError',
   });
   expect(register).toHaveBeenCalledOnce();
+});
+
+test('an incompatible active worker cannot prepare a new contract', async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('navigator', {
+    serviceWorker: {
+      register: () => Promise.resolve(),
+      ready: Promise.resolve({ active: { postMessage() {} } }),
+    },
+  });
+  const rejected = expect(
+    prepareOfflineShell(new AbortController().signal),
+  ).rejects.toThrow('Offline shell unavailable');
+  await vi.advanceTimersByTimeAsync(10000);
+  await rejected;
 });

@@ -39,12 +39,6 @@ export interface ReportDataSource {
     mime: 'image/jpeg' | 'image/png' | 'image/webp';
   }>;
 }
-export type ReportDataset = {
-  days: NutritionDay[];
-  steps: StepsSummary['days'];
-  dailyStepsGoal: number | null;
-  photos: Array<SafeMealPhotoView & { dataUri: string }>;
-};
 // Composition seam for source C. No silent demo fallback or global test setter.
 export function reportDataSource(headers: Headers): ReportDataSource {
   return {

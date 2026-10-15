@@ -254,7 +254,7 @@ const request = (
   headers: Headers,
   path = 'snapshot?from=2026-10-11&to=2026-10-12',
 ) => new Request('http://localhost/api/offline/' + path, { headers });
-it('actual sessions restrict offline access to OWNER even with trainer grant', async () => {
+it('actual sessions require owner or a current explicit trainer grant', async () => {
   database.db
     .insert(trainerAccess)
     .values({ trainerId: 'trainer', ownerId, createdAt: new Date() })
@@ -262,9 +262,9 @@ it('actual sessions restrict offline access to OWNER even with trainer grant', a
   expect((await identityGET(request(new Headers(), 'identity'))).status).toBe(
     401,
   );
-  expect((await snapshotGET(request(trainerHeaders))).status).toBe(403);
+  expect((await snapshotGET(request(trainerHeaders))).status).toBe(200);
   expect((await identityGET(request(trainerHeaders, 'identity'))).status).toBe(
-    403,
+    200,
   );
 });
 it('strict query rejects owner selectors, duplicates, invalid/reversed dates and over30 days', async () => {
@@ -579,7 +579,7 @@ it('native offline history is owner/current-account/day bounded, disconnected-re
     .insert(trainerAccess)
     .values({ trainerId: 'trainer', ownerId, createdAt: new Date() })
     .run();
-  expect((await snapshotGET(request(trainerHeaders))).status).toBe(403);
+  expect((await snapshotGET(request(trainerHeaders))).status).toBe(200);
   try {
     for (const disconnected of [false, true]) {
       if (disconnected) await store.disconnect();

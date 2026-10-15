@@ -7,6 +7,7 @@ import {
   AnalyticsDashboard,
   analyticsMessages as m,
   AnalyticsTimezone,
+  PeriodControl,
 } from '@/features/analytics';
 export const metadata = { title: m.title };
 export default async function Page({
@@ -48,6 +49,14 @@ export default async function Page({
     <AnalyticsDashboard
       key={`${data.range.from}:${data.range.to}:${data.timezone}`}
       data={data}
+      navigationSlot={
+        <PeriodControl
+          range={data.range}
+          previous={data.previousRange}
+          timezone={data.timezone}
+          today={data.today}
+        />
+      }
     />
   );
 }

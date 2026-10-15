@@ -50,17 +50,19 @@ export function MeasurementsPanel({
   writable,
   weightHistory,
   renderComments,
+  saved,
 }: {
   ownerId: string;
   writable: boolean;
   deviceWrites?: boolean;
+  saved?: Measurement[];
   weightHistory: WeightHistory;
   renderComments?: (measurementId: string) => ReactNode;
 }) {
   const [issues, setIssues] = useState<MeasurementPrecisionIssue[]>([]);
   const [retrying, setRetrying] = useState<string>();
-  const [items, setItems] = useState<Measurement[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<Measurement[]>(saved ?? []);
+  const [loading, setLoading] = useState(!saved);
   const [readDenied, setReadDenied] = useState(false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -75,6 +77,7 @@ export function MeasurementsPanel({
   const [metric, setMetric] = useState<MeasurementMetric>('weight');
   const url = `/api/measurements?ownerId=${encodeURIComponent(ownerId)}`;
   useEffect(() => {
+    if (saved) return;
     let active = true;
     fetch(url)
       .then(async (r) => {
@@ -103,8 +106,9 @@ export function MeasurementsPanel({
     return () => {
       active = false;
     };
-  }, [url]);
+  }, [url, saved]);
   useEffect(() => {
+    if (saved) return;
     let active = true;
     void fetch(`/api/measurements/sync?ownerId=${encodeURIComponent(ownerId)}`)
       .then(async (response) => {
@@ -157,7 +161,7 @@ export function MeasurementsPanel({
       active = false;
       clearInterval(timer);
     };
-  }, [ownerId, url, items]);
+  }, [ownerId, url, items, saved]);
   async function retrySync(id: string) {
     setRetrying(id);
     setError(undefined);

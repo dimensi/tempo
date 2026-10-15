@@ -3,11 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ReportError } from '@/server/pdf/errors';
 
-export type ReportFonts = {
-  sans: Uint8Array;
-  bold: Uint8Array;
-  serif: Uint8Array;
-};
+import type { ReportFonts } from '@/contracts/reports';
 
 export async function readReportFonts(): Promise<ReportFonts> {
   try {

@@ -1,8 +1,8 @@
 'use client';
 import { useSyncExternalStore } from 'react';
-import { Alert, Stack, Text, Title } from '@mantine/core';
-import { getOfflineController } from './controller';
-import { offlineMessages as m } from './messages';
+import { Button, Alert, Stack, Text, Title } from '@mantine/core';
+import { getOfflineController } from '@/lib/offline-controller';
+import { offlineMessages as m } from '@/config/offline';
 export function OfflineSettings() {
   const controller = getOfflineController();
   const state = useSyncExternalStore(
@@ -17,6 +17,13 @@ export function OfflineSettings() {
         <Text>{m.description}</Text>
         <Text>{m.background}</Text>
         <Text>{m.disclosure}</Text>
+        <Button
+          variant="subtle"
+          mih={44}
+          onClick={() => void controller.disable()}
+        >
+          {m.disable}
+        </Button>
         {state.error && <Alert role="alert">{m[state.error]}</Alert>}
         {state.bundle && (
           <Text>

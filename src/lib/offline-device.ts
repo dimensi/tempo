@@ -1,3 +1,4 @@
+import { reportNetworkResult } from '@/lib/network-state';
 import { clearVideoDrafts } from '@/lib/workout-video-draft';
 import {
   offlineLimits,
@@ -94,7 +95,7 @@ export function initialMetadata(): CacheMetadata {
 }
 
 const databaseName = 'yazio-offline-read-v1';
-const stores = ['metadata', 'bundle', 'photos'];
+const stores = ['metadata', 'bundle', 'photos', 'files'];
 const gateKey = 'yazio.offline.block.v1';
 const channelName = 'yazio-offline-lifecycle-v1';
 const mutationLockName = 'yazio-offline-mutation';
@@ -362,6 +363,41 @@ export interface StoredPhoto {
   id: string;
   bytes: Blob;
 }
+export interface StoredOfflineFile {
+  id: string;
+  label: string;
+  kind: 'pdf' | 'video';
+  bytes: Blob;
+  savedAt: number;
+  fence: CacheFence;
+}
+export const offlineFileLimits = {
+  bytes: 300 * 1024 * 1024,
+  count: 30,
+  singleBytes: 256 * 1024 * 1024,
+} as const;
+export function validOfflineFiles(
+  files: StoredOfflineFile[],
+  fence: CacheFence,
+) {
+  return (
+    files.every(
+      (file) =>
+        file.fence.partition === fence.partition &&
+        file.fence.generation === fence.generation &&
+        file.fence.deviceEpoch === fence.deviceEpoch &&
+        file.bytes instanceof Blob &&
+        file.bytes.size > 0 &&
+        file.bytes.size <= offlineFileLimits.singleBytes &&
+        file.bytes.type ===
+          (file.kind === 'pdf' ? 'application/pdf' : 'video/mp4'),
+    ) &&
+    files.length <= offlineFileLimits.count &&
+    new Set(files.map((file) => file.id)).size === files.length &&
+    files.reduce((sum, file) => sum + file.bytes.size, 0) <=
+      offlineFileLimits.bytes
+  );
+}
 export class OfflineStorage {
   private database?: Promise<IDBDatabase>;
   constructor(
@@ -372,9 +408,11 @@ export class OfflineStorage {
     if (!this.factory)
       return Promise.reject(new OfflineStorageError('unavailable'));
     return (this.database ??= new Promise((resolve, reject) => {
-      const request = this.factory!.open(databaseName, 1);
+      const request = this.factory!.open(databaseName, 2);
       request.onupgradeneeded = () => {
-        for (const name of stores) request.result.createObjectStore(name);
+        for (const name of stores)
+          if (!request.result.objectStoreNames.contains(name))
+            request.result.createObjectStore(name);
       };
       request.onerror = () => {
         this.database = undefined;
@@ -436,6 +474,7 @@ export class OfflineStorage {
             transaction.objectStore('metadata').put(metadata, 'current');
             transaction.objectStore('bundle').clear();
             transaction.objectStore('photos').clear();
+            transaction.objectStore('files').clear();
           }
           action(
             transaction,
@@ -501,6 +540,7 @@ export class OfflineStorage {
       tx.objectStore('metadata').put(next, 'current');
       tx.objectStore('bundle').clear();
       tx.objectStore('photos').clear();
+      tx.objectStore('files').clear();
       finish(next);
     });
   }
@@ -531,6 +571,7 @@ export class OfflineStorage {
       tx.objectStore('metadata').put(next, 'current');
       tx.objectStore('bundle').clear();
       tx.objectStore('photos').clear();
+      tx.objectStore('files').clear();
       finish({
         partition,
         generation: next.generation,
@@ -600,6 +641,7 @@ export class OfflineStorage {
       metadata: CacheMetadata;
       bundle: CachedBundle<OfflineSnapshot> | null;
       photos: StoredPhoto[];
+      files?: StoredOfflineFile[];
     }>((tx, metadata, finish, fail) => {
       const request = tx.objectStore('bundle').get('current');
       request.onsuccess = () => {
@@ -617,6 +659,7 @@ export class OfflineStorage {
             tx.objectStore('metadata').put(next, 'current');
             tx.objectStore('bundle').clear();
             tx.objectStore('photos').clear();
+            tx.objectStore('files').clear();
             return finish({ metadata: next, bundle: null, photos: [] });
           }
           if (!bundle) return finish({ metadata, bundle: null, photos: [] });
@@ -631,6 +674,7 @@ export class OfflineStorage {
             tx.objectStore('metadata').put(next, 'current');
             tx.objectStore('bundle').clear();
             tx.objectStore('photos').clear();
+            tx.objectStore('files').clear();
             return finish({ metadata: next, bundle: null, photos: [] });
           }
           const snapshot = pruneOfflineSnapshot(
@@ -654,9 +698,11 @@ export class OfflineStorage {
             tx.objectStore('metadata').put(next, 'current');
             tx.objectStore('bundle').clear();
             tx.objectStore('photos').clear();
+            tx.objectStore('files').clear();
             return finish({ metadata: next, bundle: null, photos: [] });
           }
           const photos: StoredPhoto[] = [];
+          const filesRequest = tx.objectStore('files').getAll();
           const cursor = tx.objectStore('photos').openCursor();
           cursor.onsuccess = () => {
             try {
@@ -687,7 +733,17 @@ export class OfflineStorage {
                   ),
                 };
                 tx.objectStore('bundle').put(retained, 'current');
-                finish({ metadata: next, bundle: retained, photos });
+                const files = filesRequest.result as StoredOfflineFile[];
+                if (!validOfflineFiles(files, retained.fence)) {
+                  tx.objectStore('files').clear();
+                  finish({
+                    metadata: next,
+                    bundle: retained,
+                    photos,
+                    files: [],
+                  });
+                } else
+                  finish({ metadata: next, bundle: retained, photos, files });
               }
             } catch {
               fail(new OfflineStorageError('unavailable'));
@@ -699,6 +755,31 @@ export class OfflineStorage {
       };
     });
   }
+  writeFile(file: StoredOfflineFile | { id: string; fence: CacheFence }) {
+    return this.transaction<void>((tx, metadata, finish, fail) => {
+      const gate = readGate(this.gateStorage);
+      if (
+        hasMutationIntent(this.gateStorage) ||
+        memoryBlocked ||
+        gate.disabled ||
+        gate.epoch !== file.fence.deviceEpoch ||
+        !matchesFence(metadata, file.fence)
+      )
+        return fail(new OfflineStorageError('fence'));
+      const request = tx.objectStore('files').getAll();
+      request.onsuccess = () => {
+        const remaining = (request.result as StoredOfflineFile[]).filter(
+          (row) => row.id !== file.id,
+        );
+        if ('bytes' in file) {
+          if (!validOfflineFiles([...remaining, file], file.fence))
+            return fail(new OfflineStorageError('quota'));
+          tx.objectStore('files').put(file, file.id);
+        } else tx.objectStore('files').delete(file.id);
+        finish();
+      };
+    });
+  }
   async close() {
     (await this.database)?.close();
     this.database = undefined;
@@ -707,7 +788,50 @@ export class OfflineStorage {
 export function observeOfflineDenials() {
   const original = window.fetch;
   const observed: typeof fetch = async (input, init) => {
-    const response = await original.call(window, input, init);
+    const url = new URL(
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url,
+      window.location.origin,
+    );
+    const relevant =
+      url.origin === window.location.origin && url.pathname.startsWith('/api/');
+    let response: Response;
+    try {
+      response = await original.call(window, input, init);
+    } catch (error) {
+      if (
+        relevant &&
+        !(
+          init?.signal?.aborted ||
+          (input instanceof Request && input.signal.aborted)
+        )
+      )
+        reportNetworkResult(false);
+      throw error;
+    }
+    if (relevant) {
+      // A feature HTTP error still proves reachability; preserve its error/draft.
+      // Cache-service failures and transport exceptions control global fallback.
+      reportNetworkResult(
+        !url.pathname.startsWith('/api/offline/') || response.status < 500,
+      );
+      const method = (
+        init?.method ?? (input instanceof Request ? input.method : 'GET')
+      ).toUpperCase();
+      if (
+        response.ok &&
+        !url.pathname.startsWith('/api/offline/') &&
+        !/\/(?:video|preview|playback|parts)(?:\/|$)/.test(url.pathname) &&
+        /^\/api\/(?:nutrition|measurements|workouts|health|overview|yazio|transformmate|comments|settings)(?:\/|$)/.test(
+          url.pathname,
+        ) &&
+        ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(method)
+      )
+        window.dispatchEvent(new Event('tempo:offline-source-loaded'));
+    }
     try {
       const url = new URL(
         typeof input === 'string'

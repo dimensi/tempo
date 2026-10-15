@@ -25,14 +25,18 @@ function exactDifference(current: string, previous: string) {
 const macros = ['protein', 'fat', 'carbs'] as const;
 export function analyzeNutrition(
   range: AnalyticsRange,
-  input: NutritionDay[],
+  input: (Pick<NutritionDay, 'date' | 'fetchedAt' | 'totals' | 'knownTotals'> &
+    ({ meals: NutritionDay['meals'] } | { hasEntries: boolean }))[],
 ): NutritionAnalysis {
   const summary = summarizeNutrition(range, input);
   const records = new Map(input.map((day) => [day.date, day]));
   const days = summary.days.map((day) => {
     const record = records.get(day.date);
-    const hasEntries =
-      record?.meals.some((meal) => meal.entries.length > 0) ?? false;
+    const hasEntries = record
+      ? 'hasEntries' in record
+        ? record.hasEntries
+        : record.meals.some((meal) => meal.entries.length > 0)
+      : false;
     const quality = !record
       ? 'missing'
       : !hasEntries

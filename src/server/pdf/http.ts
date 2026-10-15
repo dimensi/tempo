@@ -6,7 +6,7 @@ import { reportMessages as m } from '@/features/reports';
 import { ReportError } from '@/server/pdf/errors';
 import { reportDataSource, type ReportDataSource } from '@/server/pdf/source';
 import { generateReport, withReportSlot } from '@/server/pdf/service';
-import { reportCsp } from '@/server/pdf/template';
+import { reportCsp } from '@/lib/reports/template';
 
 const privateHeaders = {
   'Cache-Control': 'private, no-store, max-age=0',
@@ -60,10 +60,19 @@ export function createReportHandler(
           );
         const filename = `nutrition-${data.start}-${data.end}.${data.format}`;
         return new Response(
-          typeof body === 'string' ? body : new Uint8Array(body),
+          request.method === 'HEAD'
+            ? null
+            : typeof body === 'string'
+              ? body
+              : new Uint8Array(body),
           {
             headers: {
               ...privateHeaders,
+              'Content-Length': String(
+                typeof body === 'string'
+                  ? Buffer.byteLength(body, 'utf8')
+                  : body.byteLength,
+              ),
               'Content-Type':
                 data.format === 'html'
                   ? 'text/html; charset=utf-8'

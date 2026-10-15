@@ -5,6 +5,7 @@ import {
   transformMateExerciseInfoSchema,
   type TransformMateExerciseInfo,
 } from '@/contracts/transformmate';
+import { OfflineFile } from '@/components/shared/offline-file';
 import { TeachingVideo } from './teaching-video';
 import { useExercisePreview } from './exercise-preview';
 import { workoutMessages as m } from './messages';
@@ -54,6 +55,14 @@ function LoadedExerciseDetails({
           key={`${ownerId}-${exerciseId}`}
           poster={preview?.src}
           src={`/api/workouts/transformmate/exercises/${exerciseId}/video?ownerId=${encodeURIComponent(ownerId)}`}
+        />
+      )}
+      {info.hasVideo && (
+        <OfflineFile
+          id={`exercise-video:${exerciseId}`}
+          label={info.name}
+          kind="video"
+          href={`/api/workouts/transformmate/exercises/${exerciseId}/video?ownerId=${encodeURIComponent(ownerId)}`}
         />
       )}
       <Badge variant="outline" color="gray" c="dimmed">

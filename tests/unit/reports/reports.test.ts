@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { reportRequestSchema, periodDates } from '@/contracts/reports';
-import { summarizeDays } from '@/server/pdf/summary';
-import { renderReportHtml } from '@/server/pdf/template';
+import { summarizeDays } from '@/lib/reports/summary';
+import { renderReportHtml } from '@/lib/reports/template';
 import { loadReportDataset, withReportSlot } from '@/server/pdf/service';
 import type { ReportDataSource } from '@/server/pdf/source';
 import { syntheticDay } from './fixtures';
@@ -252,4 +252,32 @@ it('preserves source quantity, serving and zero consumed portions without derivi
   expect(html).toContain('0 порций');
   expect(html).toContain('масса не указана');
   expect(day).toEqual(before);
+});
+
+it('renders a complete local report with foods, absent days and missing photo bytes', () => {
+  const day = syntheticDay();
+  day.meals[0]!.entries[0]!.name = 'Saved local food';
+  const html = renderReportHtml(
+    { ...request, period: 'custom', end: '2026-10-11' },
+    {
+      dailyStepsGoal: 10000,
+      days: [day],
+      steps: [{ date: request.start, steps: 0, source: 'YAZIO' }],
+      photos: [
+        {
+          id: 'missing',
+          date: request.start,
+          daytime: 'breakfast',
+          source: 'manual',
+          observedAt: '2026-10-10T12:00:00Z',
+          dataUri: null,
+        },
+      ],
+    },
+  );
+  expect(html).toContain('Saved local food');
+  expect(html).toContain('Нет данных за этот день');
+  expect(html).toContain('Фотография не сохранена на устройстве, нужна сеть.');
+  expect(html).not.toContain('src="null"');
+  expect(html).toContain('Шаги');
 });

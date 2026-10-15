@@ -7,9 +7,9 @@ import { join } from 'node:path';
 import { syntheticDay } from '../unit/reports/fixtures';
 vi.mock('server-only', () => ({}));
 import { readReportFonts } from '@/server/pdf/fonts';
-import { renderReportHtml } from '@/server/pdf/template';
+import { renderReportHtml } from '@/lib/reports/template';
 import { prepareReportPage } from '@/server/pdf/renderer';
-import { mealShares } from '@/server/pdf/shares';
+import { mealShares } from '@/lib/reports/shares';
 import { reportMessages as m } from '@/features/reports';
 
 it('omits empty canonical meals in paginated HTML/PDF, retaining real entries, photos and authoritative-only nutrients', async () => {

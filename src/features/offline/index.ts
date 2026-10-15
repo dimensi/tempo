@@ -1,8 +1,8 @@
 export { OfflineLifecycle } from './lifecycle';
 export { OfflineSettings } from './settings';
 
-export { getOfflineController } from './controller';
-export { offlineMessages } from './messages';
+export { getOfflineController } from '@/lib/offline-controller';
+export { offlineMessages } from '@/config/offline';
 export {
   interceptOfflineLinks,
   offlineNavigate,

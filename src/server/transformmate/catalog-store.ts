@@ -98,6 +98,16 @@ export function createCatalogStore(sqlite: Database.Database) {
   return {
     state,
     records,
+    offlineRecords(scope: CatalogIdentity) {
+      return (
+        sqlite
+          .prepare(
+            `SELECT * FROM transformmate_catalog_exercise WHERE ${WHERE}
+        ORDER BY coalesce(detail_fetched_at,summary_fetched_at) DESC,exercise_id LIMIT 201`,
+          )
+          .all(...values(scope)) as Row[]
+      ).map(decode);
+    },
     record,
     full(scope: CatalogIdentity, summaries: Summary[], at: string) {
       const parsed = transformMateCatalogSchema.parse(summaries);

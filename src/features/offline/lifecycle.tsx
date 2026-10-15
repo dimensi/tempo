@@ -1,10 +1,11 @@
 'use client';
+import { reportNetworkResult } from '@/lib/network-state';
 import { useEffect } from 'react';
 import {
   observeOfflineDenials,
   purgeOfflineDevice,
 } from '@/lib/offline-device';
-import { getOfflineController } from './controller';
+import { getOfflineController } from '@/lib/offline-controller';
 import { attachOfflineRefresh } from './refresh';
 import { syncDeviceWrites } from '@/lib/offline-write-client';
 export function OfflineLifecycle({ role }: { role: string }) {
@@ -12,9 +13,16 @@ export function OfflineLifecycle({ role }: { role: string }) {
     const controller = getOfflineController();
     const stopListening = controller.listen();
     const stopObserving = observeOfflineDenials();
-    const detach =
-      role === 'OWNER' ? attachOfflineRefresh(controller) : () => {};
-    if (role !== 'OWNER') void purgeOfflineDevice().catch(() => {});
+    const networkMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OFFLINE_NETWORK_UNAVAILABLE')
+        reportNetworkResult(false);
+    };
+    navigator.serviceWorker?.addEventListener('message', networkMessage);
+    const detach = ['OWNER', 'TRAINER'].includes(role)
+      ? attachOfflineRefresh(controller)
+      : () => {};
+    if (!['OWNER', 'TRAINER'].includes(role))
+      void purgeOfflineDevice().catch(() => {});
     let running = false;
     const sync = () => {
       if (
@@ -45,6 +53,7 @@ export function OfflineLifecycle({ role }: { role: string }) {
       document.removeEventListener('visibilitychange', sync);
       stopListening();
       stopObserving();
+      navigator.serviceWorker?.removeEventListener('message', networkMessage);
       detach();
     };
   }, [role]);

@@ -49,7 +49,7 @@ export function offlineFixture(now: number, timezone = 'UTC'): OfflineSnapshot {
     })),
   };
   return offlineSnapshotSchema.parse({
-    contractVersion: 1,
+    contractVersion: 2,
     weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
     partition: 'A'.repeat(43),
     connectionGeneration: 'B'.repeat(43),
@@ -59,6 +59,15 @@ export function offlineFixture(now: number, timezone = 'UTC'): OfflineSnapshot {
     sessionExpiresAt: new Date(now + 1200000).toISOString(),
     from: shiftDate(date, -14),
     to: date,
+    views: {
+      summary: null,
+      settings: null,
+      comments: [],
+      commentsComplete: true,
+      catalog: [],
+      catalogComplete: false,
+      videos: [],
+    },
     workoutDates: [date],
     diary: [day],
     photos: { availability: 'metadata-only', items: [] },

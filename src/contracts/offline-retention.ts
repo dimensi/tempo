@@ -25,11 +25,30 @@ export function pruneOfflineSnapshot(
       within(record.measuredDate),
     ),
     dailySteps: snapshot.dailySteps.filter((day) => within(day.date)),
-    // Workout copies are bounded by collection/payload quotas, not diary age.
-    plannedWorkouts: snapshot.plannedWorkouts,
-    workoutSessions: snapshot.workoutSessions,
-    nativeTrainings: snapshot.nativeTrainings,
-    transformMateFacts: snapshot.transformMateFacts,
+    views: {
+      ...snapshot.views,
+      comments: snapshot.views.comments.filter((record) => within(record.date)),
+      videos: snapshot.views.videos.filter((video) =>
+        snapshot.workoutSessions.some(
+          (session) =>
+            session.href === video.sessionHref && within(session.date),
+        ),
+      ),
+    },
+    workoutDates: snapshot.workoutDates.filter(within),
+    // Detailed workout copies follow the same rolling window as the diary.
+    plannedWorkouts: snapshot.plannedWorkouts.filter((record) =>
+      within(record.date),
+    ),
+    workoutSessions: snapshot.workoutSessions.filter((record) =>
+      within(record.date),
+    ),
+    nativeTrainings: snapshot.nativeTrainings.filter((record) =>
+      within(record.date),
+    ),
+    transformMateFacts: snapshot.transformMateFacts.filter((record) =>
+      within(record.date),
+    ),
   };
 }
 export function mergeOfflineSnapshots(

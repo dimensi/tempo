@@ -7,7 +7,7 @@ vi.mock('@/lib/offline-device', async (importOriginal) => ({
     return 'completed';
   }),
 }));
-import { OfflineController } from '@/features/offline/controller';
+import { OfflineController } from '@/lib/offline-controller';
 import {
   initialMetadata,
   nextMetadata,
@@ -16,6 +16,7 @@ import {
   type OfflineStorage,
   type CachedBundle,
   type CacheMetadata,
+  type StoredOfflineFile,
 } from '@/lib/offline-device';
 import {
   offlineLocalWindow,
@@ -28,12 +29,17 @@ const now = Date.parse('2026-10-12T12:00:00Z');
 const fixture = offlineFixture(now);
 function storage() {
   let metadata: CacheMetadata = initialMetadata();
+  let files: StoredOfflineFile[] = [];
   let bundle: CachedBundle<OfflineSnapshot> | null = null;
   const commit = vi.fn(async (value: CachedBundle<OfflineSnapshot>) => {
     bundle = value;
   });
   return {
     commit,
+    writeFile: vi.fn(async (file: StoredOfflineFile | { id: string }) => {
+      files = files.filter((row) => row.id !== file.id);
+      if ('bytes' in file) files.push(file);
+    }),
     metadata: async () => metadata,
     enable: async (partition: string, connectionGeneration: string) => {
       metadata = {
@@ -72,7 +78,7 @@ function storage() {
             offlineLocalWindow(time, timezone),
           ),
         };
-      return { metadata, bundle, photos: [] };
+      return { metadata, bundle, photos: [], files };
     }),
   };
 }
@@ -119,7 +125,10 @@ const controller = (
     async () => {},
     () => 'UTC',
   );
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.unstubAllGlobals();
+});
 it('explicit opt-in verifies OWNER and always requests rolling15 date-only data, preserving zero/null/kg policy', async () => {
   const persistence = storage();
   const request = fetcher();
@@ -236,7 +245,7 @@ it('foreground event bursts are singleflight and snapshot refresh is bounded whi
     ),
   ).toHaveLength(1);
 });
-it('failed live verification hides cache and preserves copied data; failed background download keeps verified copy', async () => {
+it('failed network verification reads the guarded local copy; background failure stays offline', async () => {
   const persistence = storage();
   const initial = controller(persistence, fetcher() as typeof fetch);
   await initial.save();
@@ -244,7 +253,8 @@ it('failed live verification hides cache and preserves copied data; failed backg
     throw new TypeError('network');
   }) as typeof fetch);
   await reader.activate(true);
-  expect(reader.getSnapshot().bundle).toBeNull();
+  expect(reader.getSnapshot().bundle).not.toBeNull();
+  expect(reader.getSnapshot().status).toBe('offline');
   expect(purgeOfflineDevice).not.toHaveBeenCalled();
   expect((await persistence.read()).bundle).not.toBeNull();
   const background = controller(
@@ -258,8 +268,8 @@ it('failed live verification hides cache and preserves copied data; failed backg
   await background.activate(true);
   expect(background.getSnapshot()).toMatchObject({
     enabled: true,
-    status: 'ready',
-    error: 'unavailable',
+    status: 'offline',
+    error: null,
   });
   expect(background.getSnapshot().bundle?.weightPolicyVersion).toBe(
     ownerConfirmedYazioWeightPolicyVersion,
@@ -327,4 +337,97 @@ it('online identity denial supersedes a deferred unverified offline read without
     error: 'denied',
   });
   expect((await persistence.read()).bundle).toBeNull();
+});
+
+it('explicit file save keeps actual bytes and removing a copy does not invent an offline network state', async () => {
+  vi.stubGlobal('location', { origin: 'https://tempo.example.test' });
+  const persistence = storage();
+  const copy = '%PDF-local';
+  const request = vi.fn(async (url: string) => {
+    if (url.startsWith('/api/reports?'))
+      return new Response(copy, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Length': String(copy.length),
+        },
+      });
+    return url === '/api/offline/identity'
+      ? identity()
+      : new Response(JSON.stringify(fixture));
+  });
+  const reader = controller(persistence, request as typeof fetch);
+  await reader.save();
+  await reader.saveFile({
+    id: 'report:today',
+    label: 'Today',
+    kind: 'pdf',
+    href: '/api/reports?format=pdf',
+  });
+  expect(await reader.getSnapshot().files[0]!.bytes.text()).toBe(copy);
+  expect(reader.getSnapshot().status).toBe('ready');
+  await reader.removeFile('report:today');
+  expect(reader.getSnapshot().files).toEqual([]);
+  expect(reader.getSnapshot().status).toBe('ready');
+  expect(reader.getSnapshot().bundle).not.toBeNull();
+  await expect(
+    reader.saveFile({
+      id: 'bad',
+      label: 'Bad',
+      kind: 'video',
+      href: 'https://cdn.test/video?token=secret',
+    }),
+  ).rejects.toThrow();
+});
+it('a quota rejection during explicit file save preserves the copied diary', async () => {
+  vi.stubGlobal('location', { origin: 'https://tempo.example.test' });
+  const persistence = storage();
+  persistence.writeFile.mockRejectedValueOnce(new Error('Quota exceeded'));
+  const request = vi.fn(async (url: string) =>
+    url.startsWith('/api/reports?')
+      ? new Response('%PDF-local', {
+          headers: { 'Content-Type': 'application/pdf' },
+        })
+      : url === '/api/offline/identity'
+        ? identity()
+        : new Response(JSON.stringify(fixture)),
+  );
+  const reader = controller(persistence, request as typeof fetch);
+  await reader.save();
+  await expect(
+    reader.saveFile({
+      id: 'report:today',
+      label: 'Today',
+      kind: 'pdf',
+      href: '/api/reports?format=pdf',
+    }),
+  ).rejects.toThrow();
+  expect(reader.getSnapshot().status).toBe('ready');
+  expect(reader.getSnapshot().bundle?.snapshot.diary).toHaveLength(1);
+});
+
+it('checks file size with HEAD without persisting a file or downloading its body', async () => {
+  vi.stubGlobal('location', { origin: 'https://tempo.test' });
+  const persistence = storage();
+  const requests = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.startsWith('/api/reports')) expect(options?.method).toBe('HEAD');
+    return url === '/api/offline/identity'
+      ? identity()
+      : url.startsWith('/api/offline/snapshot')
+        ? new Response(JSON.stringify(fixture))
+        : new Response(null, {
+            headers: {
+              'content-length': '1234',
+              'content-type': 'application/pdf',
+            },
+          });
+  });
+  const reader = controller(persistence, requests as typeof fetch);
+  await reader.save();
+  expect(await reader.fileSize('/api/reports?format=pdf')).toBe(1234);
+  expect(
+    requests.mock.calls.find((call) => call[0].startsWith('/api/reports'))?.[1]
+      ?.method,
+  ).toBe('HEAD');
+  expect(persistence.writeFile).not.toHaveBeenCalled();
+  expect(reader.getSnapshot().bundle).not.toBeNull();
 });

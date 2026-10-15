@@ -1,4 +1,3 @@
-import 'server-only';
 import Decimal from 'decimal.js';
 import type { NutritionDay, NutritionTotals } from '@/contracts/nutrition';
 const Exact = Decimal.clone({ precision: 320, toExpNeg: -110, toExpPos: 110 });

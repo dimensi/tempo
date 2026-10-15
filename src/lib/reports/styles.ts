@@ -1,5 +1,3 @@
-import 'server-only';
-
 export const reportStyles = `
 @page{size:A4 portrait;margin:0}
 :root{--paper:#F8F7F2;--ink:#202C28;--muted:#55645D;--brand:#225C45;--rule:#D4DAD1;--wash:#E8EDE4;--calories:#B45309;--protein:#236AA8;--fat:#946500;--carbs:#23784B;--breakfast:#B45309;--lunch:#236AA8;--dinner:#7956AA;--snack:#1D7468;--numeric-columns:18.5mm 17mm 17mm 19mm}

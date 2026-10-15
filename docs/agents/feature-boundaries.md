@@ -15,3 +15,5 @@
 Task-specific unit/integration tests are owned by the feature agent; avoid all agents editing the shared smoke test. Route handlers/server actions accessing DB remain server-only; server implementation can be placed under a clearly assigned `src/server/<feature>` after agreeing ownership. Do not put a DB import into UI feature files.
 
 No direct feature-to-feature imports; data exchange uses shared contracts and server composition. No cycles. A shared type must be accepted before dependent modules proceed. Schema/migrations are coordinated serially to avoid independent snapshot collisions. Additive features must preserve existing shell and security checks.
+
+Offline read composition uses the public `nutrition/read`, `workouts/read`, `overview/read` and `analytics/read` entries. These entries expose shared reading components/models without Next router runtime imports; ordinary online route adapters remain in the regular feature entry. Feature-to-feature imports remain forbidden.

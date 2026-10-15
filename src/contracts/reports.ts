@@ -41,3 +41,17 @@ export function periodDates(start: string, end: string): string[] {
     new Date(first + index * 86400000).toISOString().slice(0, 10),
   );
 }
+
+export type ReportDataset = {
+  days: import('./nutrition').NutritionDay[];
+  steps: import('./health').StepsSummary['days'];
+  dailyStepsGoal: number | null;
+  photos: Array<
+    import('./nutrition').SafeMealPhotoView & { dataUri: string | null }
+  >;
+};
+export type ReportFonts = {
+  sans: Uint8Array;
+  bold: Uint8Array;
+  serif: Uint8Array;
+};

@@ -2,7 +2,29 @@ import { ru } from '@/config/messages';
 import { offlineDeviceMessages } from '@/lib/offline-device';
 export const offlineMessages = {
   ...offlineDeviceMessages,
-  unknown: 'Нет сети, эти данные ещё не загружены',
+  unknown: 'Нет сохранённых данных, нужна сеть',
+  coverage: 'Сохранённый период',
+  partial:
+    'Покрытие неполное. Пропуски не считаются нулями; для остальных данных нужна сеть.',
+  cachedCatalog: 'Каталог упражнений',
+  cachedComments: 'Комментарии',
+  noComments: 'За сохранённый период комментариев нет.',
+  networkUnavailable: 'Сеть или сервер недоступны · сохранённые данные',
+  reachable: 'Сеть доступна',
+  connected: 'Подключено',
+  disconnected: 'Не подключено',
+  initialFrom: 'Начало синхронизации',
+  timezone: 'Часовой пояс',
+  automaticSync: 'Автоматическая синхронизация',
+  yes: 'Да',
+  no: 'Нет',
+  files: 'Файлы на устройстве',
+  reportsDescription:
+    'Сохранённые отчёты и сводки доступны для чтения. Для создания нового PDF нужна сеть.',
+  findExercise: 'Найти в сохранённом каталоге',
+  retryConnection: 'Проверить соединение',
+  sessionExpired:
+    'Срок серверной сессии истёк. Локальная копия доступна только для чтения; при подключении потребуется проверка доступа.',
   requiresNetwork: 'Для этого раздела нужно подключение к сети.',
   sectionTitle: (pathname: string) =>
     ru.sections.find((section) => section.href === pathname)?.title ??
@@ -32,7 +54,7 @@ export const offlineMessages = {
   enabledLabel: 'Доступно офлайн',
   background:
     'Обновляем данные по возможности, пока приложение открыто и подключено к сети.',
-  disable: 'Отключить и очистить',
+  disable: 'Очистить локальные данные',
   open: 'Открыть сохранённые данные',
   saving: 'Сохраняем данные и фотографии…',
   checking: 'Проверяем доступ…',

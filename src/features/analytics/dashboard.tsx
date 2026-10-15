@@ -1,8 +1,8 @@
 'use client';
+import type { ReactNode } from 'react';
 import { Stack, Text, Title } from '@mantine/core';
 import type { AnalyticsData } from '@/contracts/analytics';
 import { analyticsMessages as m } from './messages';
-import { PeriodControl } from './period-control';
 import { AnalyticsOverview } from './overview';
 import { AnalyticsHighlights } from './highlights';
 import { NutritionAnalytics } from './nutrition-analytics';
@@ -10,7 +10,13 @@ import { BodyAnalytics } from './body-analytics';
 import { ActivityAnalytics } from './activity-analytics';
 import { AnalyticsDataQuality } from './data-quality';
 import classes from './analytics.module.css';
-export function AnalyticsDashboard({ data }: { data: AnalyticsData }) {
+export function AnalyticsDashboard({
+  data,
+  navigationSlot,
+}: {
+  data: AnalyticsData;
+  navigationSlot: ReactNode;
+}) {
   const context = {
     today: data.today,
     timezone: data.timezone,
@@ -23,12 +29,7 @@ export function AnalyticsDashboard({ data }: { data: AnalyticsData }) {
           <Title order={1}>{m.title}</Title>
           <Text c="dimmed">{m.description}</Text>
         </div>
-        <PeriodControl
-          range={data.range}
-          previous={data.previousRange}
-          timezone={data.timezone}
-          today={data.today}
-        />
+        {navigationSlot}
       </Stack>
       <AnalyticsOverview data={data} />
       <AnalyticsHighlights items={data.highlights} />

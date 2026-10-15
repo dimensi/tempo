@@ -1,5 +1,5 @@
 import 'server-only';
-import Decimal from 'decimal.js';
+import { summarizeSteps } from '@/lib/steps-summary';
 import { getAuth } from '@/server/auth';
 import { authorize } from '@/server/auth/guards';
 import { getAccessibleOwnerId } from '@/server/access/owner';
@@ -11,13 +11,10 @@ import { yazioHealthRepository } from '@/server/yazio/health-repository';
 import { ownerConfirmedYazioWeightUnit } from '@/contracts/yazio-weight-policy';
 import {
   healthRangeSchema,
-  healthRangeDates,
-  stepsSummarySchema,
   weightHistorySchema,
   type HealthRange,
 } from '@/contracts/health';
 
-const HealthDecimal = Decimal.clone({ precision: 40 });
 export class HealthReadError extends Error {
   constructor(public readonly status: number) {
     super('Health data unavailable');
@@ -42,24 +39,7 @@ export async function getStepsSummary(headers: Headers, input: unknown) {
   const { ownerId, range } = await selectScope(headers, input);
   const records = yazioHealthRepository().steps(ownerId, range);
   await check(headers, ownerId);
-  const byDate = new Map(records.map((record) => [record.date, record]));
-  const days = healthRangeDates(range).map((date) => ({
-    date,
-    steps: byDate.get(date)?.steps ?? null,
-    source: byDate.has(date) ? ('YAZIO' as const) : null,
-  }));
-  const observed = days.filter((day) => day.steps !== null);
-  const total = observed.reduce(
-    (sum, day) => sum.plus(day.steps!),
-    new HealthDecimal(0),
-  );
-  return stepsSummarySchema.parse({
-    range,
-    days,
-    observedDays: observed.length,
-    totalSteps: observed.length ? total.toFixed() : null,
-    averageSteps: observed.length ? total.div(observed.length).toFixed() : null,
-  });
+  return summarizeSteps(range, records);
 }
 export async function getWeightHistory(headers: Headers, input: unknown) {
   const { ownerId, range } = await selectScope(headers, input);

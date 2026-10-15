@@ -1,4 +1,3 @@
-import 'server-only';
 import { hasNutritionMealContent } from '@/lib/nutrition-meal-content';
 import { formatDecimal } from '@/lib/number-display';
 import {
@@ -8,13 +7,12 @@ import {
   type NutritionTotals,
 } from '@/contracts/nutrition';
 import { periodDates, type ReportRequest } from '@/contracts/reports';
-import { reportMessages as m } from '@/features/reports';
-import type { ReportDataset } from '@/server/pdf/source';
-import type { ReportFonts } from '@/server/pdf/fonts';
-import { summarizeSteps, stepsProgress } from '@/server/pdf/steps';
-import { summarizeDays } from '@/server/pdf/summary';
-import { macroShares, mealShares } from '@/server/pdf/shares';
-import { reportStyles, reportPreviewStyles } from '@/server/pdf/styles';
+import { reportMessages as m } from '@/config/reports';
+import type { ReportDataset, ReportFonts } from '@/contracts/reports';
+import { summarizeDays } from '@/lib/reports/summary';
+import { macroShares, mealShares } from '@/lib/reports/shares';
+import { reportStyles, reportPreviewStyles } from '@/lib/reports/styles';
+import { summarizeSteps, stepsProgress } from '@/lib/reports/steps';
 
 export const reportCsp =
   "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
@@ -128,6 +126,12 @@ function notes(values: NutritionTotals, fetchedAt?: string): string {
   const shares = macroShares(values);
   return `<section class="notes"><p>${m.macroExplanation}${shares ? ` ${m.macroEnergy}: ${value(shares.energy)} ${m.kcal}.` : ''} ${m.compactNotes}</p>${fetchedAt ? `<p>${m.updated}: ${escapeHtml(new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(fetchedAt)))} UTC.</p>` : ''}</section>`;
 }
+function fontBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 8192)
+    binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
+  return btoa(binary);
+}
 export function renderReportHtml(
   request: ReportRequest,
   dataset: ReportDataset,
@@ -139,7 +143,7 @@ export function renderReportHtml(
   if (request.format === 'pdf' && !fonts) throw new Error('PDF fonts required');
   const embeddedFonts =
     request.format === 'pdf'
-      ? `@font-face{font-family:'Report Sans';src:url(data:font/ttf;base64,${Buffer.from(fonts!.sans).toString('base64')});font-weight:400}@font-face{font-family:'Report Sans';src:url(data:font/ttf;base64,${Buffer.from(fonts!.bold).toString('base64')});font-weight:700}@font-face{font-family:'Report Serif';src:url(data:font/ttf;base64,${Buffer.from(fonts!.serif).toString('base64')});font-weight:400}`
+      ? `@font-face{font-family:'Report Sans';src:url(data:font/ttf;base64,${fontBase64(fonts!.sans)});font-weight:400}@font-face{font-family:'Report Sans';src:url(data:font/ttf;base64,${fontBase64(fonts!.bold)});font-weight:700}@font-face{font-family:'Report Serif';src:url(data:font/ttf;base64,${fontBase64(fonts!.serif)});font-weight:400}`
       : '';
   const fontFaces = `<style>${embeddedFonts}${reportStyles}${request.format === 'html' ? reportPreviewStyles : ''}</style>`;
   const previewHeader = (title: string, label: string) =>
@@ -170,9 +174,16 @@ export function renderReportHtml(
       const details = visibleMeals
         .map((kind) => {
           const meal = day?.meals.find((candidate) => candidate.kind === kind);
-          const photo = photos.find((candidate) => candidate.daytime === kind);
+          const photo = photos
+            .filter((candidate) => candidate.daytime === kind)
+            .sort(
+              (a, b) =>
+                Number(b.source === 'yazio') - Number(a.source === 'yazio') ||
+                b.observedAt.localeCompare(a.observedAt) ||
+                a.id.localeCompare(b.id),
+            )[0];
           if (!meal && !photo) return '';
-          return `<section class="meal-block" data-meal="${kind}" data-name="${m[kind]}"><div class="meal-heading"><h2>${m[kind]}</h2>${keys.map((key) => `<span class="meal-total number numeric" data-nutrient="${key}">${value(meal?.totals[key] ?? null)}</span>`).join('')}</div><div class="meal-body">${photo ? `<figure class="meal-media"><img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}"></figure>` : ''}<div class="meal-entries">${meal?.entries.map(food).join('') ?? ''}</div></div></section>`;
+          return `<section class="meal-block" data-meal="${kind}" data-name="${m[kind]}"><div class="meal-heading"><h2>${m[kind]}</h2>${keys.map((key) => `<span class="meal-total number numeric" data-nutrient="${key}">${value(meal?.totals[key] ?? null)}</span>`).join('')}</div><div class="meal-body">${photo ? (photo.dataUri ? `<figure class="meal-media"><img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}"></figure>` : `<p class="small-note">${m.offlineMissingPhoto}</p>`) : ''}<div class="meal-entries">${meal?.entries.map(food).join('') ?? ''}</div></div></section>`;
         })
         .join('');
       return `<section class="day-source" data-date="${date}" data-title="${m.diary}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}">${previewHeader(m.diary, diaryDateLabel(date))}<div class="day-start"><p class="counts">${m.mealCount}: ${mealsWithData} · ${m.entryCount}: ${entries} · ${m.photoCount}: ${photos.length}</p>${mealsWithData === 0 ? `<p class="empty">${!day ? m.missing : m.empty}</p>` : ''}${totals(dayTotals, day?.knownTotals, stepsMetric(steps === null ? null : String(steps), dataset.dailyStepsGoal, m.steps))}${charts(dayTotals, day, visibleMeals)}</div><div class="day-meals">${details ? columnHeaders() : ''}${details}</div>${notes(dayTotals, day?.fetchedAt)}</section>`;
