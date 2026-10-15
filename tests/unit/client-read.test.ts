@@ -295,6 +295,30 @@ it('document deletion preserves the medical workspace summary when its refresh f
       ),
     ),
   ).toBe(true);
+  const marker = {
+    id: 'blood-glucose',
+    code: 'GLU',
+    name: 'Glucose',
+    shortName: null,
+    category: 'biochemistry',
+    description: null,
+    preferredUnit: null,
+    definitionVersion: 1,
+  };
+  const markerPath = '/anamnesis/markers/blood-glucose';
+  const markerApi =
+    '/api/anamnesis/markers/blood-glucose?ownerId=00000000-0000-4000-8000-000000000003';
+  await seedClientRead(markerApi, marker);
+  expect(
+    await hasSavedMedicalRoute(new URL(markerPath, 'https://tempo.test')),
+  ).toBe(false);
+  await seedClientRead(
+    '/api/anamnesis/markers/blood-glucose/observations?ownerId=00000000-0000-4000-8000-000000000003',
+    [],
+  );
+  expect(
+    await hasSavedMedicalRoute(new URL(markerPath, 'https://tempo.test')),
+  ).toBe(true);
   await invalidateMedicalDocument(
     '00000000-0000-4000-8000-000000000001',
     '00000000-0000-4000-8000-000000000003',

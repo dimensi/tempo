@@ -173,7 +173,10 @@ export function interceptOfflineLinks(
     const saved = hasSaved(url);
     // Let a regular Next link own an online, unsaved transition so its native
     // pending state and latest-navigation ordering remain intact.
-    if (saved === false && navigator.onLine && networkReachable()) return;
+    if (saved === false && navigator.onLine && networkReachable()) {
+      pendingNavigation?.abort();
+      return;
+    }
     event.preventDefault();
     navigateReadRoute({
       url,

@@ -269,6 +269,24 @@ it('leaves an ordinary online link alone when no copy is saved', () => {
   expect(env.pushState).not.toHaveBeenCalled();
   env.stop();
 });
+it('cancels an older saved-route probe before yielding a newer unsaved link', () => {
+  const requests: Array<{ signal?: AbortSignal }> = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((_input, init) => {
+      requests.push(init ?? {});
+      return new Promise<Response>(() => {});
+    }),
+  );
+  let saved = true;
+  const env = navigationDouble(() => saved);
+  env.click('/analytics');
+  saved = false;
+  const preventDefault = env.click('/diary?date=2026-10-16');
+  expect(preventDefault).not.toHaveBeenCalled();
+  expect(requests[0]?.signal?.aborted).toBe(true);
+  env.stop();
+});
 it('opens saved data while onLine stays true and the identity probe never settles', () => {
   vi.stubGlobal(
     'fetch',

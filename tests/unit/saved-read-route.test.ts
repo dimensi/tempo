@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { offlineFixture } from '../offline/fixtures';
 import { hasSavedReadRoute } from '@/lib/saved-read-route';
 
-function saved(path: string) {
+function saved(path: string, today = '2026-10-12') {
   const snapshot = offlineFixture(Date.parse('2026-10-12T12:00:00Z'));
   snapshot.views.summary = {
     dailyStepsGoal: null,
@@ -20,13 +20,19 @@ function saved(path: string) {
     },
     steps: [],
   };
-  return hasSavedReadRoute(snapshot, new URL(path, 'https://tempo.test'));
+  return hasSavedReadRoute(
+    snapshot,
+    new URL(path, 'https://tempo.test'),
+    today,
+  );
 }
 
 it('recognizes only core routes whose requested data is already saved', () => {
   expect(saved('/')).toBe(true);
   expect(saved('/diary?date=2026-10-12')).toBe(true);
   expect(saved('/diary?date=2026-09-01')).toBe(false);
+  expect(saved('/diary')).toBe(true);
+  expect(saved('/diary', '2026-10-13')).toBe(false);
   expect(saved('/measurements')).toBe(true);
   expect(saved('/workouts/catalog')).toBe(true);
   expect(saved('/reports')).toBe(true);
@@ -37,6 +43,8 @@ it('recognizes only core routes whose requested data is already saved', () => {
   expect(saved('/analytics?from=2024-10-01&to=2024-10-12&timezone=UTC')).toBe(
     false,
   );
+  expect(saved('/analytics')).toBe(true);
+  expect(saved('/analytics', '2026-10-13')).toBe(false);
   expect(saved('/workouts?date=2026-10-12')).toBe(true);
   expect(saved('/workouts?date=2026-09-01')).toBe(false);
 });

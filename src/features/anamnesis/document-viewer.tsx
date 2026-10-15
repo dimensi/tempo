@@ -41,10 +41,11 @@ export function DocumentViewer({
 
   useEffect(() => {
     let active = true;
+    let liveAuthoritative = false;
     if (preferSaved)
       void savedMedicalDocument(documentId, ownerId)
         .then((saved) => {
-          if (active) setDocument(saved);
+          if (active && !liveAuthoritative) setDocument(saved);
         })
         .catch(() => {});
     void (async () => {
@@ -52,7 +53,10 @@ export function DocumentViewer({
         const loaded = await fetchAnamnesis<MedicalDocument>(
           `/api/anamnesis/documents/${documentId}?${query}`,
         );
-        if (active) setDocument(loaded);
+        if (active) {
+          liveAuthoritative = true;
+          setDocument(loaded);
+        }
         const reviews = await fetchAnamnesis<
           Array<{
             observation: MedicalObservation;
@@ -76,6 +80,7 @@ export function DocumentViewer({
             'status' in cause &&
             [401, 403].includes(Number(cause.status))
           ) {
+            liveAuthoritative = true;
             setDocument(undefined);
             setSources([]);
           }

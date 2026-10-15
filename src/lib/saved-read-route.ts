@@ -2,18 +2,30 @@ import type { OfflineSnapshot } from '@/contracts/offline';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
+function localToday(now = new Date()) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function weekRange(today: string) {
+  const from = new Date(`${today}T00:00:00Z`);
+  from.setUTCDate(from.getUTCDate() - 6);
+  return { from: from.toISOString().slice(0, 10), to: today };
+}
+
 function selectedDate(url: URL, fallback: string) {
   const value = url.searchParams.get('date');
   return value && datePattern.test(value) ? value : fallback;
 }
 
 /** Whether the current fenced snapshot can render the destination without RSC. */
-export function hasSavedReadRoute(snapshot: OfflineSnapshot, url: URL) {
+export function hasSavedReadRoute(
+  snapshot: OfflineSnapshot,
+  url: URL,
+  today = localToday(),
+) {
   if (url.pathname === '/') return snapshot.views.summary !== null;
   if (url.pathname === '/diary')
-    return snapshot.diary.some(
-      (day) => day.date === selectedDate(url, snapshot.to),
-    );
+    return snapshot.diary.some((day) => day.date === selectedDate(url, today));
   if (url.pathname === '/measurements') return true;
   if (url.pathname === '/workouts/catalog') return true;
   if (url.pathname === '/settings') return snapshot.views.settings !== null;
@@ -23,15 +35,16 @@ export function hasSavedReadRoute(snapshot: OfflineSnapshot, url: URL) {
     if (!summary) return false;
     const from = url.searchParams.get('from');
     const to = url.searchParams.get('to');
-    if (from === null && to === null) return true;
+    const range =
+      from === null && to === null ? weekRange(today) : { from, to };
     return (
-      from !== null &&
-      to !== null &&
-      datePattern.test(from) &&
-      datePattern.test(to) &&
-      from <= to &&
-      from >= summary.from &&
-      to <= summary.to
+      range.from !== null &&
+      range.to !== null &&
+      datePattern.test(range.from) &&
+      datePattern.test(range.to) &&
+      range.from <= range.to &&
+      range.from >= summary.from &&
+      range.to <= summary.to
     );
   }
   if (url.pathname === '/workouts')

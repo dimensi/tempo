@@ -1,12 +1,15 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { isValidElement, type ReactNode } from 'react';
 import { Button, FileInput } from '@mantine/core';
+import type { MedicalDocument } from '@/contracts/anamnesis';
 const state = vi.hoisted(() => ({
   online: false,
   index: 0,
   viewer: false,
   runEffects: false,
   savedDocumentCalls: 0,
+  savedDocumentPromise: undefined as Promise<MedicalDocument> | undefined,
+  documentUpdates: [] as unknown[],
 }));
 vi.mock('react', async (original) => ({
   ...(await original<typeof import('react')>()),
@@ -18,7 +21,9 @@ vi.mock('react', async (original) => ({
         : !state.viewer && index === 8
           ? { name: 'selected.pdf' }
           : initial,
-      vi.fn(),
+      index === 0 && state.viewer
+        ? (value: unknown) => state.documentUpdates.push(value)
+        : vi.fn(),
     ];
   },
   useEffect: (effect: () => void) => {
@@ -33,20 +38,23 @@ vi.mock('@/lib/client-read', () => ({
   invalidateMedicalDocument: vi.fn(),
   savedMedicalDocument: async () => {
     state.savedDocumentCalls++;
-    return {
-      id: 'doc',
-      ownerId: 'owner',
-      filename: 'saved.pdf',
-      mimeType: 'application/pdf',
-      sizeBytes: 1,
-      pageCount: 1,
-      laboratoryName: null,
-      title: null,
-      collectedAt: null,
-      issuedAt: null,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    return (
+      state.savedDocumentPromise ??
+      Promise.resolve({
+        id: 'doc',
+        ownerId: 'owner',
+        filename: 'saved.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 1,
+        pageCount: 1,
+        laboratoryName: null,
+        title: null,
+        collectedAt: null,
+        issuedAt: null,
+        createdAt: 1,
+        updatedAt: 1,
+      })
+    );
   },
 }));
 vi.mock('@/features/anamnesis/refresh', () => ({
@@ -76,6 +84,46 @@ afterEach(() => {
   state.index = 0;
   state.runEffects = false;
   state.savedDocumentCalls = 0;
+  state.savedDocumentPromise = undefined;
+  state.documentUpdates = [];
+  vi.unstubAllGlobals();
+});
+it('does not let a late saved document overwrite a fresher live response', async () => {
+  const saved = Promise.withResolvers<MedicalDocument>();
+  state.savedDocumentPromise = saved.promise;
+  state.viewer = true;
+  state.runEffects = true;
+  const live: MedicalDocument = {
+    id: 'doc',
+    ownerId: 'owner',
+    filename: 'live.pdf',
+    mimeType: 'application/pdf',
+    sizeBytes: 1,
+    pageCount: 1,
+    laboratoryName: null,
+    title: null,
+    collectedAt: null,
+    issuedAt: null,
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(live))
+      .mockResolvedValueOnce(Response.json([])),
+  );
+  DocumentViewer({
+    ownerId: 'owner',
+    documentId: 'doc',
+    writable: true,
+    preferSaved: true,
+  });
+  await vi.waitFor(() => expect(state.documentUpdates).toContainEqual(live));
+  saved.resolve({ ...live, filename: 'stale.pdf', updatedAt: 1 });
+  await Promise.resolve();
+  expect(state.documentUpdates.at(-1)).toEqual(live);
 });
 
 it('loads a saved document before a stalled live refresh on an offline projection', async () => {

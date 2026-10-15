@@ -393,7 +393,16 @@ export async function hasSavedMedicalRoute(url: URL) {
       location.origin,
     ),
   );
-  return clientReads.read(key).then(
+  const observationsKey = canonicalReadKey(
+    new URL(
+      `/api/anamnesis/markers/${resourceId}/observations?ownerId=${encodeURIComponent(summary.ownerId)}`,
+      location.origin,
+    ),
+  );
+  return Promise.all([
+    clientReads.read(key),
+    clientReads.read(observationsKey),
+  ]).then(
     () => true,
     () => false,
   );
