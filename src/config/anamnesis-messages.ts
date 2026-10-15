@@ -201,6 +201,7 @@ export const anamnesisMessages = {
   },
   // Строки для PDF-шаблона отчёта.
   reportTitle: 'Медицинский отчёт',
+  reportHistoricalResult: 'Предыдущий результат',
   reportFooter: 'Анамнез · Темпо',
   reportDisclaimer:
     'Отчёт сформирован из личной медицинской истории и не является медицинской рекомендацией.',
