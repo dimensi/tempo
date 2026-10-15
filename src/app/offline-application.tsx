@@ -68,7 +68,10 @@ function OfflineRouteContent({ showStatus = true }: { showStatus?: boolean }) {
         )
       : [];
   useLayoutEffect(() => {
-    if (state.bundle) revealOfflineContent(state.bundle.fence);
+    // A BFCache restore starts from synchronously concealed DOM. Keep it
+    // concealed while the retained bundle's identity is being revalidated.
+    if (state.bundle && state.status !== 'checking')
+      revealOfflineContent(state.bundle.fence);
   }, [state]);
   useEffect(() => {
     const byId = new Map(state.photos.map((photo) => [photo.id, photo.bytes]));
