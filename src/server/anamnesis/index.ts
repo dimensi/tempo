@@ -932,6 +932,10 @@ export async function getAnamnesisReportFile(
   if (!reportVisibleToGrants(grants, reportDto(row)))
     throw new AnamnesisError(403);
   const bytes = await getObjectStorage().get(row.storageKey);
+  const currentSession = await check(headers, ownerId);
+  const currentGrants = await markerGrants(currentSession, repo, ownerId);
+  if (!reportVisibleToGrants(currentGrants, reportDto(row)))
+    throw new AnamnesisError(403);
   return { bytes, filename: row.filename };
 }
 

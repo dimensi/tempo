@@ -15,6 +15,7 @@ import { ZodError } from 'zod';
 const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
   objects: new Map<string, Uint8Array>(),
+  beforeObjectRead: null as null | (() => void),
 }));
 
 vi.mock('server-only', () => ({}));
@@ -40,6 +41,7 @@ vi.mock('@/server/storage', () => ({
       state.objects.set(key, bytes);
     },
     get: async (key: string) => {
+      state.beforeObjectRead?.();
       const bytes = state.objects.get(key);
       if (!bytes) throw new Error('missing object');
       return bytes;
@@ -85,6 +87,7 @@ describe('anamnesis authorization and grants', () => {
   });
 
   afterEach(() => {
+    state.beforeObjectRead = null;
     state.session = null;
   });
 
@@ -898,6 +901,34 @@ describe('anamnesis authorization and grants', () => {
         bytes: new Uint8Array([1, 2, 3, 4]),
       }),
     ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('denies a saved PDF if a grant is revoked while object storage is reading it', async () => {
+    await seedUsers();
+    await ensureAnamnesisCatalog(database.handle!);
+    const trainerId = '11111111-1111-4111-8111-111111111111';
+    repo.setMarkerGrant('owner', trainerId, 'alt', true);
+    repo.insertReport({
+      id: 'report-late-read',
+      ownerId: 'owner',
+      createdBy: 'owner',
+      markerIdsJson: ['alt'],
+      dateKeysJson: null,
+      historicalPeriodJson: null,
+      status: 'ready',
+      storageKey: 'private/late.pdf',
+      filename: 'synthetic.pdf',
+      sizeBytes: 3,
+      createdAt: Date.now(),
+    });
+    state.objects.set('private/late.pdf', new Uint8Array([1, 2, 3]));
+    state.session = { user: { id: trainerId, role: 'TRAINER' } };
+    state.beforeObjectRead = () => {
+      repo.setMarkerGrant('owner', trainerId, 'alt', false);
+    };
+    await expect(
+      service.getAnamnesisReportFile(headers(), 'owner', 'report-late-read'),
+    ).rejects.toMatchObject({ status: 403 });
   });
 
   afterAll(() => {
