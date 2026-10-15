@@ -624,9 +624,11 @@ export function OfflineBoundary({
           {m.denied} <a href="/login">{m.signInAgain}</a>
         </Alert>
       )}
-      <Activity mode={showingSavedRoute || denied ? 'hidden' : 'visible'}>
-        {children}
-      </Activity>
+      <div hidden={denied}>
+        <Activity mode={showingSavedRoute ? 'hidden' : 'visible'}>
+          {children}
+        </Activity>
+      </div>
       {showingSavedRoute && !denied && ['OWNER', 'TRAINER'].includes(role) && (
         <OfflineRouteContent showStatus={false} />
       )}

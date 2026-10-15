@@ -874,6 +874,22 @@ test('retained diary stays paused during repeated offline menu navigation and re
     await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
       'Обзор',
     );
+    await page.evaluate(() => history.go(-27));
+    await expect(page).toHaveURL(`/diary?date=${data.date}`);
+    await expect(
+      page.getByRole('region', { name: 'Завтрак', exact: true }).locator('img'),
+    ).toHaveAttribute('src', /^blob:/);
+    await expect
+      .poll(() =>
+        page
+          .getByRole('region', { name: 'Завтрак', exact: true })
+          .locator('img')
+          .evaluate(
+            (image: HTMLImageElement) =>
+              image.complete && image.naturalWidth > 0,
+          ),
+      )
+      .toBe(true);
     expect(photoRequests).toEqual([]);
     expect(errors).toEqual([]);
   } finally {

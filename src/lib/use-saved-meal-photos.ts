@@ -27,6 +27,7 @@ export function useSavedMealPhotos(photos: SafeMealPhotoView[]) {
     });
     return () => {
       active = false;
+      setCopy(null);
       for (const url of urls.values()) URL.revokeObjectURL(url);
     };
   }, [online, state.bundle, state.photos]);
