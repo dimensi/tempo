@@ -466,6 +466,10 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect(granted.status()).toBe(200);
     expect(granted.headers()['content-type']).toBe('application/pdf');
     expect((await granted.body()).subarray(0, 5).toString()).toBe('%PDF-');
+    const preflight = await context.request.head(scopedUrl);
+    expect(preflight.status()).toBe(200);
+    expect(Number(preflight.headers()['content-length'])).toBeGreaterThan(0);
+    expect((await preflight.body()).length).toBe(0);
     const trainerPage = await context.newPage();
     let releaseScripts!: () => void;
     const scriptsReady = new Promise<void>((resolve) => {

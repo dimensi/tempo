@@ -1,6 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState, createElement, type ElementType } from 'react';
 import {
   Alert,
   Anchor,
@@ -27,7 +26,15 @@ const date = (value: string) =>
   new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long' }).format(
     new Date(`${value}T12:00:00`),
   );
-export function Overview({ saved }: { saved?: OverviewData } = {}) {
+export function Overview({
+  saved,
+  plannedUnknown = false,
+  linkComponent = 'a',
+}: {
+  saved?: OverviewData;
+  plannedUnknown?: boolean;
+  linkComponent?: ElementType;
+} = {}) {
   const [calendar, setCalendar] = useState<ReturnType<
     typeof localCalendar
   > | null>(null);
@@ -140,7 +147,7 @@ export function Overview({ saved }: { saved?: OverviewData } = {}) {
                 {m.today}
               </Title>
               <Anchor
-                component={Link}
+                renderRoot={(props) => createElement(linkComponent, props)}
                 href={`/diary?date=${current.today}`}
                 className={classes.link}
               >
@@ -174,13 +181,17 @@ export function Overview({ saved }: { saved?: OverviewData } = {}) {
                       </>
                     ) : (
                       <Text>
-                        {key === 'planned' ? m.noPlan : m.noCompleted}
+                        {key === 'planned'
+                          ? plannedUnknown
+                            ? m.noSavedPlan
+                            : m.noPlan
+                          : m.noCompleted}
                       </Text>
                     )}
                   </Stack>
                 ))}
                 <Anchor
-                  component={Link}
+                  renderRoot={(props) => createElement(linkComponent, props)}
                   href="/workouts"
                   className={classes.link}
                 >
@@ -195,7 +206,7 @@ export function Overview({ saved }: { saved?: OverviewData } = {}) {
                     {m.weight}
                   </Title>
                   <Anchor
-                    component={Link}
+                    renderRoot={(props) => createElement(linkComponent, props)}
                     href="/measurements"
                     className={classes.link}
                   >
@@ -254,7 +265,7 @@ export function Overview({ saved }: { saved?: OverviewData } = {}) {
                   {m.week}
                 </Title>
                 <Anchor
-                  component={Link}
+                  renderRoot={(props) => createElement(linkComponent, props)}
                   href={`/analytics?from=${current.weight.points.at(-7)!.date}&to=${current.today}`}
                   className={classes.link}
                 >
@@ -324,7 +335,7 @@ export function Overview({ saved }: { saved?: OverviewData } = {}) {
                   </Group>
                 </Stack>
                 <Anchor
-                  component={Link}
+                  renderRoot={(props) => createElement(linkComponent, props)}
                   href="/settings#sync"
                   className={classes.link}
                 >

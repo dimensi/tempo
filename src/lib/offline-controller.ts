@@ -103,13 +103,21 @@ export class OfflineController {
       ]),
     };
   }
-  private async request(url: string, signal: AbortSignal) {
+  private async request(
+    url: string,
+    signal: AbortSignal,
+    options: { method?: 'GET' | 'HEAD'; timeoutMs?: number } = {},
+  ) {
     let response: Response;
     try {
       response = await this.fetcher.call(globalThis, url, {
         cache: 'no-store',
+        method: options.method ?? 'GET',
         credentials: 'same-origin',
-        signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
+        signal: AbortSignal.any([
+          signal,
+          AbortSignal.timeout(options.timeoutMs ?? 10000),
+        ]),
       });
     } catch {
       throw new OfflineNetworkError();
@@ -496,14 +504,8 @@ export class OfflineController {
     if (this.flight) await this.flight;
     await this.save();
   }
-  async saveFile(input: {
-    id: string;
-    label: string;
-    kind: 'pdf' | 'video';
-    href: string;
-    size?: number;
-  }) {
-    const url = new URL(input.href, location.origin);
+  private fileUrl(href: string) {
+    const url = new URL(href, location.origin);
     if (
       url.origin !== location.origin ||
       !(
@@ -514,6 +516,75 @@ export class OfflineController {
       )
     )
       throw new OfflineReadError('unavailable');
+    return url;
+  }
+  async fileSize(href: string): Promise<number | null> {
+    const url = this.fileUrl(href);
+    let result: number | null = null;
+    let completed = false;
+    let failure: unknown;
+    await this.runLocked('checking', true, async (operation) => {
+      try {
+        const identity = await this.identity(operation.signal);
+        const cached = await this.storage.read(this.now(), this.timezone());
+        if (
+          !cached.bundle ||
+          !this.sameIdentity(identity, cached.bundle.snapshot)
+        )
+          throw new OfflineReadError('denied');
+        const response = await this.request(
+          url.pathname + url.search,
+          operation.signal,
+          { method: 'HEAD', timeoutMs: 60000 },
+        );
+        const declared = Number(
+          response.status === 206
+            ? response.headers.get('content-range')?.split('/').at(-1)
+            : response.headers.get('content-length'),
+        );
+        if (
+          Number.isFinite(declared) &&
+          declared > offlineFileLimits.singleBytes
+        )
+          throw new OfflineStorageError('quota');
+        const latest = await this.identity(operation.signal);
+        if (
+          this.revision !== operation.revision ||
+          !this.sameIdentity(identity, latest)
+        )
+          throw new OfflineReadError('denied');
+        result =
+          Number.isSafeInteger(declared) && declared > 0 ? declared : null;
+        completed = true;
+        this.publish(cached, true);
+      } catch (error) {
+        failure = error;
+        if (error instanceof OfflineReadError && error.reason === 'denied')
+          await this.disable();
+        else {
+          const cached = await this.storage
+            .read(this.now(), this.timezone())
+            .catch(() => null);
+          if (this.revision === operation.revision) {
+            if (cached)
+              this.publish(cached, !(error instanceof OfflineNetworkError));
+            else this.set({ ...empty, status: 'error', error: 'unavailable' });
+          }
+        }
+      }
+    });
+    if (failure) throw failure;
+    if (!completed) throw new OfflineReadError('unavailable');
+    return result;
+  }
+  async saveFile(input: {
+    id: string;
+    label: string;
+    kind: 'pdf' | 'video';
+    href: string;
+    size?: number;
+  }) {
+    const url = this.fileUrl(input.href);
     let failure: unknown;
     let committed = false;
     await this.runLocked('saving', true, async (operation) => {
@@ -528,6 +599,7 @@ export class OfflineController {
         const response = await this.request(
           url.pathname + url.search,
           operation.signal,
+          { timeoutMs: 60000 },
         );
         const mime = input.kind === 'pdf' ? 'application/pdf' : 'video/mp4';
         if (

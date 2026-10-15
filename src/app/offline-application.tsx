@@ -33,10 +33,16 @@ import {
   OfflineFiles,
 } from './offline-sections';
 import { savedDiaryDay } from './offline-model';
+import { recoverOnlineRoute } from '@/lib/offline-recovery';
 import { networkStatusEvent } from '@/lib/network-state';
 import { revealOfflineContent } from '@/lib/offline-device';
 import { workoutTitle } from '@/lib/workout-title';
 import type { OfflineSnapshot } from '@/contracts/offline';
+function reopenOnlineRoute() {
+  location.replace(
+    location.pathname === '/offline/index.html' ? '/' : location.href,
+  );
+}
 function OfflineRouteContent() {
   const url = useOfflineLocation();
   const controller = getOfflineController();
@@ -57,6 +63,10 @@ function OfflineRouteContent() {
           ),
         )
       : [];
+  useEffect(() => {
+    if (state.error === 'denied' && navigator.onLine)
+      location.replace('/login');
+  }, [state.error]);
   useLayoutEffect(() => {
     if (state.bundle) revealOfflineContent(state.bundle.fence);
   }, [state]);
@@ -306,9 +316,9 @@ function OfflineReadStatus({ offlineMode = false }: { offlineMode?: boolean }) {
     return () => clearInterval(timer);
   }, []);
   const retry = async () => {
-    await controller.activate(true, true);
-    if (controller.getSnapshot().status === 'ready' && offlineMode)
-      location.reload();
+    if (offlineMode && (await recoverOnlineRoute(location.href, controller)))
+      reopenOnlineRoute();
+    else if (!offlineMode) await controller.activate(true, true);
   };
   return (
     <Stack gap={4}>
@@ -483,16 +493,14 @@ export function OfflineApplication({ brandSrc }: { brandSrc: string }) {
   );
   useEffect(() => {
     const reconnect = async () => {
-      await controller.activate(true, true);
-      await syncDeviceWrites().catch(() => {});
-      if (controller.getSnapshot().status === 'ready') location.reload();
+      if (await recoverOnlineRoute(location.href, controller)) {
+        await syncDeviceWrites().catch(() => {});
+        reopenOnlineRoute();
+      }
     };
     window.addEventListener('online', reconnect);
     return () => window.removeEventListener('online', reconnect);
   }, [controller]);
-  useEffect(() => {
-    if (state.status === 'ready') location.reload();
-  }, [state.status]);
   return (
     <ApplicationShellFrame
       role={state.bundle?.snapshot.role ?? 'OWNER'}
@@ -531,10 +539,9 @@ export function OfflineBoundary({
     const connected = async () => {
       if (!offline || verifying) return;
       verifying = true;
-      await getOfflineController().activate(true, true);
+      const recovered = await recoverOnlineRoute(location.href, controller);
       verifying = false;
-      if (getOfflineController().getSnapshot().status === 'ready')
-        location.reload();
+      if (recovered) reopenOnlineRoute();
     };
     const observed = (event: Event) => {
       if (!(event as CustomEvent<boolean>).detail) lost();
@@ -549,11 +556,15 @@ export function OfflineBoundary({
       window.removeEventListener('online', connected);
       window.removeEventListener(networkStatusEvent, observed);
     };
-  }, [offline]);
+  }, [offline, controller]);
   useEffect(() => (offline ? interceptOfflineLinks() : undefined), [offline]);
-  useEffect(() => {
-    if (disconnected && state.status === 'ready') location.reload();
-  }, [disconnected, state.status]);
+  useEffect(
+    () =>
+      controller.subscribe(() => {
+        if (controller.getSnapshot().status === 'offline') setOffline(true);
+      }),
+    [controller],
+  );
   if (!offline)
     return (
       <Stack gap="md">

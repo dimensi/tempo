@@ -153,3 +153,22 @@ it('prepares the next plan summary without downloading future detailed history',
     title: 'Next',
   });
 });
+
+it('orders same-day weights like the online reader so the newest id wins the chart', () => {
+  for (const [id, value] of [
+    ['a', '71'],
+    ['z', '72'],
+  ])
+    state
+      .sqlite!.prepare('INSERT INTO measurements VALUES (?,?,?,?,?)')
+      .run(
+        id,
+        'owner',
+        '2026-10-12',
+        JSON.stringify([{ metric: 'weight', value, unit: 'kg' }]),
+        null,
+      );
+  const summary = read().summary!;
+  expect(summary.weight.local.map((row) => row.value)).toEqual(['71', '72']);
+  expect(summary.latestWeight).toEqual({ date: '2026-10-12', value: '72' });
+});

@@ -12,8 +12,9 @@ import {
 import { stepsGoalSchema } from '@/contracts/steps-goal';
 import { stepsSummarySchema } from '@/contracts/health';
 import { ReportError } from '@/server/pdf/errors';
-import { type ReportDataSource, type ReportDataset } from '@/server/pdf/source';
-import { renderReportHtml } from '@/server/pdf/template';
+import { type ReportDataSource } from '@/server/pdf/source';
+import type { ReportDataset } from '@/contracts/reports';
+import { renderReportHtml } from '@/lib/reports/template';
 import { renderPdfReport } from '@/server/pdf/renderer';
 import { readReportFonts } from '@/server/pdf/fonts';
 import { selectReportPhotos } from '@/server/pdf/photos';

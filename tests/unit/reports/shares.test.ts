@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
-import { macroShares, mealShares } from '@/server/pdf/shares';
+import { macroShares, mealShares } from '@/lib/reports/shares';
 import { syntheticDay } from './fixtures';
 
 it('allocates 4/9/4 energy to exactly 100.0%, independently of diary calories', () => {

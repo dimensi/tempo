@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 import { Stack, Text, Title } from '@mantine/core';
 import type { AnalyticsData } from '@/contracts/analytics';
 import { analyticsMessages as m } from './messages';
-import { PeriodControl } from './period-control';
 import { AnalyticsOverview } from './overview';
 import { AnalyticsHighlights } from './highlights';
 import { NutritionAnalytics } from './nutrition-analytics';
@@ -16,7 +15,7 @@ export function AnalyticsDashboard({
   navigationSlot,
 }: {
   data: AnalyticsData;
-  navigationSlot?: ReactNode;
+  navigationSlot: ReactNode;
 }) {
   const context = {
     today: data.today,
@@ -30,14 +29,7 @@ export function AnalyticsDashboard({
           <Title order={1}>{m.title}</Title>
           <Text c="dimmed">{m.description}</Text>
         </div>
-        {navigationSlot ?? (
-          <PeriodControl
-            range={data.range}
-            previous={data.previousRange}
-            timezone={data.timezone}
-            today={data.today}
-          />
-        )}
+        {navigationSlot}
       </Stack>
       <AnalyticsOverview data={data} />
       <AnalyticsHighlights items={data.highlights} />

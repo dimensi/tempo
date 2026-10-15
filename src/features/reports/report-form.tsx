@@ -15,17 +15,19 @@ import {
   Text,
   TextInput,
   Title,
-  Table,
 } from '@mantine/core';
 import { DateNavigation } from '@/components/shared/date-navigation';
 import { browserToday } from '@/components/shared/date-navigation-dates';
 import type { NutritionDay } from '@/contracts/nutrition';
-import { formatDecimal } from '@/lib/number-display';
 import { OfflineFile } from '@/components/shared/offline-file';
 import { offlineFileMessages } from '@/config/offline-files';
 import { reportRequestSchema } from '@/contracts/reports';
-import { reportMessages as m } from './messages';
+import { reportMessages as m } from '@/config/reports';
 import { weeklyRange } from './weekly-range';
+import {
+  OfflineReportPreview,
+  type OfflineReportPhoto,
+} from './offline-preview';
 
 const subscribe = () => () => {};
 const clientReady = () => true;
@@ -35,9 +37,13 @@ const inputStyles = { input: { fontSize: 16 } };
 export function ReportForm({
   ownerId,
   offlineDays,
+  offlineSteps = [],
+  offlinePhotos = [],
 }: {
   ownerId: string | null;
   offlineDays?: NutritionDay[];
+  offlineSteps?: { date: string; steps: number | null }[];
+  offlinePhotos?: OfflineReportPhoto[];
 }) {
   const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
   const [period, setPeriod] = useState('daily');
@@ -327,63 +333,26 @@ export function ReportForm({
           </Text>
         </>
       )}
-      {offlineDays && (
-        <>
-          <Text c="dimmed">{m.offlinePreview}</Text>
-          <Table.ScrollContainer minWidth={400}>
-            <Table>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>{m.offlineDate}</Table.Th>
-                  <Table.Th>{m.energy}</Table.Th>
-                  <Table.Th>{m.proteinName}</Table.Th>
-                  <Table.Th>{m.fatName}</Table.Th>
-                  <Table.Th>{m.carbsName}</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {Array.from(
-                  {
-                    length: Math.min(
-                      366,
-                      Math.max(
-                        0,
-                        (Date.parse(finish) - Date.parse(selectedStart)) /
-                          86400000 +
-                          1,
-                      ),
-                    ),
-                  },
-                  (_, i) => {
-                    const date = new Date(
-                      Date.parse(selectedStart) + i * 86400000,
-                    )
-                      .toISOString()
-                      .slice(0, 10);
-                    const day = offlineDays.find((day) => day.date === date);
-                    return (
-                      <Table.Tr key={date}>
-                        <Table.Td>
-                          {date}
-                          {!day && <Text size="xs">{m.offlineMissing}</Text>}
-                        </Table.Td>
-                        {(['calories', 'protein', 'fat', 'carbs'] as const).map(
-                          (key) => (
-                            <Table.Td key={key}>
-                              {formatDecimal(day?.totals[key] ?? null) ??
-                                m.unavailable}
-                            </Table.Td>
-                          ),
-                        )}
-                      </Table.Tr>
-                    );
-                  },
-                )}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
-        </>
-      )}
+      {offlineDays &&
+        (() => {
+          const parsed = reportRequestSchema.safeParse({
+            ownerId: ownerId ?? '',
+            period,
+            start: selectedStart,
+            end: finish,
+            format: 'html',
+          });
+          return parsed.success ? (
+            <OfflineReportPreview
+              request={parsed.data}
+              days={offlineDays}
+              steps={offlineSteps}
+              photos={offlinePhotos}
+            />
+          ) : (
+            <Alert>{m.invalid}</Alert>
+          );
+        })()}
       {html && (
         <Text size="sm" c="dimmed">
           {m.preview}: {previewRange}

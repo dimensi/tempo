@@ -76,11 +76,17 @@ export function readOfflineViews(input: {
     measuredAt: string;
     data: string;
   }[];
-  const body = bodyRows.slice(0, 1000).map((row) => ({
-    id: key('measurement', row.id),
-    measuredAt: row.measuredAt,
-    values: z.array(measurementValueSchema).max(7).parse(JSON.parse(row.data)),
-  }));
+  const body = bodyRows
+    .slice(0, 1000)
+    .reverse()
+    .map((row) => ({
+      id: key('measurement', row.id),
+      measuredAt: row.measuredAt,
+      values: z
+        .array(measurementValueSchema)
+        .max(7)
+        .parse(JSON.parse(row.data)),
+    }));
   const imported = sqlite
     .prepare(
       `SELECT coalesce(measured_date,substr(provider_date,1,10)) AS measuredAt, measured_date AS measuredDate, provider_date AS providerDate,

@@ -1,7 +1,5 @@
 'use client';
 import { useTransition, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { dateInTimezone } from '@/contracts/nutrition-sync-dates';
 import {
   Accordion,
@@ -33,7 +31,6 @@ export function Details({
   );
 }
 export function BlockError() {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   return (
     <Alert color="red">
@@ -42,7 +39,7 @@ export function BlockError() {
         <Button
           variant="default"
           loading={pending}
-          onClick={() => startTransition(() => router.refresh())}
+          onClick={() => startTransition(() => location.reload())}
           mih={44}
         >
           {m.retry}
@@ -98,7 +95,7 @@ export function Freshness({
           : m.freshnessUnknown}
       </Text>
       {canSync && (
-        <Anchor component={Link} href="/settings#sync" size="sm">
+        <Anchor href="/settings#sync" size="sm">
           {m.syncLink}
         </Anchor>
       )}

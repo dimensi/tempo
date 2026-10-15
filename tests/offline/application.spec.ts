@@ -99,11 +99,15 @@ async function waitSaved(page: Page) {
   await expect
     .poll(() => page.evaluate('window.offlineTest.read(Date.now())'))
     .toMatchObject({ present: true, enabled: true });
-  await expect
-    .poll(() =>
-      page.evaluate(() => Boolean(navigator.serviceWorker.controller)),
-    )
-    .toBe(true);
+  await page.evaluate(() =>
+    navigator.serviceWorker.ready.then(() => undefined),
+  );
+  if (
+    !(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))
+  ) {
+    await page.reload();
+    await page.addScriptTag({ content: harness });
+  }
 }
 async function openNavigation(page: Page) {
   const burger = page.getByRole('button', { name: 'Навигация', exact: true });
@@ -122,11 +126,11 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
       page.getByText('Synthetic breakfast', { exact: true }),
     ).toBeVisible();
     await page.goto(
-      `/workouts/sessions/offline-older-session?date=${data.old}`,
+      `/workouts/sessions/offline-real-session?date=${data.date}`,
     );
     await expect(
       page.getByRole('heading', {
-        name: 'Synthetic older result',
+        name: 'Synthetic ordinary result',
         exact: true,
       }),
     ).toBeVisible();
@@ -135,7 +139,7 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
         async () => {
           await page.addScriptTag({ content: harness });
           return page.evaluate(async () => {
-            const request = indexedDB.open('yazio-offline-read-v1', 1);
+            const request = indexedDB.open('yazio-offline-read-v1', 2);
             return new Promise((resolve) => {
               request.onsuccess = () => {
                 const db = request.result;
@@ -145,8 +149,7 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
                   resolve(
                     read.result?.snapshot.workoutSessions.some(
                       (item: { href: string }) =>
-                        item.href ===
-                        '/workouts/sessions/offline-older-session',
+                        item.href === '/workouts/sessions/offline-real-session',
                     ),
                   );
                   db.close();
@@ -161,36 +164,38 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
     await context.setOffline(true);
     // The already-open genuine Next route switches before any cold document fallback.
     await expect(
-      page.getByText('Без сети · сохранённые данные', { exact: true }),
+      page
+        .getByRole('status')
+        .filter({ hasText: 'Сеть или сервер недоступны · сохранённые данные' }),
     ).toBeVisible();
     await expect(
       page.getByRole('heading', {
-        name: 'Synthetic older result',
+        name: 'Synthetic ordinary result',
         exact: true,
       }),
     ).toBeVisible();
     await page
       .getByRole('link', { name: 'К тренировкам', exact: true })
       .click();
-    await expect(page).toHaveURL(new RegExp(`/workouts\\?date=${data.old}`));
+    await expect(page).toHaveURL(new RegExp(`/workouts\\?date=${data.date}`));
     await page.getByRole('link', { name: 'Открыть', exact: true }).click();
     await expect(page).toHaveURL(
-      new RegExp(`/workouts/sessions/offline-older-session\\?date=${data.old}`),
+      new RegExp(`/workouts/sessions/offline-real-session\\?date=${data.date}`),
     );
     await page.reload();
     await expect(
       page.getByRole('heading', {
-        name: 'Synthetic older result',
+        name: 'Synthetic ordinary result',
         exact: true,
       }),
     ).toBeVisible();
     await page
       .getByRole('link', { name: 'К тренировкам', exact: true })
       .click();
-    await expect(page).toHaveURL(new RegExp(`/workouts\\?date=${data.old}`));
+    await expect(page).toHaveURL(new RegExp(`/workouts\\?date=${data.date}`));
     await expect(
       page.getByRole('heading', {
-        name: 'Synthetic older result',
+        name: 'Synthetic ordinary result',
         exact: true,
       }),
     ).toBeVisible();
@@ -230,7 +235,7 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
     ).toBeDisabled();
     await page.goto(`/diary?date=${shiftDate(data.date, -15)}`);
     await expect(
-      page.getByText('Нет сети, эти данные ещё не загружены', { exact: true }),
+      page.getByText('Нет сохранённых данных, нужна сеть', { exact: true }),
     ).toBeVisible();
     await page.goto(
       `/workouts/sessions/offline-real-session?date=${data.date}`,
@@ -265,15 +270,13 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
 
     await page.goto(`/workouts/native/987654?date=${data.date}`);
     await expect(
-      page.getByText('Нет сети, эти данные ещё не загружены', { exact: true }),
+      page.getByText('Нет сохранённых данных, нужна сеть', { exact: true }),
     ).toBeVisible();
     await openNavigation(page);
     await page.getByRole('link', { name: 'Настройки', exact: true }).click();
     await expect(
-      page.getByText('Для этого раздела нужно подключение к сети.', {
-        exact: true,
-      }),
-    ).toBeVisible();
+      page.getByLabel('Часовой пояс', { exact: true }),
+    ).toBeDisabled();
     expect(writes).toEqual([]);
     data.db
       .prepare('UPDATE session SET expires_at=0 WHERE user_id=?')
@@ -403,7 +406,7 @@ test('refill holds a shared lock past advisory-check gap and cannot publish duri
   );
 });
 
-test('old workout detail bookmark without a query caches its authorized actual date', async ({
+test('old workout detail bookmark without a query does not bypass the rolling retention window', async ({
   page,
   context,
 }) => {
@@ -421,7 +424,7 @@ test('old workout detail bookmark without a query caches its authorized actual d
     await expect
       .poll(() =>
         page.evaluate(async () => {
-          const request = indexedDB.open('yazio-offline-read-v1', 1);
+          const request = indexedDB.open('yazio-offline-read-v1', 2);
           return new Promise((resolve) => {
             request.onsuccess = () => {
               const db = request.result;
@@ -440,18 +443,12 @@ test('old workout detail bookmark without a query caches its authorized actual d
           });
         }),
       )
-      .toBe(true);
+      .toBe(false);
     await context.setOffline(true);
     await page.reload();
     await expect(page).toHaveURL('/workouts/sessions/offline-older-session');
     await expect(
-      page.getByRole('heading', {
-        name: 'Synthetic older result',
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(
-      page.getByText('Literal result note', { exact: true }),
+      page.getByText('Нет сохранённых данных, нужна сеть', { exact: true }),
     ).toBeVisible();
   } finally {
     await context.setOffline(false);
@@ -618,4 +615,64 @@ test('owner results and manual measurements survive offline tab closure and sync
       .locator('[data-offline-write-private]')
       .getByText('Синхронизировано', { exact: true }),
   ).toBeVisible();
+});
+
+test('saved sections show ordinary content and the complete report without network requests', async ({
+  page,
+  context,
+}) => {
+  await page.goto('/login');
+  await page.addScriptTag({ content: harness });
+  await page.evaluate("window.offlineTest.seed('sections')");
+  await page.evaluate('window.offlineTest.prepareShell()');
+  const failures: string[] = [];
+  const apiRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/'))
+      apiRequests.push(request.url());
+  });
+  page.on('pageerror', (error) => failures.push(error.message));
+  await context.setOffline(true);
+  try {
+    await page.goto('/');
+    await expect(
+      page.getByRole('heading', { name: 'Питание сегодня', exact: true }),
+    ).toBeVisible();
+    await page.goto('/analytics');
+    await expect(
+      page.getByRole('button', { name: '30 дней', exact: true }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: '30 дней', exact: true }).click();
+    await expect(page).toHaveURL(/from=/);
+    await page.goto('/measurements');
+    await expect(
+      page.getByRole('cell', { name: 'Synthetic manual', exact: true }),
+    ).toBeVisible();
+    await page.goto('/settings');
+    await expect(page.getByLabel('Часовой пояс', { exact: true })).toHaveValue(
+      'UTC',
+    );
+    await expect(
+      page.getByLabel('Часовой пояс', { exact: true }),
+    ).toBeDisabled();
+    const date = new Date().toISOString().slice(0, 10);
+    await page.goto(`/diary?date=${date}`);
+    await expect(
+      page.getByText('Saved offline comment', { exact: true }),
+    ).toBeVisible();
+    await page.goto('/workouts/catalog');
+    await expect(
+      page.getByText('Saved catalog exercise', { exact: true }),
+    ).toBeVisible();
+    await page.goto('/reports');
+    await expect(
+      page
+        .frameLocator('iframe')
+        .getByText('Synthetic breakfast', { exact: true }),
+    ).toBeVisible();
+    expect(failures).toEqual([]);
+    expect(apiRequests).toEqual([]);
+  } finally {
+    await context.setOffline(false);
+  }
 });

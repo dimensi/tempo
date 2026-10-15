@@ -76,7 +76,7 @@ test('offline rolling calendar read prunes old records and photo blobs transacti
     ).toEqual({
       enabled: true,
       photos: 0,
-      collections: [0, 0, 0, 0, 0, 1, 1, 1, 1],
+      collections: [0, 0, 0, 0, 0, 0, 0, 0, 0],
     });
     expect(await page.evaluate(call('rawCounts()'))).toEqual({
       bundle: 1,

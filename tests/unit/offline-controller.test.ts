@@ -404,3 +404,30 @@ it('a quota rejection during explicit file save preserves the copied diary', asy
   expect(reader.getSnapshot().status).toBe('ready');
   expect(reader.getSnapshot().bundle?.snapshot.diary).toHaveLength(1);
 });
+
+it('checks file size with HEAD without persisting a file or downloading its body', async () => {
+  vi.stubGlobal('location', { origin: 'https://tempo.test' });
+  const persistence = storage();
+  const requests = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.startsWith('/api/reports')) expect(options?.method).toBe('HEAD');
+    return url === '/api/offline/identity'
+      ? identity()
+      : url.startsWith('/api/offline/snapshot')
+        ? new Response(JSON.stringify(fixture))
+        : new Response(null, {
+            headers: {
+              'content-length': '1234',
+              'content-type': 'application/pdf',
+            },
+          });
+  });
+  const reader = controller(persistence, requests as typeof fetch);
+  await reader.save();
+  expect(await reader.fileSize('/api/reports?format=pdf')).toBe(1234);
+  expect(
+    requests.mock.calls.find((call) => call[0].startsWith('/api/reports'))?.[1]
+      ?.method,
+  ).toBe('HEAD');
+  expect(persistence.writeFile).not.toHaveBeenCalled();
+  expect(reader.getSnapshot().bundle).not.toBeNull();
+});

@@ -33,6 +33,12 @@ async function seed(page: Page) {
   await page.addScriptTag({ content: harness });
   await page.evaluate('window.offlineTest.seed()');
 }
+async function prepareLegacy(page: Page) {
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.register('/offline-sw.js', { scope: '/' });
+    await navigator.serviceWorker.ready;
+  });
+}
 async function cachePaths(page: Page) {
   return page.evaluate(async () => {
     const paths: string[] = [];
@@ -100,9 +106,13 @@ test('fresh pages cold-launch the application shell only for supported navigatio
       const cold = await context.newPage();
       await cold.goto(path);
       await expect(
-        cold.getByText('Без сети · сохранённые данные', { exact: true }),
+        cold
+          .getByRole('status')
+          .filter({
+            hasText: 'Сеть или сервер недоступны · сохранённые данные',
+          }),
       ).toBeVisible();
-      await expect(cold.getByRole('textbox')).toHaveCount(0);
+
       await cold.close();
     }
     for (const path of ['/login', '/unknown', '/workouts/arbitrary/path']) {
@@ -170,7 +180,7 @@ test('same-endpoint update retains IDB and replaces old static cache after insta
 }) => {
   await request.post('/__offline-test/control', { data: { mode: 'legacy' } });
   await seed(page);
-  await page.evaluate('window.offlineTest.prepareShell()');
+  await prepareLegacy(page);
   await page.reload();
   await page.addScriptTag({ content: harness });
   await expect
@@ -205,19 +215,48 @@ test('same-endpoint update retains IDB and replaces old static cache after insta
   ).toBe(false);
   await request.post('/__offline-test/control', { data: { hold: false } });
   await expect
-    .poll(() => page.evaluate(() => caches.keys()))
-    .not.toContain('yazio-offline-shell-legacy-test');
+    .poll(() =>
+      page.evaluate(async () =>
+        Boolean((await navigator.serviceWorker.getRegistration())?.waiting),
+      ),
+    )
+    .toBe(true);
+  expect(await page.evaluate(() => caches.keys())).toContain(
+    'yazio-offline-shell-legacy-test',
+  );
   expect(await page.evaluate('window.offlineTest.read()')).toMatchObject({
     present: true,
     enabled: true,
     photos: 1,
   });
-  await page.context().setOffline(true);
-  await page.goto('/workouts');
+  const context = page.context();
+  await page.close();
+  const fresh = await context.newPage();
+  await fresh.goto('/login');
+  await expect
+    .poll(() =>
+      fresh.evaluate(async () =>
+        Boolean((await navigator.serviceWorker.getRegistration())?.active),
+      ),
+    )
+    .toBe(true);
+  await expect
+    .poll(() => fresh.evaluate(() => caches.keys()))
+    .not.toContain('yazio-offline-shell-legacy-test');
+  await fresh.addScriptTag({ content: harness });
+  expect(await fresh.evaluate('window.offlineTest.read()')).toMatchObject({
+    present: true,
+    enabled: true,
+    photos: 1,
+  });
+  await context.setOffline(true);
+  await fresh.goto('/workouts');
   await expect(
-    page.getByText('Без сети · сохранённые данные', { exact: true }),
+    fresh.getByText('Сеть или сервер недоступны · сохранённые данные', {
+      exact: true,
+    }),
   ).toBeVisible();
-  await page.context().setOffline(false);
+  await context.setOffline(false);
 });
 test('failed worker update leaves the old active worker and stored data usable', async ({
   page,
@@ -225,7 +264,7 @@ test('failed worker update leaves the old active worker and stored data usable',
 }) => {
   await request.post('/__offline-test/control', { data: { mode: 'legacy' } });
   await seed(page);
-  await page.evaluate('window.offlineTest.prepareShell()');
+  await prepareLegacy(page);
   await request.post('/__offline-test/control', { data: { mode: 'broken' } });
   expect(
     await page.evaluate(async () => {
@@ -248,7 +287,9 @@ test('failed worker update leaves the old active worker and stored data usable',
   await page.context().setOffline(true);
   await page.goto('/diary');
   await expect(
-    page.getByText('Без сети · сохранённые данные', { exact: true }),
+    page.getByText('Сеть или сервер недоступны · сохранённые данные', {
+      exact: true,
+    }),
   ).toBeVisible();
   await page.context().setOffline(false);
 });

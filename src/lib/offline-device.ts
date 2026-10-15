@@ -813,7 +813,12 @@ export function observeOfflineDenials() {
       throw error;
     }
     if (relevant) {
-      reportNetworkResult(response.status < 500);
+      // Report rendering can fail while the authenticated app remains reachable.
+      // Its JSON runtime/busy errors belong to the report form, not global fallback.
+      const reportFailure =
+        url.pathname === '/api/reports' &&
+        response.headers.get('content-type')?.includes('application/json');
+      reportNetworkResult(response.status < 500 || Boolean(reportFailure));
       const method = (
         init?.method ?? (input instanceof Request ? input.method : 'GET')
       ).toUpperCase();

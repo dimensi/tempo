@@ -145,3 +145,13 @@ it('the strict view DTO refuses credentials, signed file URLs and obsolete contr
     }).success,
   ).toBe(false);
 });
+
+it('does not present yesterday cached plan as a future workout after rollover', () => {
+  const snapshot = fixture();
+  expect(
+    savedOverview(snapshot, '2026-10-20', 'UTC')!.workouts.planned?.date,
+  ).toBe('2026-10-20');
+  expect(
+    savedOverview(snapshot, '2026-10-21', 'UTC')!.workouts.planned,
+  ).toBeNull();
+});

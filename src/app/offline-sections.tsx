@@ -3,12 +3,12 @@ import { useSyncExternalStore } from 'react';
 import { Alert, Button, Stack, Text, TextInput, Title } from '@mantine/core';
 import type { OfflineSnapshot } from '@/contracts/offline';
 import { analyticsRangeSchema } from '@/contracts/analytics';
-import { Overview } from '@/features/overview';
+import { Overview } from '@/features/overview/read';
 import {
   AnalyticsDashboard,
   PeriodControlView,
   presetRange,
-} from '@/features/analytics';
+} from '@/features/analytics/read';
 import { MeasurementsPanel } from '@/features/measurements';
 import { WeightHistoryPanel, StepsPanel } from '@/features/health';
 import { ReportForm } from '@/features/reports';
@@ -112,7 +112,14 @@ export function OfflineSection({
     const data = snapshot && savedOverview(snapshot, today, timezone);
     return (
       <Stack>
-        {data ? <Overview saved={data} /> : unknown}
+        {data ? (
+          <Overview
+            saved={data}
+            plannedUnknown={!!summary && summary.to < today}
+          />
+        ) : (
+          unknown
+        )}
         {coverage}
         {summary && (
           <StepsPanel
@@ -248,13 +255,7 @@ export function OfflineSection({
     return (
       <Stack>
         {snapshot ? (
-          <ReportForm
-            ownerId={snapshot.partition}
-            offlineDays={snapshot.diary.flatMap((day) => {
-              const value = savedDiaryDay(snapshot, day.date);
-              return value ? [value] : [];
-            })}
-          />
+          <OfflineReport snapshot={snapshot} />
         ) : (
           <>
             <Title order={1}>{m.sectionTitle('/reports')}</Title>
@@ -296,5 +297,32 @@ export function OfflineFiles({ kind }: { kind?: 'pdf' | 'video' }) {
         />
       ))}
     </Stack>
+  );
+}
+
+function OfflineReport({ snapshot }: { snapshot: OfflineSnapshot }) {
+  const controller = getOfflineController();
+  const state = useSyncExternalStore(
+    controller.subscribe,
+    controller.getSnapshot,
+    controller.getServerSnapshot,
+  );
+  return (
+    <ReportForm
+      ownerId={snapshot.partition}
+      offlineDays={snapshot.diary.flatMap((day) => {
+        const saved = savedDiaryDay(snapshot, day.date);
+        return saved ? [saved] : [];
+      })}
+      offlineSteps={snapshot.dailySteps}
+      offlinePhotos={snapshot.photos.items.map((photo) => ({
+        id: photo.id,
+        date: photo.date,
+        daytime: photo.daytime,
+        source: photo.source,
+        observedAt: photo.observedAt,
+        bytes: state.photos.find((copy) => copy.id === photo.id)?.bytes ?? null,
+      }))}
+    />
   );
 }

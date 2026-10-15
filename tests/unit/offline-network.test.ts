@@ -51,3 +51,15 @@ it('server unavailability is reported even when the network interface is present
   expect(env.loaded()).toBe(0);
   env.stop();
 });
+it('keeps report runtime errors local while reporting an unavailable document gateway', async () => {
+  const responses = [
+    Response.json({ error: 'Renderer unavailable' }, { status: 503 }),
+    new Response('Gateway unavailable', { status: 503 }),
+  ];
+  const env = windowDouble(vi.fn(async () => responses.shift()!));
+  await env.target.fetch('/api/reports?format=pdf');
+  await env.target.fetch('/api/reports?format=pdf');
+  expect(env.statuses).toEqual([true, false]);
+  expect(env.loaded()).toBe(0);
+  env.stop();
+});

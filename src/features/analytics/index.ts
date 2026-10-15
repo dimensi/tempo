@@ -8,4 +8,5 @@ export { AnalyticsTimezone } from './period-control';
 export { previousRange } from './range';
 export { analyzeNutrition, analyzeBody, compareMeans } from './analysis';
 
-export { PeriodControlView } from './period-control';
+export { PeriodControlView } from './period-control-view';
+export { PeriodControl } from './period-control';

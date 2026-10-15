@@ -10,7 +10,7 @@ import {
   previousRange,
   presetRange,
   summarizeNutrition,
-} from '@/features/analytics';
+} from '@/features/analytics/read';
 import { summarizeSteps } from '@/lib/steps-summary';
 import { shiftDate } from '@/contracts/nutrition-sync-dates';
 
@@ -167,6 +167,12 @@ export function savedOverview(
         return { date, value: byDate.get(date) ?? null };
       }),
     },
-    workouts: summary.workouts,
+    workouts: {
+      ...summary.workouts,
+      planned:
+        summary.workouts.planned && summary.workouts.planned.date >= today
+          ? summary.workouts.planned
+          : null,
+    },
   };
 }

@@ -9,13 +9,14 @@ import {
   type NutritionDay,
   type SafeMealPhotoView,
 } from '@/contracts/nutrition';
-import type { ReportDataset, ReportDataSource } from '@/server/pdf/source';
+import type { ReportDataSource } from '@/server/pdf/source';
+import type { ReportDataset } from '@/contracts/reports';
 import { redesignDay } from '../unit/reports/redesign-fixtures';
 import { formatDecimal } from '@/lib/number-display';
 vi.mock('server-only', () => ({}));
 import { generateReport } from '@/server/pdf/service';
 import { readReportFonts } from '@/server/pdf/fonts';
-import { renderReportHtml } from '@/server/pdf/template';
+import { renderReportHtml } from '@/lib/reports/template';
 import { prepareReportPage, renderPdfReport } from '@/server/pdf/renderer';
 
 const directory = await mkdtemp(join(tmpdir(), 'yazio-redesign-'));
@@ -165,7 +166,7 @@ it('renders the specified one-page compact day and six records, then measures ph
         photos: [
           ...canonicalPhotos,
           ...canonicalPhotos.map((p, index) =>
-            photo(second.date, index, p.dataUri),
+            photo(second.date, index, p.dataUri ?? ''),
           ),
         ],
       },
