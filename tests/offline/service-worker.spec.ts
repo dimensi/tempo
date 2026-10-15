@@ -106,11 +106,9 @@ test('fresh pages cold-launch the application shell only for supported navigatio
       const cold = await context.newPage();
       await cold.goto(path);
       await expect(
-        cold
-          .getByRole('status')
-          .filter({
-            hasText: 'Сеть или сервер недоступны · сохранённые данные',
-          }),
+        cold.getByRole('status').filter({
+          hasText: 'Сеть или сервер недоступны · сохранённые данные',
+        }),
       ).toBeVisible();
 
       await cold.close();
