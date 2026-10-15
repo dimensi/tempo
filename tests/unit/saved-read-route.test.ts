@@ -47,6 +47,8 @@ it('recognizes only core routes whose requested data is already saved', () => {
   expect(saved('/analytics', '2026-10-13')).toBe(false);
   expect(saved('/workouts?date=2026-10-12')).toBe(true);
   expect(saved('/workouts?date=2026-09-01')).toBe(false);
+  expect(saved('/workouts')).toBe(true);
+  expect(saved('/workouts', '2026-10-13')).toBe(false);
 });
 
 it('recognizes settings only when their saved projection exists', () => {

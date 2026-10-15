@@ -1,3 +1,4 @@
+import { concealOfflineContent } from '@/lib/offline-device';
 import type { OfflineController } from '@/lib/offline-controller';
 import { networkReachable } from '@/lib/network-state';
 export function attachOfflineRefresh(controller: OfflineController) {
@@ -19,6 +20,10 @@ export function attachOfflineRefresh(controller: OfflineController) {
   const hide = () => {
     controller.suspend();
     clearTimeout(scheduled);
+  };
+  const pageHide = () => {
+    concealOfflineContent();
+    hide();
   };
   const offline = () => {
     clearTimeout(scheduled);
@@ -60,7 +65,7 @@ export function attachOfflineRefresh(controller: OfflineController) {
   window.addEventListener('tempo:offline-navigation', localNavigation);
   window.addEventListener('focus', refresh);
   window.addEventListener('pageshow', refresh);
-  window.addEventListener('pagehide', hide);
+  window.addEventListener('pagehide', pageHide);
   document.addEventListener('visibilitychange', visible);
   const interval = setInterval(() => {
     if (document.visibilityState === 'visible')
@@ -77,7 +82,7 @@ export function attachOfflineRefresh(controller: OfflineController) {
     window.removeEventListener('tempo:offline-navigation', localNavigation);
     window.removeEventListener('focus', refresh);
     window.removeEventListener('pageshow', refresh);
-    window.removeEventListener('pagehide', hide);
+    window.removeEventListener('pagehide', pageHide);
     document.removeEventListener('visibilitychange', visible);
   };
 }

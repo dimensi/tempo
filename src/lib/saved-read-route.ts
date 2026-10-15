@@ -48,7 +48,7 @@ export function hasSavedReadRoute(
     );
   }
   if (url.pathname === '/workouts')
-    return snapshot.workoutDates.includes(selectedDate(url, snapshot.to));
+    return snapshot.workoutDates.includes(selectedDate(url, today));
   if (
     url.pathname.startsWith('/workouts/') &&
     !/\/(?:edit|results)$/.test(url.pathname) &&
