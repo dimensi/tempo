@@ -225,9 +225,39 @@ test('measurement and actual-session comments compose after CRUD with real train
         .getByRole('button', { name: 'Изменить', exact: true })
         .click();
       await panel.getByLabel('Комментарий').fill(`${reply} edited`);
-      await panel
-        .getByRole('button', { name: 'Сохранить', exact: true })
-        .click();
+      let release!: () => void;
+      let acknowledged!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const committed = new Promise<void>((resolve) => {
+        acknowledged = resolve;
+      });
+      await trainer.route('**/api/comments/*', async (route) => {
+        if (route.request().method() !== 'PATCH') {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        acknowledged();
+        await gate;
+        await route.fulfill({ response });
+      });
+      const nextDraft = `New draft during ${target.type} acknowledgement`;
+      try {
+        await panel
+          .getByRole('button', { name: 'Сохранить', exact: true })
+          .click();
+        await committed;
+        await panel.getByLabel('Комментарий').fill(nextDraft);
+      } finally {
+        release();
+      }
+      await trainer.unrouteAll({ behavior: 'wait' });
+      await expect(
+        panel.getByRole('button', { name: 'Сохранить', exact: true }),
+      ).toBeEnabled();
+      await expect(panel.getByLabel('Комментарий')).toHaveValue(nextDraft);
       await expect(
         panel.getByText(`${reply} edited`, { exact: true }),
       ).toBeVisible();

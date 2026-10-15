@@ -1,7 +1,7 @@
 'use client';
 import { useReadOnline } from '@/lib/use-read-online';
 import { useReadRefresh } from '@/lib/use-read-refresh';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -25,6 +25,7 @@ function TargetCommentsPanel({
   const readRefresh = useReadRefresh();
   const [rows, setRows] = useState<CommentDto[]>([]);
   const [body, setBody] = useState('');
+  const draftRevision = useRef(0);
   const [parentId, setParentId] = useState<string>();
   const [editing, setEditing] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -56,7 +57,8 @@ function TargetCommentsPanel({
     setRows(await response.json());
   }
   async function save() {
-    if (!online) return;
+    if (!online || busy) return;
+    const submittedRevision = draftRevision.current;
     setBusy(true);
     setError(false);
     try {
@@ -78,9 +80,12 @@ function TargetCommentsPanel({
         },
       );
       if (!response.ok) throw new Error();
-      setBody('');
-      setParentId(undefined);
-      setEditing(undefined);
+      if (draftRevision.current === submittedRevision) {
+        draftRevision.current++;
+        setBody('');
+        setParentId(undefined);
+        setEditing(undefined);
+      }
       await refresh();
     } catch {
       setError(true);
@@ -136,6 +141,7 @@ function TargetCommentsPanel({
                   variant="subtle"
                   disabled={!online || busy}
                   onClick={() => {
+                    draftRevision.current++;
                     setParentId(row.id);
                     setEditing(undefined);
                     setBody('');
@@ -151,6 +157,7 @@ function TargetCommentsPanel({
                     variant="subtle"
                     disabled={!online || busy}
                     onClick={() => {
+                      draftRevision.current++;
                       setEditing(row.id);
                       setParentId(undefined);
                       setBody(row.body);
@@ -192,7 +199,10 @@ function TargetCommentsPanel({
             autosize
             minRows={3}
             value={body}
-            onChange={(e) => setBody(e.currentTarget.value)}
+            onChange={(e) => {
+              draftRevision.current++;
+              setBody(e.currentTarget.value);
+            }}
           />
           <Group>
             <Button mih={44} type="submit" disabled={loading} loading={busy}>
@@ -203,6 +213,7 @@ function TargetCommentsPanel({
                 mih={44}
                 variant="subtle"
                 onClick={() => {
+                  draftRevision.current++;
                   setEditing(undefined);
                   setParentId(undefined);
                   setBody('');

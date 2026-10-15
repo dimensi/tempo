@@ -23,6 +23,8 @@ import {
   offlineFileLimits,
 } from '@/lib/offline-device';
 import { prepareOfflineShell } from './offline-shell';
+import { fetchWithDeadline } from './fetch-with-deadline';
+import { reportNetworkResult } from './network-state';
 export interface OfflineState {
   status: 'checking' | 'disabled' | 'saving' | 'ready' | 'offline' | 'error';
   enabled: boolean;
@@ -115,16 +117,19 @@ export class OfflineController {
   ) {
     let response: Response;
     try {
-      response = await this.fetcher.call(globalThis, url, {
-        cache: 'no-store',
-        method: options.method ?? 'GET',
-        credentials: 'same-origin',
-        signal: AbortSignal.any([
+      response = await fetchWithDeadline(
+        url,
+        {
+          cache: 'no-store',
+          method: options.method ?? 'GET',
+          credentials: 'same-origin',
           signal,
-          AbortSignal.timeout(options.timeoutMs ?? 10000),
-        ]),
-      });
+        },
+        options.timeoutMs ?? 10000,
+        this.fetcher.bind(globalThis),
+      );
     } catch {
+      if (!signal.aborted) reportNetworkResult(false);
       throw new OfflineNetworkError();
     }
     if (
@@ -146,7 +151,9 @@ export class OfflineController {
   }
   private async identity(signal: AbortSignal) {
     return offlineIdentitySchema.parse(
-      await (await this.request('/api/offline/identity', signal)).json(),
+      await (
+        await this.request('/api/offline/identity', signal, { timeoutMs: 2000 })
+      ).json(),
     );
   }
   private sameIdentity(first: OfflineIdentity, second: OfflineIdentity) {
@@ -194,7 +201,7 @@ export class OfflineController {
     if (
       this.flight &&
       this.flightRevision === this.revision &&
-      (!online || this.flightOnline)
+      this.flightOnline === online
     )
       return this.flight;
     const elapsed = this.now() - this.lastVerifiedAt;
@@ -357,7 +364,7 @@ export class OfflineController {
     signal: AbortSignal;
   }) {
     this.optedIn = true;
-    this.set({ ...empty, status: 'saving' });
+    this.set({ ...this.state, status: 'saving', error: null });
     try {
       const identity = await this.identity(operation.signal);
       if (this.revision !== operation.revision) return;
@@ -382,6 +389,19 @@ export class OfflineController {
       const cached = await this.storage.read(this.now(), this.timezone());
       await this.download(identity, operation, cached);
     } catch (error) {
+      if (
+        error instanceof OfflineNetworkError &&
+        !operation.signal.aborted &&
+        this.revision === operation.revision
+      ) {
+        const cached = await this.storage
+          .read(this.now(), this.timezone())
+          .catch(() => null);
+        if (cached && this.revision === operation.revision) {
+          this.publish(cached, false);
+          return;
+        }
+      }
       await this.failed(error, operation.revision);
     }
   }

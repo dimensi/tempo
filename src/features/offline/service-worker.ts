@@ -1,6 +1,8 @@
 /// <reference lib='webworker' />
 import { Serwist, type PrecacheEntry } from 'serwist';
 import { OfflineStorage } from '@/lib/offline-device';
+import { fetchWithDeadline } from '@/lib/fetch-with-deadline';
+import { isOfflineNavigationPath } from '@/lib/offline-navigation-paths';
 declare const self: ServiceWorkerGlobalScope & {
   __SW_MANIFEST: PrecacheEntry[];
 };
@@ -21,18 +23,6 @@ const precache = new Serwist({
 const allowed = new Set(
   precache.getPrecachedUrls().map((url) => new URL(url).pathname),
 );
-const navigationPaths = new Set([
-  '/',
-  '/diary',
-  '/analytics',
-  '/anamnesis',
-  '/measurements',
-  '/workouts',
-  '/workouts/catalog',
-  '/settings',
-  '/reports',
-  '/offline/index.html',
-]);
 async function purge(previousEpoch?: string) {
   const storage = new OfflineStorage();
   try {
@@ -95,16 +85,9 @@ worker.addEventListener('fetch', (event) => {
     precache.handleFetch(event);
     return;
   }
-  if (
-    request.mode === 'navigate' &&
-    (navigationPaths.has(url.pathname) ||
-      /^\/anamnesis\/(?:markers|documents)\/[^/]+$/.test(url.pathname) ||
-      /^\/workouts\/(?:plans\/[A-Za-z0-9_%~-]+\/(?:workouts\/[A-Za-z0-9_%~-]+(?:\/results)?|edit)|sessions\/[A-Za-z0-9_%~-]+(?:\/edit)?|native\/[1-9][0-9]*|links\/[A-Za-z0-9_%~-]+|new)$/.test(
-        url.pathname,
-      ))
-  ) {
+  if (request.mode === 'navigate' && isOfflineNavigationPath(url.pathname)) {
     event.respondWith(
-      fetch(request)
+      fetchWithDeadline(request, {}, 3000)
         .then((response) => {
           if (
             response.status === 401 ||

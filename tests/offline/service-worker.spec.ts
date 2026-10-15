@@ -18,15 +18,79 @@ test.beforeEach(async ({ request }) => {
   expect(
     (
       await request.post('/__offline-test/control', {
-        data: { mode: 'current', hold: false, navigationStatus: 0 },
+        data: {
+          mode: 'current',
+          hold: false,
+          navigationStatus: 0,
+          stalledNavigation: false,
+          stalledIdentity: false,
+          stalledApi: false,
+        },
       })
     ).ok(),
   ).toBe(true);
 });
 test.afterEach(async ({ request }) => {
   await request.post('/__offline-test/control', {
-    data: { mode: 'current', hold: false, navigationStatus: 0 },
+    data: {
+      mode: 'current',
+      hold: false,
+      navigationStatus: 0,
+      stalledNavigation: false,
+      stalledIdentity: false,
+      stalledApi: false,
+    },
   });
+});
+test('closed browser restarts from its persisted shell while navigation and identity never respond', async ({
+  playwright,
+  browserName,
+  request,
+}, info) => {
+  const profile = info.outputPath('persistent-profile');
+  const options = {
+    baseURL: String(info.project.use.baseURL),
+    ignoreHTTPSErrors: true,
+    serviceWorkers: 'allow' as const,
+    args: browserName === 'chromium' ? ['--ignore-certificate-errors'] : [],
+  };
+  let context = await playwright[browserName].launchPersistentContext(
+    profile,
+    options,
+  );
+  try {
+    let page = context.pages()[0]!;
+    await page.goto('/login');
+    await page.addScriptTag({ content: harness });
+    await page.evaluate('window.offlineTest.seed("sections")');
+    await page.evaluate('window.offlineTest.prepareShell()');
+    await context.close();
+    await request.post('/__offline-test/control', {
+      data: { stalledNavigation: true, stalledIdentity: true },
+    });
+    context = await playwright[browserName].launchPersistentContext(
+      profile,
+      options,
+    );
+    page = context.pages()[0]!;
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    const started = Date.now();
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 7000 });
+    await expect(
+      page.getByRole('heading', { name: 'Обзор', exact: true }),
+    ).toBeVisible({ timeout: 6000 });
+    expect(Date.now() - started).toBeLessThan(8000);
+    expect(await page.evaluate(() => navigator.onLine)).toBe(true);
+    await expect(
+      page
+        .getByRole('status')
+        .filter({ hasText: 'Сеть или сервер недоступны' }),
+    ).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
 });
 async function seed(page: Page) {
   await page.goto('/login');
