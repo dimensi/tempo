@@ -1,11 +1,32 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { interceptOfflineLinks, isOfflineRoute } from '@/lib/offline-routing';
+import {
+  interceptOfflineLinks,
+  isOfflineRoute,
+  offlineNavigate,
+} from '@/lib/offline-routing';
 import { reportNetworkResult } from '@/lib/network-state';
+import { purgeOfflineDevice } from '@/lib/offline-device';
+
+vi.mock('@/lib/offline-device', () => ({
+  purgeOfflineDevice: vi.fn(async () => {}),
+}));
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.mocked(purgeOfflineDevice).mockClear();
   reportNetworkResult(true);
+});
+
+it('preserves scroll when cached navigation requests it', () => {
+  const pushState = vi.fn();
+  const scrollTo = vi.fn();
+  vi.stubGlobal('location', new URL('https://tempo.test/diary'));
+  vi.stubGlobal('history', { pushState });
+  vi.stubGlobal('window', { scrollTo });
+  offlineNavigate('/diary?date=2026-10-16', false, false);
+  expect(pushState).toHaveBeenCalledOnce();
+  expect(scrollTo).not.toHaveBeenCalled();
 });
 it.each([
   '/',
@@ -137,9 +158,49 @@ it.each([401, 403, 409])(
     await Promise.resolve();
     expect(env.pushState).toHaveBeenCalledOnce();
     expect(env.navigate).not.toHaveBeenCalled();
+    if (status === 409)
+      await vi.waitFor(() => expect(purgeOfflineDevice).toHaveBeenCalledOnce());
+    else expect(purgeOfflineDevice).not.toHaveBeenCalled();
     env.stop();
   },
 );
+it('resumes a verified captured link without replaying its click', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response('{}')),
+  );
+  const resumeVerified = vi.fn();
+  let click!: (event: MouseEvent) => void;
+  const replay = vi.fn();
+  vi.stubGlobal('document', {
+    addEventListener: (_: string, fn: typeof click) => {
+      click = fn;
+    },
+    removeEventListener: vi.fn(),
+  });
+  vi.stubGlobal('window', new EventTarget());
+  vi.stubGlobal('location', new URL('https://tempo.test/diary'));
+  vi.stubGlobal('navigator', { onLine: true });
+  const stop = interceptOfflineLinks(() => false, resumeVerified);
+  click({
+    button: 0,
+    target: {
+      closest: () => ({
+        href: 'https://tempo.test/anamnesis',
+        click: replay,
+      }),
+    },
+    preventDefault: vi.fn(),
+  } as unknown as MouseEvent);
+  await vi.waitFor(() =>
+    expect(resumeVerified).toHaveBeenCalledWith(
+      new URL('https://tempo.test/anamnesis'),
+    ),
+  );
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(replay).not.toHaveBeenCalled();
+  stop();
+});
 it('keeps the current screen until an actual response allows live navigation', async () => {
   const request = vi.fn(async () => new Response(null, { status: 503 }));
   vi.stubGlobal('fetch', request);

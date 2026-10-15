@@ -1,5 +1,6 @@
 'use client';
 import { networkReachable, reportNetworkResult } from '@/lib/network-state';
+import { purgeOfflineDevice } from '@/lib/offline-device';
 import { fetchWithDeadline } from './fetch-with-deadline';
 import { isOfflineNavigationPath } from './offline-navigation-paths';
 import { useSyncExternalStore } from 'react';
@@ -16,7 +17,7 @@ export function isOfflineRoute(url: URL | null) {
     history.state?.tempoOfflineRoute === url.pathname + url.search
   );
 }
-export function offlineNavigate(href: string, replace = false) {
+export function offlineNavigate(href: string, replace = false, scroll = true) {
   const url = new URL(href, location.href);
   if (url.origin !== location.origin) return;
   history[replace ? 'replaceState' : 'pushState'](
@@ -25,7 +26,7 @@ export function offlineNavigate(href: string, replace = false) {
     url.pathname + url.search + url.hash,
   );
   changed();
-  window.scrollTo(0, 0);
+  if (scroll) window.scrollTo(0, 0);
 }
 export function useOfflineLocation() {
   useSyncExternalStore(
@@ -88,7 +89,13 @@ export function navigateReadRoute({
         resumeLive();
         return;
       }
-      if ([401, 403, 409].includes(response.status)) return;
+      if (response.status === 409) {
+        // A changed connection generation invalidates the displayed fence.
+        // purgeOfflineDevice conceals synchronously before physical cleanup.
+        void purgeOfflineDevice().catch(() => {});
+        return;
+      }
+      if (response.status === 401 || response.status === 403) return;
       if (!savedShown) resumeLive();
     },
     () => {
@@ -101,6 +108,7 @@ export function navigateReadRoute({
 
 export function interceptOfflineLinks(
   hasSaved: (url: URL) => boolean = () => false,
+  resumeVerified?: (url: URL) => void,
 ) {
   let resuming: HTMLAnchorElement | undefined;
   const click = (event: MouseEvent) => {
@@ -137,6 +145,10 @@ export function interceptOfflineLinks(
         window.dispatchEvent(new Event('tempo:offline-navigation'));
       },
       resumeLive: () => {
+        if (resumeVerified) {
+          resumeVerified(url);
+          return;
+        }
         // Resume the original link so Next keeps its scroll options, pending
         // state and keyboard-selection ordering. Bypass only this one replay.
         resuming = link;

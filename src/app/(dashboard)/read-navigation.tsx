@@ -26,7 +26,11 @@ export function ReadNavigation() {
         url,
         hasSaved,
         showSaved: () => {
-          offlineNavigate(url.href, options?.replace);
+          offlineNavigate(
+            url.href,
+            options?.replace,
+            options?.scroll !== false,
+          );
           window.dispatchEvent(new Event('tempo:offline-navigation'));
         },
         resumeLive: () =>
@@ -35,7 +39,9 @@ export function ReadNavigation() {
             : router.push(href, { scroll: options?.scroll }),
       });
     });
-    const stopLinks = interceptOfflineLinks(hasSaved);
+    const stopLinks = interceptOfflineLinks(hasSaved, (url) =>
+      router.push(url.pathname + url.search + url.hash),
+    );
     return () => {
       stopLinks();
       stopNavigation();
