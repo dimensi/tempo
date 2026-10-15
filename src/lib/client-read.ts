@@ -349,3 +349,25 @@ export async function savedMedicalSummary() {
   const body = await clientReads.read('/api/offline/anamnesis-local');
   return offlineAnamnesisSchema.parse(JSON.parse(body));
 }
+
+export async function hasSavedMedicalRoute(url: URL) {
+  if (url.pathname !== '/anamnesis' && !url.pathname.startsWith('/anamnesis/'))
+    return false;
+  const summary = await savedMedicalSummary().catch(() => undefined);
+  if (!summary) return false;
+  if (url.pathname === '/anamnesis') return true;
+  const match = url.pathname.match(
+    /^\/anamnesis\/(markers|documents)\/([^/]+)$/,
+  );
+  if (!match) return false;
+  const key = canonicalReadKey(
+    new URL(
+      `/api/anamnesis/${match[1]}/${match[2]}?ownerId=${encodeURIComponent(summary.ownerId)}`,
+      location.origin,
+    ),
+  );
+  return clientReads.read(key).then(
+    () => true,
+    () => false,
+  );
+}

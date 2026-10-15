@@ -9,6 +9,7 @@ import {
   offlineNavigate,
 } from '@/lib/offline-routing';
 import { hasSavedReadRoute } from '@/lib/saved-read-route';
+import { hasSavedMedicalRoute } from '@/lib/client-read';
 export function ReadNavigation() {
   const router = useRouter();
   useEffect(() => {
@@ -24,11 +25,15 @@ export function ReadNavigation() {
     };
     const hasSaved = (url: URL) => {
       const state = getOfflineController().getSnapshot();
-      return (
+      const snapshotSaved =
         state.error !== 'denied' &&
         !!state.bundle &&
-        hasSavedReadRoute(state.bundle.snapshot, url)
-      );
+        hasSavedReadRoute(state.bundle.snapshot, url);
+      if (snapshotSaved) return true;
+      return url.pathname === '/anamnesis' ||
+        url.pathname.startsWith('/anamnesis/')
+        ? hasSavedMedicalRoute(url)
+        : false;
     };
     const stopNavigation = installReadNavigation((href, options) => {
       const url = new URL(href, location.href);

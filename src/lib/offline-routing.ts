@@ -59,7 +59,7 @@ export function navigateReadRoute({
   valid = () => true,
 }: {
   url: URL;
-  hasSaved: (url: URL) => boolean;
+  hasSaved: (url: URL) => boolean | Promise<boolean>;
   showSaved: () => void;
   resumeLive: () => void;
   expectedIdentity?: SavedReadIdentity | null;
@@ -74,7 +74,13 @@ export function navigateReadRoute({
     savedShown = true;
     showSaved();
   };
-  if (hasSaved(url)) local();
+  const saved = hasSaved(url);
+  if (typeof saved === 'boolean') {
+    if (saved) local();
+  } else
+    void saved.then((available) => {
+      if (available && !attempt.signal.aborted && valid()) local();
+    });
   if (!navigator.onLine || !networkReachable()) {
     local();
     return;
@@ -132,7 +138,7 @@ export function navigateReadRoute({
 }
 
 export function interceptOfflineLinks(
-  hasSaved: (url: URL) => boolean = () => false,
+  hasSaved: (url: URL) => boolean | Promise<boolean> = () => false,
   resumeVerified?: (url: URL) => void,
   expectedIdentity?: () => SavedReadIdentity | null,
 ) {

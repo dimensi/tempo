@@ -82,7 +82,7 @@ it('matches a saved route to its exact URL so ordinary navigation cannot inherit
 });
 
 function navigationDouble(
-  hasSaved: (url: URL) => boolean = () => false,
+  hasSaved: (url: URL) => boolean | Promise<boolean> = () => false,
   expectedIdentity?: () => {
     partition: string;
     connectionGeneration: string;
@@ -151,6 +151,20 @@ it('shows a saved destination before identity and RSC settle', async () => {
   await vi.waitFor(() =>
     expect(env.navigate).toHaveBeenCalledWith('/analytics'),
   );
+  env.stop();
+});
+it('shows an asynchronously restored destination while identity remains stalled', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Promise<Response>(() => {})),
+  );
+  const restored = Promise.withResolvers<boolean>();
+  const env = navigationDouble(() => restored.promise);
+  env.click('/anamnesis');
+  expect(env.pushState).not.toHaveBeenCalled();
+  restored.resolve(true);
+  await vi.waitFor(() => expect(env.pushState).toHaveBeenCalledOnce());
+  expect(env.navigate).not.toHaveBeenCalled();
   env.stop();
 });
 it.each([401, 403, 409])(

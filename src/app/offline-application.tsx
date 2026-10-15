@@ -39,6 +39,7 @@ import { isOfflineRoute } from '@/lib/offline-routing';
 import { useReadOnline } from '@/lib/use-read-online';
 import { canRetainLiveRead } from '@/lib/live-read-scope';
 import { hasSavedReadRoute } from '@/lib/saved-read-route';
+import { hasSavedMedicalRoute } from '@/lib/client-read';
 import { revealOfflineContent } from '@/lib/offline-device';
 import { workoutTitle } from '@/lib/workout-title';
 import {
@@ -505,7 +506,11 @@ export function OfflineApplication({ brandSrc }: { brandSrc: string }) {
       interceptOfflineLinks(
         (destination) => {
           const snapshot = controller.getSnapshot().bundle?.snapshot;
-          return !!snapshot && hasSavedReadRoute(snapshot, destination);
+          if (snapshot && hasSavedReadRoute(snapshot, destination)) return true;
+          return destination.pathname === '/anamnesis' ||
+            destination.pathname.startsWith('/anamnesis/')
+            ? hasSavedMedicalRoute(destination)
+            : false;
         },
         undefined,
         () => {

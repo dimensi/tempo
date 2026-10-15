@@ -227,12 +227,16 @@ it('document deletion removes both details and observations from memory and pers
   ).toBeUndefined();
 });
 it('document deletion preserves the medical workspace summary when its refresh fails', async () => {
-  const { seedClientRead, savedMedicalSummary, invalidateMedicalDocument } =
-    await install(
-      vi.fn(async () => {
-        throw new TypeError('offline');
-      }),
-    );
+  const {
+    seedClientRead,
+    savedMedicalSummary,
+    hasSavedMedicalRoute,
+    invalidateMedicalDocument,
+  } = await install(
+    vi.fn(async () => {
+      throw new TypeError('offline');
+    }),
+  );
   const document = {
     id: '00000000-0000-4000-8000-000000000001',
     ownerId: '00000000-0000-4000-8000-000000000003',
@@ -268,6 +272,29 @@ it('document deletion preserves the medical workspace summary when its refresh f
     ],
     reports: [],
   });
+  expect(
+    await hasSavedMedicalRoute(new URL('/anamnesis', 'https://tempo.test')),
+  ).toBe(true);
+  expect(
+    await hasSavedMedicalRoute(
+      new URL(
+        '/anamnesis/documents/00000000-0000-4000-8000-000000000001',
+        'https://tempo.test',
+      ),
+    ),
+  ).toBe(false);
+  await seedClientRead(
+    '/api/anamnesis/documents/00000000-0000-4000-8000-000000000001?ownerId=00000000-0000-4000-8000-000000000003',
+    document,
+  );
+  expect(
+    await hasSavedMedicalRoute(
+      new URL(
+        '/anamnesis/documents/00000000-0000-4000-8000-000000000001',
+        'https://tempo.test',
+      ),
+    ),
+  ).toBe(true);
   await invalidateMedicalDocument(
     '00000000-0000-4000-8000-000000000001',
     '00000000-0000-4000-8000-000000000003',
