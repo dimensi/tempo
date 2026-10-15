@@ -245,6 +245,11 @@ test('measurement and actual-session comments compose after CRUD with real train
         ).parentId,
       ).toBe(rootId);
     }
+    const stalePanel = trainer.getByTestId(`session-${workoutId}`);
+    await stalePanel.getByLabel('Комментарий').fill('Revoked write');
+    await expect(stalePanel.getByLabel('Комментарий')).toHaveValue(
+      'Revoked write',
+    );
     expect(
       (await page.request.delete('/api/trainers', { data: scope })).ok(),
     ).toBe(true);
@@ -261,21 +266,24 @@ test('measurement and actual-session comments compose after CRUD with real train
         403,
       );
     }
-    const stalePanel = trainer.getByTestId(`session-${workoutId}`);
-    await stalePanel.getByLabel('Комментарий').fill('Revoked write');
-    const denied = trainer.waitForResponse(
-      (response) =>
-        response.url().endsWith('/api/comments') &&
-        response.request().method() === 'POST',
-    );
-    await stalePanel
-      .getByRole('button', { name: 'Отправить', exact: true })
-      .click();
-    expect((await denied).status()).toBe(403);
-    await expect(stalePanel.getByRole('alert')).toBeVisible();
-    await expect(stalePanel.getByLabel('Комментарий')).toHaveValue(
-      'Revoked write',
-    );
+    expect(
+      (
+        await trainer.request.post('/api/comments', {
+          data: {
+            ownerId,
+            target: { type: 'workout', id: workoutId },
+            body: 'Revoked write',
+          },
+        })
+      ).status(),
+    ).toBe(403);
+    // A visible refresh checks the revoked grant before any further UI writes.
+    await trainer.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(
+      trainer.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
+    ).toBeVisible();
+    await expect(stalePanel).not.toBeVisible();
+    await expect(stalePanel.getByLabel('Комментарий')).not.toBeVisible();
     await expect(
       stalePanel.locator('p').filter({ hasText: /^Revoked write$/ }),
     ).toHaveCount(0);

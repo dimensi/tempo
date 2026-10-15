@@ -1,4 +1,5 @@
 'use client';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 import {
   useCallback,
   useEffect,
@@ -170,6 +171,7 @@ function ScopedWorkoutsDashboard({
   const [busy, setBusy] = useState(false);
   const sync = useTransformMateSync(ownerId, data, date);
   const [deletion, setDeletion] = useState<Deletion | null>(null);
+  const readRefresh = useReadRefresh();
   const endpoint = useCallback(
     (path = '') =>
       `/api/workouts${path}?ownerId=${encodeURIComponent(ownerId)}`,
@@ -210,7 +212,7 @@ function ScopedWorkoutsDashboard({
           setError(error instanceof Error ? error.message : m.loadError);
       });
     return () => controller.abort();
-  }, [read]);
+  }, [read, readRefresh]);
   async function load() {
     try {
       setData(await read());

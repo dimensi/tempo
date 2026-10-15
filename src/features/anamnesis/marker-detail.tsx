@@ -1,4 +1,19 @@
 'use client';
+import {
+  clientReads,
+  seedClientRead,
+  prepareMedicalReads,
+} from '@/lib/client-read';
+import { useReadResource } from '@/lib/use-read-resource';
+import { getOfflineController } from '@/lib/offline-controller';
+import {
+  medicalMarkerSchema,
+  medicalObservationSchema,
+} from '@/contracts/anamnesis';
+import { z } from 'zod';
+import { offlineMessages } from '@/config/offline';
+import { useReadOnline } from '@/lib/use-read-online';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 
 import { useEffect, useState } from 'react';
 import {
@@ -34,6 +49,8 @@ export function MarkerDetail({
   markerId: string;
   writable: boolean;
 }) {
+  const online = useReadOnline();
+  const readRefresh = useReadRefresh();
   const [marker, setMarker] = useState<MedicalMarker>();
   const [items, setItems] = useState<MedicalObservation[]>([]);
   const [error, setError] = useState<string>();
@@ -44,6 +61,19 @@ export function MarkerDetail({
   const [date, setDate] = useState('');
   const [unit, setUnit] = useState('');
   const [busy, setBusy] = useState(false);
+  useReadResource(
+    `/api/anamnesis/markers/${markerId}?${ownerIdQuery(ownerId)}`,
+    (value) => medicalMarkerSchema.parse(value),
+    setMarker,
+  );
+  useReadResource(
+    `/api/anamnesis/markers/${markerId}/observations?${ownerIdQuery(ownerId)}`,
+    (value) => z.array(medicalObservationSchema).parse(value),
+    (value) => {
+      setItems(value);
+      setLoading(false);
+    },
+  );
 
   useEffect(() => {
     let active = true;
@@ -77,10 +107,10 @@ export function MarkerDetail({
     return () => {
       active = false;
     };
-  }, [ownerId, markerId]);
+  }, [ownerId, markerId, readRefresh]);
 
   async function save() {
-    if (!editing) return;
+    if (!editing || !online) return;
     const parsed = medicalObservationCorrectionSchema.safeParse({
       expectedRevision: editing.revision,
       markerId,
@@ -100,6 +130,7 @@ export function MarkerDetail({
     }
     setBusy(true);
     setError(undefined);
+    const expectedScope = getOfflineController().getSnapshot().bundle?.snapshot;
     try {
       const updated = await fetchAnamnesis<MedicalObservation>(
         `/api/anamnesis/observations/${editing.id}?${ownerIdQuery(ownerId)}`,
@@ -109,9 +140,14 @@ export function MarkerDetail({
           body: JSON.stringify(parsed.data),
         },
       );
-      setItems((old) =>
-        old.map((item) => (item.id === updated.id ? updated : item)),
+      const observations = items.map((item) =>
+        item.id === updated.id ? updated : item,
       );
+      const key = `/api/anamnesis/markers/${markerId}/observations?${ownerIdQuery(ownerId)}`;
+      await clientReads.invalidate(key);
+      if (expectedScope) await seedClientRead(key, observations, expectedScope);
+      setItems(observations);
+      await prepareMedicalReads(true);
       setEditing(undefined);
     } catch (cause) {
       setError(
@@ -136,6 +172,11 @@ export function MarkerDetail({
       </Stack>
     );
 
+  const conflict =
+    !!editing &&
+    items.some(
+      (item) => item.id === editing.id && item.revision !== editing.revision,
+    );
   const numeric = items.filter((item) => item.value.kind === 'numeric');
   const chart = [...numeric]
     .filter((item) => item.collectedAt)
@@ -152,6 +193,9 @@ export function MarkerDetail({
         {m.title} · {m.workspace.markers}
       </a>
       <Title order={1}>{marker?.name ?? markerId}</Title>
+      {conflict && (
+        <Alert color="orange">{offlineMessages.draftConflict}</Alert>
+      )}
       {error && (
         <Alert color="red" role="alert">
           {error}
@@ -236,7 +280,7 @@ export function MarkerDetail({
                         <Button
                           variant="default"
                           mih={44}
-                          disabled={busy}
+                          disabled={busy || !online}
                           onClick={() => {
                             setEditing(item);
                             setValue(
@@ -281,7 +325,12 @@ export function MarkerDetail({
                 />
               </SimpleGrid>
               <Group mt="md">
-                <Button onClick={() => void save()} loading={busy} mih={44}>
+                <Button
+                  disabled={!online || conflict}
+                  onClick={() => void save()}
+                  loading={busy}
+                  mih={44}
+                >
                   {m.buttons.save}
                 </Button>
                 <Button

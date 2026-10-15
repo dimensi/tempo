@@ -1,8 +1,12 @@
 'use client';
+import { useReadResource } from '@/lib/use-read-resource';
+import { anamnesisMarkerSummarySchema } from '@/contracts/anamnesis';
+import { z } from 'zod';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 
 import { useAnamnesisRevision } from './refresh';
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import { ReadLink as Link } from '@/components/shared/read-link';
 import {
   Alert,
   Badge,
@@ -19,6 +23,7 @@ import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
 
 export function MarkerTable({ ownerId }: { ownerId: string }) {
+  const readRefresh = useReadRefresh();
   const revision = useAnamnesisRevision();
   const [items, setItems] = useState<AnamnesisMarkerSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,6 +31,14 @@ export function MarkerTable({ ownerId }: { ownerId: string }) {
   const [denied, setDenied] = useState(false);
   const [search, setSearch] = useState('');
   const url = `/api/anamnesis/markers?${ownerIdQuery(ownerId)}`;
+  useReadResource(
+    url,
+    (value) => z.array(anamnesisMarkerSummarySchema).parse(value),
+    (value) => {
+      setItems(value);
+      setLoading(false);
+    },
+  );
 
   useEffect(() => {
     let active = true;
@@ -50,7 +63,7 @@ export function MarkerTable({ ownerId }: { ownerId: string }) {
     return () => {
       active = false;
     };
-  }, [url, revision]);
+  }, [url, revision, readRefresh]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();

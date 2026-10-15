@@ -489,10 +489,6 @@ test('unnamed editor preserves drafts, handles errors and copies only the select
 test('a save settling after Back does not redirect or repeat the write', async ({
   page,
 }) => {
-  test.skip(
-    test.info().project.name !== 'desktop',
-    'Viewport-independent asynchronous navigation guard.',
-  );
   await login(page);
   const id = await ownerId(page);
   await page.goto('/workouts?date=2026-10-12');
@@ -717,23 +713,28 @@ test('add choice creates performed work directly without a plan and skipped work
 test('actual draft survives conflict and access errors; unavailable storage requires explicit leave', async ({
   page,
 }) => {
-  test.skip(
-    test.info().project.name !== 'desktop',
-    'Storage and response guards are viewport independent.',
-  );
   await login(page);
   const date = '2026-10-18';
   const route = `/workouts/sessions/new?date=${date}`;
   await page.goto(route);
-  await page
-    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
-    .fill('Draft actual');
-  await page
-    .getByRole('option', {
-      name: 'Добавить вручную: Draft actual',
+  async function addExercise() {
+    const input = page.getByRole('combobox', {
+      name: 'Добавить упражнение',
       exact: true,
-    })
-    .click();
+    });
+    await input.scrollIntoViewIfNeeded();
+    await input.click();
+    await input.fill('Draft actual');
+    await expect(
+      page.getByRole('option', {
+        name: 'Добавить вручную: Draft actual',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await input.press('ArrowDown');
+    await input.press('Enter');
+  }
+  await addExercise();
   const reps = page.getByRole('textbox', { name: /Факт · Повторения/ });
   await reps.fill('7');
   await page.route('**/api/offline/writes', (handler) =>
@@ -753,15 +754,7 @@ test('actual draft survives conflict and access errors; unavailable storage requ
     .click();
   await page.unroute('**/api/offline/writes');
   await page.goto(route);
-  await page
-    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
-    .fill('Draft actual');
-  await page
-    .getByRole('option', {
-      name: 'Добавить вручную: Draft actual',
-      exact: true,
-    })
-    .click();
+  await addExercise();
   await reps.fill('7');
   await page.route('**/api/workouts?*', (handler) =>
     handler.fulfill({ status: 503, json: { error: 'unavailable' } }),
@@ -804,23 +797,42 @@ test('actual draft survives conflict and access errors; unavailable storage requ
 test('late actual save cannot erase a reopened draft or redirect it', async ({
   page,
 }) => {
-  test.skip(
-    test.info().project.name !== 'desktop',
-    'Mounted resource race is viewport independent.',
-  );
   await login(page);
   const id = await ownerId(page);
   const path = '/workouts/sessions/new?date=2026-10-19';
   await page.goto(path);
-  await page
-    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
-    .fill('Delayed actual');
-  await page
-    .getByRole('option', {
-      name: 'Добавить вручную: Delayed actual',
+  async function addExercise() {
+    const exerciseInput = page.getByRole('combobox', {
+      name: 'Добавить упражнение',
       exact: true,
-    })
-    .click();
+    });
+    await exerciseInput.scrollIntoViewIfNeeded();
+    await exerciseInput.click();
+    const searched = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === '/api/workouts/transformmate/exercises' &&
+        url.searchParams.get('q') === 'Delayed actual'
+      );
+    });
+    await exerciseInput.fill('Delayed actual');
+    await searched;
+    await expect(
+      page.getByRole('alert').filter({ hasText: workoutMessages.catalogError }),
+    ).toBeVisible();
+    // A late catalog/layout update can move focus on a retained mobile page.
+    // Reopen after the actual response rather than racing the dropdown render.
+    await exerciseInput.click();
+    await exerciseInput.press('ArrowDown');
+    await expect(
+      page.getByRole('option', {
+        name: 'Добавить вручную: Delayed actual',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await exerciseInput.press('Enter');
+  }
+  await addExercise();
   const reps = page.getByRole('textbox', { name: /Факт · Повторения/ });
   await reps.fill('6');
   let release!: () => void,
@@ -861,15 +873,7 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
   await page.goBack();
   await page.goto(path);
   await expect(reps).toHaveCount(0);
-  await page
-    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
-    .fill('Delayed actual');
-  await page
-    .getByRole('option', {
-      name: 'Добавить вручную: Delayed actual',
-      exact: true,
-    })
-    .click();
+  await addExercise();
   await reps.fill('9');
   release();
   await settled;
@@ -892,10 +896,6 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
 test('retained planned and actual editors hide cached drafts before real access revalidation and denial', async ({
   browser,
 }) => {
-  test.skip(
-    test.info().project.name !== 'desktop',
-    'Retained access lifecycle is viewport independent.',
-  );
   const baseURL = testOrigin;
   for (const kind of ['planned', 'actual'] as const) {
     const context = await browser.newContext({
@@ -982,7 +982,7 @@ test('retained planned and actual editors hide cached drafts before real access 
       expect((await response).status()).toBe(401);
       await expect(
         page.locator('#main-content').getByRole('alert'),
-      ).toContainText(workoutMessages.noAccess);
+      ).toContainText('Доступ изменился.');
       await expect(
         page.getByRole('textbox', {
           name: 'Название (необязательно)',

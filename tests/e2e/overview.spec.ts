@@ -231,7 +231,10 @@ test('real overview shows empty, partial and populated data with local dates and
   ).toBe(403);
   await trainerPage.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(
-    trainerPage.getByText('Владелец ещё не предоставил доступ к данным.'),
+    trainerPage.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
   ).toBeVisible();
+  await expect(
+    trainerPage.getByRole('heading', { name: 'Обзор', exact: true }),
+  ).not.toBeVisible();
   await trainerContext.close();
 });

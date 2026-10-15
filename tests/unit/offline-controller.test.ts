@@ -196,6 +196,22 @@ it('a delayed snapshot cannot commit after logout-style invalidation', async () 
   expect(persistence.commit).not.toHaveBeenCalled();
   expect(reader.getSnapshot().bundle).toBeNull();
 });
+it('keeps denial visible when the physical purge invalidates its own active operation', async () => {
+  const reader = controller(
+    storage(),
+    async () => new Response('{}', { status: 401 }),
+  );
+  vi.mocked(purgeOfflineDevice).mockImplementationOnce(async () =>
+    reader.invalidate(),
+  );
+  await reader.activate(true);
+  expect(reader.getSnapshot()).toMatchObject({
+    status: 'error',
+    error: 'denied',
+    bundle: null,
+    enabled: false,
+  });
+});
 it('an expired server session does not expire downloaded offline copy; online denial is still required', async () => {
   const persistence = storage();
   let clock = now;

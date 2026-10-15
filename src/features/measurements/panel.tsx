@@ -1,4 +1,9 @@
 'use client';
+import { offlineMessages } from '@/config/offline';
+import { useReadResource } from '@/lib/use-read-resource';
+import { measurementSchema } from '@/contracts/measurements';
+import { z } from 'zod';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Alert,
@@ -59,9 +64,11 @@ export function MeasurementsPanel({
   weightHistory: WeightHistory;
   renderComments?: (measurementId: string) => ReactNode;
 }) {
+  const readRefresh = useReadRefresh();
   const [issues, setIssues] = useState<MeasurementPrecisionIssue[]>([]);
   const [retrying, setRetrying] = useState<string>();
-  const [items, setItems] = useState<Measurement[]>(saved ?? []);
+  const [loadedItems, setItems] = useState<Measurement[]>(saved ?? []);
+  const items = saved ?? loadedItems;
   const [loading, setLoading] = useState(!saved);
   const [readDenied, setReadDenied] = useState(false);
   const [error, setError] = useState<string>();
@@ -75,7 +82,26 @@ export function MeasurementsPanel({
     Partial<Record<MeasurementMetric, string>>
   >({});
   const [metric, setMetric] = useState<MeasurementMetric>('weight');
+  const currentEdited =
+    editingOriginal && items.find((item) => item.id === editingOriginal.id);
+  const content = (item: Measurement) =>
+    JSON.stringify({
+      measuredAt: item.measuredAt,
+      note: item.note,
+      values: item.values,
+    });
+  const conflict =
+    !!editingOriginal &&
+    (!currentEdited || content(currentEdited) !== content(editingOriginal));
   const url = `/api/measurements?ownerId=${encodeURIComponent(ownerId)}`;
+  useReadResource(
+    saved ? undefined : url,
+    (value) => z.array(measurementSchema).parse(value),
+    (value) => {
+      setItems(value);
+      setLoading(false);
+    },
+  );
   useEffect(() => {
     if (saved) return;
     let active = true;
@@ -106,7 +132,7 @@ export function MeasurementsPanel({
     return () => {
       active = false;
     };
-  }, [url, saved]);
+  }, [url, saved, readRefresh]);
   useEffect(() => {
     if (saved) return;
     let active = true;
@@ -318,6 +344,9 @@ export function MeasurementsPanel({
   return (
     <Stack data-testid="measurements-panel">
       <Title order={1}>{m.title}</Title>
+      {conflict && (
+        <Alert color="orange">{offlineMessages.draftConflict}</Alert>
+      )}
       {error && (
         <Alert color="red" role="alert">
           {error}

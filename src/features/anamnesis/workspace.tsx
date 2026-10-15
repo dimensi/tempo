@@ -1,4 +1,7 @@
 'use client';
+import { useReadResource } from '@/lib/use-read-resource';
+import { anamnesisOverviewSchema } from '@/contracts/anamnesis';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useEffect, useState } from 'react';
 import { Alert, Group, Stack, Text, Title } from '@mantine/core';
 import { SectionNavigation } from '@/components/shared/section-navigation';
@@ -25,7 +28,13 @@ export function AnamnesisWorkspace({
 }) {
   const [overview, setOverview] = useState<AnamnesisOverview | null>(initial);
   const [error, setError] = useState(false);
+  const readRefresh = useReadRefresh();
   const revision = useAnamnesisRevision();
+  useReadResource(
+    `/api/anamnesis/overview?${ownerIdQuery(ownerId)}`,
+    (value) => anamnesisOverviewSchema.parse(value),
+    setOverview,
+  );
   useEffect(() => {
     const controller = new AbortController();
     void fetchAnamnesis<AnamnesisOverview>(
@@ -33,16 +42,24 @@ export function AnamnesisWorkspace({
       { signal: controller.signal, cache: 'no-store' },
     )
       .then((result) => {
-        if (!controller.signal.aborted) setOverview(result);
-      })
-      .catch(() => {
         if (!controller.signal.aborted) {
-          setOverview(null);
+          setOverview(result);
+          setError(false);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) {
+          if (
+            cause instanceof Error &&
+            'status' in cause &&
+            [401, 403].includes(Number(cause.status))
+          )
+            setOverview(null);
           setError(true);
         }
       });
     return () => controller.abort();
-  }, [ownerId, revision]);
+  }, [ownerId, revision, readRefresh]);
   return (
     <Stack data-testid="anamnesis-page">
       <Title order={1}>{m.title}</Title>

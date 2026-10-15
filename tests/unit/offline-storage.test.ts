@@ -240,3 +240,41 @@ it('old DTOs and foreign file fences are erased; a signed URL never counts as by
   for (const name of ['bundle', 'photos', 'files'])
     expect(data.get(name)?.size).toBe(0);
 });
+
+it('read-resource data shares the read fence, is cleaned on account replacement and rejects stale writes', async () => {
+  const { storage, data, bundle } = await prepared();
+  const stamp = Date.now();
+  const record = {
+    version: 1 as const,
+    key: '/api/anamnesis/markers?ownerId=owner',
+    body: '[]',
+    savedAt: stamp,
+    touchedAt: stamp,
+  };
+  await storage.writeResource(bundle.fence, record);
+  expect(await storage.readResources(bundle.fence, stamp)).toEqual([record]);
+  const next = await storage.enable('new-owner', 'new-generation', stamp);
+  expect(data.get('resources')?.size).toBe(0);
+  await expect(
+    storage.writeResource(bundle.fence, record),
+  ).rejects.toMatchObject({ reason: 'fence' });
+  await storage.writeResource(next, record);
+  await storage.purge(stamp);
+  expect(data.get('resources')?.size).toBe(0);
+});
+it('resource eviction is bounded and cannot remove the diary or saved file bytes', async () => {
+  const { storage, bundle, file } = await prepared();
+  await storage.writeFile(file);
+  const stamp = Date.now();
+  await storage.writeResource(bundle.fence, {
+    version: 1,
+    key: '/api/anamnesis/markers/x',
+    body: '{}',
+    savedAt: stamp - 16 * 86400000,
+    touchedAt: stamp - 16 * 86400000,
+  });
+  expect(await storage.readResources(bundle.fence, stamp)).toEqual([]);
+  const retained = await storage.read(now, 'UTC');
+  expect(retained.bundle?.snapshot.diary).toHaveLength(1);
+  expect(retained.files?.[0]?.bytes).toBeInstanceOf(Blob);
+});

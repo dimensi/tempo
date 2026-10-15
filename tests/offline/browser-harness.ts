@@ -455,7 +455,7 @@ Object.assign(window, {
     },
     async alterNative(mode: 'old-format' | 'pre-native' | 'boundary') {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open('yazio-offline-read-v1', 2);
+        const request = indexedDB.open('yazio-offline-read-v1', 3);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
@@ -503,7 +503,7 @@ Object.assign(window, {
     },
     async rawCounts() {
       const db = await new Promise<IDBDatabase>((resolve) => {
-        const request = indexedDB.open('yazio-offline-read-v1', 2);
+        const request = indexedDB.open('yazio-offline-read-v1', 3);
         request.onsuccess = () => resolve(request.result);
       });
       const result = await new Promise<{ bundle: number; photos: number }>(

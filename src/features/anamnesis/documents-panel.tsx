@@ -1,9 +1,15 @@
 'use client';
+import { invalidateMedicalDocument } from '@/lib/client-read';
+import { useReadResource } from '@/lib/use-read-resource';
+import { medicalDocumentSchema } from '@/contracts/anamnesis';
+import { z } from 'zod';
+import { useReadOnline } from '@/lib/use-read-online';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 
 import { ReviewEditor } from './review-editor';
 import { notifyAnamnesisChanged, useAnamnesisRevision } from './refresh';
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { ReadLink as Link } from '@/components/shared/read-link';
 import {
   Alert,
   Button,
@@ -25,6 +31,8 @@ export function DocumentsPanel({
   ownerId: string;
   writable: boolean;
 }) {
+  const online = useReadOnline();
+  const readRefresh = useReadRefresh();
   const revision = useAnamnesisRevision();
   const previousJobs = useRef(new Map<string, MedicalImportJob>());
   const [pending, setPending] = useState<Record<string, number>>({});
@@ -39,6 +47,14 @@ export function DocumentsPanel({
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<string>();
   const query = ownerIdQuery(ownerId);
+  useReadResource(
+    `/api/anamnesis/documents?${query}`,
+    (value) => z.array(medicalDocumentSchema).parse(value),
+    (value) => {
+      setItems(value);
+      setLoading(false);
+    },
+  );
 
   useEffect(() => {
     let active = true;
@@ -64,9 +80,10 @@ export function DocumentsPanel({
     return () => {
       active = false;
     };
-  }, [query, revision]);
+  }, [query, revision, readRefresh]);
 
   useEffect(() => {
+    if (!online) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
@@ -100,10 +117,10 @@ export function DocumentsPanel({
       active = false;
       clearTimeout(timer);
     };
-  }, [query, revision]);
+  }, [query, revision, online]);
 
   useEffect(() => {
-    if (!writable) return;
+    if (!writable || !online) return;
     const controller = new AbortController();
     void fetchAnamnesis<Array<{ review: { documentId: string } }>>(
       `/api/anamnesis/reviews?${query}`,
@@ -121,10 +138,10 @@ export function DocumentsPanel({
         if (!controller.signal.aborted) setError(m.errors.load);
       });
     return () => controller.abort();
-  }, [query, revision, writable]);
+  }, [query, revision, writable, online]);
 
   async function upload() {
-    if (!file) return;
+    if (!file || !online) return;
     setBusy(true);
     setError(undefined);
     setNotice(undefined);
@@ -165,6 +182,7 @@ export function DocumentsPanel({
       await fetchAnamnesis(`/api/anamnesis/documents/${id}?${query}`, {
         method: 'DELETE',
       });
+      await invalidateMedicalDocument(id, ownerId);
       setItems((old) => old.filter((item) => item.id !== id));
       setDeleting(undefined);
       notifyAnamnesisChanged();
@@ -205,6 +223,7 @@ export function DocumentsPanel({
               label={m.documents.upload}
               placeholder="report.pdf"
               accept="application/pdf"
+              disabled={!online}
               value={file}
               onChange={setFile}
               style={{ flex: 1 }}
@@ -212,7 +231,7 @@ export function DocumentsPanel({
             <Button
               onClick={() => void upload()}
               loading={busy}
-              disabled={!file}
+              disabled={!online || !file}
               mih={44}
             >
               {m.documents.upload}

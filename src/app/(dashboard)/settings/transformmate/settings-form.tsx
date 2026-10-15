@@ -1,4 +1,6 @@
 'use client';
+import { useReadOnline } from '@/lib/use-read-online';
+import { networkReachable } from '@/lib/network-state';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -36,6 +38,7 @@ export function TransformMateSettingsForm({
   initial: TransformMateConnectionStatus;
   embedded?: boolean;
 }) {
+  const online = useReadOnline();
   const [status, setStatus] = useState(initial);
   const [apiKey, setApiKey] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
@@ -56,6 +59,7 @@ export function TransformMateSettingsForm({
       action: 'status' | 'connect' | 'check' | 'disconnect',
       body?: unknown,
     ) => {
+      if (!navigator.onLine || !networkReachable()) return;
       inflight.current?.abort();
       const controller = new AbortController();
       inflight.current = controller;
@@ -138,7 +142,7 @@ export function TransformMateSettingsForm({
           );
       } finally {
         if (current()) {
-          clearCredentials();
+          if (mutation) clearCredentials();
           setBusy(false);
           inflight.current = null;
         }
@@ -200,6 +204,7 @@ export function TransformMateSettingsForm({
               mih={44}
               variant="light"
               loading={busy}
+              disabled={!online}
               onClick={() => void request('check')}
             >
               {m.check}
@@ -207,7 +212,7 @@ export function TransformMateSettingsForm({
             <Button
               mih={44}
               variant="default"
-              disabled={busy}
+              disabled={!online || busy}
               onClick={() => setDisconnectOpen(true)}
             >
               {m.disconnect}
@@ -238,6 +243,7 @@ export function TransformMateSettingsForm({
             <Stack>
               <Text size="sm">{m.credentialsHint}</Text>
               <PasswordInput
+                readOnly={!online}
                 label={m.apiKey}
                 autoComplete="off"
                 visibilityToggleButtonProps={{
@@ -251,10 +257,11 @@ export function TransformMateSettingsForm({
                 value={apiKey}
                 maxLength={512}
                 required
-                disabled={busy}
+                disabled={!online || busy}
                 onChange={(event) => setApiKey(event.currentTarget.value)}
               />
               <PasswordInput
+                readOnly={!online}
                 label={m.refreshToken}
                 autoComplete="off"
                 visibilityToggleButtonProps={{
@@ -268,10 +275,10 @@ export function TransformMateSettingsForm({
                 value={refreshToken}
                 maxLength={8192}
                 required
-                disabled={busy}
+                disabled={!online || busy}
                 onChange={(event) => setRefreshToken(event.currentTarget.value)}
               />
-              <Button type="submit" mih={44} loading={busy}>
+              <Button type="submit" mih={44} loading={busy} disabled={!online}>
                 {status.configured ? m.reconnect : m.connect}
               </Button>
             </Stack>
@@ -299,7 +306,7 @@ export function TransformMateSettingsForm({
             <Button
               mih={44}
               variant="default"
-              disabled={busy}
+              disabled={!online || busy}
               onClick={() => setDisconnectOpen(false)}
             >
               {copy.cancel}
@@ -308,6 +315,7 @@ export function TransformMateSettingsForm({
               mih={44}
               color="red"
               loading={busy}
+              disabled={!online}
               onClick={() => void request('disconnect')}
             >
               {m.disconnect}

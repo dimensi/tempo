@@ -1,6 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useReadRefresh } from '@/lib/use-read-refresh';
+import { nutritionDaySchema } from '@/contracts/nutrition';
+import { z } from 'zod';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Stack } from '@mantine/core';
 import { browserToday } from '@/components/shared/date-navigation-dates';
@@ -26,6 +29,25 @@ export function DiaryClient({
   ...props
 }: DiaryClientProps) {
   const router = useRouter();
+  const refresh = useReadRefresh();
+  const [model, setModel] = useState({ seed: props.day, day: props.day });
+  if (model.seed !== props.day) setModel({ seed: props.day, day: props.day });
+  useEffect(() => {
+    let active = true;
+    void fetch(
+      `/api/nutrition/days?${new URLSearchParams({ ownerId, from: props.date, to: props.date })}`,
+    )
+      .then(async (response) => {
+        if (!response.ok) return;
+        const value =
+          z.array(nutritionDaySchema).parse(await response.json())[0] ?? null;
+        if (active) setModel({ seed: props.day, day: value });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [ownerId, props.date, props.day, refresh]);
   const params = useSearchParams();
   const hasDate =
     params.getAll('date').length === 1 &&
@@ -41,6 +63,7 @@ export function DiaryClient({
   return (
     <DiaryView
       {...props}
+      day={model.day}
       navigationSlot={
         <Stack gap="sm">
           <DayNavigation key={props.date} date={props.date} />

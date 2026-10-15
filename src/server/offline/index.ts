@@ -1,3 +1,4 @@
+import { anamnesisRepository } from '@/server/anamnesis/repository';
 import 'server-only';
 import {
   ownerConfirmedYazioWeightPolicyVersion,
@@ -141,6 +142,19 @@ async function identityContext(headers: Headers, session: Session) {
       epoch,
       tm.configured,
       tm.connectionId,
+      ...(session.user.role === 'TRAINER'
+        ? [
+            [
+              ...anamnesisRepository().markerGrantIds(ownerId, session.user.id),
+            ].sort(),
+            [
+              ...anamnesisRepository().documentGrantIds(
+                ownerId,
+                session.user.id,
+              ),
+            ].sort(),
+          ]
+        : []),
     ]),
     role: session.user.role,
     serverNow: new Date(now).toISOString(),

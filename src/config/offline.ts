@@ -2,6 +2,11 @@ import { ru } from '@/config/messages';
 import { offlineDeviceMessages } from '@/lib/offline-device';
 export const offlineMessages = {
   ...offlineDeviceMessages,
+  signInAgain: 'Войти заново',
+  fileRequiresSave:
+    'Файл доступен без сети только после явного сохранения на устройство.',
+  draftConflict:
+    'Данные на сервере изменились. Введённые значения сохранены; проверьте изменения перед отправкой.',
   unknown: 'Нет сохранённых данных, нужна сеть',
   coverage: 'Сохранённый период',
   partial:

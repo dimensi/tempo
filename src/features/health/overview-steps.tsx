@@ -1,4 +1,5 @@
 'use client';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useEffect, useState } from 'react';
 import { Alert, Skeleton } from '@mantine/core';
 import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
@@ -7,6 +8,7 @@ import { StepsPanel } from './steps-panel';
 import { healthMessages as m } from './messages';
 
 export function HealthOverviewSteps() {
+  const readRefresh = useReadRefresh();
   const [resource, setResource] = useState<{
     data: StepsSummary | null;
     error: number | null;
@@ -21,7 +23,7 @@ export function HealthOverviewSteps() {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const today = dateInTimezone(new Date(), timezone);
       const range = { from: shiftDate(today, -6), to: today };
-      setResource({ data: null, error: null });
+
       fetch(`/api/health/steps?from=${range.from}&to=${range.to}`, {
         signal: active.signal,
         cache: 'no-store',
@@ -35,7 +37,15 @@ export function HealthOverviewSteps() {
         })
         .catch((error) => {
           if (!active.signal.aborted)
-            setResource({ data: null, error: Number(error.message) || 500 });
+            setResource((previous) => ({
+              data: [401, 403].includes(Number(error.message))
+                ? null
+                : previous.data,
+              error:
+                previous.data && ![401, 403].includes(Number(error.message))
+                  ? null
+                  : Number(error.message) || 500,
+            }));
         });
       clearTimeout(timer);
       const midnight = new Date();
@@ -54,7 +64,7 @@ export function HealthOverviewSteps() {
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', visible);
     };
-  }, []);
+  }, [readRefresh]);
   if (resource.error)
     return (
       <Alert color={resource.error === 403 ? 'orange' : 'red'} role="alert">

@@ -1,4 +1,5 @@
 'use client';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useEffect, useState, createElement, type ElementType } from 'react';
 import {
   Alert,
@@ -35,6 +36,7 @@ export function Overview({
   plannedUnknown?: boolean;
   linkComponent?: ElementType;
 } = {}) {
+  const readRefresh = useReadRefresh();
   const [calendar, setCalendar] = useState<ReturnType<
     typeof localCalendar
   > | null>(null);
@@ -76,7 +78,7 @@ export function Overview({
   useEffect(() => {
     if (saved || !calendar) return;
     const controller = new AbortController();
-    const key = `${calendar.timezone}:${calendar.today}:${revision}`;
+    const key = `${calendar.timezone}:${calendar.today}`;
     fetch(`/api/overview?timezone=${encodeURIComponent(calendar.timezone)}`, {
       signal: controller.signal,
       cache: 'no-store',
@@ -91,17 +93,20 @@ export function Overview({
       })
       .catch((reason) => {
         if (!controller.signal.aborted)
-          setResource({
+          setResource((previous) => ({
             key,
-            data: null,
-            error: Number(reason.message) || 500,
-          });
+            data: [401, 403].includes(Number(reason.message))
+              ? null
+              : (previous?.data ?? null),
+            error:
+              previous?.data && ![401, 403].includes(Number(reason.message))
+                ? null
+                : Number(reason.message) || 500,
+          }));
       });
     return () => controller.abort();
-  }, [calendar, revision, saved]);
-  const key = calendar
-    ? `${calendar.timezone}:${calendar.today}:${revision}`
-    : '';
+  }, [calendar, revision, saved, readRefresh]);
+  const key = calendar ? `${calendar.timezone}:${calendar.today}` : '';
   const data = resource?.key === key ? resource.data : null;
   const error = resource?.key === key ? resource.error : null;
   const current =

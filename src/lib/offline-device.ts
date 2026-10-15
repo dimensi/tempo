@@ -1,3 +1,8 @@
+import {
+  pruneReadRecords,
+  readRecordSchema,
+  type ReadRecord,
+} from '@/contracts/read-resources';
 import { reportNetworkResult } from '@/lib/network-state';
 import { clearVideoDrafts } from '@/lib/workout-video-draft';
 import {
@@ -95,7 +100,7 @@ export function initialMetadata(): CacheMetadata {
 }
 
 const databaseName = 'yazio-offline-read-v1';
-const stores = ['metadata', 'bundle', 'photos', 'files'];
+const stores = ['metadata', 'bundle', 'photos', 'files', 'resources'];
 const gateKey = 'yazio.offline.block.v1';
 const channelName = 'yazio-offline-lifecycle-v1';
 const mutationLockName = 'yazio-offline-mutation';
@@ -408,7 +413,7 @@ export class OfflineStorage {
     if (!this.factory)
       return Promise.reject(new OfflineStorageError('unavailable'));
     return (this.database ??= new Promise((resolve, reject) => {
-      const request = this.factory!.open(databaseName, 2);
+      const request = this.factory!.open(databaseName, 3);
       request.onupgradeneeded = () => {
         for (const name of stores)
           if (!request.result.objectStoreNames.contains(name))
@@ -424,6 +429,9 @@ export class OfflineStorage {
       };
       request.onsuccess = () => {
         const db = request.result;
+        db.addEventListener?.('close', () => {
+          this.database = undefined;
+        });
         db.onversionchange = () => {
           db.close();
           this.database = undefined;
@@ -442,11 +450,23 @@ export class OfflineStorage {
   ): Promise<T> {
     const db = await this.open();
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(stores, 'readwrite');
+      let transaction: IDBTransaction;
+      try {
+        transaction = db.transaction(stores, 'readwrite');
+      } catch {
+        this.database = undefined;
+        db.close();
+        reject(new OfflineStorageError('unavailable'));
+        return;
+      }
       let result: T;
       let failure: OfflineStorageError | undefined;
       transaction.oncomplete = () => resolve(result);
-      transaction.onabort = () =>
+      transaction.onabort = () => {
+        if (transaction.error?.name !== 'QuotaExceededError') {
+          this.database = undefined;
+          db.close();
+        }
         reject(
           failure ??
             new OfflineStorageError(
@@ -455,6 +475,7 @@ export class OfflineStorage {
                 : 'unavailable',
             ),
         );
+      };
       transaction.onerror = () => {
         /* Abort is the single rejection path. */
       };
@@ -475,6 +496,7 @@ export class OfflineStorage {
             transaction.objectStore('bundle').clear();
             transaction.objectStore('photos').clear();
             transaction.objectStore('files').clear();
+            transaction.objectStore('resources').clear();
           }
           action(
             transaction,
@@ -541,6 +563,7 @@ export class OfflineStorage {
       tx.objectStore('bundle').clear();
       tx.objectStore('photos').clear();
       tx.objectStore('files').clear();
+      tx.objectStore('resources').clear();
       finish(next);
     });
   }
@@ -572,6 +595,7 @@ export class OfflineStorage {
       tx.objectStore('bundle').clear();
       tx.objectStore('photos').clear();
       tx.objectStore('files').clear();
+      tx.objectStore('resources').clear();
       finish({
         partition,
         generation: next.generation,
@@ -660,6 +684,7 @@ export class OfflineStorage {
             tx.objectStore('bundle').clear();
             tx.objectStore('photos').clear();
             tx.objectStore('files').clear();
+            tx.objectStore('resources').clear();
             return finish({ metadata: next, bundle: null, photos: [] });
           }
           if (!bundle) return finish({ metadata, bundle: null, photos: [] });
@@ -675,6 +700,7 @@ export class OfflineStorage {
             tx.objectStore('bundle').clear();
             tx.objectStore('photos').clear();
             tx.objectStore('files').clear();
+            tx.objectStore('resources').clear();
             return finish({ metadata: next, bundle: null, photos: [] });
           }
           const snapshot = pruneOfflineSnapshot(
@@ -699,6 +725,7 @@ export class OfflineStorage {
             tx.objectStore('bundle').clear();
             tx.objectStore('photos').clear();
             tx.objectStore('files').clear();
+            tx.objectStore('resources').clear();
             return finish({ metadata: next, bundle: null, photos: [] });
           }
           const photos: StoredPhoto[] = [];
@@ -736,6 +763,7 @@ export class OfflineStorage {
                 const files = filesRequest.result as StoredOfflineFile[];
                 if (!validOfflineFiles(files, retained.fence)) {
                   tx.objectStore('files').clear();
+                  tx.objectStore('resources').clear();
                   finish({
                     metadata: next,
                     bundle: retained,
@@ -780,6 +808,79 @@ export class OfflineStorage {
       };
     });
   }
+  readResources(fence: CacheFence, now = Date.now()) {
+    return this.transaction<ReadRecord[]>((tx, metadata, finish, fail) => {
+      if (!matchesFence(metadata, fence))
+        return fail(new OfflineStorageError('fence'));
+      if (Date.now() < metadata.lastSeenAt)
+        return fail(new OfflineStorageError('expired'));
+      const gate = readGate(this.gateStorage);
+      if (
+        memoryBlocked ||
+        hasMutationIntent(this.gateStorage) ||
+        gate.disabled ||
+        gate.epoch !== fence.deviceEpoch
+      )
+        return fail(new OfflineStorageError('fence'));
+      const store = tx.objectStore('resources');
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const valid = request.result.flatMap((row: unknown) => {
+          const value = readRecordSchema.safeParse(row);
+          return value.success ? [value.data] : [];
+        });
+        const rows = pruneReadRecords(valid, now);
+        store.clear();
+        for (const row of rows) store.put(row, row.key);
+        finish(rows);
+      };
+    });
+  }
+  removeResource(fence: CacheFence, key: string) {
+    return this.transaction<void>((tx, metadata, finish, fail) => {
+      if (!matchesFence(metadata, fence))
+        return fail(new OfflineStorageError('fence'));
+      tx.objectStore('resources').delete(key);
+      finish();
+    });
+  }
+  writeResource(fence: CacheFence, record: ReadRecord) {
+    return this.transaction<void>((tx, metadata, finish, fail) => {
+      if (!matchesFence(metadata, fence))
+        return fail(new OfflineStorageError('fence'));
+      if (Date.now() < metadata.lastSeenAt)
+        return fail(new OfflineStorageError('expired'));
+      const gate = readGate(this.gateStorage);
+      if (
+        memoryBlocked ||
+        hasMutationIntent(this.gateStorage) ||
+        gate.disabled ||
+        gate.epoch !== fence.deviceEpoch
+      )
+        return fail(new OfflineStorageError('fence'));
+      const store = tx.objectStore('resources');
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const rows = request.result.flatMap((value: unknown) => {
+          const parsed = readRecordSchema.safeParse(value);
+          return parsed.success && parsed.data.key !== record.key
+            ? [parsed.data]
+            : [];
+        });
+        const retained = pruneReadRecords(
+          [readRecordSchema.parse(record), ...rows],
+          Date.now(),
+        );
+        if (!retained.some((row) => row.key === record.key)) {
+          finish();
+          return;
+        }
+        store.clear();
+        for (const row of retained) store.put(row, row.key);
+        finish();
+      };
+    });
+  }
   async close() {
     (await this.database)?.close();
     this.database = undefined;
@@ -816,7 +917,8 @@ export function observeOfflineDenials() {
       // A feature HTTP error still proves reachability; preserve its error/draft.
       // Cache-service failures and transport exceptions control global fallback.
       reportNetworkResult(
-        !url.pathname.startsWith('/api/offline/') || response.status < 500,
+        !/^\/api\/offline\/(?:identity|snapshot)$/.test(url.pathname) ||
+          response.status < 500,
       );
       const method = (
         init?.method ?? (input instanceof Request ? input.method : 'GET')
@@ -845,8 +947,15 @@ export function observeOfflineDenials() {
         url.origin === window.location.origin &&
         url.pathname.startsWith('/api/') &&
         (response.status === 401 || response.status === 403)
-      )
-        void purgeOfflineDevice().catch(() => {});
+      ) {
+        window.dispatchEvent(new Event('tempo:read-access-denied'));
+        void purgeOfflineDevice()
+          .catch(() => {})
+          .then(() => {
+            if (!/^\/api\/offline\/(?:identity|snapshot)$/.test(url.pathname))
+              window.dispatchEvent(new Event('tempo:read-access-recheck'));
+          });
+      }
     } catch {
       /* Observing status never changes a request or response. */
     }

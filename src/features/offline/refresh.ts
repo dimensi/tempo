@@ -19,7 +19,7 @@ export function attachOfflineRefresh(controller: OfflineController) {
   };
   const hide = () => {
     concealOfflineContent();
-    controller.invalidate();
+    controller.suspend();
     clearTimeout(scheduled);
   };
   const offline = () => {

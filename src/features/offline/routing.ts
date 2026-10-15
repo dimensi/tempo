@@ -1,4 +1,5 @@
 'use client';
+import { networkReachable } from '@/lib/network-state';
 import { useSyncExternalStore } from 'react';
 const listeners = new Set<() => void>();
 let version = 0;
@@ -10,7 +11,7 @@ export function offlineNavigate(href: string, replace = false) {
   const url = new URL(href, location.href);
   if (url.origin !== location.origin) return;
   history[replace ? 'replaceState' : 'pushState'](
-    null,
+    { tempoOfflineRoute: true },
     '',
     url.pathname + url.search + url.hash,
   );
@@ -47,7 +48,19 @@ export function interceptOfflineLinks() {
     );
     if (!link || link.target || link.download) return;
     const url = new URL(link.href, location.href);
-    if (url.origin !== location.origin) return;
+    if (
+      url.origin !== location.origin ||
+      url.pathname.startsWith('/api/') ||
+      url.pathname === '/login'
+    )
+      return;
+    // Explicit editor navigation may use Next/server delivery once connectivity is verified.
+    if (
+      navigator.onLine &&
+      networkReachable() &&
+      /\/(?:edit|results|new)$/.test(url.pathname)
+    )
+      return;
     event.preventDefault();
     offlineNavigate(url.href);
   };

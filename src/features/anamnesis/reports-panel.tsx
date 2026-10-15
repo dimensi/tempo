@@ -1,4 +1,7 @@
 'use client';
+import { OfflineFile } from '@/components/shared/offline-file';
+import { useReadOnline } from '@/lib/use-read-online';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -87,6 +90,8 @@ function ReportPreview({ preview }: { preview: MedicalReportPreview }) {
 }
 export function ReportsPanel({ ownerId }: { ownerId: string }) {
   const query = ownerIdQuery(ownerId);
+  const online = useReadOnline();
+  const readRefresh = useReadRefresh();
   const revision = useAnamnesisRevision();
   const [items, setItems] = useState<MedicalReportExport[]>([]);
   const [markers, setMarkers] = useState<AnamnesisMarkerSummary[]>([]);
@@ -159,10 +164,10 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
         }
       });
     return () => controller.abort();
-  }, [query, revision, refresh]);
+  }, [query, revision, refresh, readRefresh]);
   useEffect(() => {
     const controller = new AbortController();
-    if (!markerIds.length) return;
+    if (!online || !markerIds.length) return;
     void fetchAnamnesis<MedicalReportDateOption[]>(
       `/api/anamnesis/reports/dates?${query}`,
       {
@@ -198,10 +203,11 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
       });
     return () => controller.abort();
     // Date options depend on marker selection, not on the selected dates.
-  }, [markerIds, query, revision, datesKey]);
+  }, [markerIds, query, revision, datesKey, online]);
   useEffect(() => {
     const controller = new AbortController();
     const version = ++generation.current;
+    if (!online) return;
     const input = JSON.parse(selection) as {
       markerIds: string[];
       dateKeys: string[] | null;
@@ -240,7 +246,7 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [current, query, selection]);
+  }, [current, query, selection, online]);
   async function download() {
     if (!preview || previewSelection !== current) return;
     const key = current;
@@ -386,7 +392,9 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
             mih={44}
             onClick={() => void download()}
             loading={busy}
-            disabled={!preview || previewSelection !== current || loading}
+            disabled={
+              !online || !preview || previewSelection !== current || loading
+            }
           >
             {m.workspace.download}
           </Button>
@@ -421,16 +429,26 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
             <Button variant="default" onClick={() => setSaved(item.id)}>
               {m.workspace.view}
             </Button>
-            <Button
-              component="a"
+            {online && (
+              <Button
+                component="a"
+                href={`/api/anamnesis/reports/${item.id}/file?${query}`}
+              >
+                {m.reports.download}
+              </Button>
+            )}
+            <OfflineFile
+              id={`medical-report:${item.id}`}
+              label={item.filename ?? m.reports.download}
+              kind="pdf"
+              size={item.sizeBytes ?? undefined}
               href={`/api/anamnesis/reports/${item.id}/file?${query}`}
-            >
-              {m.reports.download}
-            </Button>
+              offline={!online}
+            />
           </Group>
         </Group>
       ))}
-      {saved && (
+      {saved && online && (
         <Stack>
           <Button
             component="a"
