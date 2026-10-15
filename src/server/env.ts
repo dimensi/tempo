@@ -27,7 +27,7 @@ const schema = z.object({
     .string()
     .min(1)
     .max(64)
-    .default('google/gemini-2.5-flash-lite'),
+    .default('google/gemini-3.8-flash'),
   ANAMNESIS_LLM_TIMEOUT_MS: z.coerce
     .number()
     .int()

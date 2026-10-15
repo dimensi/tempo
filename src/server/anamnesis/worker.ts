@@ -24,7 +24,7 @@ import {
 } from './pipeline';
 import { normalizeSourceKinds } from './extraction-normalize';
 
-export const ANAMNESIS_EXTRACTION_VERSION = '1';
+export const ANAMNESIS_EXTRACTION_VERSION = '2';
 const LEASE_MS = 300000;
 const MAX_ATTEMPTS = 3;
 
@@ -74,10 +74,10 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
       const requestPages: ExtractionRequestPage[] = pages.map((page) => ({
         pageNumber: page.pageNumber,
         lines: page.lines,
-        imageJpeg: page.hasTextLayer ? null : page.imageJpeg,
+        imagePng: page.hasTextLayer ? null : page.imagePng,
       }));
       const unrecognizedPages = requestPages.filter(
-        (page) => !page.lines.length && !page.imageJpeg,
+        (page) => !page.lines.length && !page.imagePng,
       ).length;
 
       repo.updateJob(jobId, { stage: 'structured_extraction' });
@@ -129,7 +129,7 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
             height: page.height,
             hasTextLayer: page.hasTextLayer,
             textJson: { lines: page.lines.slice(0, 400) },
-            ocrApplied: !page.hasTextLayer && page.imageJpeg !== null,
+            ocrApplied: !page.hasTextLayer && page.imagePng !== null,
           })),
         );
         for (const group of groups) {

@@ -15,7 +15,7 @@ const baseEnv = {
 const input = {
   sha256: 'a'.repeat(64),
   pages: [
-    { pageNumber: 1, lines: [], imageJpeg: Buffer.from('synthetic-image') },
+    { pageNumber: 1, lines: [], imagePng: Buffer.from('synthetic-image') },
   ],
 };
 const emptyResult = {
@@ -54,7 +54,7 @@ describe('OpenRouter anamnesis extraction', () => {
       'Bearer synthetic-openrouter-key',
     );
     const body = JSON.parse(options.body);
-    expect(body.model).toBe('google/gemini-2.5-flash-lite');
+    expect(body.model).toBe('google/gemini-3.8-flash');
     expect(body.max_tokens).toBe(16384);
     expect(body.provider).toEqual({ require_parameters: true });
     expect(body.response_format).toMatchObject({
@@ -67,8 +67,8 @@ describe('OpenRouter anamnesis extraction', () => {
       type: 'image_url',
       image_url: {
         url:
-          'data:image/jpeg;base64,' +
-          input.pages[0]!.imageJpeg.toString('base64'),
+          'data:image/png;base64,' +
+          input.pages[0]!.imagePng.toString('base64'),
       },
     });
   });

@@ -25,6 +25,7 @@ export const anamnesisCatalog: CatalogMarker[] = [
     preferredUnit: 'нг/мл',
     aliases: [
       '25-oh витамин d',
+      '25-он витамин d (25-гидроксикальциферол)',
       'витамин d 25-oh',
       'витамин d',
       '25-гидроксивитамин d',
