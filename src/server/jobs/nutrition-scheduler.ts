@@ -6,6 +6,7 @@ import { and, eq, gt, lte, or, isNull, sql } from 'drizzle-orm';
 import { getDatabase } from '@/server/db';
 import { user } from '@/server/db/schema';
 import { nutritionSchedule } from '@/server/db/schema/nutrition-schedule';
+import { yazioSyncProgress } from '@/server/db/schema/yazio-sync-progress';
 import { readServerEnv } from '@/server/env';
 import {
   nutritionScheduleInputSchema,
@@ -120,19 +121,25 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       from: input.initialFrom,
       to: nutritionLocalDate(now(), input.timezone),
     });
-    ensure(ownerId);
-    db.update(nutritionSchedule)
-      .set({
-        enabled: true,
-        timezone: input.timezone,
-        initialFrom: input.initialFrom,
-        epoch: sql`${nutritionSchedule.epoch} + 1`,
-        nextRunAt: now() + SYNC_INTERVAL,
-        attempt: 0,
-        lastError: null,
-      })
-      .where(ownerScope(ownerId))
-      .run();
+    db.transaction(() => {
+      ensure(ownerId);
+      // Explicit credentials/token replacement invalidates the previous account's checkpoints.
+      db.delete(yazioSyncProgress)
+        .where(eq(yazioSyncProgress.ownerId, ownerId))
+        .run();
+      db.update(nutritionSchedule)
+        .set({
+          enabled: true,
+          timezone: input.timezone,
+          initialFrom: input.initialFrom,
+          epoch: sql`${nutritionSchedule.epoch} + 1`,
+          nextRunAt: now() + SYNC_INTERVAL,
+          attempt: 0,
+          lastError: null,
+        })
+        .where(ownerScope(ownerId))
+        .run();
+    });
     // Reconnection deliberately retains an existing lease until its owner drains.
   }
   function disable(ownerId: string) {

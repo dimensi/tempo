@@ -121,6 +121,51 @@ afterEach(() => {
 });
 
 describe('durable owner schedule', () => {
+  it('invalidates every historical checkpoint on credentials/token replacement without deleting the diary', async () => {
+    const { service, upstream, repository } = setup();
+    const history = { from: '2026-10-01', to: '2026-10-01' };
+    await service.run('owner', history, { mode: 'manual', timezone: 'UTC' });
+    const progress = syncProgress(database);
+    progress.set('owner', history.from, {
+      food: true,
+      photos: true,
+      steps: true,
+      weight: true,
+      body: true,
+    });
+    const savedDay = repository.day('owner', history.from);
+    service.disable('owner');
+    service.enable('owner', input);
+    expect(repository.day('owner', history.from)).toEqual(savedDay);
+    expect(progress.get('owner', history.from)).toBeUndefined();
+    expect(
+      progress
+        .plan('owner', [history.from], '2026-10-12', false)
+        .get(history.from),
+    ).toEqual({
+      food: true,
+      photos: true,
+      steps: true,
+      weight: true,
+      body: true,
+    });
+    vi.clearAllMocks();
+    const result = await service.run('owner', history, {
+      mode: 'manual',
+      timezone: 'UTC',
+    });
+    expect(result.completedDates).toEqual([history.from]);
+    expect(result.skippedDates).toEqual([]);
+    expect(upstream.items).toHaveBeenCalledWith(history.from);
+    expect(upstream.summary).toHaveBeenCalledWith(history.from);
+    expect(upstream.images).toHaveBeenCalledWith(history.from);
+    expect(upstream.healthSummary).toHaveBeenCalledWith(history.from);
+    expect(upstream.weight).toHaveBeenCalledWith(history.from, null);
+    // Token replacement while already connected follows the same enable path.
+    service.enable('owner', input);
+    expect(progress.get('owner', history.from)).toBeUndefined();
+  });
+
   function withBody(deps: NutritionSchedulerDependencies) {
     const bodySync = vi.fn(
       async (
