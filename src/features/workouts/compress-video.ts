@@ -22,8 +22,11 @@ export async function compressWorkoutVideo(
     source: new BlobSource(file),
   });
   let conversion: Awaited<ReturnType<typeof Conversion.init>> | undefined;
+  let completed = false;
+  let cancellation: Promise<void> | undefined;
   const cancel = () => {
-    void conversion?.cancel();
+    cancellation ??= conversion?.cancel();
+    void cancellation?.catch(() => {});
   };
   signal.addEventListener('abort', cancel);
   try {
@@ -48,7 +51,12 @@ export async function compressWorkoutVideo(
       height = Math.max(2, Math.floor((naturalHeight * scale) / 2) * 2);
     if (
       !(await track.canDecode()) ||
-      !(await canEncodeVideo('avc', { width, height }))
+      !(await canEncodeVideo('avc', {
+        width,
+        height,
+        frameRate: 30,
+        quality: new Quality(0.6),
+      }))
     )
       throw new Error(m.videoUnsupported);
     const pieces: BlobPart[] = [];
@@ -105,6 +113,7 @@ export async function compressWorkoutVideo(
     conversion.onProgress = (value) => progress(value);
     await conversion.execute();
     signal.throwIfAborted();
+    completed = true;
     return { blob: new Blob(pieces, { type: 'video/mp4' }), duration };
   } catch (error) {
     if (signal.aborted) throw error;
@@ -123,6 +132,13 @@ export async function compressWorkoutVideo(
     throw new Error(m.videoUnsupported);
   } finally {
     signal.removeEventListener('abort', cancel);
-    input.dispose();
+    try {
+      if (!completed) {
+        cancel();
+        await cancellation?.catch(() => {});
+      }
+    } finally {
+      input.dispose();
+    }
   }
 }
