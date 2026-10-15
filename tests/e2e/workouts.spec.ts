@@ -488,7 +488,8 @@ test('unnamed editor preserves drafts, handles errors and copies only the select
 
 test('a save settling after Back does not redirect or repeat the write', async ({
   page,
-}) => {
+}, testInfo) => {
+  const exerciseName = `Delayed save ${testInfo.project.name}`;
   await login(page);
   const id = await ownerId(page);
   await page.goto('/workouts?date=2026-10-12');
@@ -497,10 +498,10 @@ test('a save settling after Back does not redirect or repeat the write', async (
     .click();
   await page
     .getByRole('combobox', { name: 'Упражнение', exact: true })
-    .fill('Delayed save');
+    .fill(exerciseName);
   await page
     .getByRole('option', {
-      name: 'Добавить вручную: Delayed save',
+      name: `Добавить вручную: ${exerciseName}`,
       exact: true,
     })
     .click();
@@ -543,7 +544,7 @@ test('a save settling after Back does not redirect or repeat the write', async (
   expect(posts).toBe(1);
   expect(
     (await workouts(page, id)).plans.filter(
-      (plan) => plan.workouts[0]?.exercises[0]?.name === 'Delayed save',
+      (plan) => plan.workouts[0]?.exercises[0]?.name === exerciseName,
     ),
   ).toHaveLength(1);
 });
@@ -796,7 +797,8 @@ test('actual draft survives conflict and access errors; unavailable storage requ
 
 test('late actual save cannot erase a reopened draft or redirect it', async ({
   page,
-}) => {
+}, testInfo) => {
+  const exerciseName = `Delayed actual ${testInfo.project.name}`;
   await login(page);
   const id = await ownerId(page);
   const path = '/workouts/sessions/new?date=2026-10-19';
@@ -812,10 +814,10 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
       const url = new URL(response.url());
       return (
         url.pathname === '/api/workouts/transformmate/exercises' &&
-        url.searchParams.get('q') === 'Delayed actual'
+        url.searchParams.get('q') === exerciseName
       );
     });
-    await exerciseInput.fill('Delayed actual');
+    await exerciseInput.fill(exerciseName);
     await searched;
     await expect(
       page.getByRole('alert').filter({ hasText: workoutMessages.catalogError }),
@@ -826,7 +828,7 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
     await exerciseInput.press('ArrowDown');
     await expect(
       page.getByRole('option', {
-        name: 'Добавить вручную: Delayed actual',
+        name: `Добавить вручную: ${exerciseName}`,
         exact: true,
       }),
     ).toBeVisible();
@@ -888,7 +890,7 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
   expect(posts).toBe(1);
   expect(
     (await workouts(page, id)).sessions.filter(
-      (value) => value.exercises[0]?.name === 'Delayed actual',
+      (value) => value.exercises[0]?.name === exerciseName,
     ),
   ).toHaveLength(1);
 });
