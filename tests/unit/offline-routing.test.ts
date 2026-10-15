@@ -59,7 +59,7 @@ it('matches a saved route to its exact URL so ordinary navigation cannot inherit
   expect(isOfflineRoute(null)).toBe(false);
 });
 
-function navigationDouble() {
+function navigationDouble(hasSaved: (url: URL) => boolean = () => false) {
   let click!: (event: MouseEvent) => void;
   const pushState = vi.fn();
   const navigate = vi.fn();
@@ -76,7 +76,7 @@ function navigationDouble() {
   vi.stubGlobal('location', new URL('https://tempo.test/diary'));
   vi.stubGlobal('history', { pushState });
   vi.stubGlobal('navigator', { onLine: true });
-  const stop = interceptOfflineLinks();
+  const stop = interceptOfflineLinks(hasSaved);
   return {
     pushState,
     navigate,
@@ -98,6 +98,48 @@ function navigationDouble() {
     },
   };
 }
+it('shows a saved destination before identity and RSC settle', async () => {
+  let release!: (response: Response) => void;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    ),
+  );
+  const env = navigationDouble((url) => url.pathname === '/analytics');
+  env.click('/analytics');
+  expect(env.pushState).toHaveBeenCalledWith(
+    { tempoOfflineRoute: '/analytics' },
+    '',
+    '/analytics',
+  );
+  expect(env.navigate).not.toHaveBeenCalled();
+
+  release(new Response('{}'));
+  await vi.waitFor(() =>
+    expect(env.navigate).toHaveBeenCalledWith('/analytics'),
+  );
+  env.stop();
+});
+it.each([401, 403, 409])(
+  'does not resume live navigation after identity denial %s',
+  async (status) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status })),
+    );
+    const env = navigationDouble(() => true);
+    env.click('/analytics');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(env.pushState).toHaveBeenCalledOnce();
+    expect(env.navigate).not.toHaveBeenCalled();
+    env.stop();
+  },
+);
 it('keeps the current screen until an actual response allows live navigation', async () => {
   const request = vi.fn(async () => new Response(null, { status: 503 }));
   vi.stubGlobal('fetch', request);

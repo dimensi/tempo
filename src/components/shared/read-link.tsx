@@ -1,11 +1,26 @@
 'use client';
 import type { ComponentProps } from 'react';
-let navigate: ((href: string) => void) | undefined;
-export function installReadNavigation(value: (href: string) => void) {
+export interface ReadNavigationOptions {
+  replace?: boolean;
+  scroll?: boolean;
+}
+let navigate:
+  ((href: string, options?: ReadNavigationOptions) => void) | undefined;
+export function installReadNavigation(
+  value: (href: string, options?: ReadNavigationOptions) => void,
+) {
   navigate = value;
   return () => {
     if (navigate === value) navigate = undefined;
   };
+}
+export function requestReadNavigation(
+  href: string,
+  options: ReadNavigationOptions,
+  fallback: () => void,
+) {
+  if (navigate) navigate(href, options);
+  else fallback();
 }
 export function ReadLink({ onClick, ...props }: ComponentProps<'a'>) {
   return (

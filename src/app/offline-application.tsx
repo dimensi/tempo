@@ -38,6 +38,7 @@ import { reconnectReads } from '@/lib/offline-reconnect';
 import { isOfflineRoute } from '@/lib/offline-routing';
 import { useReadOnline } from '@/lib/use-read-online';
 import { canRetainLiveRead } from '@/lib/live-read-scope';
+import { hasSavedReadRoute } from '@/lib/saved-read-route';
 import { revealOfflineContent } from '@/lib/offline-device';
 import { workoutTitle } from '@/lib/workout-title';
 import {
@@ -493,12 +494,19 @@ function WorkoutDay({
 }
 export function OfflineApplication({ brandSrc }: { brandSrc: string }) {
   const url = useOfflineLocation();
-  useEffect(interceptOfflineLinks, []);
   const controller = getOfflineController();
   const state = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
     controller.getServerSnapshot,
+  );
+  useEffect(
+    () =>
+      interceptOfflineLinks((destination) => {
+        const snapshot = controller.getSnapshot().bundle?.snapshot;
+        return !!snapshot && hasSavedReadRoute(snapshot, destination);
+      }),
+    [controller],
   );
   useEffect(() => {
     const reconnect = () => {

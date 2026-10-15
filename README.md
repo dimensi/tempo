@@ -118,6 +118,6 @@ Runtime работает от пользователя node, применяет 
 
 Читайте [AGENTS.md](AGENTS.md), [parallel development](docs/agents/parallel-development.md), [feature boundaries](docs/agents/feature-boundaries.md), [task template](docs/agents/task-template.md).
 
-[Architecture](docs/architecture/overview.md) · [Data flow](docs/architecture/data-flow.md) · [Permissions](docs/architecture/permissions.md) · [Database/migrations](docs/architecture/database.md) · [YAZIO](docs/architecture/yazio.md) · [Decisions](docs/decisions/001-foundation.md).
+[Architecture](docs/architecture/overview.md) · [Local-first UI](docs/architecture/local-first-ui.md) · [Data flow](docs/architecture/data-flow.md) · [Permissions](docs/architecture/permissions.md) · [Database/migrations](docs/architecture/database.md) · [YAZIO](docs/architecture/yazio.md) · [Decisions](docs/decisions/001-foundation.md).
 
 Секреты, базы и фотографии не коммитить. Контракты согласовываются до зависимых реализаций. Shared/core меняются отдельным согласованным шагом. Никаких прямых зависимостей между features.

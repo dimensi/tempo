@@ -1,6 +1,7 @@
 'use client';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { requestReadNavigation } from '@/components/shared/read-link';
 import { Skeleton, Stack, Text, Title } from '@mantine/core';
 import { dateInTimezone } from '@/contracts/nutrition-sync-dates';
 import { presetRange } from './range';
@@ -44,12 +45,12 @@ export function PeriodControl(props: PeriodControlProps) {
   return (
     <PeriodControlView
       {...props}
-      onNavigate={(range) =>
-        router.push(
-          `/analytics?${new URLSearchParams({ ...range, timezone: props.timezone })}`,
-          { scroll: false },
-        )
-      }
+      onNavigate={(range) => {
+        const href = `/analytics?${new URLSearchParams({ ...range, timezone: props.timezone })}`;
+        requestReadNavigation(href, { scroll: false }, () =>
+          router.push(href, { scroll: false }),
+        );
+      }}
     />
   );
 }

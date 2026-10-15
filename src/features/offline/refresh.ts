@@ -1,4 +1,3 @@
-import { concealOfflineContent } from '@/lib/offline-device';
 import type { OfflineController } from '@/lib/offline-controller';
 import { networkReachable } from '@/lib/network-state';
 export function attachOfflineRefresh(controller: OfflineController) {
@@ -7,7 +6,6 @@ export function attachOfflineRefresh(controller: OfflineController) {
   let lastSourceSave = 0;
   let scheduled: ReturnType<typeof setTimeout> | undefined;
   const refresh = () => {
-    concealOfflineContent();
     clearTimeout(scheduled);
     scheduled = setTimeout(
       () => void controller.activate(navigator.onLine, true),
@@ -19,13 +17,12 @@ export function attachOfflineRefresh(controller: OfflineController) {
     else hide();
   };
   const hide = () => {
-    concealOfflineContent();
     controller.suspend();
     clearTimeout(scheduled);
   };
   const offline = () => {
-    hide();
-    refresh();
+    clearTimeout(scheduled);
+    void controller.activate(false, true);
   };
   const localNavigation = () => {
     clearTimeout(scheduled);

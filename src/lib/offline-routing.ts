@@ -5,6 +5,7 @@ import { isOfflineNavigationPath } from './offline-navigation-paths';
 import { useSyncExternalStore } from 'react';
 const listeners = new Set<() => void>();
 let version = 0;
+let pendingNavigation: AbortController | undefined;
 function changed() {
   version++;
   for (const listener of listeners) listener();
@@ -41,8 +42,66 @@ export function useOfflineLocation() {
   );
   return typeof location === 'undefined' ? null : new URL(location.href);
 }
-export function interceptOfflineLinks() {
-  let pending: AbortController | undefined;
+
+export function navigateReadRoute({
+  url,
+  hasSaved,
+  showSaved,
+  resumeLive,
+  valid = () => true,
+}: {
+  url: URL;
+  hasSaved: (url: URL) => boolean;
+  showSaved: () => void;
+  resumeLive: () => void;
+  valid?: () => boolean;
+}) {
+  pendingNavigation?.abort();
+  const attempt = new AbortController();
+  pendingNavigation = attempt;
+  let savedShown = false;
+  const local = () => {
+    if (savedShown) return;
+    savedShown = true;
+    showSaved();
+  };
+  if (hasSaved(url)) local();
+  if (!navigator.onLine || !networkReachable()) {
+    local();
+    return;
+  }
+  // A saved destination is already interactive while this bounded check and
+  // the ordinary Next navigation proceed in the background.
+  void fetchWithDeadline(
+    '/api/offline/identity',
+    {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      signal: attempt.signal,
+    },
+    2000,
+  ).then(
+    (response) => {
+      if (attempt.signal.aborted || !valid()) return;
+      if (response.ok) {
+        reportNetworkResult(true);
+        resumeLive();
+        return;
+      }
+      if ([401, 403, 409].includes(response.status)) return;
+      if (!savedShown) resumeLive();
+    },
+    () => {
+      if (attempt.signal.aborted || !valid()) return;
+      reportNetworkResult(false);
+      local();
+    },
+  );
+}
+
+export function interceptOfflineLinks(
+  hasSaved: (url: URL) => boolean = () => false,
+) {
   let resuming: HTMLAnchorElement | undefined;
   const click = (event: MouseEvent) => {
     if (
@@ -70,31 +129,14 @@ export function interceptOfflineLinks() {
     )
       return;
     event.preventDefault();
-    pending?.abort();
-    const attempt = new AbortController();
-    pending = attempt;
-    const local = () => {
-      offlineNavigate(url.href);
-      window.dispatchEvent(new Event('tempo:offline-navigation'));
-    };
-    if (!navigator.onLine || !networkReachable()) {
-      local();
-      return;
-    }
-    // Check before handing the screen to Next's pending navigation. Some mobile
-    // transports keep onLine=true and leave navigation requests pending indefinitely.
-    void fetchWithDeadline(
-      '/api/offline/identity',
-      {
-        cache: 'no-store',
-        credentials: 'same-origin',
-        signal: attempt.signal,
+    navigateReadRoute({
+      url,
+      hasSaved,
+      showSaved: () => {
+        offlineNavigate(url.href);
+        window.dispatchEvent(new Event('tempo:offline-navigation'));
       },
-      2000,
-    ).then(
-      () => {
-        if (attempt.signal.aborted || link.isConnected === false) return;
-        reportNetworkResult(true);
+      resumeLive: () => {
         // Resume the original link so Next keeps its scroll options, pending
         // state and keyboard-selection ordering. Bypass only this one replay.
         resuming = link;
@@ -104,18 +146,14 @@ export function interceptOfflineLinks() {
           resuming = undefined;
         }
       },
-      () => {
-        if (attempt.signal.aborted) return;
-        reportNetworkResult(false);
-        local();
-      },
-    );
+      valid: () => link.isConnected !== false,
+    });
   };
-  const cancel = () => pending?.abort();
+  const cancel = () => pendingNavigation?.abort();
   document.addEventListener('click', click, true);
   window.addEventListener('popstate', cancel);
   return () => {
-    pending?.abort();
+    pendingNavigation?.abort();
     document.removeEventListener('click', click, true);
     window.removeEventListener('popstate', cancel);
   };

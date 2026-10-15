@@ -138,14 +138,11 @@ test('stale online flag and stalled requests keep navigation local without loadi
     expect(await page.evaluate(() => navigator.onLine)).toBe(true);
     await openNavigation(page);
     await page.getByRole('link', { name: 'Обзор', exact: true }).click();
-    // No Next pending navigation may hide the already rendered diary while the
-    // reachability probe is pending, and no document navigation may discard it.
-    await expect(
-      page.getByText('Synthetic breakfast', { exact: true }),
-    ).toBeVisible();
+    // The saved destination appears before the stalled identity/RSC work and
+    // replaces the current route without a document reload or loading screen.
     await expect(
       page.getByRole('heading', { name: 'Обзор', exact: true }),
-    ).toBeVisible({ timeout: 5000 });
+    ).toBeVisible();
     await expect(
       page
         .getByRole('status')

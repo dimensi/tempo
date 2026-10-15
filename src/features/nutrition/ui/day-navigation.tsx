@@ -1,6 +1,7 @@
 'use client';
 import Link, { useLinkStatus } from 'next/link';
 import { useRouter } from 'next/navigation';
+import { requestReadNavigation } from '@/components/shared/read-link';
 import { Button } from '@mantine/core';
 import {
   DateNavigation,
@@ -39,9 +40,12 @@ export function DayNavigation({ date }: { date: string }) {
     <DateNavigation
       date={date}
       labels={m}
-      onSelect={(value) =>
-        router.push(`/diary?date=${value}`, { scroll: false })
-      }
+      onSelect={(value) => {
+        const href = `/diary?date=${value}`;
+        requestReadNavigation(href, { scroll: false }, () =>
+          router.push(href, { scroll: false }),
+        );
+      }}
       renderDay={renderDay}
     />
   );
