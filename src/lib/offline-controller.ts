@@ -132,7 +132,12 @@ export class OfflineController {
       response.status === 403 ||
       response.status === 409
     ) {
+      if (signal.aborted) throw new OfflineNetworkError();
       await purgeOfflineDevice().catch(() => {});
+      // Purge broadcasts invalidate this operation too. Preserve the reason after
+      // that invalidation so a cold shell can offer an explicit sign-in action.
+      this.optedIn = false;
+      this.set({ ...empty, status: 'error', error: 'denied' });
       throw new OfflineReadError('denied');
     }
     if (response.status >= 500) throw new OfflineNetworkError();
