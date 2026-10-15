@@ -461,14 +461,19 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         )
         .catch(() => {});
       assertCurrent();
-      complete(
-        !foodSucceeded
-          ? 'SYNC_FAILED'
-          : result.photoFailedDates.length
-            ? 'PHOTO_INCOMPLETE'
-            : null,
-        foodSucceeded,
+      const selectedWork = [...work.values()].some((parts) =>
+        syncParts.some((part) => parts[part]),
       );
+      // A checkpoint-only no-op proves nothing about a previous failed sync.
+      if (selectedWork)
+        complete(
+          !foodSucceeded
+            ? 'SYNC_FAILED'
+            : result.photoFailedDates.length
+              ? 'PHOTO_INCOMPLETE'
+              : null,
+          foodSucceeded,
+        );
       foodCompleted = true;
       return { ...result, health };
     } catch (error) {

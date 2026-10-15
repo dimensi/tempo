@@ -121,6 +121,58 @@ afterEach(() => {
 });
 
 describe('durable owner schedule', () => {
+  it.each(['SYNC_FAILED', 'PHOTO_INCOMPLETE'] as const)(
+    'retains %s and its retry deadline when a manual historical range is fully skipped',
+    async (lastError) => {
+      const { service, upstream } = setup();
+      service.enable('owner', input);
+      const previous = {
+        lastError,
+        lastSuccess: Date.now() - 3600000,
+        attempt: 2,
+        nextRunAt: Date.now() + 60000,
+      };
+      database.db
+        .update(nutritionSchedule)
+        .set(previous)
+        .where(eq(nutritionSchedule.ownerId, 'owner'))
+        .run();
+      const history = { from: '2026-10-01', to: '2026-10-01' };
+      syncProgress(database).set('owner', history.from, {
+        food: true,
+        photos: true,
+        steps: true,
+        weight: true,
+        body: true,
+      });
+      const result = await service.run('owner', history, {
+        mode: 'manual',
+        timezone: 'UTC',
+      });
+      expect(result.skippedDates).toEqual([history.from]);
+      expect(result.completedDates).toEqual([]);
+      for (const method of [
+        'items',
+        'summary',
+        'images',
+        'healthSummary',
+        'weight',
+      ] as const)
+        expect(upstream[method]).not.toHaveBeenCalled();
+      expect(
+        database.db
+          .select()
+          .from(nutritionSchedule)
+          .where(eq(nutritionSchedule.ownerId, 'owner'))
+          .get(),
+      ).toMatchObject({
+        ...previous,
+        leaseId: null,
+        leaseExpiresAt: null,
+      });
+    },
+  );
+
   it('invalidates every historical checkpoint on credentials/token replacement without deleting the diary', async () => {
     const { service, upstream, repository } = setup();
     const history = { from: '2026-10-01', to: '2026-10-01' };
