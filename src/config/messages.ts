@@ -35,6 +35,12 @@ export const ru = {
       area: 'nutrition',
     },
     {
+      href: '/workouts',
+      title: 'Тренировки',
+      description: 'Здесь появятся тренировки и планы занятий.',
+      area: 'workouts',
+    },
+    {
       href: '/measurements',
       title: 'Замеры',
       description: 'Здесь появится история физических показателей.',
@@ -45,12 +51,6 @@ export const ru = {
       title: 'Анамнез',
       description: 'Лабораторные показатели, документы и отчёты.',
       area: 'anamnesis',
-    },
-    {
-      href: '/workouts',
-      title: 'Тренировки',
-      description: 'Здесь появятся тренировки и планы занятий.',
-      area: 'workouts',
     },
     {
       href: '/analytics',
