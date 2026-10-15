@@ -32,6 +32,13 @@ copy, and scheduled source refresh stops when transport is unavailable. A deadli
 is distinct from intentional cancellation. Existing grants, denial handling,
 cross-tab fencing, static version isolation and unsynchronized writes are retained.
 
+The mandatory full-suite run also exposed a comment form race: an acknowledgement
+of an earlier save could clear text entered while that save was pending. A draft
+revision now fences the clear operation, including reply/edit/cancel changes.
+The existing comment UI scenario delays a real committed PATCH acknowledgement
+and checks that subsequently entered text survives. This is part of the requested
+input preservation; no new comment or offline-write capability is introduced.
+
 Acceptance: targeted unit tests for deadline/abort cleanup, stale navigation
 responses, cache preservation and activation cancellation; production-browser
 tests for persisted browser restart with stalled document/identity responses and
