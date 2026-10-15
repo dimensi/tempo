@@ -323,7 +323,21 @@ function OfflineReadStatus({ offlineMode = false }: { offlineMode?: boolean }) {
   return (
     <Stack gap={4}>
       <Group gap="xs">
-        <Text size="xs" c="dimmed" role="status">
+        <Text
+          size="xs"
+          c="dimmed"
+          role="status"
+          style={
+            offlineMode
+              ? undefined
+              : {
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  minWidth: 0,
+                }
+          }
+        >
           {offlineMode
             ? m.networkUnavailable
             : state.status === 'ready'
@@ -567,7 +581,7 @@ export function OfflineBoundary({
   );
   if (!offline)
     return (
-      <Stack gap="md">
+      <Stack gap={0}>
         <OfflineReadStatus />
         {children}
       </Stack>

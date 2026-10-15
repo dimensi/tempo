@@ -46,7 +46,7 @@ it('server unavailability is reported even when the network interface is present
   const env = windowDouble(
     vi.fn(async () => new Response('{}', { status: 503 })),
   );
-  await env.target.fetch('/api/overview');
+  await env.target.fetch('/api/offline/identity');
   expect(env.statuses).toEqual([false]);
   expect(env.loaded()).toBe(0);
   env.stop();
@@ -60,14 +60,14 @@ it('refreshes safe settings after successful goal reads and saves', async () => 
   expect(env.loaded()).toBe(2);
   env.stop();
 });
-it('keeps report runtime errors local while reporting an unavailable document gateway', async () => {
+it('keeps feature HTTP failures local while reporting an unavailable cache service', async () => {
   const responses = [
     Response.json({ error: 'Renderer unavailable' }, { status: 503 }),
     new Response('Gateway unavailable', { status: 503 }),
   ];
   const env = windowDouble(vi.fn(async () => responses.shift()!));
-  await env.target.fetch('/api/reports?format=pdf');
-  await env.target.fetch('/api/reports?format=pdf');
+  await env.target.fetch('/api/overview');
+  await env.target.fetch('/api/offline/snapshot');
   expect(env.statuses).toEqual([true, false]);
   expect(env.loaded()).toBe(0);
   env.stop();

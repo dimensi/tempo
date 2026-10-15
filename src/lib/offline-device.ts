@@ -813,13 +813,11 @@ export function observeOfflineDenials() {
       throw error;
     }
     if (relevant) {
-      // Provider/rendering failures can occur while the app remains reachable.
-      // Structured application errors belong to their form; offline API failures
-      // still control cache fallback, and gateway/transport failures are global.
-      const applicationFailure =
-        !url.pathname.startsWith('/api/offline/') &&
-        response.headers.get('content-type')?.includes('application/json');
-      reportNetworkResult(response.status < 500 || Boolean(applicationFailure));
+      // A feature HTTP error still proves reachability; preserve its error/draft.
+      // Cache-service failures and transport exceptions control global fallback.
+      reportNetworkResult(
+        !url.pathname.startsWith('/api/offline/') || response.status < 500,
+      );
       const method = (
         init?.method ?? (input instanceof Request ? input.method : 'GET')
       ).toUpperCase();
