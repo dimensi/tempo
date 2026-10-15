@@ -3,15 +3,15 @@ import {
   expect,
   type Page,
   type APIRequestContext,
-} from '@playwright/test';
+} from '../ci/isolated-test';
 import Database from 'better-sqlite3';
-import { testOrigin } from '../ci/origin';
+import { testOrigin, testUpstreamOrigin } from '../ci/origin';
 import { getSessionWith429Retry } from '../e2e/auth-session';
 
 async function control(request: APIRequestContext, action?: string) {
   const response = action
-    ? await request.post('http://127.0.0.1:3158/control', { data: { action } })
-    : await request.get('http://127.0.0.1:3158/control');
+    ? await request.post(`${testUpstreamOrigin}/control`, { data: { action } })
+    : await request.get(`${testUpstreamOrigin}/control`);
   expect(response.status()).toBe(200);
   return (await response.json()) as {
     previewReads: number;

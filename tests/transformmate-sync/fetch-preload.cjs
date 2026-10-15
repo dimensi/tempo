@@ -1,7 +1,13 @@
+const origin = process.env.BETTER_AUTH_URL;
+if (!/^https:\/\/localhost:(3160|3260|3262|3264|3266)$/.test(origin ?? ''))
+  throw new Error('Unsafe synthetic runtime origin');
+const gatewayPort = Number(new URL(origin).port);
+const upstreamPort =
+  gatewayPort === 3160 ? 3158 : 3360 + (gatewayPort - 3260) / 2;
 // Loaded only in the disposable production-test child, never in a deployed server.
 const expected = {
   DATABASE_URL: 'file:./.data/e2e.sqlite',
-  BETTER_AUTH_URL: 'https://localhost:3160',
+  BETTER_AUTH_URL: origin,
   TRANSFORMMATE_TOKEN_FILE: './.data/e2e-transformmate-token.json',
   BETTER_AUTH_SECRET: 'offline-production-synthetic-secret-1234567890',
 };
@@ -88,7 +94,7 @@ globalThis.fetch = async (input, init) => {
         );
     }
     const target = new URL(
-      `http://127.0.0.1:3158${prefix}${url.pathname}${url.search}`,
+      `http://127.0.0.1:${upstreamPort}${prefix}${url.pathname}${url.search}`,
     );
     return original(
       input instanceof Request ? new Request(target, input) : target,

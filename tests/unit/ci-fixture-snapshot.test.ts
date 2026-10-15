@@ -12,11 +12,17 @@ test('only an exact closed fixture in an isolated family can skip synthetic prep
   try {
     mkdirSync(resolve(directory, '.data'));
     writeFileSync(path, fixture);
-    for (const family of ['general', 'smoke', 'isolation'])
+    for (const family of [
+      'general',
+      'smoke',
+      'isolation',
+      'offline',
+      'transformmate',
+    ])
       expect(() =>
         verifyFixtureSnapshot(family, hash, directory),
       ).not.toThrow();
-    for (const family of ['nutrition', 'transformmate', 'offline', 'unknown'])
+    for (const family of ['nutrition', 'unknown'])
       expect(() => verifyFixtureSnapshot(family, hash, directory)).toThrow(
         'isolated browser families',
       );

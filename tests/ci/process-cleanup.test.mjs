@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
+import { spawnSync } from 'node:child_process';
 import { runProcessGroup } from '../../scripts/ci/process-group.mjs';
 
 for (const mode of [
@@ -41,7 +42,12 @@ for (const mode of [
         // An exited zombie cannot execute or keep storage/network handles open.
         let state;
         try {
-          state = readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1][0];
+          state =
+            process.platform === 'darwin'
+              ? spawnSync('ps', ['-p', String(pid), '-o', 'stat='], {
+                  encoding: 'utf8',
+                }).stdout.trim()[0]
+              : readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1][0];
         } catch (error) {
           assert.equal(error.code, 'ENOENT');
         }

@@ -1,3 +1,4 @@
+import { testUpstreamPort } from '../ci/origin';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import {
@@ -383,7 +384,7 @@ export async function startUpstream() {
     json({ error: 'unexpected synthetic request' }, 404);
   });
   await new Promise<void>((resolve) =>
-    server.listen(3158, '127.0.0.1', resolve),
+    server.listen(testUpstreamPort, '127.0.0.1', resolve),
   );
   return server;
 }

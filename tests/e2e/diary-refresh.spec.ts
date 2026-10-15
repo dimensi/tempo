@@ -1,30 +1,11 @@
-import { getSessionWith429Retry } from './auth-session';
+import { signInFixture } from '../ci/real-auth';
 import { test, expect, type Page } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
 import { nutritionDaySchema } from '@/contracts/nutrition';
 import { day as syntheticDay } from '../unit/diary/fixture';
 
 async function login(page: Page, role: 'owner' | 'trainer') {
-  await page.goto('/login');
-  await page.getByLabel('Электронная почта').fill(`${role}@example.test`);
-  await page
-    .getByRole('textbox', { name: 'Пароль', exact: true })
-    .fill('Test-only-password-12345');
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const pending = page.waitForResponse((response) =>
-      response.url().endsWith('/api/auth/sign-in/email'),
-    );
-    await page.getByRole('button', { name: 'Войти', exact: true }).click();
-    const response = await pending;
-    if (response.status() !== 429) {
-      expect(response.ok()).toBe(true);
-      break;
-    }
-    const seconds = Number(response.headers()['retry-after'] ?? 10);
-    await new Promise((resolve) => setTimeout(resolve, (seconds + 1) * 1000));
-  }
-  await expect(page).toHaveURL('/');
-  return (await getSessionWith429Retry(page.request)).user.id;
+  return signInFixture(page, role);
 }
 
 test('selected-day owner refresh deduplicates, separates photo warnings and ignores late navigation; trainer cannot refresh', async ({
@@ -36,9 +17,6 @@ test('selected-day owner refresh deduplicates, separates photo warnings and igno
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text());
   });
-  // Serial tests share Better Auth's real in-memory sign-in limit (3 per 10s).
-  // Let earlier tests' login requests expire; keep collecting all console errors.
-  await new Promise((resolve) => setTimeout(resolve, 11000));
   const date = '2024-02-29';
   const ownerId = await login(page, 'owner');
   await page.goto(`/diary?date=${date}`);

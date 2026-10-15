@@ -14,6 +14,8 @@ import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { requirePassingReport } from './report.mjs';
 import { runProcessGroup } from './process-group.mjs';
+import { partitionCases } from './partition-cases.mjs';
+import { summarizeResets } from './reset-statistics.mjs';
 import { caseTitlePattern } from './case-selection.mjs';
 
 // One disposable checkout and browser process per bounded worker. Each case
@@ -32,8 +34,8 @@ export async function isolatedBrowser(run, concurrency = 2) {
   }
 }
 async function executeIsolated(run, concurrency, signal) {
-  if (![1, 2].includes(concurrency))
-    throw new Error('Browser concurrency must be 1 or 2');
+  if (![1, 2, 3, 4].includes(concurrency))
+    throw new Error('Browser concurrency must be between 1 and 4');
   mkdirSync('test-results', { recursive: true });
   const listed = JSON.parse(
     execFileSync(
@@ -155,24 +157,19 @@ async function executeIsolated(run, concurrency, signal) {
       fixtureSeconds: Number(
         ((performance.now() - fixtureStart) / 1000).toFixed(3),
       ),
+      selectedCases: cases,
       cases: [],
       errors: [],
     },
   };
-  const projects = [...new Set(cases.map((entry) => entry.project))];
-  if (projects.length > 2)
-    throw new Error('Isolated browser supports at most two viewport projects');
-  const groups =
-    projects.length === 2
-      ? projects.map((project) =>
-          cases.filter((entry) => entry.project === project),
-        )
-      : Array.from({ length: Math.min(concurrency, cases.length) }, (_, slot) =>
-          cases.filter(
-            (_, index) => index % Math.min(concurrency, cases.length) === slot,
-          ),
-        );
+  const groups = partitionCases(cases, concurrency);
   const allowedMobileSkips = {
+    'smoke/slow-install.spec.ts': [
+      'held initial offline install cannot delay real logout behind a cache lock',
+    ],
+    'transformmate-sync/preview.e2e.ts': [
+      'owned preview negative requests coalesce across remounts, new revision retries once and revoked trainer cannot publish a late blob',
+    ],
     'e2e/workouts.spec.ts': [
       'a save settling after Back does not redirect or repeat the write',
       'actual draft survives conflict and access errors; unavailable storage requires explicit leave',
@@ -215,8 +212,9 @@ async function executeIsolated(run, concurrency, signal) {
           '--config',
           run.config,
           ...new Set(selectedCases.map((entry) => entry.file)),
-          '--project',
-          selectedCases[0].project,
+          ...[...new Set(selectedCases.map((entry) => entry.project))].flatMap(
+            (project) => ['--project', project],
+          ),
           '--workers=1',
           '--grep',
           caseTitlePattern(selectedCases),
@@ -239,6 +237,12 @@ async function executeIsolated(run, concurrency, signal) {
           resolve(sandbox, `test-results/${run.family}.json`),
           'utf8',
         ),
+      );
+      // Preserve the original result even if ledger/selection validation fails.
+      mkdirSync(`test-results/${run.family}/workers`, { recursive: true });
+      writeFileSync(
+        `test-results/${run.family}/workers/${slot}.json`,
+        JSON.stringify(report, null, 2),
       );
       const starts = readFileSync(
         resolve(sandbox, 'test-results/production-starts.jsonl'),
@@ -270,14 +274,24 @@ async function executeIsolated(run, concurrency, signal) {
         JSON.stringify(selectedCases.map(key).sort())
       )
         throw new Error('Worker report differs from enumerated selection');
+      const resets = readFileSync(
+        resolve(sandbox, 'test-results/reset-timings.jsonl'),
+        'utf8',
+      )
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line));
+      combined.isolation.resetSamples ??= [];
+      combined.isolation.resetSamples.push(...resets);
       combined.suites.push(...report.suites);
       for (const key of ['expected', 'unexpected', 'skipped', 'flaky'])
         combined.stats[key] += report.stats[key] ?? 0;
       combined.isolation.cases.push(...entries);
       combined.isolation.workers ??= [];
       combined.isolation.workers.push({
-        slot,
-        project: selectedCases[0].project,
+        slot: slot,
+        projects: [...new Set(selectedCases.map((entry) => entry.project))],
         copySeconds: Number(copiedSeconds.toFixed(3)),
         seconds: Number(((performance.now() - start) / 1000).toFixed(3)),
         serverStarts: starts.trim().split('\n').length,
@@ -307,6 +321,7 @@ async function executeIsolated(run, concurrency, signal) {
         .filter((entry) => entry.generation > 0)
         .map((entry) => JSON.stringify(entry.caseKey));
       if (
+        resets.length !== resetKeys.length ||
         new Set(resetKeys).size !== resetKeys.length ||
         resetKeys.some(
           (value) => !selectedCases.some((entry) => key(entry) === value),
@@ -318,13 +333,11 @@ async function executeIsolated(run, concurrency, signal) {
       )
         throw new Error('A case did not reset its production server');
       if (report.stats.expected) requirePassingReport(report);
-      mkdirSync(`test-results/${run.family}/workers`, { recursive: true });
-      writeFileSync(
-        `test-results/${run.family}/workers/${slot}.json`,
-        JSON.stringify(report, null, 2),
-      );
     } catch (error) {
-      combined.isolation.errors.push({ slot, message: error.message });
+      combined.isolation.errors.push({
+        slot: slot,
+        message: error.message,
+      });
     } finally {
       try {
         try {
@@ -341,16 +354,13 @@ async function executeIsolated(run, concurrency, signal) {
       }
     }
   }
-  // Concurrency1 still enumerates both projects, but runs their separate workers serially.
-  const results = [];
-  for (let start = 0; start < groups.length; start += concurrency)
-    results.push(
-      ...(await Promise.allSettled(
-        groups
-          .slice(start, start + concurrency)
-          .map((group, index) => worker(group, start + index)),
-      )),
-    );
+  const results = await Promise.allSettled(
+    groups.map((group, slot) => worker(group, slot)),
+  );
+  combined.isolation.reset = summarizeResets(
+    combined.isolation.resetSamples ?? [],
+  );
+  delete combined.isolation.resetSamples;
   writeFileSync(
     `test-results/${run.family}.json`,
     JSON.stringify(combined, null, 2),

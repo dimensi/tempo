@@ -1,3 +1,4 @@
+import { signInFixture } from '../ci/real-auth';
 import { testOrigin } from '../ci/origin';
 import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '../ci/isolated-test';
@@ -6,32 +7,7 @@ import type { WorkoutsData } from '@/contracts/workouts';
 import { workoutMessages } from '@/features/workouts/messages';
 
 async function login(page: Page, role: 'owner' | 'trainer' = 'owner') {
-  await page.goto('/login');
-  await page.getByLabel('Электронная почта').fill(`${role}@example.test`);
-  await page
-    .getByRole('textbox', { name: 'Пароль', exact: true })
-    .fill('Test-only-password-12345');
-  let response = page.waitForResponse((value) =>
-    value.url().endsWith('/api/auth/sign-in/email'),
-  );
-  await page.getByRole('button', { name: 'Войти', exact: true }).click();
-  const result = await response;
-  if (result.status() === 429) {
-    const seconds = Number(
-      result.headers()['x-retry-after'] ??
-        result.headers()['retry-after'] ??
-        10,
-    );
-    // A legitimate server-directed wait must not consume the CRUD assertion budget.
-    test.setTimeout(test.info().timeout + (seconds + 1) * 1000);
-    await page.waitForTimeout((seconds + 1) * 1000);
-    response = page.waitForResponse((value) =>
-      value.url().endsWith('/api/auth/sign-in/email'),
-    );
-    await page.getByRole('button', { name: 'Войти', exact: true }).click();
-    expect((await response).ok()).toBe(true);
-  } else expect(result.ok()).toBe(true);
-  await expect(page).toHaveURL('/');
+  return signInFixture(page, role);
 }
 async function ownerId(page: Page) {
   return (await getSessionWith429Retry(page.request)).user.id;

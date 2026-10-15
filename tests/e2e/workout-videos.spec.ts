@@ -1,35 +1,11 @@
+import { signInFixture } from '../ci/real-auth';
 import { test, expect, type Page } from '../ci/isolated-test';
 import { testOrigin } from '../ci/origin';
 import { getSessionWith429Retry } from './auth-session';
 import { Input, BufferSource, ALL_FORMATS } from 'mediabunny';
 import { workoutMessages as m } from '@/features/workouts/messages';
-async function login(page: Page, role = 'owner') {
-  await page.goto('/login');
-  await page.getByLabel('Электронная почта').fill(`${role}@example.test`);
-  await page
-    .getByRole('textbox', { name: 'Пароль', exact: true })
-    .fill('Test-only-password-12345');
-  let response = page.waitForResponse((value) =>
-    value.url().endsWith('/api/auth/sign-in/email'),
-  );
-  await page.getByRole('button', { name: 'Войти', exact: true }).click();
-  let result = await response;
-  if (result.status() === 429) {
-    const seconds = Number(
-      result.headers()['retry-after'] ??
-        result.headers()['x-retry-after'] ??
-        10,
-    );
-    test.setTimeout(test.info().timeout + (seconds + 1) * 1000);
-    await page.waitForTimeout((seconds + 1) * 1000);
-    response = page.waitForResponse((value) =>
-      value.url().endsWith('/api/auth/sign-in/email'),
-    );
-    await page.getByRole('button', { name: 'Войти', exact: true }).click();
-    result = await response;
-  }
-  expect(result.ok()).toBe(true);
-  await expect(page).toHaveURL('/');
+async function login(page: Page, role: 'owner' | 'trainer' = 'owner') {
+  return signInFixture(page, role);
 }
 async function createSession(page: Page) {
   const ownerId = (await getSessionWith429Retry(page.request)).user.id;

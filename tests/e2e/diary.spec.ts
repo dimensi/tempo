@@ -34,12 +34,13 @@ test('authenticated diary date navigation and empty state', async ({
   await page.getByLabel('День', { exact: true }).selectOption('03');
   await page.getByRole('button', { name: 'Открыть день' }).click();
   await expect(page).toHaveURL('/diary?date=2026-02-03');
-  await expect(page.locator('[aria-current="date"]')).toHaveAttribute(
-    'href',
-    '/diary?date=2026-02-03',
-  );
   await expect(
-    page.getByText('Данные за этот день пока не загружены.'),
+    page.locator('[aria-current="date"]').filter({ visible: true }),
+  ).toHaveAttribute('href', '/diary?date=2026-02-03');
+  await expect(
+    page
+      .getByText('Данные за этот день пока не загружены.')
+      .filter({ visible: true }),
   ).toBeVisible();
   for (const meal of ['Завтрак', 'Обед', 'Ужин', 'Перекус'])
     await expect(
