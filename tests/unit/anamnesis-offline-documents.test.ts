@@ -1,7 +1,13 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { isValidElement, type ReactNode } from 'react';
 import { Button, FileInput } from '@mantine/core';
-const state = vi.hoisted(() => ({ online: false, index: 0, viewer: false }));
+const state = vi.hoisted(() => ({
+  online: false,
+  index: 0,
+  viewer: false,
+  runEffects: false,
+  savedDocumentCalls: 0,
+}));
 vi.mock('react', async (original) => ({
   ...(await original<typeof import('react')>()),
   useState: (initial: unknown) => {
@@ -15,13 +21,34 @@ vi.mock('react', async (original) => ({
       vi.fn(),
     ];
   },
-  useEffect: vi.fn(),
+  useEffect: (effect: () => void) => {
+    if (state.runEffects) effect();
+  },
   useRef: (current: unknown) => ({ current }),
 }));
 vi.mock('@/lib/use-read-online', () => ({ useReadOnline: () => state.online }));
 vi.mock('@/lib/use-read-refresh', () => ({ useReadRefresh: () => 0 }));
 vi.mock('@/lib/use-read-resource', () => ({ useReadResource: vi.fn() }));
-vi.mock('@/lib/client-read', () => ({ invalidateMedicalDocument: vi.fn() }));
+vi.mock('@/lib/client-read', () => ({
+  invalidateMedicalDocument: vi.fn(),
+  savedMedicalDocument: async () => {
+    state.savedDocumentCalls++;
+    return {
+      id: 'doc',
+      ownerId: 'owner',
+      filename: 'saved.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1,
+      pageCount: 1,
+      laboratoryName: null,
+      title: null,
+      collectedAt: null,
+      issuedAt: null,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+  },
+}));
 vi.mock('@/features/anamnesis/refresh', () => ({
   useAnamnesisRevision: () => 0,
   notifyAnamnesisChanged: vi.fn(),
@@ -47,6 +74,20 @@ function nodes(
 }
 afterEach(() => {
   state.index = 0;
+  state.runEffects = false;
+  state.savedDocumentCalls = 0;
+});
+
+it('loads a saved document before a stalled live refresh on an offline projection', async () => {
+  state.viewer = true;
+  state.runEffects = true;
+  DocumentViewer({
+    ownerId: 'owner',
+    documentId: 'doc',
+    writable: true,
+    preferSaved: true,
+  });
+  await vi.waitFor(() => expect(state.savedDocumentCalls).toBe(1));
 });
 it.each([false, true])(
   'exposes direct document download only online=%s',

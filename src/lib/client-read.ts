@@ -1,5 +1,9 @@
 import { offlineAnamnesisSchema } from '@/contracts/offline-anamnesis';
 import {
+  medicalDocumentSchema,
+  type MedicalDocument,
+} from '@/contracts/anamnesis';
+import {
   ReadFailure,
   ReadResourceStore,
   type PersistedRead,
@@ -350,6 +354,21 @@ export async function savedMedicalSummary() {
   return offlineAnamnesisSchema.parse(JSON.parse(body));
 }
 
+export async function savedMedicalDocument(
+  documentId: string,
+  ownerId: string,
+): Promise<MedicalDocument> {
+  bindScope();
+  const key = canonicalReadKey(
+    new URL(
+      `/api/anamnesis/documents/${encodeURIComponent(documentId)}?ownerId=${encodeURIComponent(ownerId)}`,
+      location.origin,
+    ),
+  );
+  const body = await clientReads.read(key);
+  return medicalDocumentSchema.parse(JSON.parse(body));
+}
+
 export async function hasSavedMedicalRoute(url: URL) {
   if (url.pathname !== '/anamnesis' && !url.pathname.startsWith('/anamnesis/'))
     return false;
@@ -360,9 +379,17 @@ export async function hasSavedMedicalRoute(url: URL) {
     /^\/anamnesis\/(markers|documents)\/([^/]+)$/,
   );
   if (!match) return false;
+  const kind = match[1];
+  const resourceId = match[2];
+  if (!kind || !resourceId) return false;
+  if (kind === 'documents')
+    return savedMedicalDocument(resourceId, summary.ownerId).then(
+      () => true,
+      () => false,
+    );
   const key = canonicalReadKey(
     new URL(
-      `/api/anamnesis/${match[1]}/${match[2]}?ownerId=${encodeURIComponent(summary.ownerId)}`,
+      `/api/anamnesis/${kind}/${resourceId}?ownerId=${encodeURIComponent(summary.ownerId)}`,
       location.origin,
     ),
   );

@@ -1,5 +1,6 @@
 'use client';
 import { OfflineFile } from '@/components/shared/offline-file';
+import { savedMedicalDocument } from '@/lib/client-read';
 import { useReadOnline } from '@/lib/use-read-online';
 import { offlineMessages } from '@/config/offline';
 import { useReadRefresh } from '@/lib/use-read-refresh';
@@ -21,10 +22,12 @@ export function DocumentViewer({
   ownerId,
   documentId,
   writable,
+  preferSaved = false,
 }: {
   ownerId: string;
   documentId: string;
   writable: boolean;
+  preferSaved?: boolean;
 }) {
   const online = useReadOnline();
   const readRefresh = useReadRefresh();
@@ -38,6 +41,12 @@ export function DocumentViewer({
 
   useEffect(() => {
     let active = true;
+    if (preferSaved)
+      void savedMedicalDocument(documentId, ownerId)
+        .then((saved) => {
+          if (active) setDocument(saved);
+        })
+        .catch(() => {});
     void (async () => {
       try {
         const loaded = await fetchAnamnesis<MedicalDocument>(
@@ -77,7 +86,7 @@ export function DocumentViewer({
     return () => {
       active = false;
     };
-  }, [documentId, query, readRefresh]);
+  }, [documentId, ownerId, preferSaved, query, readRefresh]);
 
   async function reprocess() {
     setBusy(true);
