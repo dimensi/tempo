@@ -18,6 +18,7 @@ const request = {
 const signal = new AbortController().signal;
 function source(days = [syntheticDay()]): ReportDataSource {
   return {
+    getSteps: async () => [],
     getNutritionDays: async () => days,
     listPhotos: async () => [],
     readPhoto: async () => {
@@ -111,7 +112,7 @@ describe('report rules', () => {
       '<img src="https://evil.test" onerror="alert(1)">';
     const html = renderReportHtml(
       { ...request, period: 'custom', end: '2026-10-11' },
-      { days: [day], photos: [] },
+      { steps: [], days: [day], photos: [] },
       {
         sans: new Uint8Array(),
         bold: new Uint8Array(),
@@ -146,7 +147,7 @@ describe('report rules', () => {
     const before = structuredClone(day);
     const html = renderReportHtml(
       request,
-      { days: [day], photos: [] },
+      { steps: [], days: [day], photos: [] },
       {
         sans: new Uint8Array(),
         bold: new Uint8Array(),
@@ -242,7 +243,7 @@ it('preserves source quantity, serving and zero consumed portions without derivi
   const before = structuredClone(day);
   const html = renderReportHtml(
     request,
-    { days: [day], photos: [] },
+    { steps: [], days: [day], photos: [] },
     { sans: new Uint8Array(), bold: new Uint8Array(), serif: new Uint8Array() },
   );
   expect(html).toContain('Количество: 0,5');

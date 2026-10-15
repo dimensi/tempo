@@ -31,6 +31,7 @@ it('returns escaped long HTML with an authorized real photo without launching Ch
     mime: 'image/png' as const,
   }));
   const source: ReportDataSource = {
+    getSteps: async () => [],
     getNutritionDays: async () => [day],
     listPhotos: async () => [
       {
@@ -83,6 +84,7 @@ it('keeps one real empty state without artificial meal rows and checks HTML canc
     meal.officialTotals = { ...zero };
   }
   const source: ReportDataSource = {
+    getSteps: async () => [],
     getNutritionDays: async () => [day],
     listPhotos: async () => [],
     readPhoto: async () => {
@@ -100,6 +102,7 @@ it('keeps one real empty state without artificial meal rows and checks HTML canc
   const controller = new AbortController();
   const cancelling: ReportDataSource = {
     ...source,
+    getSteps: async () => [],
     getNutritionDays: async () => {
       controller.abort();
       return [day];

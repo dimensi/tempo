@@ -10,13 +10,9 @@ Numerical text uses the shared `formatDecimal` presentation helper: ordinary val
 
 `reportDataSource(headers)` statically imports source C and composes its authorized public interface through `createNutritionReportSource`. There is no demo fallback or global test setter. The adapter preserves the agreed DTO without conversion or nutrient recalculation:
 
-```ts
-import * as nutrition from '@/server/nutrition';
+Daily HTML and PDF sections also show steps from the existing authenticated health reader for the same owner and calendar range. The source checks that the requested owner matches the session's accessible owner before reading; the health reader enforces `measurements:read` with owner scope. Zero steps remain zero; missing values display `—`. No steps are inferred from nutrition or converted to calories.
 
-export function reportDataSource(headers: Headers): ReportDataSource {
-  return createNutritionReportSource(headers, nutrition);
-}
-```
+Task scope: `src/server/pdf`, `src/features/reports/messages.ts` and report tests; existing v1 report/nutrition/health contracts, no schema changes. Acceptance: real PDF text contains date-specific steps, zero and unknown remain distinct, canonical day still fits A4, owner/trainer guards remain enforced.
 
 The handler passes request headers to the adapter; Chromium never receives them. The reports page uses `getAccessibleOwnerId(await headers())` from `@/server/access/owner`. No trainer owner-ID input is exposed; a missing grant disables export controls. The helper does not replace the route guard.
 

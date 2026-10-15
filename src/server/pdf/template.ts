@@ -132,6 +132,9 @@ export function renderReportHtml(
   const sections = dates
     .map((date) => {
       const day = dataset.days.find((candidate) => candidate.date === date);
+      const steps =
+        dataset.steps.find((candidate) => candidate.date === date)?.steps ??
+        null;
       const dayTotals = day?.totals ?? unknownTotals;
       const photos = dataset.photos.filter((photo) => photo.date === date);
       const entries =
@@ -151,7 +154,7 @@ export function renderReportHtml(
           return `<section class="meal-block" data-meal="${kind}" data-name="${m[kind]}"><div class="meal-heading"><h2>${m[kind]}</h2>${keys.map((key) => `<span class="meal-total number numeric" data-nutrient="${key}">${value(meal?.totals[key] ?? null)}</span>`).join('')}</div><div class="meal-body">${photo ? `<figure class="meal-media"><img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}"></figure>` : ''}<div class="meal-entries">${meal?.entries.map(food).join('') ?? ''}</div></div></section>`;
         })
         .join('');
-      return `<section class="day-source" data-date="${date}" data-title="${m.diary}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}">${previewHeader(m.diary, diaryDateLabel(date))}<div class="day-start"><p class="counts">${m.mealCount}: ${mealsWithData} · ${m.entryCount}: ${entries} · ${m.photoCount}: ${photos.length}</p>${mealsWithData === 0 ? `<p class="empty">${!day ? m.missing : m.empty}</p>` : ''}${totals(dayTotals, day?.knownTotals)}${charts(dayTotals, day, visibleMeals)}</div><div class="day-meals">${details ? columnHeaders() : ''}${details}</div>${notes(dayTotals, day?.fetchedAt)}</section>`;
+      return `<section class="day-source" data-date="${date}" data-title="${m.diary}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}">${previewHeader(m.diary, diaryDateLabel(date))}<div class="day-start"><p class="counts">${m.mealCount}: ${mealsWithData} · ${m.entryCount}: ${entries} · ${m.photoCount}: ${photos.length}</p>${mealsWithData === 0 ? `<p class="empty">${!day ? m.missing : m.empty}</p>` : ''}${totals(dayTotals, day?.knownTotals)}<p class="counts daily-steps">${m.steps}: <strong class="number">${steps === null ? m.unavailable : value(String(steps))}</strong></p>${charts(dayTotals, day, visibleMeals)}</div><div class="day-meals">${details ? columnHeaders() : ''}${details}</div>${notes(dayTotals, day?.fetchedAt)}</section>`;
     })
     .join('');
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${reportCsp}"><title>${m.diary}</title>${fontFaces}</head><body${request.format === 'html' ? ' class="report-preview"' : ''}><main id="report-source" data-continued="${m.continued}">${overview}${sections}</main></body></html>`;

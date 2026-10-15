@@ -56,6 +56,7 @@ export const reportMessages = {
   distribution: 'Калории по приёмам пищи',
   mealCount: 'Приёмов пищи',
   entryCount: 'Записей',
+  steps: 'Шаги',
   photoCount: 'Фотографий',
   totalDay: 'Итого за день',
   macroEnergyShare: 'энергии БЖУ',

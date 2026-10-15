@@ -41,7 +41,11 @@ it('omits empty canonical meals in paginated HTML/PDF, retaining real entries, p
       period: 'daily' as const,
       format: 'pdf' as const,
     };
-    const empty = renderReportHtml(request, { days: [day], photos: [] }, fonts);
+    const empty = renderReportHtml(
+      request,
+      { steps: [], days: [day], photos: [] },
+      fonts,
+    );
     await prepareReportPage(page, empty);
     expect(await page.locator('.report-page .meal-block').count()).toBe(0);
     expect(await page.locator('.report-page .table-header').count()).toBe(0);
@@ -77,6 +81,7 @@ it('omits empty canonical meals in paginated HTML/PDF, retaining real entries, p
     const html = renderReportHtml(
       request,
       {
+        steps: [],
         days: [day],
         photos: [
           {
@@ -150,7 +155,11 @@ it('omits empty canonical meals in paginated HTML/PDF, retaining real entries, p
     }));
     await prepareReportPage(
       page,
-      renderReportHtml(request, { days: [splitDay], photos: [] }, fonts),
+      renderReportHtml(
+        request,
+        { steps: [], days: [splitDay], photos: [] },
+        fonts,
+      ),
     );
     expect(
       await page.locator('.report-page .meal-block').count(),
