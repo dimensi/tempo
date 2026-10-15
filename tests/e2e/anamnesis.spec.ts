@@ -357,7 +357,9 @@ test('owner imports the reference PDF and trainer receives only granted access',
   const allReport = (await exportResponse.json()) as { id: string };
   const savedReport = builder.getByTestId(`medical-report-${allReport.id}`);
   await expect(savedReport).toBeVisible();
-  await savedReport.getByRole('button').click();
+  await savedReport
+    .getByRole('button', { name: 'Посмотреть', exact: true })
+    .click();
   await expect(
     builder.getByRole('link', { name: 'Открыть в новой вкладке' }),
   ).toHaveAttribute('href', /inline=1/);
