@@ -588,6 +588,8 @@ export function OfflineBoundary({
     });
     window.addEventListener('tempo:read-access-denied', blocked);
     window.addEventListener('tempo:read-access-recheck', recheck);
+    window.addEventListener('focus', recheck);
+    window.addEventListener('online', recheck);
     const lost = () => setOffline(true);
     const connected = () => {
       void reconnectReads().then(() => {
@@ -606,6 +608,8 @@ export function OfflineBoundary({
       verified();
       window.removeEventListener('tempo:read-access-denied', blocked);
       window.removeEventListener('tempo:read-access-recheck', recheck);
+      window.removeEventListener('focus', recheck);
+      window.removeEventListener('online', recheck);
       window.removeEventListener('offline', lost);
       window.removeEventListener('online', connected);
       window.removeEventListener(networkStatusEvent, observed);
