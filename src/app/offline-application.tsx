@@ -532,7 +532,6 @@ export function OfflineBoundary({
 }) {
   // The mounted Next screen owns its form state. Connectivity must never replace it.
   const url = useOfflineLocation();
-  const offline = !useReadOnline();
   const [denied, setDenied] = useState(false);
   const verifiedPartition = useRef(initialIdentity?.partition ?? null);
   const verifiedGeneration = useRef(
@@ -612,10 +611,6 @@ export function OfflineBoundary({
   // Next's layout children can retain their identity across normal navigation.
   // Only an explicitly intercepted history entry belongs to the saved shell.
   const showingSavedRoute = isOfflineRoute(url);
-  useEffect(
-    () => (offline || showingSavedRoute ? interceptOfflineLinks() : undefined),
-    [offline, showingSavedRoute],
-  );
   return (
     <Stack gap={0}>
       <OfflineReadStatus offlineMode={showingSavedRoute} />

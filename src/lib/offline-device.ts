@@ -903,12 +903,11 @@ export function observeOfflineDenials() {
     try {
       response = await original.call(window, input, init);
     } catch (error) {
+      const signal =
+        init?.signal ?? (input instanceof Request ? input.signal : undefined);
       if (
         relevant &&
-        !(
-          init?.signal?.aborted ||
-          (input instanceof Request && input.signal.aborted)
-        )
+        (!signal?.aborted || signal.reason?.name === 'TimeoutError')
       )
         reportNetworkResult(false);
       throw error;

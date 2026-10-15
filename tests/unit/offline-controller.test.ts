@@ -126,8 +126,46 @@ const controller = (
     () => 'UTC',
   );
 afterEach(() => {
+  vi.useRealTimers();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+});
+it('a stale online flag cannot block the saved copy behind an unresponsive identity request', async () => {
+  const persistence = storage();
+  await controller(persistence, fetcher() as typeof fetch).save();
+  vi.useFakeTimers();
+  const reader = controller(
+    persistence,
+    async () => new Promise<Response>(() => {}),
+  );
+  const loading = reader.activate(true);
+  await vi.advanceTimersByTimeAsync(2001);
+  await loading;
+  expect(reader.getSnapshot()).toMatchObject({
+    status: 'offline',
+    enabled: true,
+  });
+  expect(reader.getSnapshot().bundle?.snapshot.diary).toHaveLength(1);
+  expect(purgeOfflineDevice).not.toHaveBeenCalled();
+});
+it('switching to local navigation supersedes an in-flight online verification', async () => {
+  const persistence = storage();
+  await controller(persistence, fetcher() as typeof fetch).save();
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const reader = controller(persistence, async () => {
+    entered();
+    return new Promise<Response>(() => {});
+  });
+  const online = reader.activate(true);
+  await started;
+  await reader.activate(false, true);
+  await online;
+  expect(reader.getSnapshot().status).toBe('offline');
+  expect(reader.getSnapshot().bundle?.snapshot.diary).toHaveLength(1);
+  expect(purgeOfflineDevice).not.toHaveBeenCalled();
 });
 it('explicit opt-in verifies OWNER and always requests rolling15 date-only data, preserving zero/null/kg policy', async () => {
   const persistence = storage();
@@ -260,6 +298,21 @@ it('foreground event bursts are singleflight and snapshot refresh is bounded whi
       call[0].startsWith('/api/offline/snapshot'),
     ),
   ).toHaveLength(1);
+});
+it('failed automatic save retains the saved model both during refresh and after a transport deadline', async () => {
+  const persistence = storage();
+  const request = fetcher();
+  const reader = controller(persistence, request as typeof fetch);
+  await reader.save();
+  vi.useFakeTimers();
+  request.mockImplementation(() => new Promise<Response>(() => {}));
+  const saving = reader.save();
+  expect(reader.getSnapshot().bundle?.snapshot.diary).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(2001);
+  await saving;
+  expect(reader.getSnapshot().status).toBe('offline');
+  expect(reader.getSnapshot().bundle?.snapshot.diary).toHaveLength(1);
+  expect(purgeOfflineDevice).not.toHaveBeenCalled();
 });
 it('failed network verification reads the guarded local copy; background failure stays offline', async () => {
   const persistence = storage();

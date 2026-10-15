@@ -113,6 +113,90 @@ async function openNavigation(page: Page) {
   const burger = page.getByRole('button', { name: 'Навигация', exact: true });
   if (await burger.isVisible()) await burger.click();
 }
+test('stale online flag and stalled requests keep navigation local without loading screens', async ({
+  page,
+  request,
+}) => {
+  const data = seedReal();
+  try {
+    await signIn(page);
+    await page.goto(`/diary?date=${data.date}`);
+    await waitSaved(page);
+    await expect(
+      page.getByText('Synthetic breakfast', { exact: true }),
+    ).toBeVisible();
+    await page.evaluate(() => {
+      Reflect.set(window, 'retainedDocument', 'same document');
+    });
+    await request.post('/__offline-test/control', {
+      data: {
+        stalledNavigation: true,
+        stalledIdentity: true,
+        stalledApi: true,
+      },
+    });
+    expect(await page.evaluate(() => navigator.onLine)).toBe(true);
+    await openNavigation(page);
+    await page.getByRole('link', { name: 'Обзор', exact: true }).click();
+    // No Next pending navigation may hide the already rendered diary while the
+    // reachability probe is pending, and no document navigation may discard it.
+    await expect(
+      page.getByText('Synthetic breakfast', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Обзор', exact: true }),
+    ).toBeVisible({ timeout: 5000 });
+    await expect(
+      page
+        .getByRole('status')
+        .filter({ hasText: 'Сеть или сервер недоступны' }),
+    ).toBeVisible();
+    for (const [label, path] of [
+      ['Тренировки', '/workouts'],
+      ['Аналитика', '/analytics'],
+      ['Обзор', '/'],
+    ]) {
+      await openNavigation(page);
+      await page.getByRole('link', { name: label!, exact: true }).click();
+      await expect.poll(() => new URL(page.url()).pathname).toBe(path);
+      await expect(page.locator('.mantine-Loader-root:visible')).toHaveCount(0);
+      await expect(
+        page.getByRole('link', { name: label!, exact: true }),
+      ).toHaveAttribute('aria-current', 'page');
+    }
+    expect(
+      await page.evaluate(() => Reflect.get(window, 'retainedDocument')),
+    ).toBe('same document');
+    await request.post('/__offline-test/control', {
+      data: {
+        stalledNavigation: false,
+        stalledIdentity: false,
+        stalledApi: false,
+      },
+    });
+    await page
+      .getByRole('button', { name: 'Проверить соединение', exact: true })
+      .click();
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Сеть доступна' }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(() => Reflect.get(window, 'retainedDocument')),
+    ).toBe('same document');
+    await expect(
+      page.getByRole('heading', { name: 'Обзор', exact: true }),
+    ).toBeVisible();
+  } finally {
+    await request.post('/__offline-test/control', {
+      data: {
+        stalledNavigation: false,
+        stalledIdentity: false,
+        stalledApi: false,
+      },
+    });
+    data.db.close();
+  }
+});
 test('automatic cache reuses ordinary routes, cold reload, navigation and shared views without writes', async ({
   page,
   context,

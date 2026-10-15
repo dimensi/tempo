@@ -51,6 +51,18 @@ it('successful data loads signal refresh while offline API/media cannot create r
   expect(env.loaded()).toBe(1);
   env.stop();
 });
+it('treats a transport deadline as unavailable while ignoring deliberate cancellation', async () => {
+  const env = windowDouble(async () => {
+    throw new TypeError('Fetch failed');
+  });
+  const deadline = new AbortController();
+  deadline.abort(new DOMException('No headers', 'TimeoutError'));
+  await expect(
+    env.target.fetch('/api/offline/identity', { signal: deadline.signal }),
+  ).rejects.toThrow();
+  expect(env.statuses).toEqual([false]);
+  env.stop();
+});
 it('cache preparation HTTP failures do not report loss of transport', async () => {
   const env = windowDouble(
     vi.fn(async () => new Response('{}', { status: 503 })),

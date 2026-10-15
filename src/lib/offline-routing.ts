@@ -1,5 +1,7 @@
 'use client';
-import { networkReachable } from '@/lib/network-state';
+import { networkReachable, reportNetworkResult } from '@/lib/network-state';
+import { fetchWithDeadline } from './fetch-with-deadline';
+import { isOfflineNavigationPath } from './offline-navigation-paths';
 import { useSyncExternalStore } from 'react';
 const listeners = new Set<() => void>();
 let version = 0;
@@ -39,9 +41,11 @@ export function useOfflineLocation() {
   );
   return typeof location === 'undefined' ? null : new URL(location.href);
 }
-export function interceptOfflineLinks() {
+export function interceptOfflineLinks(navigateOnline?: (href: string) => void) {
+  let pending: AbortController | undefined;
   const click = (event: MouseEvent) => {
     if (
+      event.defaultPrevented ||
       event.button !== 0 ||
       event.metaKey ||
       event.ctrlKey ||
@@ -57,14 +61,53 @@ export function interceptOfflineLinks() {
     if (
       url.origin !== location.origin ||
       url.pathname.startsWith('/api/') ||
-      url.pathname === '/login'
+      url.pathname === '/login' ||
+      !isOfflineNavigationPath(url.pathname) ||
+      (url.pathname === location.pathname &&
+        url.search === location.search &&
+        url.hash)
     )
       return;
-    // Once transport is available, every ordinary link uses the live router.
-    if (navigator.onLine && networkReachable()) return;
     event.preventDefault();
-    offlineNavigate(url.href);
+    pending?.abort();
+    const attempt = new AbortController();
+    pending = attempt;
+    const local = () => {
+      offlineNavigate(url.href);
+      window.dispatchEvent(new Event('tempo:offline-navigation'));
+    };
+    if (!navigator.onLine || !networkReachable()) {
+      local();
+      return;
+    }
+    // Check before handing the screen to Next's pending navigation. Some mobile
+    // transports keep onLine=true and leave navigation requests pending indefinitely.
+    void fetchWithDeadline(
+      '/api/offline/identity',
+      {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: attempt.signal,
+      },
+      2000,
+    ).then(
+      () => {
+        if (attempt.signal.aborted) return;
+        reportNetworkResult(true);
+        if (navigateOnline)
+          navigateOnline(url.pathname + url.search + url.hash);
+        else location.assign(url.href);
+      },
+      () => {
+        if (attempt.signal.aborted) return;
+        reportNetworkResult(false);
+        local();
+      },
+    );
   };
   document.addEventListener('click', click, true);
-  return () => document.removeEventListener('click', click, true);
+  return () => {
+    pending?.abort();
+    document.removeEventListener('click', click, true);
+  };
 }

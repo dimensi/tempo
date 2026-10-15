@@ -62,6 +62,10 @@ const legacy = (
 let workerMode = 'current';
 let navigationStatus = 0;
 let holdInstall = false;
+let stalledNavigation = false;
+let stalledIdentity = false;
+let stalledApi = false;
+const stalled: (() => void)[] = [];
 const held: (() => void)[] = [];
 
 for (const file of [
@@ -226,6 +230,10 @@ async function resetCase(caseKey: unknown[]) {
     workerMode = 'current';
     navigationStatus = 0;
     holdInstall = false;
+    stalledNavigation = false;
+    stalledIdentity = false;
+    stalledApi = false;
+    stalled.splice(0).forEach((release) => release());
     held.splice(0).forEach((release) => release());
     generation++;
     child = startServer(caseKey);
@@ -317,6 +325,11 @@ const server = createServer(
         workerMode = input.mode ?? workerMode;
         navigationStatus = input.navigationStatus ?? navigationStatus;
         holdInstall = input.hold ?? holdInstall;
+        stalledNavigation = input.stalledNavigation ?? stalledNavigation;
+        stalledIdentity = input.stalledIdentity ?? stalledIdentity;
+        stalledApi = input.stalledApi ?? stalledApi;
+        if (!stalledNavigation && !stalledIdentity && !stalledApi)
+          stalled.splice(0).forEach((release) => release());
         if (!holdInstall) held.splice(0).forEach((release) => release());
         outgoing.writeHead(200, { 'Content-Type': 'application/json' });
         outgoing.end(JSON.stringify({ held: held.length }));
@@ -326,6 +339,26 @@ const server = createServer(
     if (incoming.url === '/__offline-test/activity') {
       outgoing.writeHead(200, { 'Content-Type': 'application/json' });
       outgoing.end(JSON.stringify({ held: held.length }));
+      return;
+    }
+    const path = new URL(incoming.url ?? '/', 'https://localhost').pathname;
+    if (
+      (stalledNavigation && path === '/') ||
+      (stalledApi && path.startsWith('/api/')) ||
+      (stalledIdentity && path === '/api/offline/identity')
+    ) {
+      // Model a disconnected transport that neither rejects nor sends headers.
+      const release = () => {
+        if (!outgoing.destroyed) {
+          outgoing.writeHead(503);
+          outgoing.end('Synthetic stalled connection released');
+        }
+      };
+      stalled.push(release);
+      outgoing.on('close', () => {
+        const index = stalled.indexOf(release);
+        if (index !== -1) stalled.splice(index, 1);
+      });
       return;
     }
     if (incoming.url === '/offline-sw.js') {
