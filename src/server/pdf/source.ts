@@ -1,4 +1,5 @@
 import 'server-only';
+import { getReportStepsGoal } from '@/server/settings/steps-goal';
 import type { StepsSummary } from '@/contracts/health';
 import { getStepsSummary } from '@/server/health/readers';
 import type { NutritionDay, SafeMealPhotoView } from '@/contracts/nutrition';
@@ -16,6 +17,7 @@ export interface ReportDataSource {
     end: string,
     signal: AbortSignal,
   ): Promise<NutritionDay[]>;
+  getStepsGoal(ownerId: string, signal: AbortSignal): Promise<number | null>;
   getSteps(
     ownerId: string,
     start: string,
@@ -40,12 +42,19 @@ export interface ReportDataSource {
 export type ReportDataset = {
   days: NutritionDay[];
   steps: StepsSummary['days'];
+  dailyStepsGoal: number | null;
   photos: Array<SafeMealPhotoView & { dataUri: string }>;
 };
 // Composition seam for source C. No silent demo fallback or global test setter.
 export function reportDataSource(headers: Headers): ReportDataSource {
   return {
     ...createNutritionReportSource(headers, nutrition),
+    async getStepsGoal(ownerId, signal) {
+      signal.throwIfAborted();
+      const goal = await getReportStepsGoal(headers, ownerId);
+      signal.throwIfAborted();
+      return goal;
+    },
     async getSteps(ownerId, start, end, signal) {
       signal.throwIfAborted();
       if ((await getAccessibleOwnerId(headers)) !== ownerId)
@@ -79,7 +88,7 @@ export interface NutritionReportApi {
 export function createNutritionReportSource(
   headers: Headers,
   api: NutritionReportApi,
-): Omit<ReportDataSource, 'getSteps'> {
+): Omit<ReportDataSource, 'getSteps' | 'getStepsGoal'> {
   return {
     async getNutritionDays(ownerId, start, end, signal) {
       signal.throwIfAborted();

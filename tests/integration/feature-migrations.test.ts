@@ -55,6 +55,7 @@ it('upgrades an existing foundation DB repeatedly without losing users or grants
       'owner',
     );
     for (const table of [
+      'owner_settings',
       'measurements',
       'workout_plans',
       'workout_sessions',
@@ -70,6 +71,9 @@ it('upgrades an existing foundation DB repeatedly without losing users or grants
           .prepare('SELECT name FROM sqlite_master WHERE type = ? AND name = ?')
           .get('table', table),
       ).toEqual({ name: table });
+    expect(
+      database.sqlite.prepare('SELECT * FROM owner_settings').all(),
+    ).toEqual([]);
     expect(database.sqlite.pragma('foreign_key_check')).toEqual([]);
     expect(database.sqlite.pragma('integrity_check', { simple: true })).toBe(
       'ok',

@@ -18,7 +18,13 @@ h1,h2,h3,p,figure{margin:0}
 h2{font-size:11pt;line-height:1.2;font-weight:700}
 .counts{font-size:8pt;color:var(--muted);margin-bottom:3mm}
 .summary-block{margin-bottom:3mm;break-inside:avoid}
-.daily-totals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4mm;padding:2mm 0 3mm;border-bottom:.25mm solid var(--rule)}
+.daily-totals{display:grid;grid-template-columns:1.15fr repeat(4,minmax(0,1fr));gap:3mm;padding:2mm 0 3mm;border-bottom:.25mm solid var(--rule)}
+.steps-column{min-width:0;color:var(--brand)}
+.steps-value{display:block;font-size:22pt;line-height:1.15;font-weight:700;overflow-wrap:anywhere}
+.steps-column .total-label{color:var(--brand)}
+.steps-caption{font-size:8pt;line-height:1.35;margin-top:1mm;overflow-wrap:anywhere}
+.steps-track{height:1.2mm;background:var(--rule);margin-top:1.2mm}
+.steps-track span{display:block;height:100%;background:var(--brand)}
 .total-column{min-width:0}
 .total-label{font-size:8pt;margin-bottom:1.2mm;color:var(--muted)}
 .summary-value{display:block;font-size:16pt;font-weight:700;line-height:1.15}
@@ -89,7 +95,9 @@ export const reportPreviewStyles = `
 .preview-header h1{font-family:inherit;font-size:20pt;line-height:1.15;font-weight:400}
 .preview-header span{font-size:9pt;color:var(--muted);text-align:right}
 @media(max-width:760px){
-.report-preview .daily-totals{grid-template-columns:repeat(2,minmax(0,1fr))}
+.report-preview .daily-totals{grid-template-columns:repeat(6,minmax(0,1fr))}
+.report-preview .steps-column,.report-preview .total-column[data-nutrient=calories]{grid-column:span 3}
+.report-preview .total-column:not([data-nutrient=calories]){grid-column:span 2}
 .report-preview .charts{grid-template-columns:minmax(0,1fr)}
 .report-preview .legend{flex-wrap:wrap;justify-content:flex-start}
 .report-preview .legend-item{white-space:normal;overflow-wrap:anywhere}

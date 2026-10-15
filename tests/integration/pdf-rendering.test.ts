@@ -54,6 +54,7 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, squa
     };
     day.delta = { ...day.delta, fat: '3e-16', carbs: '-5e-16' };
     const adapter: ReportDataSource = {
+      getStepsGoal: async () => null,
       getSteps: async () => [
         { date: '2026-10-10', steps: 12345, source: 'YAZIO' },
       ],
@@ -91,7 +92,8 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, squa
         encoding: 'utf8',
       });
       expect(text).toContain('Яйцо · запись 45');
-      expect(text).toMatch(/Шаги:\s+12[\s\u00a0]345/);
+      expect(text).toContain('Шаги');
+      expect(text).toMatch(/12[\s\u00a0]345/);
       expect(text).toContain('—');
       expect(text).toContain('Известная часть');
       expect(text).toContain('12,52');
@@ -174,6 +176,7 @@ it('generates real A4 daily/weekly/custom PDFs with Cyrillic embedded font, squa
     const html = renderReportHtml(
       base,
       {
+        dailyStepsGoal: null,
         steps: [],
         days: [syntheticDay()],
         photos: [{ ...metadata, dataUri: png }],
@@ -239,7 +242,12 @@ it('cancels real Chromium preparation and releases the report slot before the ne
     };
     const html = renderReportHtml(
       request,
-      { steps: [], days: [syntheticDay(undefined, 300)], photos: [] },
+      {
+        dailyStepsGoal: null,
+        steps: [],
+        days: [syntheticDay(undefined, 300)],
+        photos: [],
+      },
       await readReportFonts(),
     );
     await expect(

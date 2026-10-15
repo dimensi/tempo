@@ -1,3 +1,5 @@
+import { getStepsGoal } from '@/server/settings/steps-goal';
+import { StepsGoalForm } from './steps-goal-form';
 import { headers } from 'next/headers';
 import { Stack, Text, Title } from '@mantine/core';
 import { requireSession } from '@/server/auth/guards';
@@ -24,10 +26,11 @@ export default async function Page() {
       </Stack>
     );
   const requestHeaders = await headers();
-  const [status, transformMateStatus, trainers] = await Promise.all([
+  const [status, transformMateStatus, trainers, stepsGoal] = await Promise.all([
     getYazioStatus(requestHeaders),
     getTransformMateStatus(requestHeaders),
     listTrainers(requestHeaders, session.user.id),
+    getStepsGoal(requestHeaders),
   ]);
   return (
     <Stack gap="xl">
@@ -48,6 +51,7 @@ export default async function Page() {
               headingOrder={2}
             />
           </section>
+          <StepsGoalForm initial={stepsGoal} />
           <OfflineSettings />
         </Stack>
       </SettingsNavigation>

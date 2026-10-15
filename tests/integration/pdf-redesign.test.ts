@@ -190,6 +190,7 @@ it('renders the specified one-page compact day and six records, then measures ph
       const html = renderReportHtml(
         request,
         {
+          dailyStepsGoal: 10000,
           steps: scenario.days.map((day, index) => ({
             date: day.date,
             steps: index === 0 ? 0 : null,
@@ -418,8 +419,18 @@ it('renders the specified one-page compact day and six records, then measures ph
         encoding: 'utf8',
       });
       expect(text).not.toContain('mass-unavailable');
-      expect(text).toMatch(/Шаги:\s+0/);
-      if (scenario.name === 'two-days') expect(text).toMatch(/Шаги:\s+—/);
+      expect(text).toContain('Текущая цель:');
+      expect(text).toMatch(/0%\s+от цели/);
+      expect(text).toContain('Шаги');
+      expect(await page.locator('.steps-value').first().textContent()).toBe(
+        '0',
+      );
+      if (scenario.name === 'two-days')
+        expect(await page.locator('.steps-value').allTextContents()).toEqual([
+          '0',
+          '0',
+          '—',
+        ]);
       if (scenario.name === 'empty') expect(text).toContain('Нет записей');
       else if (scenario.name === 'totals-only') {
         expect(text).not.toContain('Нет записей');
@@ -472,6 +483,7 @@ it('renders the specified one-page compact day and six records, then measures ph
       observedAt: '2026-10-11T12:00:00Z',
     };
     const adapter: ReportDataSource = {
+      getStepsGoal: async () => null,
       getSteps: async () => [],
       getNutritionDays: async () => [baseline],
       listPhotos: async () => [metadata],

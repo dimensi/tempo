@@ -14,6 +14,7 @@ const database = openDatabase('file::memory:');
 vi.mock('@/server/db', () => ({ getDatabase: () => database }));
 const { createReportHandler } = await import('@/server/pdf/http');
 const source = {
+  getStepsGoal: async () => null,
   getSteps: async () => [],
   getNutritionDays: vi.fn(async () => [syntheticDay()]),
   listPhotos: async () => [],
@@ -75,6 +76,7 @@ it('rechecks grant after data generation and refuses to release bytes after mid-
     .run();
   const revoked = createReportHandler(() => ({
     ...source,
+    getStepsGoal: async () => null,
     getSteps: async () => [],
     getNutritionDays: async () => {
       database.db.delete(trainerAccess).run();
@@ -97,6 +99,7 @@ it('returns access denied when source authorization fails after mid-flight revoc
     .run();
   const revoked = createReportHandler(() => ({
     ...source,
+    getStepsGoal: async () => null,
     getSteps: async () => [],
     getNutritionDays: async () => {
       database.db.delete(trainerAccess).run();

@@ -212,9 +212,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       page.getByRole('button', { name: 'Предпросмотр HTML' }),
     ).toHaveCount(0);
     const preview = page.frameLocator('iframe[title="Предпросмотр HTML"]');
-    await expect(preview.locator('.daily-steps')).toHaveText(
-      /Шаги: 12[\s\u00a0]345/,
-    );
+    await expect(preview.locator('.steps-value')).toHaveText(/12[\s\u00a0]345/);
     await expect(
       preview.getByText('Яйцо · запись 1', { exact: true }),
     ).toBeVisible();
@@ -304,7 +302,8 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await download.saveAs(path);
     expect(download.suggestedFilename()).toBe(`nutrition-${date}-${date}.pdf`);
     const text = execFileSync('pdftotext', [path, '-'], { encoding: 'utf8' });
-    expect(text).toMatch(/Шаги:\s+12[\s\u00a0]345/);
+    expect(text).toContain('Шаги');
+    expect(text).toMatch(/12[\s\u00a0]345/);
     expect(text).toContain('Яйцо');
     expect(text).toContain('—');
     expect(text).toContain('12,52');
