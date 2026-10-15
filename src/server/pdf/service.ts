@@ -9,6 +9,7 @@ import {
   periodDates,
   type ReportRequest,
 } from '@/contracts/reports';
+import { stepsSummarySchema } from '@/contracts/health';
 import { ReportError } from '@/server/pdf/errors';
 import { type ReportDataSource, type ReportDataset } from '@/server/pdf/source';
 import { renderReportHtml } from '@/server/pdf/template';
@@ -82,6 +83,15 @@ export async function loadReportDataset(
     days.some((day) => !dates.includes(day.date))
   )
     throw new ReportError('INVALID', 422);
+  const steps = stepsSummarySchema.shape.days.parse(
+    await source.getSteps(request.ownerId, request.start, request.end, signal),
+  );
+  if (
+    steps.length > dates.length ||
+    new Set(steps.map((day) => day.date)).size !== steps.length ||
+    steps.some((day) => !dates.includes(day.date))
+  )
+    throw new ReportError('INVALID', 422);
   const metadata = await source.listPhotos(
     request.ownerId,
     request.start,
@@ -132,7 +142,7 @@ export async function loadReportDataset(
     });
   }
   if (!days.length && !photos.length) throw new ReportError('NO_DATA', 404);
-  return { days, photos };
+  return { days, photos, steps };
 }
 export async function generateReport(
   source: ReportDataSource,
