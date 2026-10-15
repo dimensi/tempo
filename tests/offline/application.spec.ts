@@ -606,13 +606,13 @@ test('owner results and manual measurements survive offline tab closure and sync
       { timeout: 45000 },
     )
     .toBe(1);
-  await reopened.goto('/workouts');
+  // Reconnection already navigates both offline shells back to the live app.
+  // Observe the acknowledgement without racing that navigation with another load.
   await expect(
     reopened
       .locator('[data-offline-write-private]')
       .getByText('Синхронизировано', { exact: true }),
   ).toBeVisible();
-  await second.reload();
   await expect(
     second
       .locator('[data-offline-write-private]')
