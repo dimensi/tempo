@@ -9,6 +9,7 @@ import {
   TextInput,
   Paper,
   Stack,
+  SimpleGrid,
   Table,
   Text,
   Title,
@@ -25,8 +26,8 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
   const [items, setItems] = useState<MedicalReportExport[]>([]);
   const [markers, setMarkers] = useState<AnamnesisMarkerSummary[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [from, setFrom] = useState<Date | null>(null);
-  const [to, setTo] = useState<Date | null>(null);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -47,7 +48,11 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
         ]);
         if (active) {
           setItems(reports);
-          setMarkers(markerList);
+          const available = markerList.filter(
+            (item) => item.observationCount > 0,
+          );
+          setMarkers(available);
+          setSelected(new Set(available.map((item) => item.marker.id)));
         }
       } catch {
         if (active) setError(m.errors.load);
@@ -63,11 +68,15 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
   async function generate() {
     const parsed = medicalReportRequestSchema.safeParse({
       markerIds: [...selected],
-      from: from ? from.toISOString().slice(0, 10) : null,
-      to: to ? to.toISOString().slice(0, 10) : null,
+      from: from || null,
+      to: to || null,
     });
     if (!parsed.success) {
-      setError(m.reports.builder.selectAtLeast);
+      setError(
+        selected.size
+          ? m.reports.builder.invalidPeriod
+          : m.reports.builder.selectAtLeast,
+      );
       return;
     }
     setBusy(true);
@@ -82,11 +91,15 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
           body: JSON.stringify(parsed.data),
         },
       );
-      const list = await fetchAnamnesis<MedicalReportExport[]>(
-        `/api/anamnesis/reports?${query}`,
-      );
-      setItems(list);
       setNotice(created.id);
+      try {
+        const list = await fetchAnamnesis<MedicalReportExport[]>(
+          `/api/anamnesis/reports?${query}`,
+        );
+        setItems(list);
+      } catch {
+        setError(m.errors.load);
+      }
     } catch (cause) {
       if (
         cause instanceof Error &&
@@ -111,58 +124,140 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
         </Alert>
       )}
       <Paper withBorder p="md">
-        <Title order={2}>{m.reports.builder.title}</Title>
-        <Text size="sm" c="dimmed" mb="sm">
-          {m.reports.builder.markers}
-        </Text>
-        <Stack gap="xs">
-          {markers.map((item) => (
-            <Checkbox
-              key={item.marker.id}
-              label={`${item.marker.name} (${item.observationCount})`}
-              checked={selected.has(item.marker.id)}
-              onChange={(event) => {
-                setSelected((old) => {
-                  const next = new Set(old);
-                  if (event.currentTarget.checked) next.add(item.marker.id);
-                  else next.delete(item.marker.id);
-                  return next;
-                });
-              }}
-            />
-          ))}
+        <Stack gap="md">
+          <div>
+            <Title order={2}>{m.reports.builder.title}</Title>
+            <Text size="sm" c="dimmed">
+              {m.reports.builder.description}
+            </Text>
+          </div>
+          {loading ? (
+            <Text role="status">{m.reports.loading}</Text>
+          ) : !markers.length ? (
+            !error && <Text>{m.reports.builder.noMeasurements}</Text>
+          ) : (
+            <>
+              <Group justify="space-between">
+                <Checkbox
+                  label={m.reports.builder.selectAll}
+                  checked={selected.size === markers.length}
+                  indeterminate={
+                    selected.size > 0 && selected.size < markers.length
+                  }
+                  disabled={busy}
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked;
+                    setSelected(
+                      new Set(
+                        checked ? markers.map((item) => item.marker.id) : [],
+                      ),
+                    );
+                  }}
+                  styles={{ body: { minHeight: 44, alignItems: 'center' } }}
+                />
+                <Button
+                  variant="subtle"
+                  disabled={busy || !selected.size}
+                  onClick={() => setSelected(new Set())}
+                  mih={44}
+                >
+                  {m.reports.builder.clearSelection}
+                </Button>
+              </Group>
+              <Stack
+                gap={0}
+                role="group"
+                aria-label={m.reports.builder.markers}
+              >
+                {markers.map((item) => (
+                  <Checkbox
+                    key={item.marker.id}
+                    label={`${item.marker.name} (${item.observationCount})`}
+                    checked={selected.has(item.marker.id)}
+                    disabled={busy}
+                    styles={{ body: { minHeight: 44, alignItems: 'center' } }}
+                    onChange={(event) => {
+                      const checked = event.currentTarget.checked;
+                      setSelected((old) => {
+                        const next = new Set(old);
+                        if (checked) next.add(item.marker.id);
+                        else next.delete(item.marker.id);
+                        return next;
+                      });
+                    }}
+                  />
+                ))}
+              </Stack>
+              <Text size="sm" role="status">
+                {m.reports.builder.selected}: {selected.size} / {markers.length}
+              </Text>
+              <div>
+                <Group justify="space-between" mb="xs">
+                  <Text fw={500}>{m.reports.builder.period}</Text>
+                  {(from || to) && (
+                    <Button
+                      variant="subtle"
+                      disabled={busy}
+                      mih={44}
+                      onClick={() => {
+                        setFrom('');
+                        setTo('');
+                      }}
+                    >
+                      {m.wholePeriod}
+                    </Button>
+                  )}
+                </Group>
+                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                  <TextInput
+                    type="date"
+                    label={m.reports.builder.from}
+                    value={from}
+                    max={to || undefined}
+                    disabled={busy}
+                    onChange={(event) => setFrom(event.currentTarget.value)}
+                    styles={{ input: { minHeight: 44 } }}
+                  />
+                  <TextInput
+                    type="date"
+                    label={m.reports.builder.to}
+                    value={to}
+                    min={from || undefined}
+                    disabled={busy}
+                    onChange={(event) => setTo(event.currentTarget.value)}
+                    styles={{ input: { minHeight: 44 } }}
+                  />
+                </SimpleGrid>
+                <Text size="sm" c="dimmed" mt="xs">
+                  {m.reports.builder.wholeHistoryHint}
+                </Text>
+              </div>
+              <Button
+                onClick={() => void generate()}
+                loading={busy}
+                disabled={!selected.size}
+                mih={44}
+              >
+                {m.reports.builder.generate}
+              </Button>
+            </>
+          )}
+          {notice && (
+            <Alert color="green" title={m.reports.ready}>
+              <Button
+                component="a"
+                href={`/api/anamnesis/reports/${notice}/file?${query}`}
+                target="_blank"
+                rel="noreferrer"
+                variant="default"
+                mih={44}
+              >
+                {m.reports.download}
+              </Button>
+            </Alert>
+          )}
         </Stack>
-        <Group mt="md" align="flex-end">
-          <TextInput
-            type="date"
-            label={m.reports.builder.from}
-            value={from ? from.toISOString().slice(0, 10) : ''}
-            onChange={(event) =>
-              setFrom(
-                event.currentTarget.value
-                  ? new Date(event.currentTarget.value)
-                  : null,
-              )
-            }
-          />
-          <TextInput
-            type="date"
-            label={m.reports.builder.to}
-            value={to ? to.toISOString().slice(0, 10) : ''}
-            onChange={(event) =>
-              setTo(
-                event.currentTarget.value
-                  ? new Date(event.currentTarget.value)
-                  : null,
-              )
-            }
-          />
-          <Button onClick={() => void generate()} loading={busy} mih={44}>
-            {m.reports.builder.generate}
-          </Button>
-        </Group>
       </Paper>
-      {loading && <Text>…</Text>}
       {!loading && !items.length && <Text>{m.reports.empty}</Text>}
       {!!items.length && (
         <Table.ScrollContainer minWidth={640}>
@@ -188,18 +283,19 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
                   <Table.Td>
                     {notice === item.id ? (
                       <Text size="sm" c="green">
-                        Готов
+                        {m.reports.ready}
                       </Text>
                     ) : null}
-                    <a
+                    <Button
+                      component="a"
                       href={`/api/anamnesis/reports/${item.id}/file?${query}`}
                       target="_blank"
                       rel="noreferrer"
+                      variant="default"
+                      mih={44}
                     >
-                      <Button variant="default" mih={44}>
-                        {m.reports.download}
-                      </Button>
-                    </a>
+                      {m.reports.download}
+                    </Button>
                   </Table.Td>
                 </Table.Tr>
               ))}
