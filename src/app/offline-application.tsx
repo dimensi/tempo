@@ -36,6 +36,7 @@ import { savedDiaryDay } from './offline-model';
 import { reconnectReads } from '@/lib/offline-reconnect';
 import { networkStatusEvent } from '@/lib/network-state';
 import { useReadOnline } from '@/lib/use-read-online';
+import { canRetainLiveRead } from '@/lib/live-read-scope';
 import { revealOfflineContent } from '@/lib/offline-device';
 import { workoutTitle } from '@/lib/workout-title';
 import {
@@ -556,10 +557,19 @@ export function OfflineBoundary({
           if (!response.ok) return;
           const identity = offlineIdentitySchema.parse(await response.json());
           if (
-            identity.partition !== verifiedPartition.current ||
-            identity.connectionGeneration !== verifiedGeneration.current
+            !verifiedPartition.current ||
+            !verifiedGeneration.current ||
+            !canRetainLiveRead(
+              {
+                partition: verifiedPartition.current,
+                connectionGeneration: verifiedGeneration.current,
+                role,
+              },
+              identity,
+            )
           )
             return;
+          verifiedGeneration.current = identity.connectionGeneration;
           setDenied(false);
           // Restoring live authorization must not depend on IndexedDB or SW availability.
           void getOfflineController().activate(true, true);
@@ -575,9 +585,14 @@ export function OfflineBoundary({
         const partition = state.bundle.fence.partition;
         if (
           verifiedPartition.current &&
-          (verifiedPartition.current !== partition ||
-            verifiedGeneration.current !==
-              state.bundle.snapshot.connectionGeneration)
+          !canRetainLiveRead(
+            {
+              partition: verifiedPartition.current,
+              connectionGeneration: verifiedGeneration.current ?? '',
+              role,
+            },
+            state.bundle.snapshot,
+          )
         ) {
           setDenied(true);
           return;
@@ -616,7 +631,7 @@ export function OfflineBoundary({
       window.removeEventListener('online', connected);
       window.removeEventListener(networkStatusEvent, observed);
     };
-  }, []);
+  }, [role]);
   // Next's layout children can retain their identity across normal navigation.
   // Only an explicitly intercepted history entry belongs to the saved shell.
   const showingSavedRoute =
