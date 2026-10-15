@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useReadRefresh } from '@/lib/use-read-refresh';
 import { nutritionDaySchema } from '@/contracts/nutrition';
+import { z } from 'zod';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Stack } from '@mantine/core';
 import { browserToday } from '@/components/shared/date-navigation-dates';
@@ -34,11 +35,12 @@ export function DiaryClient({
   useEffect(() => {
     let active = true;
     void fetch(
-      `/api/nutrition/days/${props.date}?ownerId=${encodeURIComponent(ownerId)}`,
+      `/api/nutrition/days?${new URLSearchParams({ ownerId, from: props.date, to: props.date })}`,
     )
       .then(async (response) => {
         if (!response.ok) return;
-        const value = nutritionDaySchema.parse(await response.json());
+        const value =
+          z.array(nutritionDaySchema).parse(await response.json())[0] ?? null;
         if (active) setModel({ seed: props.day, day: value });
       })
       .catch(() => {});

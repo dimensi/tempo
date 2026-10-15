@@ -37,7 +37,11 @@ import { reconnectReads } from '@/lib/offline-reconnect';
 import { networkStatusEvent } from '@/lib/network-state';
 import { revealOfflineContent } from '@/lib/offline-device';
 import { workoutTitle } from '@/lib/workout-title';
-import type { OfflineSnapshot } from '@/contracts/offline';
+import {
+  offlineIdentitySchema,
+  type OfflineIdentity,
+  type OfflineSnapshot,
+} from '@/contracts/offline';
 function OfflineRouteContent() {
   const url = useOfflineLocation();
   const controller = getOfflineController();
@@ -522,29 +526,43 @@ export function OfflineApplication({ brandSrc }: { brandSrc: string }) {
 export function OfflineBoundary({
   children,
   role,
+  initialIdentity,
 }: {
   children: ReactNode;
   role: string;
+  initialIdentity: OfflineIdentity | null;
 }) {
   // The mounted Next screen owns its form state. Connectivity must never replace it.
   const url = useOfflineLocation();
   const [offline, setOffline] = useState(false);
   const [denied, setDenied] = useState(false);
-  const verifiedPartition = useRef<string | null>(null);
-  const verifiedGeneration = useRef<string | null>(null);
+  const verifiedPartition = useRef(initialIdentity?.partition ?? null);
+  const verifiedGeneration = useRef(
+    initialIdentity?.connectionGeneration ?? null,
+  );
   useEffect(() => {
     const blocked = () => setDenied(true);
     let checkingAccess = false;
     const recheck = () => {
       if (checkingAccess || !navigator.onLine) return;
       checkingAccess = true;
-      const controller = getOfflineController();
-      void controller
-        .activate(true, true)
-        .then(async () => {
-          if (controller.getSnapshot().status === 'disabled')
-            await controller.activate(true, true);
+      void fetch('/api/offline/identity', {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(15000),
+      })
+        .then(async (response) => {
+          if (!response.ok) return;
+          const identity = offlineIdentitySchema.parse(await response.json());
+          if (
+            identity.partition !== verifiedPartition.current ||
+            identity.connectionGeneration !== verifiedGeneration.current
+          )
+            return;
+          setDenied(false);
+          // Restoring live authorization must not depend on IndexedDB or SW availability.
+          void getOfflineController().activate(true, true);
         })
+        .catch(() => {})
         .finally(() => {
           checkingAccess = false;
         });
@@ -566,11 +584,7 @@ export function OfflineBoundary({
         verifiedGeneration.current = state.bundle.snapshot.connectionGeneration;
         setDenied(false);
         setOffline(false);
-      } else if (
-        state.error === 'denied' ||
-        (state.status === 'disabled' && verifiedPartition.current)
-      )
-        setDenied(true);
+      } else if (state.error === 'denied') setDenied(true);
     });
     window.addEventListener('tempo:read-access-denied', blocked);
     window.addEventListener('tempo:read-access-recheck', recheck);
