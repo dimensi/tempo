@@ -92,6 +92,7 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
   const [markers, setMarkers] = useState<AnamnesisMarkerSummary[]>([]);
   const [selected, setSelected] = useState<string[] | null>(null);
   const [dates, setDates] = useState<MedicalReportDateOption[]>([]);
+  const [datesFor, setDatesFor] = useState('');
   const [dateKeys, setDateKeys] = useState<string[] | null>(null);
   const [preview, setPreview] = useState<MedicalReportPreview>();
   const [saved, setSaved] = useState<string>();
@@ -109,6 +110,7 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
       ),
     [selected, markers],
   );
+  const datesKey = `${JSON.stringify([...markerIds].sort())}:${revision}`;
   const selection = JSON.stringify({
     markerIds: [...markerIds].sort(),
     dateKeys: dateKeys === null ? null : [...dateKeys].sort(),
@@ -174,6 +176,7 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
       .then((options) => {
         if (!controller.signal.aborted) {
           setDates(options);
+          setDatesFor(datesKey);
           setDateKeys((old) =>
             old === null
               ? null
@@ -195,7 +198,7 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
       });
     return () => controller.abort();
     // Date options depend on marker selection, not on the selected dates.
-  }, [markerIds, query, revision]);
+  }, [markerIds, query, revision, datesKey]);
   useEffect(() => {
     const controller = new AbortController();
     const version = ++generation.current;
@@ -348,6 +351,7 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
           </Text>
           <Checkbox
             label={m.workspace.allHistory}
+            disabled={datesFor !== datesKey}
             checked={dateKeys === null}
             onChange={(event) =>
               setDateKeys(
@@ -358,7 +362,7 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
             }
             styles={{ body: { minHeight: 44, alignItems: 'center' } }}
           />
-          {dateKeys !== null && (
+          {dateKeys !== null && datesFor === datesKey && (
             <Stack gap={0} role="group" aria-label={m.workspace.dates}>
               {dates.map((option) => (
                 <Checkbox
