@@ -43,7 +43,7 @@ it('omits empty canonical meals in paginated HTML/PDF, retaining real entries, p
     };
     const empty = renderReportHtml(
       request,
-      { steps: [], days: [day], photos: [] },
+      { dailyStepsGoal: null, steps: [], days: [day], photos: [] },
       fonts,
     );
     await prepareReportPage(page, empty);
@@ -81,6 +81,7 @@ it('omits empty canonical meals in paginated HTML/PDF, retaining real entries, p
     const html = renderReportHtml(
       request,
       {
+        dailyStepsGoal: null,
         steps: [],
         days: [day],
         photos: [
@@ -157,7 +158,7 @@ it('omits empty canonical meals in paginated HTML/PDF, retaining real entries, p
       page,
       renderReportHtml(
         request,
-        { steps: [], days: [splitDay], photos: [] },
+        { dailyStepsGoal: null, steps: [], days: [splitDay], photos: [] },
         fonts,
       ),
     );

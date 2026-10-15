@@ -16,6 +16,7 @@ export const permissions = [
   'yazio:manage',
   'transformmate:manage',
   'trainers:manage',
+  'settings:manage',
 ] as const;
 export type Permission = (typeof permissions)[number];
 const trainerPermissions: readonly Permission[] = [

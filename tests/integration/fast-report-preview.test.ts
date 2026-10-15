@@ -21,6 +21,7 @@ it('displays natural-flow HTML and the real embedded photo with scripts/network 
     day.meals[0]!.entries[0]!.name = 'СинтетическоеДлинноеНазвание'.repeat(40);
     day.meals[0]!.entries[0]!.totals.calories = '999999999.99';
     const source: ReportDataSource = {
+      getStepsGoal: async () => null,
       getSteps: async () => [],
       getNutritionDays: async () => [day],
       listPhotos: async () => [

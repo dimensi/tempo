@@ -11,6 +11,7 @@ import { periodDates, type ReportRequest } from '@/contracts/reports';
 import { reportMessages as m } from '@/features/reports';
 import type { ReportDataset } from '@/server/pdf/source';
 import type { ReportFonts } from '@/server/pdf/fonts';
+import { summarizeSteps, stepsProgress } from '@/server/pdf/steps';
 import { summarizeDays } from '@/server/pdf/summary';
 import { macroShares, mealShares } from '@/server/pdf/shares';
 import { reportStyles, reportPreviewStyles } from '@/server/pdf/styles';
@@ -59,9 +60,28 @@ export function diaryDateLabel(date: string): string {
     .format(new Date(`${date}T12:00:00Z`))
     .replace(/\s*г\.$/, '');
 }
-function totals(values: NutritionTotals, known?: NutritionTotals): string {
+function stepsMetric(
+  raw: string | null,
+  goal: number | null,
+  label: string,
+  coverage?: string,
+): string {
+  const progress = stepsProgress(raw, goal);
+  const displayed =
+    raw === null
+      ? m.unavailable
+      : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(
+          Number(raw),
+        );
+  return `<div class="steps-column"><p class="total-label">${label}</p><strong class="steps-value number">${escapeHtml(displayed)}</strong>${goal !== null ? `<p class="steps-caption">${m.currentStepsGoal}: ${escapeHtml(new Intl.NumberFormat('ru-RU').format(goal))}</p>` : ''}${progress ? `<p class="steps-caption goal-progress">${progress.percent}% ${m.goalProgress}</p><div class="steps-track" role="img" aria-label="${progress.percent}% ${m.goalProgress}"><span style="width:${progress.width}%"></span></div>` : ''}${coverage ? `<p class="steps-caption">${coverage}</p>` : ''}</div>`;
+}
+function totals(
+  values: NutritionTotals,
+  known?: NutritionTotals,
+  steps = '',
+): string {
   const shares = macroShares(values);
-  return `<section class="summary-block daily-totals">${keys.map((key, index) => `<div class="total-column" data-nutrient="${key}"><p class="total-label">${names[key]}</p><strong class="summary-value number"><span class="numeric">${value(values[key])}</span> <span class="summary-unit">${key === 'calories' ? m.kcal : m.grams}</span></strong><p class="total-caption">${index === 0 ? m.totalDay : `<span class="energy-share number numeric">${shares === null ? m.unavailable : percentage(shares.tenths[index - 1]!)}</span> ${m.macroEnergyShare}`}</p>${values[key] === null && known?.[key] !== null && known?.[key] !== undefined ? `<p class="partial">${m.partial}: ${value(known[key])} ${key === 'calories' ? m.kcal : m.grams}</p>` : ''}</div>`).join('')}</section>`;
+  return `<section class="summary-block daily-totals">${steps}${keys.map((key, index) => `<div class="total-column" data-nutrient="${key}"><p class="total-label">${names[key]}</p><strong class="summary-value number"><span class="numeric">${value(values[key])}</span> <span class="summary-unit">${key === 'calories' ? m.kcal : m.grams}</span></strong><p class="total-caption">${index === 0 ? m.totalDay : `<span class="energy-share number numeric">${shares === null ? m.unavailable : percentage(shares.tenths[index - 1]!)}</span> ${m.macroEnergyShare}`}</p>${values[key] === null && known?.[key] !== null && known?.[key] !== undefined ? `<p class="partial">${m.partial}: ${value(known[key])} ${key === 'calories' ? m.kcal : m.grams}</p>` : ''}</div>`).join('')}</section>`;
 }
 function charts(
   values: NutritionTotals,
@@ -115,6 +135,7 @@ export function renderReportHtml(
 ): string {
   const dates = periodDates(request.start, request.end);
   const summary = summarizeDays(dataset.days, dates.length);
+  const stepSummary = summarizeSteps(dataset.steps);
   if (request.format === 'pdf' && !fonts) throw new Error('PDF fonts required');
   const embeddedFonts =
     request.format === 'pdf'
@@ -128,7 +149,7 @@ export function renderReportHtml(
   const overview =
     dates.length === 1
       ? ''
-      : `<section class="day-source" data-overview="true" data-title="${m.periodTitle}" data-header="${escapeHtml(`${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)}`)}" data-footer="${m.summary}">${previewHeader(m.periodTitle, `${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)}`)}<div class="day-start"><p class="counts">${m.completeness}: ${summary.availableDays} / ${summary.expectedDays}</p>${totals(summary.totals, summary.knownTotals)}${charts(summary.totals)}</div><div class="day-meals"></div>${notes(summary.totals)}</section>`;
+      : `<section class="day-source" data-overview="true" data-title="${m.periodTitle}" data-header="${escapeHtml(`${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)}`)}" data-footer="${m.summary}">${previewHeader(m.periodTitle, `${diaryDateLabel(request.start)} — ${diaryDateLabel(request.end)}`)}<div class="day-start"><p class="counts">${m.completeness}: ${summary.availableDays} / ${summary.expectedDays}</p>${totals(summary.totals, summary.knownTotals, stepsMetric(stepSummary.average, dataset.dailyStepsGoal, m.averageSteps, m.stepsCoverage(stepSummary.observedDays, dates.length)))}${charts(summary.totals)}</div><div class="day-meals"></div>${notes(summary.totals)}</section>`;
   const sections = dates
     .map((date) => {
       const day = dataset.days.find((candidate) => candidate.date === date);
@@ -154,7 +175,7 @@ export function renderReportHtml(
           return `<section class="meal-block" data-meal="${kind}" data-name="${m[kind]}"><div class="meal-heading"><h2>${m[kind]}</h2>${keys.map((key) => `<span class="meal-total number numeric" data-nutrient="${key}">${value(meal?.totals[key] ?? null)}</span>`).join('')}</div><div class="meal-body">${photo ? `<figure class="meal-media"><img src="${photo.dataUri}" alt="${m.photos}: ${m[kind]}"></figure>` : ''}<div class="meal-entries">${meal?.entries.map(food).join('') ?? ''}</div></div></section>`;
         })
         .join('');
-      return `<section class="day-source" data-date="${date}" data-title="${m.diary}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}">${previewHeader(m.diary, diaryDateLabel(date))}<div class="day-start"><p class="counts">${m.mealCount}: ${mealsWithData} · ${m.entryCount}: ${entries} · ${m.photoCount}: ${photos.length}</p>${mealsWithData === 0 ? `<p class="empty">${!day ? m.missing : m.empty}</p>` : ''}${totals(dayTotals, day?.knownTotals)}<p class="counts daily-steps">${m.steps}: <strong class="number">${steps === null ? m.unavailable : value(String(steps))}</strong></p>${charts(dayTotals, day, visibleMeals)}</div><div class="day-meals">${details ? columnHeaders() : ''}${details}</div>${notes(dayTotals, day?.fetchedAt)}</section>`;
+      return `<section class="day-source" data-date="${date}" data-title="${m.diary}" data-header="${escapeHtml(diaryDateLabel(date))}" data-footer="${m.dayFooter}">${previewHeader(m.diary, diaryDateLabel(date))}<div class="day-start"><p class="counts">${m.mealCount}: ${mealsWithData} · ${m.entryCount}: ${entries} · ${m.photoCount}: ${photos.length}</p>${mealsWithData === 0 ? `<p class="empty">${!day ? m.missing : m.empty}</p>` : ''}${totals(dayTotals, day?.knownTotals, stepsMetric(steps === null ? null : String(steps), dataset.dailyStepsGoal, m.steps))}${charts(dayTotals, day, visibleMeals)}</div><div class="day-meals">${details ? columnHeaders() : ''}${details}</div>${notes(dayTotals, day?.fetchedAt)}</section>`;
     })
     .join('');
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${reportCsp}"><title>${m.diary}</title>${fontFaces}</head><body${request.format === 'html' ? ' class="report-preview"' : ''}><main id="report-source" data-continued="${m.continued}">${overview}${sections}</main></body></html>`;

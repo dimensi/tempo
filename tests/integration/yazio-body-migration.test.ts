@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { openDatabase } from '@/server/db/connection';
-it('migrates a synthetic ten-migration database to twelve preserving existing records and FK integrity', () => {
+it('migrates a synthetic ten-migration database to thirteen preserving existing records and FK integrity', () => {
   const root = mkdtempSync(join(tmpdir(), 'yazio-body-migration-'));
   mkdirSync(join(root, 'meta'));
   const journal = JSON.parse(
@@ -52,7 +52,7 @@ it('migrates a synthetic ten-migration database to twelve preserving existing re
       database.sqlite
         .prepare('SELECT count(*) as n FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ n: 12 });
+    ).toEqual({ n: 13 });
     expect(database.sqlite.prepare('SELECT * FROM measurements').all()).toEqual(
       before,
     );
@@ -74,7 +74,7 @@ it('migrates a synthetic ten-migration database to twelve preserving existing re
       fresh.sqlite
         .prepare('SELECT count(*) as n FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ n: 12 });
+    ).toEqual({ n: 13 });
     expect(fresh.sqlite.pragma('foreign_key_check')).toEqual([]);
   } finally {
     fresh.sqlite.close();

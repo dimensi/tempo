@@ -57,6 +57,11 @@ export const reportMessages = {
   mealCount: 'Приёмов пищи',
   entryCount: 'Записей',
   steps: 'Шаги',
+  averageSteps: 'Шаги в среднем за день',
+  currentStepsGoal: 'Текущая цель',
+  goalProgress: 'от цели',
+  stepsCoverage: (known: number, total: number) =>
+    `Данных за ${known} из ${total} дней`,
   photoCount: 'Фотографий',
   totalDay: 'Итого за день',
   macroEnergyShare: 'энергии БЖУ',

@@ -85,6 +85,13 @@
       "when": 1792001021899,
       "tag": "0011_workout_videos",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792054901571,
+      "tag": "0012_tearful_obadiah_stane",
+      "breakpoints": true
     }
   ]
 }
