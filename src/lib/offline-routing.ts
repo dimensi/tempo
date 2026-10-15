@@ -74,67 +74,69 @@ export function navigateReadRoute({
     savedShown = true;
     showSaved();
   };
-  const saved = hasSaved(url);
-  if (typeof saved === 'boolean') {
-    if (saved) local();
-  } else
-    void saved.then((available) => {
-      if (available && !attempt.signal.aborted && valid()) local();
-    });
-  if (!navigator.onLine || !networkReachable()) {
-    local();
-    return;
-  }
-  // A saved destination is already interactive while this bounded check and
-  // the ordinary Next navigation proceed in the background.
-  void fetchWithDeadline(
-    '/api/offline/identity',
-    {
-      cache: 'no-store',
-      credentials: 'same-origin',
-      signal: attempt.signal,
-    },
-    2000,
-  ).then(
-    async (response) => {
-      if (attempt.signal.aborted || !valid()) return;
-      if (response.ok) {
-        if (expectedIdentity) {
-          const result = offlineIdentitySchema.safeParse(
-            await response.json().catch(() => null),
-          );
-          if (!result.success) return;
-          const identity = result.data;
-          if (
-            identity.partition !== expectedIdentity.partition ||
-            identity.connectionGeneration !==
-              expectedIdentity.connectionGeneration ||
-            identity.role !== expectedIdentity.role
-          ) {
-            void purgeOfflineDevice().catch(() => {});
-            return;
-          }
-        }
-        if (attempt.signal.aborted || !valid()) return;
-        reportNetworkResult(true);
-        resumeLive();
-        return;
-      }
-      if (response.status === 409) {
-        // A changed connection generation invalidates the displayed fence.
-        // purgeOfflineDevice conceals synchronously before physical cleanup.
-        void purgeOfflineDevice().catch(() => {});
-        return;
-      }
-      if (response.status === 401 || response.status === 403) return;
-      if (!savedShown) resumeLive();
-    },
-    () => {
-      if (attempt.signal.aborted || !valid()) return;
-      reportNetworkResult(false);
+  const continueNavigation = (available: boolean) => {
+    if (attempt.signal.aborted || !valid()) return;
+    if (!navigator.onLine || !networkReachable()) {
       local();
-    },
-  );
+      return;
+    }
+    // Unsaved destinations use the ordinary server-authorized navigation at
+    // once. Only an already displayed private copy needs the identity fence.
+    if (!available) {
+      resumeLive();
+      return;
+    }
+    local();
+    void fetchWithDeadline(
+      '/api/offline/identity',
+      {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: attempt.signal,
+      },
+      2000,
+    ).then(
+      async (response) => {
+        if (attempt.signal.aborted || !valid()) return;
+        if (response.ok) {
+          if (expectedIdentity) {
+            const result = offlineIdentitySchema.safeParse(
+              await response.json().catch(() => null),
+            );
+            if (!result.success) return;
+            const identity = result.data;
+            if (
+              identity.partition !== expectedIdentity.partition ||
+              identity.connectionGeneration !==
+                expectedIdentity.connectionGeneration ||
+              identity.role !== expectedIdentity.role
+            ) {
+              void purgeOfflineDevice().catch(() => {});
+              return;
+            }
+          }
+          if (attempt.signal.aborted || !valid()) return;
+          reportNetworkResult(true);
+          resumeLive();
+          return;
+        }
+        if (response.status === 409) {
+          // A changed connection generation invalidates the displayed fence.
+          // purgeOfflineDevice conceals synchronously before physical cleanup.
+          void purgeOfflineDevice().catch(() => {});
+          return;
+        }
+        if (response.status === 401 || response.status === 403) return;
+      },
+      () => {
+        if (attempt.signal.aborted || !valid()) return;
+        reportNetworkResult(false);
+      },
+    );
+  };
+  const saved = hasSaved(url);
+  if (typeof saved === 'boolean') continueNavigation(saved);
+  else void saved.then(continueNavigation, () => continueNavigation(false));
 }
 
 export function interceptOfflineLinks(
@@ -168,17 +170,21 @@ export function interceptOfflineLinks(
         url.hash)
     )
       return;
+    const saved = hasSaved(url);
+    // Let a regular Next link own an online, unsaved transition so its native
+    // pending state and latest-navigation ordering remain intact.
+    if (saved === false && navigator.onLine && networkReachable()) return;
     event.preventDefault();
     navigateReadRoute({
       url,
-      hasSaved,
+      hasSaved: () => saved,
       showSaved: () => {
         offlineNavigate(url.href);
         window.dispatchEvent(new Event('tempo:offline-navigation'));
       },
       expectedIdentity: expectedIdentity?.(),
       resumeLive: () => {
-        if (resumeVerified) {
+        if (resumeVerified && link.dataset?.tempoReadLink === 'true') {
           resumeVerified(url);
           return;
         }

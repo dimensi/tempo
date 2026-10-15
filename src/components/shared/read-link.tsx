@@ -26,6 +26,7 @@ export function ReadLink({ onClick, ...props }: ComponentProps<'a'>) {
   return (
     <a
       {...props}
+      data-tempo-read-link="true"
       onClick={(event) => {
         onClick?.(event);
         if (

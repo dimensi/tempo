@@ -200,15 +200,20 @@ it('resumes a verified captured link without replaying its click', async () => {
     },
     removeEventListener: vi.fn(),
   });
-  vi.stubGlobal('window', new EventTarget());
+  vi.stubGlobal(
+    'window',
+    Object.assign(new EventTarget(), { scrollTo: vi.fn() }),
+  );
   vi.stubGlobal('location', new URL('https://tempo.test/diary'));
+  vi.stubGlobal('history', { pushState: vi.fn() });
   vi.stubGlobal('navigator', { onLine: true });
-  const stop = interceptOfflineLinks(() => false, resumeVerified);
+  const stop = interceptOfflineLinks(() => true, resumeVerified);
   click({
     button: 0,
     target: {
       closest: () => ({
         href: 'https://tempo.test/anamnesis',
+        dataset: { tempoReadLink: 'true' },
         click: replay,
       }),
     },
@@ -253,25 +258,24 @@ it('purges instead of resuming when a successful identity belongs to another fen
   expect(env.navigate).not.toHaveBeenCalled();
   env.stop();
 });
-it('keeps the current screen until an actual response allows live navigation', async () => {
+it('leaves an ordinary online link alone when no copy is saved', () => {
   const request = vi.fn(async () => new Response(null, { status: 503 }));
   vi.stubGlobal('fetch', request);
   const env = navigationDouble();
-  env.click('/');
+  const preventDefault = env.click('/');
+  expect(preventDefault).not.toHaveBeenCalled();
   expect(env.navigate).not.toHaveBeenCalled();
-  await vi.waitFor(() => expect(env.navigate).toHaveBeenCalledWith('/'));
+  expect(request).not.toHaveBeenCalled();
   expect(env.pushState).not.toHaveBeenCalled();
   env.stop();
 });
-it('opens saved data when onLine stays true and the transport never settles', async () => {
-  vi.useFakeTimers();
+it('opens saved data while onLine stays true and the identity probe never settles', () => {
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => new Promise<Response>(() => {})),
   );
-  const env = navigationDouble();
+  const env = navigationDouble(() => true);
   env.click('/');
-  await vi.advanceTimersByTimeAsync(2001);
   expect(env.navigate).not.toHaveBeenCalled();
   expect(env.pushState).toHaveBeenCalledWith(
     { tempoOfflineRoute: '/' },
@@ -286,7 +290,7 @@ it('only the latest navigation can commit after slow responses', async () => {
     'fetch',
     vi.fn(() => new Promise<Response>((resolve) => releases.push(resolve))),
   );
-  const env = navigationDouble();
+  const env = navigationDouble(() => true);
   env.click('/');
   env.click('/analytics');
   releases[1]!(new Response('{}'));
@@ -296,7 +300,7 @@ it('only the latest navigation can commit after slow responses', async () => {
   releases[0]!(new Response('{}'));
   await Promise.resolve();
   expect(env.navigate).toHaveBeenCalledTimes(1);
-  expect(env.pushState).not.toHaveBeenCalled();
+  expect(env.pushState).toHaveBeenCalledTimes(2);
   env.stop();
 });
 it('leaves hash, modified clicks and prevented events alone', () => {
@@ -320,13 +324,13 @@ it('Back cancels a pending probe so its response cannot navigate forward again',
         }),
     ),
   );
-  const env = navigationDouble();
+  const env = navigationDouble(() => true);
   env.click('/');
   window.dispatchEvent(new Event('popstate'));
   release(new Response('{}'));
   await Promise.resolve();
   await Promise.resolve();
   expect(env.navigate).not.toHaveBeenCalled();
-  expect(env.pushState).not.toHaveBeenCalled();
+  expect(env.pushState).toHaveBeenCalledOnce();
   env.stop();
 });
