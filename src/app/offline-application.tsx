@@ -40,7 +40,10 @@ import { useReadOnline } from '@/lib/use-read-online';
 import { canRetainLiveRead } from '@/lib/live-read-scope';
 import { hasSavedReadRoute } from '@/lib/saved-read-route';
 import { hasSavedMedicalRoute } from '@/lib/client-read';
-import { revealOfflineContent } from '@/lib/offline-device';
+import {
+  isOfflinePageRestorePending,
+  revealOfflineContent,
+} from '@/lib/offline-device';
 import { workoutTitle } from '@/lib/workout-title';
 import {
   offlineIdentitySchema,
@@ -70,7 +73,10 @@ function OfflineRouteContent({ showStatus = true }: { showStatus?: boolean }) {
   useLayoutEffect(() => {
     // A BFCache restore starts from synchronously concealed DOM. Keep it
     // concealed while the retained bundle's identity is being revalidated.
-    if (state.bundle && state.status !== 'checking')
+    if (
+      state.bundle &&
+      (state.status !== 'checking' || !isOfflinePageRestorePending())
+    )
       revealOfflineContent(state.bundle.fence);
   }, [state]);
   useEffect(() => {

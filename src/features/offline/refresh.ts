@@ -1,4 +1,4 @@
-import { concealOfflineContent } from '@/lib/offline-device';
+import { concealOfflineContentForPageHide } from '@/lib/offline-device';
 import type { OfflineController } from '@/lib/offline-controller';
 import { networkReachable } from '@/lib/network-state';
 export function attachOfflineRefresh(controller: OfflineController) {
@@ -22,7 +22,7 @@ export function attachOfflineRefresh(controller: OfflineController) {
     clearTimeout(scheduled);
   };
   const pageHide = () => {
-    concealOfflineContent();
+    concealOfflineContentForPageHide();
     hide();
   };
   const offline = () => {
