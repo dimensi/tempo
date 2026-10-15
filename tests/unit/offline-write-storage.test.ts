@@ -17,6 +17,7 @@ function indexedBoundary() {
       const fresh = !databases.has(name);
       databases.set(name, stores);
       const database = {
+        objectStoreNames: { contains: (store: string) => stores.has(store) },
         createObjectStore(store: string) {
           stores.set(store, new Map());
         },
