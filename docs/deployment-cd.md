@@ -1,22 +1,26 @@
 # Nutrition deployment
 
 Tempo uses the same basic deployment path as `dimensi/dark-corses-vault`:
-CI builds the image, publishes it to GHCR, then CD copies env/Compose
+One workflow (`.github/workflows/release.yml`) builds the image, publishes it to GHCR, then copies env/Compose
 and runs ordinary SSH commands `docker compose pull` and `up --wait`.
 No deployment receiver, custom archive protocol, installer or new server helper is used.
 
 ## Image and checks
 
-CI runs only on main pushes and performs the Docker build and GHCR publication.
+Release runs on main pushes or manually on main. One job executes checkout, Docker build,
+GHCR publication and SSH deployment as separate sequential steps. Deployment runs only
+when `NUTRITION_CD_ENABLED` is `true`; build and publication remain available otherwise.
 PR CI, formatting, lint, typecheck, unit/integration tests, browser gates and
 disposable Docker smoke do not run in this workflow. All three full E2E suites
 are mandatory before every merge into main, as specified in AGENTS.md.
 A main push publishes that exact local image as
-`ghcr.io/dimensi/yazio-dashboard:FULL_COMMIT_SHA` using the job's `GITHUB_TOKEN`.
-There is no second build and no moving latest tag in deployment. There is no manual full-test CI branch.
+`ghcr.io/dimensi/yazio-dashboard:latest` using the job's `GITHUB_TOKEN`.
+There is no second build. The moving `latest` tag is used for publication and deployment;
+the immutable revision label must match the workflow SHA before startup and after deployment. There is no manual full-test CI branch.
 
-CD accepts only the current main SHA with a completed successful main-push CI run
-and the successful `docker` job. No `checks` job is required. Production concurrency remains
+Deployment runs only after build and publication succeed in the same job, and accepts
+only the current main SHA. Manual runs have no external run ID or revision inputs.
+No Actions artifacts are uploaded or downloaded. Production concurrency remains
 `nutrition-production`, cancel-in-progress false. SSH verifies the existing host key
 on port 2224. The pulled image revision label and final running image/revision must match.
 
@@ -28,7 +32,11 @@ mode-0600 `.env.deploy` using SCP into a private temporary directory under
 three configuration files, and run Compose. All Compose commands explicitly use
 project `nutrition`, the existing `runtime.env` first, then `.env.deploy`.
 The existing database/uploads volumes and network alias are preserved; no down,
-volume deletion, pruning, auth bootstrap or secret rotation is performed.
+volume deletion, auth bootstrap or secret rotation is performed. After successful startup
+and HTTPS health verification, image pruning removes only unused images carrying this
+repository's source label. Running/container-referenced images are retained. Build-cache
+pruning removes unused cache older than seven days across the Docker daemon;
+volumes and other applications' images are not pruned.
 `runtime.env` and historical `release.env` are never overwritten or copied to CI.
 The current auth secret therefore remains server-local.
 
@@ -80,8 +88,8 @@ Using its ordinary SSH credential from GitHub Actions requires a separate explic
 credential/access decision. No key is read, uploaded or replaced by this PR.
 
 The server already has a GHCR login, which is left untouched. The existing Tempo
-package/latest manifest was not readable during inspection; main CI will publish
-the repository-linked SHA image with its job token. If package policy denies job-token
+package/latest manifest was not readable during the original inspection; the release
+workflow publishes the repository-linked `latest` image with its job token. If package policy denies job-token
 pull, stop and resolve that specific access issue; do not create a PAT or permanent
 server login automatically.
 
@@ -89,4 +97,4 @@ Already installed legacy helpers are retained and not called by the new workflow
 Do not rerun the prior installer, merge the old transport design or invoke a legacy
 rollout concurrently. Before activation verify the exact PR head/checks and absence
 of active deployments, approve ordinary SSH credentials, then merge and wait for
-successful main CI before one deployment and health/synthetic verification.
+successful release build, publication, deployment and health/synthetic verification.
