@@ -914,12 +914,9 @@ export function observeOfflineDenials() {
       throw error;
     }
     if (relevant) {
-      // A feature HTTP error still proves reachability; preserve its error/draft.
-      // Cache-service failures and transport exceptions control global fallback.
-      reportNetworkResult(
-        !/^\/api\/offline\/(?:identity|snapshot)$/.test(url.pathname) ||
-          response.status < 500,
-      );
+      // Receiving HTTP proves transport reachability. A failed cache preparation
+      // is a resource error, never a reason to replace live navigation.
+      reportNetworkResult(true);
       const method = (
         init?.method ?? (input instanceof Request ? input.method : 'GET')
       ).toUpperCase();

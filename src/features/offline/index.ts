@@ -7,7 +7,7 @@ export {
   interceptOfflineLinks,
   offlineNavigate,
   useOfflineLocation,
-} from './routing';
+} from '@/lib/offline-routing';
 
 export { OfflineWrites } from './writes';
 export { writeMessages } from '@/config/offline-write-messages';

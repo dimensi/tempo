@@ -34,7 +34,7 @@ import {
 } from './offline-sections';
 import { savedDiaryDay } from './offline-model';
 import { reconnectReads } from '@/lib/offline-reconnect';
-import { networkStatusEvent } from '@/lib/network-state';
+import { isOfflineRoute } from '@/lib/offline-routing';
 import { useReadOnline } from '@/lib/use-read-online';
 import { canRetainLiveRead } from '@/lib/live-read-scope';
 import { revealOfflineContent } from '@/lib/offline-device';
@@ -44,7 +44,7 @@ import {
   type OfflineIdentity,
   type OfflineSnapshot,
 } from '@/contracts/offline';
-function OfflineRouteContent() {
+function OfflineRouteContent({ showStatus = true }: { showStatus?: boolean }) {
   const url = useOfflineLocation();
   const controller = getOfflineController();
   const state = useSyncExternalStore(
@@ -276,7 +276,7 @@ function OfflineRouteContent() {
     );
   return (
     <Stack gap="lg">
-      <OfflineReadStatus offlineMode />
+      {showStatus && <OfflineReadStatus offlineMode />}
       {state.error && (
         <Alert color="orange">
           {m[state.error]}
@@ -338,13 +338,7 @@ function OfflineReadStatus({ offlineMode = false }: { offlineMode?: boolean }) {
                 }
           }
         >
-          {offlineMode || !online
-            ? m.networkUnavailable
-            : state.status === 'ready'
-              ? m.reachable
-              : state.error
-                ? m.unavailable
-                : m.checking}
+          {!online ? m.networkUnavailable : m.reachable}
           {state.bundle &&
             ` · ${m.saved}: ${new Date(state.bundle.savedAt).toLocaleString('ru-RU')}`}
         </Text>
@@ -537,7 +531,7 @@ export function OfflineBoundary({
 }) {
   // The mounted Next screen owns its form state. Connectivity must never replace it.
   const url = useOfflineLocation();
-  const [offline, setOffline] = useState(false);
+  const offline = !useReadOnline();
   const [denied, setDenied] = useState(false);
   const verifiedPartition = useRef(initialIdentity?.partition ?? null);
   const verifiedGeneration = useRef(
@@ -600,49 +594,30 @@ export function OfflineBoundary({
         verifiedPartition.current = partition;
         verifiedGeneration.current = state.bundle.snapshot.connectionGeneration;
         setDenied(false);
-        setOffline(false);
       } else if (state.error === 'denied') setDenied(true);
     });
     window.addEventListener('tempo:read-access-denied', blocked);
     window.addEventListener('tempo:read-access-recheck', recheck);
     window.addEventListener('focus', recheck);
     window.addEventListener('online', recheck);
-    const lost = () => setOffline(true);
-    const connected = () => {
-      void reconnectReads().then(() => {
-        if (getOfflineController().getSnapshot().status === 'ready')
-          setOffline(false);
-      });
-    };
-    const observed = (event: Event) => {
-      if (!(event as CustomEvent<boolean>).detail) lost();
-    };
-    if (!navigator.onLine) lost();
-    window.addEventListener('offline', lost);
-    window.addEventListener('online', connected);
-    window.addEventListener(networkStatusEvent, observed);
     return () => {
       verified();
       window.removeEventListener('tempo:read-access-denied', blocked);
       window.removeEventListener('tempo:read-access-recheck', recheck);
       window.removeEventListener('focus', recheck);
       window.removeEventListener('online', recheck);
-      window.removeEventListener('offline', lost);
-      window.removeEventListener('online', connected);
-      window.removeEventListener(networkStatusEvent, observed);
     };
   }, [role]);
   // Next's layout children can retain their identity across normal navigation.
   // Only an explicitly intercepted history entry belongs to the saved shell.
-  const showingSavedRoute =
-    url !== null && history.state?.tempoOfflineRoute === true;
+  const showingSavedRoute = isOfflineRoute(url);
   useEffect(
     () => (offline || showingSavedRoute ? interceptOfflineLinks() : undefined),
     [offline, showingSavedRoute],
   );
   return (
     <Stack gap={0}>
-      <OfflineReadStatus />
+      <OfflineReadStatus offlineMode={showingSavedRoute} />
       {denied && (
         <Alert>
           {m.denied} <a href="/login">{m.signInAgain}</a>
@@ -650,7 +625,7 @@ export function OfflineBoundary({
       )}
       <div hidden={showingSavedRoute || denied}>{children}</div>
       {showingSavedRoute && !denied && ['OWNER', 'TRAINER'].includes(role) && (
-        <OfflineRouteContent />
+        <OfflineRouteContent showStatus={false} />
       )}
     </Stack>
   );

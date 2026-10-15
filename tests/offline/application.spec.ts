@@ -196,6 +196,15 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
       .getByRole('link', { name: 'К тренировкам', exact: true })
       .click();
     await expect(page).toHaveURL(new RegExp(`/workouts\\?date=${data.date}`));
+    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
+      'Тренировки',
+    );
+    await expect(
+      page
+        .getByRole('status')
+        .filter({ hasText: 'Сеть или сервер недоступны' }),
+    ).toHaveCount(1);
+
     await page
       .getByRole('link', { name: 'Открыть', exact: true })
       .and(page.locator('a[href^="/workouts/sessions/offline-real-session?"]'))
@@ -711,5 +720,73 @@ test('saved sections show ordinary content and the complete report without netwo
     expect(apiRequests).toEqual([]);
   } finally {
     await context.setOffline(false);
+  }
+});
+
+test('HTTP cache preparation failures keep live data, a single connection status and ordinary menu navigation', async ({
+  page,
+}) => {
+  const data = seedReal();
+  try {
+    await page.addInitScript(() => {
+      const original = window.fetch;
+      window.fetch = async (input, init) => {
+        const url = new URL(
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url,
+          location.href,
+        );
+        if (/^\/api\/offline\/(snapshot|anamnesis)$/.test(url.pathname))
+          return Response.json(
+            { error: 'OFFLINE_UNAVAILABLE' },
+            { status: 503 },
+          );
+        return original.call(window, input, init);
+      };
+    });
+    await signIn(page);
+    await page.goto(`/diary?date=${data.date}`);
+    await expect(
+      page.getByText('Synthetic breakfast', { exact: true }),
+    ).toBeVisible();
+    // Make the observed HTTP failure deterministic after all root effects mount.
+    expect(
+      await page.evaluate(
+        async () => (await fetch('/api/offline/snapshot')).status,
+      ),
+    ).toBe(503);
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Сеть доступна' }),
+    ).toHaveCount(1);
+    await expect(
+      page.getByText('Сеть или сервер недоступны', { exact: false }),
+    ).toHaveCount(0);
+    await openNavigation(page);
+    await page.getByRole('link', { name: 'Обзор', exact: true }).click();
+    await expect(page).toHaveURL('/');
+    await expect(
+      page.getByRole('heading', { name: 'Обзор', exact: true }),
+    ).toBeVisible();
+    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
+      'Обзор',
+    );
+    await expect(
+      page.getByText('Нет сохранённых данных, нужна сеть', { exact: true }),
+    ).toHaveCount(0);
+    await openNavigation(page);
+    await page
+      .getByRole('link', { name: 'Дневник питания', exact: true })
+      .click();
+    await expect(
+      page.getByText('Synthetic breakfast', { exact: true }),
+    ).toBeVisible();
+    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
+      'Дневник питания',
+    );
+  } finally {
+    data.db.close();
   }
 });

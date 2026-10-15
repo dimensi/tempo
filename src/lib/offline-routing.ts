@@ -7,11 +7,17 @@ function changed() {
   version++;
   for (const listener of listeners) listener();
 }
+export function isOfflineRoute(url: URL | null) {
+  return (
+    url !== null &&
+    history.state?.tempoOfflineRoute === url.pathname + url.search
+  );
+}
 export function offlineNavigate(href: string, replace = false) {
   const url = new URL(href, location.href);
   if (url.origin !== location.origin) return;
   history[replace ? 'replaceState' : 'pushState'](
-    { tempoOfflineRoute: true },
+    { tempoOfflineRoute: url.pathname + url.search },
     '',
     url.pathname + url.search + url.hash,
   );
@@ -54,13 +60,8 @@ export function interceptOfflineLinks() {
       url.pathname === '/login'
     )
       return;
-    // Explicit editor navigation may use Next/server delivery once connectivity is verified.
-    if (
-      navigator.onLine &&
-      networkReachable() &&
-      /\/(?:edit|results|new)$/.test(url.pathname)
-    )
-      return;
+    // Once transport is available, every ordinary link uses the live router.
+    if (navigator.onLine && networkReachable()) return;
     event.preventDefault();
     offlineNavigate(url.href);
   };

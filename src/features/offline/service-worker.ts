@@ -76,33 +76,15 @@ worker.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (url.origin !== location.origin) return;
-  const unavailable = () =>
-    worker.clients
-      .get(event.clientId)
-      .then((client) =>
-        client?.postMessage({ type: 'OFFLINE_NETWORK_UNAVAILABLE' }),
-      );
   if (url.pathname.startsWith('/api/') || request.headers.get('RSC') === '1') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.status === 401 || response.status === 403)
-            event.waitUntil(purge());
-          if (
-            response.status >= 500 &&
-            /^\/api\/offline\/(?:identity|snapshot)$/.test(url.pathname)
-          )
-            event.waitUntil(unavailable());
-          return response;
-        })
-        .catch((error) => {
-          if (
-            !request.signal.aborted &&
-            !(error instanceof Error && error.name === 'AbortError')
-          )
-            event.waitUntil(unavailable());
-          throw error;
-        }),
+      fetch(request).then((response) => {
+        if (response.status === 401 || response.status === 403)
+          event.waitUntil(purge());
+        return response;
+      }),
+      // Fetch failures propagate to the requesting client. The client owns
+      // transport state; cancelled RSC/prefetches must not mark it offline.
     );
     return;
   }

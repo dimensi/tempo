@@ -1,3 +1,4 @@
+import type { MedicalDocument } from '@/contracts/anamnesis';
 import { beforeEach, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 const state = vi.hoisted(() => ({
@@ -5,6 +6,7 @@ const state = vi.hoisted(() => ({
   calls: 0,
   changeAt: Infinity,
   denied: false,
+  documents: [] as MedicalDocument[],
 }));
 vi.mock('@/server/offline/index', () => ({
   offlineIdentity: async () => {
@@ -41,7 +43,7 @@ vi.mock('@/server/anamnesis', () => {
       };
     },
     listAnamnesisMarkers: async () => [],
-    listAnamnesisDocuments: async () => [],
+    listAnamnesisDocuments: async () => state.documents,
     listAnamnesisReports: async () => [],
   };
 });
@@ -50,6 +52,7 @@ beforeEach(() => {
   state.calls = 0;
   state.changeAt = Infinity;
   state.denied = false;
+  state.documents = [];
 });
 it('returns bounded authorized structured summaries without file downloads or OCR', async () => {
   expect(await offlineAnamnesis(new Headers())).toEqual({
@@ -86,3 +89,28 @@ it('an absent medical permission does not disable unrelated saved sections', asy
   state.denied = true;
   expect(await offlineAnamnesis(new Headers())).toBeNull();
 });
+
+it.each(['2026-10', '2026-10-15', '2026-10-15T09:30:00'])(
+  'preserves document date precision %s produced by the import pipeline',
+  async (collectedAt) => {
+    state.documents = [
+      {
+        id: '10000000-0000-4000-8000-000000000001',
+        ownerId: '10000000-0000-4000-8000-000000000002',
+        filename: 'synthetic.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 100,
+        pageCount: 1,
+        laboratoryName: null,
+        title: null,
+        collectedAt,
+        issuedAt: '2026-10',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const result = await offlineAnamnesis(new Headers());
+    expect(result?.data.documents[0]?.collectedAt).toBe(collectedAt);
+    expect(result?.data.documents[0]?.issuedAt).toBe('2026-10');
+  },
+);

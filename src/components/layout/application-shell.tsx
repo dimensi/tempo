@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useOfflineLocation, isOfflineRoute } from '@/lib/offline-routing';
 import { authClient } from '@/lib/auth-client';
 import {
   withOfflineDevicePurge,
@@ -34,7 +35,9 @@ export function ApplicationShell(props: {
   }, []);
   const [cleanupError, setCleanupError] = useState(false);
   const [pendingLogout, setPendingLogout] = useState(false);
-  const pathname = usePathname();
+  const livePathname = usePathname();
+  const localUrl = useOfflineLocation();
+  const pathname = isOfflineRoute(localUrl) ? localUrl!.pathname : livePathname;
   const router = useRouter();
   async function logout(discard = false) {
     // Conceal synchronously, before checking persistent storage or waiting on a lock.

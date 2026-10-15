@@ -116,8 +116,8 @@ export const medicalDocumentSchema = z
     pageCount: z.number().int().min(1),
     laboratoryName: z.string().min(1).max(200).nullable(),
     title: z.string().min(1).max(300).nullable(),
-    collectedAt: z.iso.date().nullable(),
-    issuedAt: z.iso.date().nullable(),
+    collectedAt: anamnesisPartialDate.nullable(),
+    issuedAt: anamnesisPartialDate.nullable(),
     createdAt: epoch,
     updatedAt: epoch,
   })
