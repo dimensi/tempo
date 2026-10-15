@@ -1,6 +1,7 @@
 import 'server-only';
 import { randomUUID, createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
+import { z } from 'zod';
 import { authorize } from '@/server/auth/guards';
 import { getDatabase } from '@/server/db';
 import { workoutSessions } from '@/server/db/schema/workouts';
@@ -118,10 +119,28 @@ export async function listVideos(request: Request) {
 export async function createVideo(request: Request) {
   const ownerId = await access(request, true);
   const input = videoCreateSchema.parse(await readWorkoutJson(request));
+  const requestId = request.headers.get('Idempotency-Key');
+  const id = requestId === null ? randomUUID() : z.uuid().parse(requestId);
   return withSessionVideoLock(ownerId, input.sessionId, async () => {
     await access(request, true);
     const session = target(ownerId, input.sessionId, input.exerciseId);
     if (session.data.status !== 'completed') throw new WorkoutError(409);
+    const existing = getDatabase()
+      .db.select()
+      .from(workoutVideos)
+      .where(eq(workoutVideos.id, id))
+      .get();
+    if (existing) {
+      if (
+        existing.ownerId !== ownerId ||
+        existing.sessionId !== input.sessionId ||
+        existing.exerciseId !== input.exerciseId ||
+        existing.size !== input.size ||
+        existing.duration !== Math.ceil(input.duration)
+      )
+        throw new WorkoutError(409);
+      return dto(existing);
+    }
     const rows = getDatabase()
       .db.select()
       .from(workoutVideos)
@@ -154,7 +173,7 @@ export async function createVideo(request: Request) {
         .db.insert(workoutVideos)
         .values({
           ...input,
-          id: randomUUID(),
+          id,
           ownerId,
           duration: Math.ceil(input.duration),
           state: 'uploading',

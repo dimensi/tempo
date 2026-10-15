@@ -207,28 +207,22 @@ function ExerciseVideos({
     setProgress(0);
     let pending = draft;
     try {
-      let row: WorkoutVideo;
-      if (pending.uploadId) {
-        const rows = await refresh(abort.signal);
-        const existing = rows.find((item) => item.id === pending.uploadId);
-        if (!existing) {
-          pending = { ...pending, uploadId: undefined };
-          row = await call('', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sessionId,
-              exerciseId,
-              size: pending.blob.size,
-              duration: pending.duration,
-            }),
-            signal: abort.signal,
-          });
-        } else row = existing;
-      } else
+      // Persist identity before POST: a lost response must not create another upload.
+      const uploadId = pending.uploadId ?? crypto.randomUUID();
+      pending = { ...pending, uploadId };
+      setDraft(pending);
+      await retain(pending);
+      const rows = await refresh(abort.signal);
+      let row: WorkoutVideo | undefined = rows.find(
+        (item) => item.id === pending.uploadId,
+      );
+      if (!row)
         row = await call('', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': uploadId,
+          },
           body: JSON.stringify({
             sessionId,
             exerciseId,
@@ -237,6 +231,7 @@ function ExerciseVideos({
           }),
           signal: abort.signal,
         });
+      if (!row) throw new Error(m.videoUploadError);
       pending = { ...pending, uploadId: row.id };
       setDraft(pending);
       await retain(pending);
