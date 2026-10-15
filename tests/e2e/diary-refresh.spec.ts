@@ -101,7 +101,9 @@ test('selected-day owner refresh deduplicates, separates photo warnings and igno
   await expect(button).toBeEnabled();
   expect(requests).toBe(1);
   await expect(
-    page.getByText('Синтетический обед', { exact: true }),
+    page
+      .getByRole('region', { name: 'Обед', exact: true })
+      .getByText('Синтетический обед', { exact: true }),
   ).toBeVisible();
   expect(
     await page.evaluate(

@@ -9,7 +9,7 @@ import { getWeightHistory, HealthReadError } from '@/server/health';
 import { shiftDate } from '@/contracts/nutrition-sync-dates';
 export const metadata = { title: m.title };
 export default async function Page() {
-  await requireSession();
+  const session = await requireSession();
   const requestHeaders = await headers();
   const ownerId = await getAccessibleOwnerId(requestHeaders);
   if (!ownerId) return <p>{m.denied}</p>;
@@ -41,6 +41,7 @@ export default async function Page() {
       <MeasurementsWithComments
         ownerId={ownerId}
         writable={writeAccess.ok}
+        deviceWrites={session.user.role === 'OWNER'}
         weightHistory={history}
       />
       <WeightHistoryPanel history={history} />

@@ -153,7 +153,11 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
             : 404,
         );
     },
-    createSession(ownerId: string, input: WorkoutSessionCreate) {
+    createSession(
+      ownerId: string,
+      input: WorkoutSessionCreate,
+      requestId?: string,
+    ) {
       return db.transaction((tx) => {
         const { planId, plannedWorkoutId, ...actual } = input;
         actual.exercises = actual.exercises.map((exercise) => ({
@@ -179,7 +183,7 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
           tx
             .insert(workoutSessions)
             .values({
-              id: randomUUID(),
+              id: requestId ?? randomUUID(),
               ownerId,
               date: actual.date,
               data: {

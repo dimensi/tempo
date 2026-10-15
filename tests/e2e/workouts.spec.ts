@@ -308,12 +308,16 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     ).toBe(403);
     await trainer.goto(`/workouts/plans/${plan.id}/edit?date=2026-10-11`);
     await expect(
-      trainer.getByText('Нет разрешения на доступ к тренировкам владельца.'),
+      trainer
+        .getByText('Нет разрешения на доступ к тренировкам владельца.')
+        .filter({ visible: true }),
     ).toBeVisible();
     await expect(trainer.getByLabel('Название (необязательно)')).toHaveCount(0);
     await trainer.goto(`/workouts/plans/${plan.id}/workouts/a?date=2026-10-11`);
     await expect(
-      trainer.getByText('Нет разрешения на доступ к тренировкам владельца.'),
+      trainer
+        .getByText('Нет разрешения на доступ к тренировкам владельца.')
+        .filter({ visible: true }),
     ).toBeVisible();
     await expect(
       trainer.getByRole('heading', { name: 'Силовая', exact: true }),
@@ -697,7 +701,7 @@ test('add choice creates performed work directly without a plan and skipped work
   await page.getByRole('combobox', { name: 'Статус', exact: true }).click();
   await page.getByRole('option', { name: 'Пропущена', exact: true }).click();
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page).toHaveURL(/\/workouts\/sessions\//);
+  await expect(page).toHaveURL(/\/workouts\/sessions\/[0-9a-f-]{36}\?date=/);
   const after = await workouts(page, id);
   expect(after.plans.map((value) => value.id)).toEqual(
     before.plans.map((value) => value.id),
@@ -732,15 +736,33 @@ test('actual draft survives conflict and access errors; unavailable storage requ
     .click();
   const reps = page.getByRole('textbox', { name: /Факт · Повторения/ });
   await reps.fill('7');
-  await page.route('**/api/workouts/sessions?*', (handler) =>
-    handler.fulfill({ status: 409, json: { error: 'conflict' } }),
+  await page.route('**/api/offline/writes', (handler) =>
+    handler.request().method() === 'POST'
+      ? handler.fulfill({ status: 409, json: { error: 'conflict' } })
+      : handler.continue(),
   );
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page.locator('#main-content').getByRole('alert')).toContainText(
-    'измен',
-  );
-  await expect(reps).toHaveValue('7');
-  await page.unroute('**/api/workouts/sessions?*');
+  const queued = page.locator('[data-offline-write-private]');
+  await expect(
+    queued.getByText('Нужна проверка', { exact: true }),
+  ).toBeVisible();
+  await expect(queued).toContainText('Draft actual');
+  await expect(queued).toContainText('× 7');
+  await queued
+    .getByRole('button', { name: 'Оставить серверный вариант', exact: true })
+    .click();
+  await page.unroute('**/api/offline/writes');
+  await page.goto(route);
+  await page
+    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
+    .fill('Draft actual');
+  await page
+    .getByRole('option', {
+      name: 'Добавить вручную: Draft actual',
+      exact: true,
+    })
+    .click();
+  await reps.fill('7');
   await page.route('**/api/workouts?*', (handler) =>
     handler.fulfill({ status: 503, json: { error: 'unavailable' } }),
   );
@@ -814,7 +836,8 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
     notifySettled = resolve;
   });
   let posts = 0;
-  await page.route('**/api/workouts/sessions?*', async (handler) => {
+  await page.route('**/api/offline/writes', async (handler) => {
+    if (handler.request().method() !== 'POST') return handler.continue();
     posts++;
     const response = await handler.fetch();
     expect(response.ok()).toBe(true);
@@ -837,7 +860,16 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
   ).toBeDisabled();
   await page.goBack();
   await page.goto(path);
-  await expect(reps).toHaveValue('6');
+  await expect(reps).toHaveCount(0);
+  await page
+    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
+    .fill('Delayed actual');
+  await page
+    .getByRole('option', {
+      name: 'Добавить вручную: Delayed actual',
+      exact: true,
+    })
+    .click();
   await reps.fill('9');
   release();
   await settled;

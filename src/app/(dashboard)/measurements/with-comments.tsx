@@ -5,6 +5,7 @@ import type { WeightHistory } from '@/contracts/health';
 export function MeasurementsWithComments(props: {
   ownerId: string;
   writable: boolean;
+  deviceWrites?: boolean;
   weightHistory: WeightHistory;
 }) {
   return (
