@@ -489,10 +489,6 @@ test('unnamed editor preserves drafts, handles errors and copies only the select
 test('a save settling after Back does not redirect or repeat the write', async ({
   page,
 }) => {
-  test.skip(
-    test.info().project.name !== 'desktop',
-    'Viewport-independent asynchronous navigation guard.',
-  );
   await login(page);
   const id = await ownerId(page);
   await page.goto('/workouts?date=2026-10-12');
@@ -717,10 +713,6 @@ test('add choice creates performed work directly without a plan and skipped work
 test('actual draft survives conflict and access errors; unavailable storage requires explicit leave', async ({
   page,
 }) => {
-  test.skip(
-    test.info().project.name !== 'desktop',
-    'Storage and response guards are viewport independent.',
-  );
   await login(page);
   const date = '2026-10-18';
   const route = `/workouts/sessions/new?date=${date}`;
@@ -804,10 +796,6 @@ test('actual draft survives conflict and access errors; unavailable storage requ
 test('late actual save cannot erase a reopened draft or redirect it', async ({
   page,
 }) => {
-  test.skip(
-    test.info().project.name !== 'desktop',
-    'Mounted resource race is viewport independent.',
-  );
   await login(page);
   const id = await ownerId(page);
   const path = '/workouts/sessions/new?date=2026-10-19';
@@ -892,10 +880,6 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
 test('retained planned and actual editors hide cached drafts before real access revalidation and denial', async ({
   browser,
 }) => {
-  test.skip(
-    test.info().project.name !== 'desktop',
-    'Retained access lifecycle is viewport independent.',
-  );
   const baseURL = testOrigin;
   for (const kind of ['planned', 'actual'] as const) {
     const context = await browser.newContext({

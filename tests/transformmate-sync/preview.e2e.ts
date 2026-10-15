@@ -73,10 +73,6 @@ test('owned preview negative requests coalesce across remounts, new revision ret
   browser,
   request,
 }) => {
-  test.skip(
-    test.info().project.name !== 'desktop',
-    'One real proxy-counter case; mobile rendering uses the same tested coordinator.',
-  );
   await control(request, 'reset');
   await control(request, 'previewold');
   const owner = await login(page);

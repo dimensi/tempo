@@ -638,10 +638,6 @@ test('catalog selection persists links and copy makes a fresh dated plan using r
 test('real authenticated session throttle is retried once after its server interval', async ({
   page,
 }) => {
-  test.skip(
-    test.info().project.name !== 'desktop',
-    'APIRequestContext quota and session validation are viewport-independent; desktop covers the genuine API throttle once.',
-  );
   await login(page);
   let throttled = false;
   for (let request = 0; request < 40; request++) {
