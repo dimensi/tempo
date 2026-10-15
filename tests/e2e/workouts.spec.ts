@@ -816,7 +816,10 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
       );
     });
     await exerciseInput.fill('Delayed actual');
-    await (await searched).finished();
+    await searched;
+    await expect(
+      page.getByRole('alert').filter({ hasText: workoutMessages.catalogError }),
+    ).toBeVisible();
     // A late catalog/layout update can move focus on a retained mobile page.
     // Reopen after the actual response rather than racing the dropdown render.
     await exerciseInput.click();
