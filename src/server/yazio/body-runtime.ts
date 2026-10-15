@@ -14,6 +14,7 @@ type Work = {
   manual: Set<string>;
   again: boolean;
   epoch: number | undefined;
+  guards: Map<string, () => void>;
 };
 const active = new Map<string, Work>();
 export function runBodySync(
@@ -21,6 +22,7 @@ export function runBodySync(
   dates: string[] = [],
   measurementId?: string,
   expectedEpoch?: number,
+  assertPullCurrent?: () => void,
 ): Promise<void> {
   const requestedEpoch =
     expectedEpoch ?? bodyRepository().schedule(ownerId)?.epoch;
@@ -29,8 +31,18 @@ export function runBodySync(
     if (existing.epoch !== requestedEpoch)
       return existing.promise
         .catch(() => {})
-        .then(() => runBodySync(ownerId, dates, measurementId, requestedEpoch));
+        .then(() =>
+          runBodySync(
+            ownerId,
+            dates,
+            measurementId,
+            requestedEpoch,
+            assertPullCurrent,
+          ),
+        );
     for (const date of dates) existing.dates.add(date);
+    if (assertPullCurrent)
+      for (const date of dates) existing.guards.set(date, assertPullCurrent);
     if (measurementId) existing.manual.add(measurementId);
     existing.again = true;
     return existing.promise;
@@ -41,14 +53,21 @@ export function runBodySync(
     manual: new Set(measurementId ? [measurementId] : []),
     again: true,
     epoch: requestedEpoch,
+    guards: new Map(
+      dates.flatMap((date) =>
+        assertPullCurrent ? [[date, assertPullCurrent] as const] : [],
+      ),
+    ),
   };
   work.promise = Promise.resolve()
     .then(async () => {
       while (work.again) {
         work.again = false;
         const requestedDates = [...work.dates],
+          requestedGuards = new Map(work.guards),
           requestedManual = new Set(work.manual);
         work.dates.clear();
+        work.guards.clear();
         work.manual.clear();
         const database = getDatabase(),
           repo = bodyRepository(database),
@@ -109,6 +128,7 @@ export function runBodySync(
             source,
             repo,
             fence,
+            (date) => requestedGuards.get(date)?.(),
           );
         } catch {
           logicalFence();

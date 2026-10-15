@@ -120,12 +120,14 @@ test('real owner/trainer sessions read durable sync snapshots and private photos
         ? {
             state: 'failed',
             completedDates: [],
+            skippedDates: [],
             failedDates: [date],
             photoFailedDates: [],
           }
         : {
             state: 'partial',
             completedDates: [date],
+            skippedDates: [],
             failedDates: [],
             photoFailedDates: [date],
           };

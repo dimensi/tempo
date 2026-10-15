@@ -55,6 +55,7 @@ export const syncStatusSchema = z.object({
   startedAt: z.string().nullable(),
   finishedAt: z.string().nullable(),
   completedDates: z.array(diaryDateSchema),
+  skippedDates: z.array(diaryDateSchema),
   failedDates: z.array(diaryDateSchema),
   photoFailedDates: z.array(diaryDateSchema),
 });
@@ -62,7 +63,7 @@ export type SyncStatus = z.infer<typeof syncStatusSchema>;
 export function syncResultKind(sync: SyncStatus) {
   const foodLoaded =
     (sync.state === 'completed' || sync.state === 'partial') &&
-    sync.completedDates.length > 0 &&
+    (sync.completedDates.length > 0 || sync.skippedDates.length > 0) &&
     sync.failedDates.length === 0;
   if (!foodLoaded) return 'incomplete';
   if (sync.photoFailedDates.length > 0) return 'photos-pending';
@@ -148,8 +149,9 @@ export const nutritionSyncMessages = {
   recent: 'Обновить сейчас',
   failure: 'Не удалось выполнить запрос',
   success: 'Запрос выполнен',
-  hourly:
-    'Каждый час обновляем последние 7 дней, включая сегодня, но не раньше выбранной даты. Историю можно загрузить кнопкой.',
+  automatic:
+    'Раз в 4 часа обновляем сегодня и вчера, не раньше выбранной даты. Старую историю догружаем только при пропусках. Обновить отдельный день можно кнопкой в дневнике.',
+  skipped: 'Уже загружено ранее',
   schedulerInactive:
     'Автоматическое обновление пока не включено на сервере. Можно обновить сейчас.',
   scheduleDisabled: 'Автоматическое обновление отключено.',

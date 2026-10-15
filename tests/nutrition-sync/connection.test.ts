@@ -140,6 +140,7 @@ beforeEach(() => {
     startedAt: null,
     finishedAt: null,
     completedDates: [],
+    skippedDates: [],
     failedDates: [],
     photoFailedDates: [],
   });
@@ -228,6 +229,7 @@ it('day refresh rechecks owner permission after a delayed leased operation', asy
             startedAt: null,
             finishedAt: null,
             completedDates: ['2024-02-29'],
+            skippedDates: [],
             failedDates: [],
             photoFailedDates: [],
           });
@@ -525,6 +527,7 @@ it('manual sync uses common lease service and preserves caller timezone', async 
   synthetic.run.mockResolvedValue({
     state: 'completed',
     completedDates: ['2026-01-01'],
+    skippedDates: [],
     failedDates: [],
     photoFailedDates: [],
     startedAt: null,
@@ -569,6 +572,7 @@ it('revalidates real owner permission after server backfill before returning acc
     startedAt: null,
     finishedAt: null,
     completedDates: [],
+    skippedDates: [],
     failedDates: [],
     photoFailedDates: [],
   });

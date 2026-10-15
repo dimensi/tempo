@@ -13,6 +13,7 @@ import {
   type NutritionDay,
 } from '@/contracts/nutrition';
 import { syncStatusSchema, type SyncStatus } from '@/contracts/nutrition-sync';
+import { syncProgress, type DayWork } from '@/server/yazio/sync-progress';
 
 export type PhotoRow = typeof nutritionPhotos.$inferInsert;
 export function nutritionRepository(database = getDatabase()) {
@@ -87,7 +88,12 @@ export function nutritionRepository(database = getDatabase()) {
           .get() ?? null
       );
     },
-    replaceDay(ownerId: string, day: NutritionDay, photos: PhotoRow[]) {
+    replaceDay(
+      ownerId: string,
+      day: NutritionDay,
+      photos: PhotoRow[],
+      progress?: Partial<DayWork>,
+    ) {
       nutritionDaySchema.parse(day);
       if (
         photos.some(
@@ -120,6 +126,7 @@ export function nutritionRepository(database = getDatabase()) {
           )
           .run();
         if (photos.length) tx.insert(nutritionPhotos).values(photos).run();
+        if (progress) syncProgress(database).set(ownerId, day.date, progress);
       });
     },
     addPhoto(photo: PhotoRow) {
@@ -193,6 +200,7 @@ export function nutritionRepository(database = getDatabase()) {
             startedAt: null,
             finishedAt: null,
             completedDates: [],
+            skippedDates: [],
             failedDates: [],
             photoFailedDates: [],
           };

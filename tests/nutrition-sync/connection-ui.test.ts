@@ -281,6 +281,21 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
       .waitFor();
     expect(updated.sync.completedDates).toHaveLength(4);
     expect(updated.sync.completedDates.at(-1)).toBe(browserToday);
+    const repeated = owner.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/yazio/sync') &&
+        response.request().method() === 'POST',
+    );
+    await owner
+      .getByRole('button', { name: 'Обновить сейчас', exact: true })
+      .click();
+    expect((await repeated).status()).toBe(200);
+    const repeatedStatus = await (
+      await owner.request.get(origin + '/api/yazio/status')
+    ).json();
+    expect(repeatedStatus.sync.completedDates).toHaveLength(2);
+    expect(repeatedStatus.sync.skippedDates).toHaveLength(2);
+    await owner.getByText('Уже загружено ранее: 2', { exact: true }).waitFor();
     expect(
       await owner
         .getByRole('button', { name: 'Отключить YAZIO', exact: true })
@@ -478,7 +493,8 @@ it('real owner connects/disconnects through UI with synthetic OAuth; clears pass
     ).json();
     expect(closedBrowserResult.configured).toBe(true);
     expect(closedBrowserResult.sync.state).toBe('completed');
-    expect(closedBrowserResult.sync.completedDates).toHaveLength(4);
+    expect(closedBrowserResult.sync.completedDates).toHaveLength(2);
+    expect(closedBrowserResult.sync.skippedDates).toHaveLength(2);
     await owner.reload();
     await expect
       .poll(

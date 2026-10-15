@@ -6,6 +6,7 @@ import { and, eq, gt, lte, or, isNull, sql } from 'drizzle-orm';
 import { getDatabase } from '@/server/db';
 import { user } from '@/server/db/schema';
 import { nutritionSchedule } from '@/server/db/schema/nutrition-schedule';
+import { yazioSyncProgress } from '@/server/db/schema/yazio-sync-progress';
 import { readServerEnv } from '@/server/env';
 import {
   nutritionScheduleInputSchema,
@@ -33,12 +34,13 @@ import {
 import { yazioHealthRepository } from '@/server/yazio/health-repository';
 import { syncYazioHealthPeriod } from './yazio-health-sync';
 import { fetchCdnImage, storeImage } from '@/server/nutrition/images';
+import { syncParts, syncProgress } from '@/server/yazio/sync-progress';
 
 const HOUR = 3600000;
+const SYNC_INTERVAL = 4 * HOUR;
 const LEASE_MS = 120000;
 const HEARTBEAT_MS = 20000;
 const MAX_RUN_MS = 2 * HOUR;
-const RETRY_MS = [60000, 300000, 900000, HOUR];
 type Database = ReturnType<typeof getDatabase>;
 type Period = { from: string; to: string };
 type RunOptions = {
@@ -72,7 +74,12 @@ export interface NutritionSchedulerDependencies {
   store: (ownerId: string) => YazioTokenStore;
   source?: (store: YazioTokenStore) => Promise<NutritionUpstream>;
   repository?: NutritionRepository;
-  bodySync?: (ownerId: string, dates: string[], epoch: number) => Promise<void>;
+  bodySync?: (
+    ownerId: string,
+    dates: string[],
+    epoch: number,
+    assertCurrent: () => void,
+  ) => Promise<void>;
   healthRepository?: Pick<ReturnType<typeof yazioHealthRepository>, 'upsert'>;
   images?: { fetch: typeof fetchCdnImage; store: typeof storeImage };
 }
@@ -83,6 +90,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
   const { db } = deps.database;
   const now = deps.now ?? Date.now;
   const repository = deps.repository ?? nutritionRepository(deps.database);
+  const progress = syncProgress(deps.database);
   const active = activeRuns.get(deps.database.sqlite) ?? new Set<string>();
   activeRuns.set(deps.database.sqlite, active);
   const ownerScope = (ownerId: string) =>
@@ -113,19 +121,25 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       from: input.initialFrom,
       to: nutritionLocalDate(now(), input.timezone),
     });
-    ensure(ownerId);
-    db.update(nutritionSchedule)
-      .set({
-        enabled: true,
-        timezone: input.timezone,
-        initialFrom: input.initialFrom,
-        epoch: sql`${nutritionSchedule.epoch} + 1`,
-        nextRunAt: now() + HOUR,
-        attempt: 0,
-        lastError: null,
-      })
-      .where(ownerScope(ownerId))
-      .run();
+    db.transaction(() => {
+      ensure(ownerId);
+      // Explicit credentials/token replacement invalidates the previous account's checkpoints.
+      db.delete(yazioSyncProgress)
+        .where(eq(yazioSyncProgress.ownerId, ownerId))
+        .run();
+      db.update(nutritionSchedule)
+        .set({
+          enabled: true,
+          timezone: input.timezone,
+          initialFrom: input.initialFrom,
+          epoch: sql`${nutritionSchedule.epoch} + 1`,
+          nextRunAt: now() + SYNC_INTERVAL,
+          attempt: 0,
+          lastError: null,
+        })
+        .where(ownerScope(ownerId))
+        .run();
+    });
     // Reconnection deliberately retains an existing lease until its owner drains.
   }
   function disable(ownerId: string) {
@@ -156,7 +170,12 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       running: !!current?.leaseId && (current.leaseExpiresAt ?? 0) > now(),
     };
   }
-  async function run(ownerId: string, raw: Period, options: RunOptions) {
+  async function run(
+    ownerId: string,
+    raw: Period,
+    options: RunOptions,
+    scheduledDates?: string[],
+  ) {
     const period = periodSchema.parse(raw);
     if (options.timezone) nutritionTimezoneSchema.parse(options.timezone);
     requireOwner(ownerId);
@@ -270,8 +289,10 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
               ...status,
               state: 'failed',
               finishedAt: new Date(now()).toISOString(),
-              failedDates: periodDates(period).filter(
-                (date) => !status.completedDates.includes(date),
+              failedDates: (scheduledDates ?? periodDates(period)).filter(
+                (date) =>
+                  !status.completedDates.includes(date) &&
+                  !status.skippedDates.includes(date),
               ),
             });
         }
@@ -280,9 +301,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
             lastSuccess: foodSucceeded ? now() : current.lastSuccess,
             lastError: error,
             attempt: error ? Math.min(current.attempt + 1, 3) : 0,
-            nextRunAt: current.enabled
-              ? now() + (error ? RETRY_MS[current.attempt]! : HOUR)
-              : null,
+            nextRunAt: current.enabled ? now() + SYNC_INTERVAL : null,
           })
           .where(condition)
           .run();
@@ -321,7 +340,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         // adoption. Only this freshly inserted row can be enabled here; an
         // explicit disable/reconnect increments epoch and defeats this fence.
         db.update(nutritionSchedule)
-          .set({ enabled: true, nextRunAt: now() + HOUR })
+          .set({ enabled: true, nextRunAt: now() + SYNC_INTERVAL })
           .where(fence())
           .run();
       }
@@ -375,6 +394,24 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
           };
         },
       });
+      const work = progress.plan(
+        ownerId,
+        scheduledDates ?? periodDates(period),
+        nutritionLocalDate(now(), options.timezone ?? acquired.timezone),
+        options.mode === 'day-refresh',
+      );
+      assertCurrent();
+      db.transaction(() => {
+        for (const [date, parts] of work) {
+          const pendingParts = Object.fromEntries(
+            syncParts
+              .filter((part) => parts[part])
+              .map((part) => [part, false]),
+          );
+          if (Object.keys(pendingParts).length)
+            progress.set(ownerId, date, pendingParts);
+        }
+      });
       const result = await syncNutritionPeriod(
         ownerId,
         period,
@@ -398,21 +435,13 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
             return value;
           },
         },
-        options.mode === 'day-refresh'
-          ? { photoFailurePolicy: 'independent' }
-          : undefined,
+        {
+          work,
+          force: options.mode === 'day-refresh',
+        },
       );
       assertCurrent();
       const foodSucceeded = result.failedDates.length === 0;
-      complete(
-        !foodSucceeded
-          ? 'SYNC_FAILED'
-          : result.photoFailedDates.length
-            ? 'PHOTO_INCOMPLETE'
-            : null,
-        foodSucceeded,
-      );
-      foodCompleted = true;
       const health = await syncYazioHealthPeriod(
         ownerId,
         period,
@@ -420,12 +449,32 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         deps.healthRepository ?? yazioHealthRepository(db),
         assertCurrent,
         new Date(now()).toISOString(),
+        work,
       );
       assertCurrent();
       await deps
-        .bodySync?.(ownerId, periodDates(period), acquired.epoch)
+        .bodySync?.(
+          ownerId,
+          [...work].filter(([, parts]) => parts.body).map(([date]) => date),
+          acquired.epoch,
+          assertCurrent,
+        )
         .catch(() => {});
       assertCurrent();
+      const selectedFoodOrPhotos = [...work.values()].some(
+        (parts) => parts.food || parts.photos,
+      );
+      // Auxiliary reads and checkpoint-only no-ops cannot verify food/photo health.
+      if (selectedFoodOrPhotos)
+        complete(
+          !foodSucceeded
+            ? 'SYNC_FAILED'
+            : result.photoFailedDates.length
+              ? 'PHOTO_INCOMPLETE'
+              : null,
+          foodSucceeded,
+        );
+      foodCompleted = true;
       return { ...result, health };
     } catch (error) {
       const code =
@@ -514,16 +563,30 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
     )
       return;
     const today = nutritionLocalDate(now(), schedule.timezone);
-    const recentFrom = shiftDate(today, -6);
+    const recentFrom = shiftDate(today, -1);
     const period = {
-      from:
-        schedule.initialFrom && schedule.initialFrom > recentFrom
-          ? schedule.initialFrom
-          : recentFrom,
+      from: schedule.initialFrom ?? recentFrom,
       to: today,
     };
     try {
-      await run(owner.id, period, { mode: 'scheduled' });
+      const dates: string[] = [];
+      for (let date = period.from; date <= today; date = shiftDate(date, 1))
+        dates.push(date);
+      const work = progress.plan(owner.id, dates, today, false);
+      const missing = dates
+        .filter(
+          (date) =>
+            date < recentFrom &&
+            syncParts.some((part) => work.get(date)![part]),
+        )
+        .slice(0, 364);
+      const recent = dates.filter((date) => date >= recentFrom);
+      await run(
+        owner.id,
+        { from: recent[0] ?? today, to: today },
+        { mode: 'scheduled' },
+        [...missing, ...recent],
+      );
     } catch (error) {
       if (error instanceof NutritionSyncBusyError) return;
       // run records sanitized failure/backoff; no raw errors or credentials logged.
@@ -535,8 +598,8 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
 function runtimeScheduler() {
   return createNutritionScheduler({
     database: getDatabase(),
-    bodySync: (ownerId, dates, epoch) =>
-      runBodySync(ownerId, dates, undefined, epoch),
+    bodySync: (ownerId, dates, epoch, assertCurrent) =>
+      runBodySync(ownerId, dates, undefined, epoch, assertCurrent),
     automaticEnabled: () =>
       !!globalScheduler.nutritionSchedulerTimer &&
       readServerEnv().ENABLE_NUTRITION_SCHEDULER === 'true' &&

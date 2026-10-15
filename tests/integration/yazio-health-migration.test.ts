@@ -48,7 +48,7 @@ test('fresh migration creates sixteen entries, health constraints and an idempot
       sqlite
         .prepare('SELECT count(*) AS count FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ count: 16 });
+    ).toEqual({ count: 17 });
     expect(repo.steps('synthetic-owner', period)).toMatchObject([{ steps: 0 }]);
     expect(
       sqlite
@@ -180,7 +180,7 @@ test('six-to-current migration preserves local records and encrypted files acros
       sqlite
         .prepare('SELECT count(*) AS count FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ count: 16 });
+    ).toEqual({ count: 17 });
     expect(
       tables.map((table) => sqlite.prepare('SELECT * FROM ' + table).all()),
     ).toEqual(previous);

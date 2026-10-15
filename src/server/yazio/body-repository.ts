@@ -1,4 +1,5 @@
 import 'server-only';
+import { syncProgress } from '@/server/yazio/sync-progress';
 import {
   canonicalYazioBodyValue,
   sameYazioBodyValue,
@@ -433,6 +434,19 @@ export function bodyRepository(database = getDatabase()) {
     local,
     jobState,
     acknowledge,
+    importDay(
+      ownerId: string,
+      epoch: number,
+      date: string,
+      entries: { metric: BodyMetric; entry: BodyEntry }[],
+    ) {
+      database.sqlite.transaction(() => {
+        assertEpoch(ownerId, epoch);
+        for (const { metric, entry } of entries)
+          importEntryWork(ownerId, epoch, metric, entry);
+        syncProgress(database).set(ownerId, date, { body: true });
+      })();
+    },
     importEntry: (
       ownerId: string,
       epoch: number,

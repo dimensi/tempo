@@ -18,7 +18,7 @@ export async function POST(request: Request) {
       timezone: input.timezone ?? 'UTC',
     });
     if (
-      sync.state === 'completed' ||
+      (sync.state === 'completed' && sync.completedDates.length > 0) ||
       (sync.state === 'partial' &&
         sync.failedDates.length === 0 &&
         sync.completedDates.length > 0)

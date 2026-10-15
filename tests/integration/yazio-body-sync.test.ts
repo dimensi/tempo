@@ -18,6 +18,7 @@ import {
   type BodyMetric,
 } from '@/contracts/yazio-body';
 import type { BodyUpstream } from '@/server/yazio/body-adapter';
+import { syncProgress } from '@/server/yazio/sync-progress';
 let database: ReturnType<typeof openDatabase>,
   repo: ReturnType<typeof bodyRepository>;
 const owner = 'synthetic-body-owner',
@@ -41,6 +42,31 @@ function save(value = '80') {
 function retry() {
   vi.advanceTimersByTime(60 * 60_000);
 }
+
+it('commits a complete body date and checkpoint together, and rolls both back on persistence failure', async () => {
+  remote.weight = [{ id: randomUUID(), date: date + ' 12:00:00', value: 80 }];
+  database.sqlite.exec(
+    "CREATE TRIGGER fail_progress BEFORE INSERT ON yazio_sync_progress BEGIN SELECT RAISE(ABORT, 'synthetic progress failure'); END",
+  );
+  await pullBodyDates(owner, 1, [date], source, repo, fence);
+  expect(database.db.select().from(measurements).all()).toEqual([]);
+  expect(syncProgress(database).get(owner, date)).toBeUndefined();
+  database.sqlite.exec('DROP TRIGGER fail_progress');
+  await pullBodyDates(owner, 1, [date], source, repo, fence);
+  expect(database.db.select().from(measurements).all()).toHaveLength(1);
+  expect(syncProgress(database).get(owner, date)!.body).toBe(true);
+});
+
+it('does not read or persist a body date after its caller lease is lost', async () => {
+  const lost = () => {
+    throw new Error('synthetic lost lease');
+  };
+  await expect(
+    pullBodyDates(owner, 1, [date], source, repo, fence, lost),
+  ).rejects.toThrow('synthetic lost lease');
+  expect(source.summary).not.toHaveBeenCalled();
+  expect(syncProgress(database).get(owner, date)).toBeUndefined();
+});
 
 beforeEach(() => {
   vi.useFakeTimers();
