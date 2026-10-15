@@ -226,3 +226,56 @@ it('document deletion removes both details and observations from memory and pers
     ).data,
   ).toBeUndefined();
 });
+it('document deletion preserves the medical workspace summary when its refresh fails', async () => {
+  const { seedClientRead, savedMedicalSummary, invalidateMedicalDocument } =
+    await install(
+      vi.fn(async () => {
+        throw new TypeError('offline');
+      }),
+    );
+  const document = {
+    id: '00000000-0000-4000-8000-000000000001',
+    ownerId: '00000000-0000-4000-8000-000000000003',
+    filename: 'lab.pdf',
+    mimeType: 'application/pdf',
+    sizeBytes: 1,
+    pageCount: 1,
+    laboratoryName: null,
+    title: null,
+    collectedAt: null,
+    issuedAt: null,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  await seedClientRead('/api/offline/anamnesis-local', {
+    version: 1,
+    ownerId: '00000000-0000-4000-8000-000000000003',
+    complete: true,
+    overview: {
+      documents: 2,
+      markers: 0,
+      observations: 0,
+      pendingReviews: 0,
+      activeImports: 0,
+      pendingDocumentId: null,
+      activeDocumentId: null,
+      lastCollectedAt: null,
+    },
+    markers: [],
+    documents: [
+      document,
+      { ...document, id: '00000000-0000-4000-8000-000000000002' },
+    ],
+    reports: [],
+  });
+  await invalidateMedicalDocument(
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000003',
+  );
+  const summary = await savedMedicalSummary();
+  expect(summary.documents.map((item) => item.id)).toEqual([
+    '00000000-0000-4000-8000-000000000002',
+  ]);
+  expect(summary.overview.documents).toBe(1);
+  expect(summary.complete).toBe(false);
+});

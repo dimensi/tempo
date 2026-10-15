@@ -1,5 +1,11 @@
 'use client';
+import {
+  clientReads,
+  seedClientRead,
+  prepareMedicalReads,
+} from '@/lib/client-read';
 import { useReadResource } from '@/lib/use-read-resource';
+import { getOfflineController } from '@/lib/offline-controller';
 import {
   medicalMarkerSchema,
   medicalObservationSchema,
@@ -124,6 +130,7 @@ export function MarkerDetail({
     }
     setBusy(true);
     setError(undefined);
+    const expectedScope = getOfflineController().getSnapshot().bundle?.snapshot;
     try {
       const updated = await fetchAnamnesis<MedicalObservation>(
         `/api/anamnesis/observations/${editing.id}?${ownerIdQuery(ownerId)}`,
@@ -133,9 +140,14 @@ export function MarkerDetail({
           body: JSON.stringify(parsed.data),
         },
       );
-      setItems((old) =>
-        old.map((item) => (item.id === updated.id ? updated : item)),
+      const observations = items.map((item) =>
+        item.id === updated.id ? updated : item,
       );
+      const key = `/api/anamnesis/markers/${markerId}/observations?${ownerIdQuery(ownerId)}`;
+      await clientReads.invalidate(key);
+      if (expectedScope) await seedClientRead(key, observations, expectedScope);
+      setItems(observations);
+      await prepareMedicalReads(true);
       setEditing(undefined);
     } catch (cause) {
       setError(

@@ -98,18 +98,50 @@ export async function invalidateMedicalDocument(
   medicalRevision++;
   const query = `?${new URLSearchParams({ ownerId })}`;
   const base = `/api/anamnesis/documents/${encodeURIComponent(documentId)}`;
+  const expected = getOfflineController().getSnapshot().bundle?.snapshot;
+  const summary = await savedMedicalSummary().catch(() => undefined);
   await Promise.all(
     [
       base + query,
       base + '/observations' + query,
       '/api/anamnesis/documents' + query,
-      '/api/offline/anamnesis-local',
     ].map((key) => clientReads.invalidate(key)),
   );
+  if (summary && summary.ownerId === ownerId && expected) {
+    const documents = summary.documents.filter(
+      (item) => item.id !== documentId,
+    );
+    await seedClientRead(
+      '/api/offline/anamnesis-local',
+      {
+        ...summary,
+        documents,
+        complete: false,
+        overview: {
+          ...summary.overview,
+          documents: Math.max(
+            0,
+            summary.overview.documents -
+              (documents.length !== summary.documents.length ? 1 : 0),
+          ),
+          pendingDocumentId:
+            summary.overview.pendingDocumentId === documentId
+              ? null
+              : summary.overview.pendingDocumentId,
+          activeDocumentId:
+            summary.overview.activeDocumentId === documentId
+              ? null
+              : summary.overview.activeDocumentId,
+        },
+      },
+      expected,
+    );
+  }
   summaryVerified = '';
   await getOfflineController()
     .removeFile(`medical-document:${documentId}`)
     .catch(() => {});
+  await prepareMedicalReads(true);
 }
 export function canonicalReadKey(url: URL) {
   const search = new URLSearchParams(url.search);
@@ -297,8 +329,9 @@ export function prepareMedicalReads(force = false) {
     ] as const)
       if (
         revision === medicalRevision &&
-        clientReads.snapshot(`/api/anamnesis/${name}?${query}`).source !==
-          'network'
+        (force ||
+          clientReads.snapshot(`/api/anamnesis/${name}?${query}`).source !==
+            'network')
       )
         await seedClientRead(`/api/anamnesis/${name}?${query}`, value, current);
     if (revision !== medicalRevision) return;

@@ -306,6 +306,12 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
       .prepare('UPDATE session SET expires_at=0 WHERE user_id=?')
       .run(data.ownerId);
     await context.setOffline(false);
+    // Reconnect conceals expired private data but must not navigate automatically.
+    await expect(page.getByRole('link', { name: 'Войти заново' })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page).not.toHaveURL(/\/login$/);
+    await page.getByRole('link', { name: 'Войти заново' }).click();
     await expect(page).toHaveURL(/\/login$/, { timeout: 15000 });
     await page.addScriptTag({ content: harness });
     await expect
