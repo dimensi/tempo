@@ -21,7 +21,8 @@ the immutable revision label must match the workflow SHA before startup and afte
 Deployment runs only after build and publication succeed in the same job, and accepts
 only the current main SHA. Manual runs have no external run ID or revision inputs.
 No Actions artifacts are uploaded or downloaded. Production concurrency remains
-`nutrition-production`, cancel-in-progress false. SSH verifies the existing host key
+`nutrition-production`, cancel-in-progress true: each new main push or manual main run cancels the
+previous running release in this group, including an in-progress build or deploy. SSH verifies the existing host key
 on port 2224. The pulled image revision label and final running image/revision must match.
 
 ## Files and secrets
