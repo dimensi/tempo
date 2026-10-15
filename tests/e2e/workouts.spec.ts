@@ -801,21 +801,24 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
   const id = await ownerId(page);
   const path = '/workouts/sessions/new?date=2026-10-19';
   await page.goto(path);
-  const exerciseInput = page.getByRole('combobox', {
-    name: 'Добавить упражнение',
-    exact: true,
-  });
-  await exerciseInput.scrollIntoViewIfNeeded();
-  await exerciseInput.click();
-  await exerciseInput.fill('Delayed actual');
-  await expect(
-    page.getByRole('option', {
-      name: 'Добавить вручную: Delayed actual',
+  async function addExercise() {
+    const exerciseInput = page.getByRole('combobox', {
+      name: 'Добавить упражнение',
       exact: true,
-    }),
-  ).toBeVisible();
-  await exerciseInput.press('ArrowDown');
-  await exerciseInput.press('Enter');
+    });
+    await exerciseInput.scrollIntoViewIfNeeded();
+    await exerciseInput.click();
+    await exerciseInput.fill('Delayed actual');
+    await expect(
+      page.getByRole('option', {
+        name: 'Добавить вручную: Delayed actual',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await exerciseInput.press('ArrowDown');
+    await exerciseInput.press('Enter');
+  }
+  await addExercise();
   const reps = page.getByRole('textbox', { name: /Факт · Повторения/ });
   await reps.fill('6');
   let release!: () => void,
@@ -856,15 +859,7 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
   await page.goBack();
   await page.goto(path);
   await expect(reps).toHaveCount(0);
-  await page
-    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
-    .fill('Delayed actual');
-  await page
-    .getByRole('option', {
-      name: 'Добавить вручную: Delayed actual',
-      exact: true,
-    })
-    .click();
+  await addExercise();
   await reps.fill('9');
   release();
   await settled;
