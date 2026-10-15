@@ -1,5 +1,6 @@
 'use client';
 import {
+  Activity,
   useEffect,
   useLayoutEffect,
   useState,
@@ -623,7 +624,9 @@ export function OfflineBoundary({
           {m.denied} <a href="/login">{m.signInAgain}</a>
         </Alert>
       )}
-      <div hidden={showingSavedRoute || denied}>{children}</div>
+      <Activity mode={showingSavedRoute || denied ? 'hidden' : 'visible'}>
+        {children}
+      </Activity>
       {showingSavedRoute && !denied && ['OWNER', 'TRAINER'].includes(role) && (
         <OfflineRouteContent showStatus={false} />
       )}

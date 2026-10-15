@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSavedMealPhotos } from '@/lib/use-saved-meal-photos';
 import { useReadRefresh } from '@/lib/use-read-refresh';
 import { nutritionDaySchema } from '@/contracts/nutrition';
 import { z } from 'zod';
@@ -29,6 +30,7 @@ export function DiaryClient({
   ...props
 }: DiaryClientProps) {
   const router = useRouter();
+  const savedPhotos = useSavedMealPhotos(photos);
   const refresh = useReadRefresh();
   const [model, setModel] = useState({ seed: props.day, day: props.day });
   if (model.seed !== props.day) setModel({ seed: props.day, day: props.day });
@@ -76,9 +78,11 @@ export function DiaryClient({
           )}
         </Stack>
       }
-      photos={diaryPhotos(ownerId, photos)}
+      photos={
+        savedPhotos.online ? diaryPhotos(ownerId, photos) : savedPhotos.photos
+      }
       photoActions={
-        canWrite
+        canWrite && savedPhotos.online
           ? createPhotoActions(ownerId, () => router.refresh())
           : undefined
       }
