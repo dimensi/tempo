@@ -37,7 +37,7 @@ The current auth secret therefore remains server-local.
 `ANAMNESIS_LLM_BASE_URL`, `ANAMNESIS_LLM_MODEL`, `ANAMNESIS_LLM_TIMEOUT_MS`,
 `ENABLE_ANAMNESIS_WORKER`. They retain the approved values:
 S3 `http://192.168.1.90:8333`, region `us-east-1`, private bucket `apps`;
-OpenRouter `https://openrouter.ai/api/v1`, `google/gemini-2.5-flash-lite`, timeout `120000`,
+OpenRouter `https://openrouter.ai/api/v1`, `google/gemini-3.8-flash`, timeout `120000`,
 worker `false`. There is no fallback to the subscription provider or thinking override.
 Env serialization rejects controls, single quotes and backslashes rather than
 accepting ambiguous dotenv escapes; literal dollars/hash/double quotes are quoted.

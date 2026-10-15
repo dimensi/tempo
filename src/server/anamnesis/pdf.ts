@@ -1,12 +1,11 @@
 import 'server-only';
-import { getDocumentProxy } from 'unpdf';
-import jpeg from 'jpeg-js';
+import { getDocumentProxy, renderPageAsImage } from 'unpdf';
 import { readServerEnv } from '@/server/env';
 
 // Порог «пригодного» текстового слоя: короткие обрывки текста OCR не отменяют.
 const MIN_TEXT_LAYER_CHARS = 50;
 // Целевой размер длинной стороны страницы для vision-запроса.
-const OCR_IMAGE_MAX_DIMENSION = 1800;
+const OCR_IMAGE_MAX_DIMENSION = 2400;
 
 export interface PdfTextItem {
   text: string;
@@ -23,22 +22,7 @@ export interface PdfPageAnalysis {
   items: PdfTextItem[];
   lines: string[];
   hasTextLayer: boolean;
-  imageJpeg: Buffer | null;
-}
-
-// pdfjs OPS.paintImageXObject — стабильная константа библиотеки.
-const PAINT_IMAGE_XOBJECT = 85;
-const IMAGE_KIND = {
-  GRAYSCALE_1BPP: 1,
-  RGB_24BPP: 2,
-  RGBA_32BPP: 3,
-} as const;
-
-interface RawImage {
-  width: number;
-  height: number;
-  kind: number;
-  data: Uint8ClampedArray;
+  imagePng: Buffer | null;
 }
 
 export async function analyzeAnamnesisPdf(
@@ -67,11 +51,16 @@ export async function analyzeAnamnesisPdf(
     );
     const hasTextLayer = totalChars >= MIN_TEXT_LAYER_CHARS;
     const lines = buildLines(items);
-    let imageJpeg: Buffer | null = null;
-    if (!hasTextLayer) {
-      const raw = await extractDominantImage(page);
-      if (raw) imageJpeg = encodeJpeg(raw);
-    }
+    const imagePng = hasTextLayer
+      ? null
+      : Buffer.from(
+          await renderPageAsImage(pdf, pageNumber, {
+            canvasImport: () => import('@napi-rs/canvas'),
+            scale:
+              OCR_IMAGE_MAX_DIMENSION /
+              Math.max(viewport.width, viewport.height),
+          }),
+        );
     pages.push({
       pageNumber,
       width: viewport.width || null,
@@ -79,7 +68,7 @@ export async function analyzeAnamnesisPdf(
       items: hasTextLayer ? items : [],
       lines,
       hasTextLayer,
-      imageJpeg,
+      imagePng,
     });
   }
   return pages;
@@ -103,104 +92,6 @@ function buildLines(items: PdfTextItem[]): string[] {
         .join(' '),
     )
     .filter(Boolean);
-}
-
-async function extractDominantImage(page: {
-  getOperatorList: () => Promise<{ fnArray: number[]; argsArray: unknown[][] }>;
-  objs: { get: (id: string, callback: (data: RawImage) => void) => void };
-  commonObjs: { get: (id: string, callback: (data: RawImage) => void) => void };
-}): Promise<RawImage | null> {
-  const opList = await page.getOperatorList();
-  const candidates: Promise<RawImage>[] = [];
-  for (let i = 0; i < opList.fnArray.length; i++) {
-    if (opList.fnArray[i] !== PAINT_IMAGE_XOBJECT) continue;
-    const name = opList.argsArray[i]![0];
-    if (typeof name !== 'string') continue;
-    const objs = name.startsWith('g_') ? page.commonObjs : page.objs;
-    candidates.push(
-      new Promise<RawImage>((resolveImage) => objs.get(name, resolveImage)),
-    );
-  }
-  const images = await Promise.all(candidates);
-  return (
-    images.sort((a, b) => b.width * b.height - a.width * a.height)[0] ?? null
-  );
-}
-
-function encodeJpeg(image: RawImage): Buffer {
-  const { data: rgba, width, height } = toRgba(image);
-  const factor = Math.max(
-    1,
-    Math.ceil(Math.max(width, height) / OCR_IMAGE_MAX_DIMENSION),
-  );
-  const targetWidth = Math.max(1, Math.floor(width / factor));
-  const targetHeight = Math.max(1, Math.floor(height / factor));
-  const output = new Uint8Array(targetWidth * targetHeight * 4);
-  for (let y = 0; y < targetHeight; y++) {
-    for (let x = 0; x < targetWidth; x++) {
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let count = 0;
-      for (let dy = 0; dy < factor; dy++) {
-        for (let dx = 0; dx < factor; dx++) {
-          const source = ((y * factor + dy) * width + x * factor + dx) * 4;
-          r += rgba[source]!;
-          g += rgba[source + 1]!;
-          b += rgba[source + 2]!;
-          count++;
-        }
-      }
-      const target = (y * targetWidth + x) * 4;
-      output[target] = r / count;
-      output[target + 1] = g / count;
-      output[target + 2] = b / count;
-      output[target + 3] = 255;
-    }
-  }
-  return jpeg.encode(
-    { data: output, width: targetWidth, height: targetHeight },
-    80,
-  ).data;
-}
-
-function toRgba(image: RawImage): {
-  data: Uint8ClampedArray;
-  width: number;
-  height: number;
-} {
-  const { width, height, kind, data } = image;
-  const rgba = new Uint8ClampedArray(width * height * 4);
-  if (kind === IMAGE_KIND.RGB_24BPP) {
-    for (let i = 0, j = 0; i < width * height; i++, j += 4) {
-      rgba[j] = data[i * 3]!;
-      rgba[j + 1] = data[i * 3 + 1]!;
-      rgba[j + 2] = data[i * 3 + 2]!;
-      rgba[j + 3] = 255;
-    }
-  } else if (kind === IMAGE_KIND.RGBA_32BPP) {
-    for (let i = 0, j = 0; i < width * height; i++, j += 4) {
-      rgba[j] = data[i * 4]!;
-      rgba[j + 1] = data[i * 4 + 1]!;
-      rgba[j + 2] = data[i * 4 + 2]!;
-      rgba[j + 3] = 255;
-    }
-  } else {
-    // GRAYSCALE_1BPP: биты упакованы по строкам с добивкой до байта.
-    const rowBytes = Math.ceil(width / 8);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const bit = (data[y * rowBytes + (x >> 3)]! >> (7 - (x & 7))) & 1;
-        const value = bit ? 255 : 0;
-        const j = (y * width + x) * 4;
-        rgba[j] = value;
-        rgba[j + 1] = value;
-        rgba[j + 2] = value;
-        rgba[j + 3] = 255;
-      }
-    }
-  }
-  return { data: rgba, width, height };
 }
 
 // Загруженный файл проверяется по содержимому, а не по заявленному MIME.

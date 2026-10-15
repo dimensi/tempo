@@ -66,7 +66,7 @@ describe('compose template passes anamnesis operational env through', () => {
       '${ANAMNESIS_LLM_BASE_URL:-https://openrouter.ai/api/v1}',
     );
     expect(appEnv.get('ANAMNESIS_LLM_MODEL')).toBe(
-      '${ANAMNESIS_LLM_MODEL:-google/gemini-2.5-flash-lite}',
+      '${ANAMNESIS_LLM_MODEL:-google/gemini-3.8-flash}',
     );
     expect(appEnv.get('ANAMNESIS_LLM_TIMEOUT_MS')).toBe(
       '${ANAMNESIS_LLM_TIMEOUT_MS:-120000}',

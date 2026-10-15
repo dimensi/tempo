@@ -278,7 +278,7 @@ describe('docker compose config guard (synthetic env, both files)', () => {
       expect(app.OPENROUTER_API_KEY).toBe('');
       expect(app.ENABLE_ANAMNESIS_WORKER).toBe('false');
       expect(app.ANAMNESIS_LLM_BASE_URL).toBe('https://openrouter.ai/api/v1');
-      expect(app.ANAMNESIS_LLM_MODEL).toBe('google/gemini-2.5-flash-lite');
+      expect(app.ANAMNESIS_LLM_MODEL).toBe('google/gemini-3.8-flash');
       expect(app.ANAMNESIS_LLM_TIMEOUT_MS).toBe('120000');
 
       // Пустые строки = unset для схемы: безопасные defaults сохраняются.
