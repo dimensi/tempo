@@ -72,3 +72,15 @@ it('keeps report runtime errors local while reporting an unavailable document ga
   expect(env.loaded()).toBe(0);
   env.stop();
 });
+it('keeps provider errors local without hiding unavailable offline snapshot responses', async () => {
+  const env = windowDouble(
+    vi.fn(async () =>
+      Response.json({ error: 'Service unavailable' }, { status: 503 }),
+    ),
+  );
+  await env.target.fetch('/api/workouts/transformmate/exercises?q=manual');
+  await env.target.fetch('/api/offline/snapshot');
+  expect(env.statuses).toEqual([true, false]);
+  expect(env.loaded()).toBe(0);
+  env.stop();
+});

@@ -813,12 +813,13 @@ export function observeOfflineDenials() {
       throw error;
     }
     if (relevant) {
-      // Report rendering can fail while the authenticated app remains reachable.
-      // Its JSON runtime/busy errors belong to the report form, not global fallback.
-      const reportFailure =
-        url.pathname === '/api/reports' &&
+      // Provider/rendering failures can occur while the app remains reachable.
+      // Structured application errors belong to their form; offline API failures
+      // still control cache fallback, and gateway/transport failures are global.
+      const applicationFailure =
+        !url.pathname.startsWith('/api/offline/') &&
         response.headers.get('content-type')?.includes('application/json');
-      reportNetworkResult(response.status < 500 || Boolean(reportFailure));
+      reportNetworkResult(response.status < 500 || Boolean(applicationFailure));
       const method = (
         init?.method ?? (input instanceof Request ? input.method : 'GET')
       ).toUpperCase();
