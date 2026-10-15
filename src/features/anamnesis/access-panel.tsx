@@ -16,7 +16,7 @@ import type {
   AnamnesisMarkerSummary,
   MedicalDocument,
 } from '@/contracts/anamnesis';
-import { anamnesisMessages as m } from './messages';
+import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import { fetchAnamnesis, ownerIdQuery } from './api';
 
 // Выборочный доступ: маркеры и документы переключаются независимо;
@@ -132,7 +132,7 @@ export function AccessPanel({ ownerId }: { ownerId: string }) {
 
   return (
     <Stack data-testid="anamnesis-access">
-      <Title order={1}>{m.access.title}</Title>
+      <Title order={3}>{m.access.title}</Title>
       <Text size="sm" c="dimmed">
         {m.access.description}
       </Text>

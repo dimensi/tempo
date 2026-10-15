@@ -1,5 +1,6 @@
 'use client';
 
+import { notifyAnamnesisChanged, useAnamnesisRevision } from './refresh';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -19,7 +20,7 @@ import {
   type MedicalObservationSource,
   type MedicalReviewItem,
 } from '@/contracts/anamnesis';
-import { anamnesisMessages as m } from './messages';
+import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import { MarkerAssessmentBadge } from './marker-table';
 import {
   fetchAnamnesis,
@@ -34,7 +35,14 @@ interface ReviewEntry {
   sources: MedicalObservationSource[];
 }
 
-export function ReviewEditor({ ownerId }: { ownerId: string }) {
+export function ReviewEditor({
+  ownerId,
+  documentId,
+}: {
+  ownerId: string;
+  documentId: string;
+}) {
+  const revision = useAnamnesisRevision();
   const [items, setItems] = useState<ReviewEntry[]>([]);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -49,7 +57,10 @@ export function ReviewEditor({ ownerId }: { ownerId: string }) {
     let active = true;
     fetchAnamnesis<ReviewEntry[]>(url)
       .then((data) => {
-        if (active) setItems(data);
+        if (active)
+          setItems(
+            data.filter((entry) => entry.review.documentId === documentId),
+          );
       })
       .catch(() => {
         if (active) setError(m.errors.load);
@@ -60,7 +71,7 @@ export function ReviewEditor({ ownerId }: { ownerId: string }) {
     return () => {
       active = false;
     };
-  }, [url]);
+  }, [url, documentId, revision]);
 
   function startEditing(entry: ReviewEntry) {
     setEditing(entry.review.id);
@@ -112,6 +123,7 @@ export function ReviewEditor({ ownerId }: { ownerId: string }) {
         old.filter((item) => item.review.id !== entry.review.id),
       );
       setEditing(undefined);
+      notifyAnamnesisChanged();
     } catch (cause) {
       setError(
         cause instanceof Error &&
@@ -138,6 +150,7 @@ export function ReviewEditor({ ownerId }: { ownerId: string }) {
       setItems((old) =>
         old.filter((item) => item.review.id !== entry.review.id),
       );
+      notifyAnamnesisChanged();
     } catch {
       setError(m.errors.save);
     } finally {
@@ -147,7 +160,7 @@ export function ReviewEditor({ ownerId }: { ownerId: string }) {
 
   return (
     <Stack data-testid="anamnesis-reviews">
-      <Title order={1}>{m.reviews.title}</Title>
+      <Title order={4}>{m.reviews.title}</Title>
       {error && (
         <Alert color="red" role="alert">
           {error}

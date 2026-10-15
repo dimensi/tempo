@@ -1,5 +1,7 @@
 'use client';
 
+import { ReviewEditor } from './review-editor';
+import { notifyAnamnesisChanged, useAnamnesisRevision } from './refresh';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -9,12 +11,11 @@ import {
   Group,
   Paper,
   Stack,
-  Table,
   Text,
   Title,
 } from '@mantine/core';
 import type { MedicalDocument, MedicalImportJob } from '@/contracts/anamnesis';
-import { anamnesisMessages as m } from './messages';
+import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
 
 export function DocumentsPanel({
@@ -24,6 +25,10 @@ export function DocumentsPanel({
   ownerId: string;
   writable: boolean;
 }) {
+  const revision = useAnamnesisRevision();
+  const [pending, setPending] = useState<Record<string, number>>({});
+  const [jobs, setJobs] = useState<MedicalImportJob[]>([]);
+  const [reviewing, setReviewing] = useState<string>();
   const [items, setItems] = useState<MedicalDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -58,7 +63,66 @@ export function DocumentsPanel({
     return () => {
       active = false;
     };
-  }, [query]);
+  }, [query, revision]);
+
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const next = await fetchAnamnesis<MedicalImportJob[]>(
+          `/api/anamnesis/imports?${query}`,
+          { cache: 'no-store' },
+        );
+        if (!active) return;
+        setJobs((old) => {
+          if (
+            old.some(
+              (job) =>
+                ['queued', 'processing'].includes(job.status) &&
+                next.some(
+                  (item) =>
+                    item.id === job.id &&
+                    !['queued', 'processing'].includes(item.status),
+                ),
+            )
+          )
+            queueMicrotask(notifyAnamnesisChanged);
+          return next;
+        });
+        if (next.some((job) => ['queued', 'processing'].includes(job.status)))
+          timer = setTimeout(() => void poll(), 2000);
+      } catch {
+        if (active) setError(m.errors.load);
+      }
+    }
+    void poll();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [query, revision]);
+
+  useEffect(() => {
+    if (!writable) return;
+    const controller = new AbortController();
+    void fetchAnamnesis<Array<{ review: { documentId: string } }>>(
+      `/api/anamnesis/reviews?${query}`,
+      { signal: controller.signal, cache: 'no-store' },
+    )
+      .then((rows) => {
+        if (controller.signal.aborted) return;
+        const counts: Record<string, number> = {};
+        rows.forEach(({ review }) => {
+          counts[review.documentId] = (counts[review.documentId] ?? 0) + 1;
+        });
+        setPending(counts);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setError(m.errors.load);
+      });
+    return () => controller.abort();
+  }, [query, revision, writable]);
 
   async function upload() {
     if (!file) return;
@@ -81,6 +145,7 @@ export function DocumentsPanel({
         setItems((old) => [result.document, ...old]);
       }
       setFile(null);
+      notifyAnamnesisChanged();
     } catch (cause) {
       setError(
         cause instanceof Error &&
@@ -103,6 +168,7 @@ export function DocumentsPanel({
       });
       setItems((old) => old.filter((item) => item.id !== id));
       setDeleting(undefined);
+      notifyAnamnesisChanged();
     } catch {
       setError(m.errors.save);
     } finally {
@@ -113,7 +179,7 @@ export function DocumentsPanel({
   if (denied)
     return (
       <Stack data-testid="anamnesis-documents">
-        <Title order={1}>{m.documents.title}</Title>
+        <Title order={2}>{m.workspace.documents}</Title>
         <Alert color="red" role="alert">
           {m.documents.readOnly}
         </Alert>
@@ -122,7 +188,7 @@ export function DocumentsPanel({
 
   return (
     <Stack data-testid="anamnesis-documents">
-      <Title order={1}>{m.documents.title}</Title>
+      <Title order={2}>{m.workspace.documents}</Title>
       {error && (
         <Alert color="red" role="alert">
           {error}
@@ -161,68 +227,82 @@ export function DocumentsPanel({
       {!writable && <Text>{m.documents.readOnly}</Text>}
       {loading && <Text>…</Text>}
       {!loading && !items.length && <Text>{m.documents.empty}</Text>}
-      {!!items.length && (
-        <Table.ScrollContainer minWidth={640}>
-          <Table data-testid="anamnesis-document-table">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>{m.documents.column.filename}</Table.Th>
-                <Table.Th>{m.documents.column.laboratory}</Table.Th>
-                <Table.Th>{m.documents.column.date}</Table.Th>
-                <Table.Th>{m.documents.column.pages}</Table.Th>
-                {writable && <Table.Th />}
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {items.map((item) => (
-                <Table.Tr key={item.id}>
-                  <Table.Td>
-                    <Link href={`/anamnesis/documents/${item.id}`}>
-                      {item.filename}
-                    </Link>
-                  </Table.Td>
-                  <Table.Td>{item.laboratoryName ?? '—'}</Table.Td>
-                  <Table.Td>
-                    {formatAnamnesisDate(item.collectedAt ?? item.issuedAt)}
-                  </Table.Td>
-                  <Table.Td>{item.pageCount}</Table.Td>
-                  {writable && (
-                    <Table.Td>
-                      {deleting === item.id ? (
-                        <Group>
-                          <Button
-                            color="red"
-                            mih={44}
-                            onClick={() => void remove(item.id)}
-                          >
-                            {m.documents.delete}
-                          </Button>
-                          <Button
-                            variant="default"
-                            onClick={() => setDeleting(undefined)}
-                          >
-                            Отмена
-                          </Button>
-                        </Group>
-                      ) : (
-                        <Button
-                          color="red"
-                          variant="light"
-                          mih={44}
-                          disabled={busy}
-                          onClick={() => setDeleting(item.id)}
-                        >
-                          {m.documents.delete}
-                        </Button>
-                      )}
-                    </Table.Td>
-                  )}
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
-      )}
+      {items.map((item) => {
+        const job = jobs
+          .filter((job) => job.documentId === item.id)
+          .sort((a, b) => b.createdAt - a.createdAt)[0];
+        return (
+          <Paper
+            key={item.id}
+            withBorder
+            p="md"
+            id={`document-${item.id}`}
+            tabIndex={-1}
+          >
+            <Stack>
+              <Group justify="space-between">
+                <Link href={`/anamnesis/documents/${item.id}`}>
+                  {item.filename}
+                </Link>
+                <Text size="sm">
+                  {item.pageCount} {m.documents.column.pages.toLowerCase()}
+                </Text>
+              </Group>
+              <Text size="sm" c="dimmed">
+                {item.laboratoryName ?? '—'} ·{' '}
+                {formatAnamnesisDate(item.collectedAt ?? item.issuedAt)}
+              </Text>
+              {job && (
+                <Text role="status">
+                  {m.imports.status[job.status]} · {m.imports.stage[job.stage]}
+                </Text>
+              )}
+              {job?.lastError && <Alert color="red">{job.lastError}</Alert>}
+              {writable && (
+                <Group>
+                  <Button
+                    variant="default"
+                    onClick={() =>
+                      setReviewing((old) =>
+                        old === item.id ? undefined : item.id,
+                      )
+                    }
+                  >
+                    {m.reviews.title} ({pending[item.id] ?? 0})
+                  </Button>
+                  <Button
+                    color="red"
+                    variant="subtle"
+                    onClick={() => setDeleting(item.id)}
+                  >
+                    {m.documents.delete}
+                  </Button>
+                </Group>
+              )}
+              {deleting === item.id && (
+                <Group>
+                  <Button
+                    color="red"
+                    loading={busy}
+                    onClick={() => void remove(item.id)}
+                  >
+                    {m.documents.delete}
+                  </Button>
+                  <Button
+                    variant="default"
+                    onClick={() => setDeleting(undefined)}
+                  >
+                    Отмена
+                  </Button>
+                </Group>
+              )}
+              {reviewing === item.id && (
+                <ReviewEditor ownerId={ownerId} documentId={item.id} />
+              )}
+            </Stack>
+          </Paper>
+        );
+      })}
     </Stack>
   );
 }

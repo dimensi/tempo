@@ -8,7 +8,7 @@ import type {
   MedicalObservation,
   MedicalObservationSource,
 } from '@/contracts/anamnesis';
-import { anamnesisMessages as m } from './messages';
+import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
 
 // Просмотр оригинала: PDF встроен через авторизованный маршрут API,
@@ -88,6 +88,9 @@ export function DocumentViewer({
 
   return (
     <Stack data-testid="anamnesis-document-viewer">
+      <a href="/anamnesis#documents">
+        {m.title} · {m.workspace.documents}
+      </a>
       <Title order={1}>{document?.filename ?? '…'}</Title>
       {document && (
         <Paper withBorder p="md">

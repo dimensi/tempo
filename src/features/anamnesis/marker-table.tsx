@@ -1,5 +1,6 @@
 'use client';
 
+import { useAnamnesisRevision } from './refresh';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -7,7 +8,6 @@ import {
   Badge,
   Group,
   Paper,
-  SimpleGrid,
   Stack,
   Table,
   Text,
@@ -15,10 +15,11 @@ import {
   Title,
 } from '@mantine/core';
 import type { AnamnesisMarkerSummary } from '@/contracts/anamnesis';
-import { anamnesisMessages as m } from './messages';
+import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
 
 export function MarkerTable({ ownerId }: { ownerId: string }) {
+  const revision = useAnamnesisRevision();
   const [items, setItems] = useState<AnamnesisMarkerSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -49,7 +50,7 @@ export function MarkerTable({ ownerId }: { ownerId: string }) {
     return () => {
       active = false;
     };
-  }, [url]);
+  }, [url, revision]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -62,7 +63,7 @@ export function MarkerTable({ ownerId }: { ownerId: string }) {
   if (denied)
     return (
       <Stack data-testid="anamnesis-markers">
-        <Title order={1}>{m.markers.title}</Title>
+        <Title order={2}>{m.markers.title}</Title>
         <Alert color="red" role="alert">
           {m.errors.denied}
         </Alert>
@@ -71,7 +72,7 @@ export function MarkerTable({ ownerId }: { ownerId: string }) {
 
   return (
     <Stack data-testid="anamnesis-markers">
-      <Title order={1}>{m.markers.title}</Title>
+      <Title order={2}>{m.markers.title}</Title>
       {error && (
         <Alert color="red" role="alert">
           {error}
@@ -162,74 +163,5 @@ export function MarkerAssessmentBadge({
     <Badge color={color} variant="light">
       {m.assessment[assessment]}
     </Badge>
-  );
-}
-
-export function AnamnesisOverviewCards({
-  overview,
-}: {
-  overview: {
-    documents: number;
-    markers: number;
-    observations: number;
-    pendingReviews: number;
-    activeImports: number;
-    lastCollectedAt: string | null;
-  };
-}) {
-  return (
-    <SimpleGrid
-      cols={{ base: 1, sm: 2, md: 3 }}
-      data-testid="anamnesis-overview"
-    >
-      <Paper withBorder p="md">
-        <Text size="sm" c="dimmed">
-          {m.overview.documents}
-        </Text>
-        <Text fs="2rem" fw={700}>
-          {overview.documents}
-        </Text>
-      </Paper>
-      <Paper withBorder p="md">
-        <Text size="sm" c="dimmed">
-          {m.overview.markers}
-        </Text>
-        <Text fs="2rem" fw={700}>
-          {overview.markers}
-        </Text>
-      </Paper>
-      <Paper withBorder p="md">
-        <Text size="sm" c="dimmed">
-          {m.overview.observations}
-        </Text>
-        <Text fs="2rem" fw={700}>
-          {overview.observations}
-        </Text>
-      </Paper>
-      <Paper withBorder p="md">
-        <Text size="sm" c="dimmed">
-          {m.overview.pendingReviews}
-        </Text>
-        <Text fs="2rem" fw={700}>
-          {overview.pendingReviews}
-        </Text>
-      </Paper>
-      <Paper withBorder p="md">
-        <Text size="sm" c="dimmed">
-          {m.overview.activeImports}
-        </Text>
-        <Text fs="2rem" fw={700}>
-          {overview.activeImports}
-        </Text>
-      </Paper>
-      <Paper withBorder p="md">
-        <Text size="sm" c="dimmed">
-          {m.overview.lastMeasurement}
-        </Text>
-        <Text fs="1.4rem" fw={700}>
-          {formatAnamnesisDate(overview.lastCollectedAt)}
-        </Text>
-      </Paper>
-    </SimpleGrid>
   );
 }

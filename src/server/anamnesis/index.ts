@@ -11,6 +11,8 @@ import {
   medicalObservationCorrectionSchema,
   anamnesisGrantInputSchema,
   medicalReportRequestSchema,
+  medicalReportCreateSchema,
+  medicalObservationDateKey,
   type AnamnesisOverview,
   type AnamnesisMarkerSummary,
   type MedicalDocument,
@@ -39,7 +41,11 @@ import {
 
 export { anamnesisUploadLimits };
 import { anamnesisDocumentStorageKey, kickAnamnesisImport } from './worker';
-import { generateMedicalReport, withMedicalReportSlot } from './reports';
+import {
+  generateMedicalReport,
+  withMedicalReportSlot,
+  previewMedicalReport,
+} from './reports';
 import {
   assessReference,
   canonicalUnit,
@@ -147,6 +153,18 @@ export async function getAnamnesisOverview(
             .reduce((sum, [, count]) => sum + count, 0),
     pendingReviews: base.pendingReviews,
     activeImports: base.activeImports,
+    pendingDocumentId:
+      session.user.role === 'OWNER'
+        ? (repo.listPendingReviews(ownerId)[0]?.documentId ?? null)
+        : null,
+    activeDocumentId:
+      repo
+        .listJobs(ownerId)
+        .find(
+          (job) =>
+            ['queued', 'processing'].includes(job.status) &&
+            (documentGrants === null || documentGrants.has(job.documentId)),
+        )?.documentId ?? null,
     lastCollectedAt: base.lastCollectedAt,
   };
 }
@@ -804,7 +822,7 @@ export async function createAnamnesisReport(
   if (!access.ok) throw new AnamnesisError(access.status);
   const session = access.session;
   const repo = anamnesisRepository();
-  const request = medicalReportRequestSchema.parse(input);
+  const request = medicalReportCreateSchema.parse(input);
   // Тренер строит отчёт только из разрешённых показателей.
   if (session.user.role === 'TRAINER') {
     const grants = repo.markerGrantIds(ownerId, session.user.id);
@@ -812,7 +830,7 @@ export async function createAnamnesisReport(
       throw new AnamnesisError(403);
   }
   try {
-    return await withMedicalReportSlot(() =>
+    const created = await withMedicalReportSlot(() =>
       generateMedicalReport(
         { storage: getObjectStorage() },
         ownerId,
@@ -820,10 +838,62 @@ export async function createAnamnesisReport(
         input,
       ),
     );
+    await authorizeReportSelection(headers, ownerId, {
+      markerIds: request.markerIds,
+      dateKeys: request.dateKeys,
+    });
+    return created;
   } catch (error) {
     if (error instanceof ZodError) throw new AnamnesisError(400);
     throw error;
   }
+}
+
+async function authorizeReportSelection(
+  headers: Headers,
+  ownerId: string,
+  input: unknown,
+) {
+  const access = await authorize(headers, 'anamnesis:report', ownerId);
+  if (!access.ok) throw new AnamnesisError(access.status);
+  const request = medicalReportRequestSchema.parse(input);
+  const repo = anamnesisRepository();
+  if (access.session.user.role === 'TRAINER') {
+    const grants = repo.markerGrantIds(ownerId, access.session.user.id);
+    if (request.markerIds.some((id) => !grants.has(id)))
+      throw new AnamnesisError(403);
+  }
+  return request;
+}
+export async function previewAnamnesisReport(
+  headers: Headers,
+  ownerId: string,
+  input: unknown,
+  signal?: AbortSignal,
+) {
+  const selection = await authorizeReportSelection(headers, ownerId, input);
+  const result = await withMedicalReportSlot(() =>
+    previewMedicalReport(ownerId, selection, signal),
+  );
+  await authorizeReportSelection(headers, ownerId, selection);
+  return result;
+}
+export async function anamnesisReportDates(
+  headers: Headers,
+  ownerId: string,
+  input: unknown,
+) {
+  const selection = await authorizeReportSelection(headers, ownerId, input);
+  const dates = new Map<string, number>();
+  for (const row of anamnesisRepository().listObservations(ownerId, {
+    markerIds: selection.markerIds,
+  })) {
+    const key = medicalObservationDateKey(row);
+    dates.set(key, (dates.get(key) ?? 0) + 1);
+  }
+  return [...dates]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([key, count]) => ({ key, count }));
 }
 
 function reportVisibleToGrants(
@@ -896,6 +966,11 @@ export function anamnesisErrorResponse(error: unknown): Response {
   return Response.json(
     { error: 'Не удалось выполнить операцию с анамнезом' },
     {
+      headers: {
+        'Cache-Control': 'private, no-store, max-age=0',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+      },
       status:
         error instanceof AnamnesisError
           ? error.status

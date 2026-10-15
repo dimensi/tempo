@@ -23,7 +23,7 @@ async function paginateMedicalReport(page: Page): Promise<void> {
       const header = document.createElement('header');
       header.className = 'page-header';
       const title = document.createElement('h1');
-      title.textContent = section.dataset.title!;
+      title.textContent = document.title;
       const date = document.createElement('span');
       date.className = 'header-date';
       date.textContent = section.dataset.header!;
@@ -43,24 +43,33 @@ async function paginateMedicalReport(page: Page): Promise<void> {
       sheets.push(sheet);
       return sheet;
     }
+    let current = newSheet(sections[0]!);
     for (const section of sections) {
-      let current = newSheet(section);
-      const summary = section.querySelector('.marker-summary');
-      if (summary) current.body.append(summary);
+      const heading = document.createElement('h2');
+      heading.className = 'marker-heading';
+      heading.textContent = section.dataset.title!;
       const rows = Array.from(
         section.querySelectorAll<HTMLElement>('.observation-row'),
       );
       const tableHead = section.querySelector('.table-header');
-      if (tableHead && rows.length) current.body.append(tableHead);
-      for (const row of rows) {
+      function addHeading() {
+        const title = heading.cloneNode(true);
+        const columns = tableHead?.cloneNode(true);
+        current.body.append(title);
+        if (columns) current.body.append(columns);
+        return [title, ...(columns ? [columns] : [])];
+      }
+      let prefix = addHeading();
+      for (const [index, row] of rows.entries()) {
         current.body.append(row);
         if (fits(current.body)) continue;
         row.remove();
-        const next = newSheet(section);
-        if (tableHead) next.body.append(tableHead);
-        next.body.append(row);
-        if (!fits(next.body)) throw new Error('Observation cannot fit page');
-        current = next;
+        if (index === 0)
+          prefix.forEach((node) => node.parentNode?.removeChild(node));
+        current = newSheet(section);
+        prefix = addHeading();
+        current.body.append(row);
+        if (!fits(current.body)) throw new Error('Observation cannot fit page');
       }
       const notes = section.querySelector('.section-notes');
       if (notes) {
@@ -84,10 +93,11 @@ async function paginateMedicalReport(page: Page): Promise<void> {
   });
 }
 
-export async function renderMedicalPdfReport(
+async function renderMedicalReport(
   html: string,
   signal?: AbortSignal,
-): Promise<Uint8Array> {
+  preview = false,
+): Promise<Uint8Array | { html: string; pageCount: number }> {
   let browser: Browser | undefined;
   let onAbort: (() => void) | undefined;
   let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -95,6 +105,10 @@ export async function renderMedicalPdfReport(
     signal?.throwIfAborted();
     browser = await chromium.launch({ headless: true, timeout: 15000 });
     signal?.throwIfAborted();
+    onAbort = () => {
+      void browser?.close().catch(() => {});
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
     const context = await browser.newContext({
       javaScriptEnabled: true,
       serviceWorkers: 'block',
@@ -113,7 +127,14 @@ export async function renderMedicalPdfReport(
       ]);
       await document.fonts.ready;
     });
-    await paginateMedicalReport(page);
+    if (!(await page.locator('html').getAttribute('data-report-ready')))
+      await paginateMedicalReport(page);
+    signal?.throwIfAborted();
+    if (preview)
+      return {
+        html: await page.content(),
+        pageCount: await page.locator('.report-page').count(),
+      };
     const operation = async () =>
       page.pdf({
         format: 'A4',
@@ -125,11 +146,6 @@ export async function renderMedicalPdfReport(
       });
     return await Promise.race([
       operation(),
-      new Promise<never>((_, reject) => {
-        onAbort = () => reject(signal?.reason ?? new Error('Aborted'));
-        signal?.addEventListener('abort', onAbort, { once: true });
-        if (signal?.aborted) onAbort();
-      }),
       new Promise<never>((_, reject) => {
         deadline = setTimeout(
           () => reject(new ReportError('RUNTIME', 503)),
@@ -145,4 +161,17 @@ export async function renderMedicalPdfReport(
     if (deadline) clearTimeout(deadline);
     await browser?.close();
   }
+}
+
+export async function prepareMedicalReport(html: string, signal?: AbortSignal) {
+  return (await renderMedicalReport(html, signal, true)) as {
+    html: string;
+    pageCount: number;
+  };
+}
+export async function renderMedicalPdfReport(
+  html: string,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  return (await renderMedicalReport(html, signal)) as Uint8Array;
 }

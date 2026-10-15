@@ -273,8 +273,12 @@ export const medicalReportExports = sqliteTable(
     markerIdsJson: text('marker_ids_json', { mode: 'json' })
       .$type<string[]>()
       .notNull(),
-    dateFrom: text('date_from'),
-    dateTo: text('date_to'),
+    dateKeysJson: text('date_keys_json', { mode: 'json' }).$type<
+      string[] | null
+    >(),
+    historicalPeriodJson: text('historical_period_json', {
+      mode: 'json',
+    }).$type<{ from: string | null; to: string | null } | null>(),
     status: text('status', { enum: ['ready', 'failed'] }).notNull(),
     storageKey: text('storage_key'),
     filename: text('filename').notNull(),

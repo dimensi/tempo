@@ -56,8 +56,7 @@ describe('medicalReportRequestSchema', () => {
     expect(
       medicalReportRequestSchema.safeParse({
         markerIds: [],
-        from: null,
-        to: null,
+        dateKeys: null,
       }).success,
     ).toBe(false);
   });
@@ -65,8 +64,7 @@ describe('medicalReportRequestSchema', () => {
     expect(
       medicalReportRequestSchema.safeParse({
         markerIds: Array.from({ length: 51 }, () => 'alt'),
-        from: null,
-        to: null,
+        dateKeys: null,
       }).success,
     ).toBe(false);
   });
@@ -104,5 +102,38 @@ describe('extractionResultSchema', () => {
       ],
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('exact report date selection', () => {
+  it('accepts nonadjacent days, a month and the undated group', () => {
+    expect(
+      medicalReportRequestSchema.parse({
+        markerIds: ['alt'],
+        dateKeys: ['2026-01-01', '2026-09-22', '2026-08', 'undated'],
+      }),
+    ).toMatchObject({
+      dateKeys: ['2026-01-01', '2026-09-22', '2026-08', 'undated'],
+    });
+  });
+  it.each([
+    { dateKeys: [] },
+    { dateKeys: ['2026-02-30'] },
+    { dateKeys: ['2026-13'] },
+    { dateKeys: ['2026'] },
+  ])('rejects empty or invented date keys %j', ({ dateKeys }) => {
+    expect(
+      medicalReportRequestSchema.safeParse({ markerIds: ['alt'], dateKeys })
+        .success,
+    ).toBe(false);
+  });
+  it('removes the old report range input', () => {
+    expect(
+      medicalReportRequestSchema.safeParse({
+        markerIds: ['alt'],
+        from: null,
+        to: null,
+      }).success,
+    ).toBe(false);
   });
 });

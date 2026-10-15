@@ -1,0 +1,3868 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "0c4f96c5-ec2a-4db4-8c9d-df4305fa804d",
+  "prevId": "85ffe123-48ad-45bd-a984-e1a5e4dcbd32",
+  "tables": {
+    "account": {
+      "name": "account",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "access_token": {
+          "name": "access_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "id_token": {
+          "name": "id_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "access_token_expires_at": {
+          "name": "access_token_expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "refresh_token_expires_at": {
+          "name": "refresh_token_expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "password": {
+          "name": "password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "account_user_idx": {
+          "name": "account_user_idx",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        },
+        "account_provider_unique": {
+          "name": "account_provider_unique",
+          "columns": [
+            "provider_id",
+            "account_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "account_user_id_user_id_fk": {
+          "name": "account_user_id_user_id_fk",
+          "tableFrom": "account",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "session": {
+      "name": "session",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "session_token_unique": {
+          "name": "session_token_unique",
+          "columns": [
+            "token"
+          ],
+          "isUnique": true
+        },
+        "session_user_idx": {
+          "name": "session_user_idx",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "session_user_id_user_id_fk": {
+          "name": "session_user_id_user_id_fk",
+          "tableFrom": "session",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "trainer_access": {
+      "name": "trainer_access",
+      "columns": {
+        "trainer_id": {
+          "name": "trainer_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "trainer_access_trainer_id_user_id_fk": {
+          "name": "trainer_access_trainer_id_user_id_fk",
+          "tableFrom": "trainer_access",
+          "tableTo": "user",
+          "columnsFrom": [
+            "trainer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trainer_access_owner_id_user_id_fk": {
+          "name": "trainer_access_owner_id_user_id_fk",
+          "tableFrom": "trainer_access",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "user": {
+      "name": "user",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email_verified": {
+          "name": "email_verified",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'TRAINER'"
+        }
+      },
+      "indexes": {
+        "user_email_unique": {
+          "name": "user_email_unique",
+          "columns": [
+            "email"
+          ],
+          "isUnique": true
+        },
+        "single_owner": {
+          "name": "single_owner",
+          "columns": [
+            "role"
+          ],
+          "isUnique": true,
+          "where": "\"user\".\"role\" = 'OWNER'"
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "user_role_check": {
+          "name": "user_role_check",
+          "value": "\"user\".\"role\" in ('OWNER', 'TRAINER')"
+        }
+      }
+    },
+    "verification": {
+      "name": "verification",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "verification_identifier_idx": {
+          "name": "verification_identifier_idx",
+          "columns": [
+            "identifier"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "yazio_body_links": {
+      "name": "yazio_body_links",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "epoch": {
+          "name": "epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "measurement_id": {
+          "name": "measurement_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "metric": {
+          "name": "metric",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider_date_time": {
+          "name": "provider_date_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "synced_value": {
+          "name": "synced_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "remote_value": {
+          "name": "remote_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "yazio_body_provider_unique": {
+          "name": "yazio_body_provider_unique",
+          "columns": [
+            "owner_id",
+            "epoch",
+            "provider_id"
+          ],
+          "isUnique": true
+        },
+        "yazio_body_measurement_idx": {
+          "name": "yazio_body_measurement_idx",
+          "columns": [
+            "owner_id",
+            "measurement_id",
+            "metric"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "yazio_body_links_owner_id_user_id_fk": {
+          "name": "yazio_body_links_owner_id_user_id_fk",
+          "tableFrom": "yazio_body_links",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "yazio_body_links_measurement_id_measurements_id_fk": {
+          "name": "yazio_body_links_measurement_id_measurements_id_fk",
+          "tableFrom": "yazio_body_links",
+          "tableTo": "measurements",
+          "columnsFrom": [
+            "measurement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "yazio_body_epoch_check": {
+          "name": "yazio_body_epoch_check",
+          "value": "\"yazio_body_links\".\"epoch\" >= 0"
+        },
+        "yazio_body_metric_check": {
+          "name": "yazio_body_metric_check",
+          "value": "\"yazio_body_links\".\"metric\" in ('weight','waist','hips','chest','thigh','biceps')"
+        },
+        "yazio_body_uuid_check": {
+          "name": "yazio_body_uuid_check",
+          "value": "length(\"yazio_body_links\".\"provider_id\")=36 and substr(\"yazio_body_links\".\"provider_id\",9,1)='-' and substr(\"yazio_body_links\".\"provider_id\",14,1)='-' and substr(\"yazio_body_links\".\"provider_id\",19,1)='-' and substr(\"yazio_body_links\".\"provider_id\",24,1)='-'"
+        }
+      }
+    },
+    "yazio_body_outbox": {
+      "name": "yazio_body_outbox",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "epoch": {
+          "name": "epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "link_id": {
+          "name": "link_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "baseline": {
+          "name": "baseline",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "conflict_value": {
+          "name": "conflict_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attempt": {
+          "name": "attempt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "yazio_body_job_revision_unique": {
+          "name": "yazio_body_job_revision_unique",
+          "columns": [
+            "link_id",
+            "revision"
+          ],
+          "isUnique": true
+        },
+        "yazio_body_due_idx": {
+          "name": "yazio_body_due_idx",
+          "columns": [
+            "owner_id",
+            "epoch",
+            "state",
+            "next_attempt_at"
+          ],
+          "isUnique": false
+        },
+        "yazio_body_link_jobs_idx": {
+          "name": "yazio_body_link_jobs_idx",
+          "columns": [
+            "link_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "yazio_body_outbox_owner_id_user_id_fk": {
+          "name": "yazio_body_outbox_owner_id_user_id_fk",
+          "tableFrom": "yazio_body_outbox",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "yazio_body_outbox_link_id_yazio_body_links_id_fk": {
+          "name": "yazio_body_outbox_link_id_yazio_body_links_id_fk",
+          "tableFrom": "yazio_body_outbox",
+          "tableTo": "yazio_body_links",
+          "columnsFrom": [
+            "link_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "yazio_body_revision_check": {
+          "name": "yazio_body_revision_check",
+          "value": "\"yazio_body_outbox\".\"revision\" > 0"
+        },
+        "yazio_body_outbox_epoch_check": {
+          "name": "yazio_body_outbox_epoch_check",
+          "value": "\"yazio_body_outbox\".\"epoch\" >= 0"
+        },
+        "yazio_body_outbox_attempt_check": {
+          "name": "yazio_body_outbox_attempt_check",
+          "value": "\"yazio_body_outbox\".\"attempt\" >= 0"
+        },
+        "yazio_body_state_check": {
+          "name": "yazio_body_state_check",
+          "value": "\"yazio_body_outbox\".\"state\" in ('pending','sending','uncertain','failed','conflict','done','cancelled')"
+        }
+      }
+    },
+    "medical_document_grants": {
+      "name": "medical_document_grants",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "trainer_id": {
+          "name": "trainer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "medical_document_grants_trainer_idx": {
+          "name": "medical_document_grants_trainer_idx",
+          "columns": [
+            "trainer_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "medical_document_grants_owner_id_user_id_fk": {
+          "name": "medical_document_grants_owner_id_user_id_fk",
+          "tableFrom": "medical_document_grants",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_document_grants_trainer_id_user_id_fk": {
+          "name": "medical_document_grants_trainer_id_user_id_fk",
+          "tableFrom": "medical_document_grants",
+          "tableTo": "user",
+          "columnsFrom": [
+            "trainer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_document_grants_document_id_medical_documents_id_fk": {
+          "name": "medical_document_grants_document_id_medical_documents_id_fk",
+          "tableFrom": "medical_document_grants",
+          "tableTo": "medical_documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "medical_document_grants_owner_id_trainer_id_document_id_pk": {
+          "columns": [
+            "owner_id",
+            "trainer_id",
+            "document_id"
+          ],
+          "name": "medical_document_grants_owner_id_trainer_id_document_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "medical_document_pages": {
+      "name": "medical_document_pages",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "page_number": {
+          "name": "page_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "width": {
+          "name": "width",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "height": {
+          "name": "height",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "has_text_layer": {
+          "name": "has_text_layer",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "text_json": {
+          "name": "text_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ocr_applied": {
+          "name": "ocr_applied",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "medical_document_pages_page_uq": {
+          "name": "medical_document_pages_page_uq",
+          "columns": [
+            "document_id",
+            "page_number"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "medical_document_pages_document_id_medical_documents_id_fk": {
+          "name": "medical_document_pages_document_id_medical_documents_id_fk",
+          "tableFrom": "medical_document_pages",
+          "tableTo": "medical_documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "medical_documents": {
+      "name": "medical_documents",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "filename": {
+          "name": "filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "page_count": {
+          "name": "page_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "laboratory_name": {
+          "name": "laboratory_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "collected_at": {
+          "name": "collected_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "medical_documents_owner_sha_uq": {
+          "name": "medical_documents_owner_sha_uq",
+          "columns": [
+            "owner_id",
+            "sha256"
+          ],
+          "isUnique": true,
+          "where": "\"medical_documents\".\"deleted_at\" is null"
+        },
+        "medical_documents_owner_idx": {
+          "name": "medical_documents_owner_idx",
+          "columns": [
+            "owner_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "medical_documents_owner_id_user_id_fk": {
+          "name": "medical_documents_owner_id_user_id_fk",
+          "tableFrom": "medical_documents",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "medical_import_jobs": {
+      "name": "medical_import_jobs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "stage": {
+          "name": "stage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lease_until": {
+          "name": "lease_until",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "medical_import_jobs_owner_idx": {
+          "name": "medical_import_jobs_owner_idx",
+          "columns": [
+            "owner_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "medical_import_jobs_status_idx": {
+          "name": "medical_import_jobs_status_idx",
+          "columns": [
+            "status",
+            "updated_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "medical_import_jobs_owner_id_user_id_fk": {
+          "name": "medical_import_jobs_owner_id_user_id_fk",
+          "tableFrom": "medical_import_jobs",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_import_jobs_document_id_medical_documents_id_fk": {
+          "name": "medical_import_jobs_document_id_medical_documents_id_fk",
+          "tableFrom": "medical_import_jobs",
+          "tableTo": "medical_documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "medical_marker_aliases": {
+      "name": "medical_marker_aliases",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "marker_id": {
+          "name": "marker_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "alias": {
+          "name": "alias",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "medical_marker_aliases_alias_uq": {
+          "name": "medical_marker_aliases_alias_uq",
+          "columns": [
+            "alias"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "medical_marker_aliases_marker_id_medical_markers_id_fk": {
+          "name": "medical_marker_aliases_marker_id_medical_markers_id_fk",
+          "tableFrom": "medical_marker_aliases",
+          "tableTo": "medical_markers",
+          "columnsFrom": [
+            "marker_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "medical_marker_grants": {
+      "name": "medical_marker_grants",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "trainer_id": {
+          "name": "trainer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "marker_id": {
+          "name": "marker_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "medical_marker_grants_trainer_idx": {
+          "name": "medical_marker_grants_trainer_idx",
+          "columns": [
+            "trainer_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "medical_marker_grants_owner_id_user_id_fk": {
+          "name": "medical_marker_grants_owner_id_user_id_fk",
+          "tableFrom": "medical_marker_grants",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_marker_grants_trainer_id_user_id_fk": {
+          "name": "medical_marker_grants_trainer_id_user_id_fk",
+          "tableFrom": "medical_marker_grants",
+          "tableTo": "user",
+          "columnsFrom": [
+            "trainer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_marker_grants_marker_id_medical_markers_id_fk": {
+          "name": "medical_marker_grants_marker_id_medical_markers_id_fk",
+          "tableFrom": "medical_marker_grants",
+          "tableTo": "medical_markers",
+          "columnsFrom": [
+            "marker_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "medical_marker_grants_owner_id_trainer_id_marker_id_pk": {
+          "columns": [
+            "owner_id",
+            "trainer_id",
+            "marker_id"
+          ],
+          "name": "medical_marker_grants_owner_id_trainer_id_marker_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "medical_markers": {
+      "name": "medical_markers",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "short_name": {
+          "name": "short_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "preferred_unit": {
+          "name": "preferred_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "definition_version": {
+          "name": "definition_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "medical_markers_code_unique": {
+          "name": "medical_markers_code_unique",
+          "columns": [
+            "code"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "medical_observation_revisions": {
+      "name": "medical_observation_revisions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "observation_id": {
+          "name": "observation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "changed_by": {
+          "name": "changed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "changes_json": {
+          "name": "changes_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "medical_observation_revisions_observation_idx": {
+          "name": "medical_observation_revisions_observation_idx",
+          "columns": [
+            "observation_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "medical_observation_revisions_observation_id_medical_observations_id_fk": {
+          "name": "medical_observation_revisions_observation_id_medical_observations_id_fk",
+          "tableFrom": "medical_observation_revisions",
+          "tableTo": "medical_observations",
+          "columnsFrom": [
+            "observation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_observation_revisions_changed_by_user_id_fk": {
+          "name": "medical_observation_revisions_changed_by_user_id_fk",
+          "tableFrom": "medical_observation_revisions",
+          "tableTo": "user",
+          "columnsFrom": [
+            "changed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "medical_observation_sources": {
+      "name": "medical_observation_sources",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "observation_id": {
+          "name": "observation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "page_number": {
+          "name": "page_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "raw_text": {
+          "name": "raw_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bounding_box_json": {
+          "name": "bounding_box_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "extraction_confidence": {
+          "name": "extraction_confidence",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "medical_observation_sources_uq": {
+          "name": "medical_observation_sources_uq",
+          "columns": [
+            "observation_id",
+            "document_id",
+            "page_number",
+            "source_kind"
+          ],
+          "isUnique": true
+        },
+        "medical_observation_sources_document_idx": {
+          "name": "medical_observation_sources_document_idx",
+          "columns": [
+            "document_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "medical_observation_sources_observation_id_medical_observations_id_fk": {
+          "name": "medical_observation_sources_observation_id_medical_observations_id_fk",
+          "tableFrom": "medical_observation_sources",
+          "tableTo": "medical_observations",
+          "columnsFrom": [
+            "observation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_observation_sources_document_id_medical_documents_id_fk": {
+          "name": "medical_observation_sources_document_id_medical_documents_id_fk",
+          "tableFrom": "medical_observation_sources",
+          "tableTo": "medical_documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "medical_observations": {
+      "name": "medical_observations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "marker_id": {
+          "name": "marker_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "original_name": {
+          "name": "original_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value_json": {
+          "name": "value_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "original_unit": {
+          "name": "original_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "normalized_value": {
+          "name": "normalized_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "normalized_unit": {
+          "name": "normalized_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "collected_at": {
+          "name": "collected_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "date_precision": {
+          "name": "date_precision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "laboratory_name": {
+          "name": "laboratory_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reference_json": {
+          "name": "reference_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reference_assessment": {
+          "name": "reference_assessment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "verification": {
+          "name": "verification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "extraction_version": {
+          "name": "extraction_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "medical_observations_owner_marker_idx": {
+          "name": "medical_observations_owner_marker_idx",
+          "columns": [
+            "owner_id",
+            "marker_id",
+            "collected_at"
+          ],
+          "isUnique": false
+        },
+        "medical_observations_owner_updated_idx": {
+          "name": "medical_observations_owner_updated_idx",
+          "columns": [
+            "owner_id",
+            "updated_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "medical_observations_owner_id_user_id_fk": {
+          "name": "medical_observations_owner_id_user_id_fk",
+          "tableFrom": "medical_observations",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_observations_marker_id_medical_markers_id_fk": {
+          "name": "medical_observations_marker_id_medical_markers_id_fk",
+          "tableFrom": "medical_observations",
+          "tableTo": "medical_markers",
+          "columnsFrom": [
+            "marker_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "medical_report_exports": {
+      "name": "medical_report_exports",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "marker_ids_json": {
+          "name": "marker_ids_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date_keys_json": {
+          "name": "date_keys_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "historical_period_json": {
+          "name": "historical_period_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "filename": {
+          "name": "filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "medical_report_exports_owner_idx": {
+          "name": "medical_report_exports_owner_idx",
+          "columns": [
+            "owner_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "medical_report_exports_owner_id_user_id_fk": {
+          "name": "medical_report_exports_owner_id_user_id_fk",
+          "tableFrom": "medical_report_exports",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_report_exports_created_by_user_id_fk": {
+          "name": "medical_report_exports_created_by_user_id_fk",
+          "tableFrom": "medical_report_exports",
+          "tableTo": "user",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "medical_review_items": {
+      "name": "medical_review_items",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "observation_id": {
+          "name": "observation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "medical_review_items_owner_status_idx": {
+          "name": "medical_review_items_owner_status_idx",
+          "columns": [
+            "owner_id",
+            "status"
+          ],
+          "isUnique": false
+        },
+        "medical_review_items_observation_idx": {
+          "name": "medical_review_items_observation_idx",
+          "columns": [
+            "observation_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "medical_review_items_owner_id_user_id_fk": {
+          "name": "medical_review_items_owner_id_user_id_fk",
+          "tableFrom": "medical_review_items",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_review_items_observation_id_medical_observations_id_fk": {
+          "name": "medical_review_items_observation_id_medical_observations_id_fk",
+          "tableFrom": "medical_review_items",
+          "tableTo": "medical_observations",
+          "columnsFrom": [
+            "observation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_review_items_document_id_medical_documents_id_fk": {
+          "name": "medical_review_items_document_id_medical_documents_id_fk",
+          "tableFrom": "medical_review_items",
+          "tableTo": "medical_documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "medical_review_items_resolved_by_user_id_fk": {
+          "name": "medical_review_items_resolved_by_user_id_fk",
+          "tableFrom": "medical_review_items",
+          "tableTo": "user",
+          "columnsFrom": [
+            "resolved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "comments": {
+      "name": "comments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_type": {
+          "name": "target_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_id": {
+          "name": "target_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "comments_target_idx": {
+          "name": "comments_target_idx",
+          "columns": [
+            "owner_id",
+            "target_type",
+            "target_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "comments_owner_id_user_id_fk": {
+          "name": "comments_owner_id_user_id_fk",
+          "tableFrom": "comments",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "comments_author_id_user_id_fk": {
+          "name": "comments_author_id_user_id_fk",
+          "tableFrom": "comments",
+          "tableTo": "user",
+          "columnsFrom": [
+            "author_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "measurements": {
+      "name": "measurements",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "measured_at": {
+          "name": "measured_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "values_json": {
+          "name": "values_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "measurements_owner_date_idx": {
+          "name": "measurements_owner_date_idx",
+          "columns": [
+            "owner_id",
+            "measured_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "measurements_owner_id_user_id_fk": {
+          "name": "measurements_owner_id_user_id_fk",
+          "tableFrom": "measurements",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "nutrition_photos": {
+      "name": "nutrition_photos",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "daytime": {
+          "name": "daytime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_url": {
+          "name": "source_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "observed_at": {
+          "name": "observed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mime": {
+          "name": "mime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "nutrition_yazio_photo_slot": {
+          "name": "nutrition_yazio_photo_slot",
+          "columns": [
+            "owner_id",
+            "date",
+            "daytime"
+          ],
+          "isUnique": true,
+          "where": "\"nutrition_photos\".\"source\" = 'yazio'"
+        },
+        "nutrition_photo_day": {
+          "name": "nutrition_photo_day",
+          "columns": [
+            "owner_id",
+            "date"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "nutrition_photos_owner_id_user_id_fk": {
+          "name": "nutrition_photos_owner_id_user_id_fk",
+          "tableFrom": "nutrition_photos",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "nutrition_photo_source": {
+          "name": "nutrition_photo_source",
+          "value": "\"nutrition_photos\".\"source\" in ('yazio', 'manual')"
+        },
+        "nutrition_photo_daytime": {
+          "name": "nutrition_photo_daytime",
+          "value": "\"nutrition_photos\".\"daytime\" in ('breakfast', 'lunch', 'dinner', 'snack')"
+        }
+      }
+    },
+    "nutrition_schedule": {
+      "name": "nutrition_schedule",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'UTC'"
+        },
+        "initial_from": {
+          "name": "initial_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "epoch": {
+          "name": "epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "last_success": {
+          "name": "last_success",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "next_run_at": {
+          "name": "next_run_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "attempt": {
+          "name": "attempt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "lease_id": {
+          "name": "lease_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lease_expires_at": {
+          "name": "lease_expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lease_started_at": {
+          "name": "lease_started_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "nutrition_schedule_due_idx": {
+          "name": "nutrition_schedule_due_idx",
+          "columns": [
+            "enabled",
+            "next_run_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "nutrition_schedule_owner_id_user_id_fk": {
+          "name": "nutrition_schedule_owner_id_user_id_fk",
+          "tableFrom": "nutrition_schedule",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "nutrition_schedule_attempt": {
+          "name": "nutrition_schedule_attempt",
+          "value": "\"nutrition_schedule\".\"attempt\" between 0 and 3"
+        }
+      }
+    },
+    "nutrition_cache": {
+      "name": "nutrition_cache",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "nutrition_cache_owner_id_user_id_fk": {
+          "name": "nutrition_cache_owner_id_user_id_fk",
+          "tableFrom": "nutrition_cache",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "nutrition_cache_owner_id_kind_id_pk": {
+          "columns": [
+            "owner_id",
+            "kind",
+            "id"
+          ],
+          "name": "nutrition_cache_owner_id_kind_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "nutrition_days": {
+      "name": "nutrition_days",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "nutrition_days_owner_id_user_id_fk": {
+          "name": "nutrition_days_owner_id_user_id_fk",
+          "tableFrom": "nutrition_days",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "nutrition_days_owner_id_date_pk": {
+          "columns": [
+            "owner_id",
+            "date"
+          ],
+          "name": "nutrition_days_owner_id_date_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "nutrition_sync_runs": {
+      "name": "nutrition_sync_runs",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "nutrition_sync_runs_owner_id_user_id_fk": {
+          "name": "nutrition_sync_runs_owner_id_user_id_fk",
+          "tableFrom": "nutrition_sync_runs",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "owner_settings": {
+      "name": "owner_settings",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "daily_steps_goal": {
+          "name": "daily_steps_goal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "owner_settings_owner_id_user_id_fk": {
+          "name": "owner_settings_owner_id_user_id_fk",
+          "tableFrom": "owner_settings",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "owner_settings_steps_goal_check": {
+          "name": "owner_settings_steps_goal_check",
+          "value": "\"owner_settings\".\"daily_steps_goal\" is null or (typeof(\"owner_settings\".\"daily_steps_goal\") = 'integer' and \"owner_settings\".\"daily_steps_goal\" between 1 and 9007199254740991)"
+        }
+      }
+    },
+    "trainer_invitations": {
+      "name": "trainer_invitations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "trainer_invitations_token_hash_unique": {
+          "name": "trainer_invitations_token_hash_unique",
+          "columns": [
+            "token_hash"
+          ],
+          "isUnique": true
+        },
+        "trainer_invitation_owner_idx": {
+          "name": "trainer_invitation_owner_idx",
+          "columns": [
+            "owner_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "trainer_invitations_owner_id_user_id_fk": {
+          "name": "trainer_invitations_owner_id_user_id_fk",
+          "tableFrom": "trainer_invitations",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "transformmate_catalog_exercise": {
+      "name": "transformmate_catalog_exercise",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_scope": {
+          "name": "account_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "locale": {
+          "name": "locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "exercise_id": {
+          "name": "exercise_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "summary_fetched_at": {
+          "name": "summary_fetched_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "detail_fetched_at": {
+          "name": "detail_fetched_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "in_full_catalog": {
+          "name": "in_full_catalog",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        }
+      },
+      "indexes": {
+        "tm_catalog_exercise_full_idx": {
+          "name": "tm_catalog_exercise_full_idx",
+          "columns": [
+            "owner_id",
+            "account_scope",
+            "generation",
+            "locale",
+            "in_full_catalog"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "transformmate_catalog_exercise_owner_id_user_id_fk": {
+          "name": "transformmate_catalog_exercise_owner_id_user_id_fk",
+          "tableFrom": "transformmate_catalog_exercise",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "transformmate_catalog_exercise_owner_id_account_scope_generation_locale_exercise_id_pk": {
+          "columns": [
+            "owner_id",
+            "account_scope",
+            "generation",
+            "locale",
+            "exercise_id"
+          ],
+          "name": "transformmate_catalog_exercise_owner_id_account_scope_generation_locale_exercise_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "tm_catalog_exercise_id": {
+          "name": "tm_catalog_exercise_id",
+          "value": "\"transformmate_catalog_exercise\".\"exercise_id\" > 0"
+        },
+        "tm_catalog_exercise_locale": {
+          "name": "tm_catalog_exercise_locale",
+          "value": "\"transformmate_catalog_exercise\".\"locale\" = 'ru'"
+        },
+        "tm_catalog_exercise_full": {
+          "name": "tm_catalog_exercise_full",
+          "value": "\"transformmate_catalog_exercise\".\"in_full_catalog\" in (0, 1)"
+        },
+        "tm_catalog_exercise_detail_pair": {
+          "name": "tm_catalog_exercise_detail_pair",
+          "value": "(\"transformmate_catalog_exercise\".\"detail\" is null) = (\"transformmate_catalog_exercise\".\"detail_fetched_at\" is null)"
+        }
+      }
+    },
+    "transformmate_catalog_query": {
+      "name": "transformmate_catalog_query",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_scope": {
+          "name": "account_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "locale": {
+          "name": "locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "query_key": {
+          "name": "query_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "exercise_ids": {
+          "name": "exercise_ids",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "total": {
+          "name": "total",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "has_more": {
+          "name": "has_more",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "tm_catalog_query_fetched_idx": {
+          "name": "tm_catalog_query_fetched_idx",
+          "columns": [
+            "owner_id",
+            "account_scope",
+            "generation",
+            "locale",
+            "fetched_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "transformmate_catalog_query_owner_id_user_id_fk": {
+          "name": "transformmate_catalog_query_owner_id_user_id_fk",
+          "tableFrom": "transformmate_catalog_query",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "transformmate_catalog_query_owner_id_account_scope_generation_locale_query_key_pk": {
+          "columns": [
+            "owner_id",
+            "account_scope",
+            "generation",
+            "locale",
+            "query_key"
+          ],
+          "name": "transformmate_catalog_query_owner_id_account_scope_generation_locale_query_key_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "tm_catalog_query_total": {
+          "name": "tm_catalog_query_total",
+          "value": "\"transformmate_catalog_query\".\"total\" >= 0"
+        },
+        "tm_catalog_query_locale": {
+          "name": "tm_catalog_query_locale",
+          "value": "\"transformmate_catalog_query\".\"locale\" = 'ru'"
+        },
+        "tm_catalog_query_more": {
+          "name": "tm_catalog_query_more",
+          "value": "\"transformmate_catalog_query\".\"has_more\" in (0, 1)"
+        }
+      }
+    },
+    "transformmate_catalog_state": {
+      "name": "transformmate_catalog_state",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_scope": {
+          "name": "account_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "locale": {
+          "name": "locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dictionary": {
+          "name": "dictionary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dictionary_fetched_at": {
+          "name": "dictionary_fetched_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "full_catalog_fetched_at": {
+          "name": "full_catalog_fetched_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "full_catalog_count": {
+          "name": "full_catalog_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "transformmate_catalog_state_owner_id_user_id_fk": {
+          "name": "transformmate_catalog_state_owner_id_user_id_fk",
+          "tableFrom": "transformmate_catalog_state",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "transformmate_catalog_state_owner_id_account_scope_generation_locale_pk": {
+          "columns": [
+            "owner_id",
+            "account_scope",
+            "generation",
+            "locale"
+          ],
+          "name": "transformmate_catalog_state_owner_id_account_scope_generation_locale_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "tm_catalog_state_locale": {
+          "name": "tm_catalog_state_locale",
+          "value": "\"transformmate_catalog_state\".\"locale\" = 'ru'"
+        },
+        "tm_catalog_state_count": {
+          "name": "tm_catalog_state_count",
+          "value": "\"transformmate_catalog_state\".\"full_catalog_count\" is null or \"transformmate_catalog_state\".\"full_catalog_count\" between 0 and 10000"
+        },
+        "tm_catalog_state_dictionary_pair": {
+          "name": "tm_catalog_state_dictionary_pair",
+          "value": "(\"transformmate_catalog_state\".\"dictionary\" is null) = (\"transformmate_catalog_state\".\"dictionary_fetched_at\" is null)"
+        },
+        "tm_catalog_state_full_pair": {
+          "name": "tm_catalog_state_full_pair",
+          "value": "(\"transformmate_catalog_state\".\"full_catalog_count\" is null) = (\"transformmate_catalog_state\".\"full_catalog_fetched_at\" is null)"
+        }
+      }
+    },
+    "workout_transformmate_native": {
+      "name": "workout_transformmate_native",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_scope": {
+          "name": "account_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "remote_training_id": {
+          "name": "remote_training_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "workout_tm_native_remote_unique": {
+          "name": "workout_tm_native_remote_unique",
+          "columns": [
+            "owner_id",
+            "account_scope",
+            "remote_training_id"
+          ],
+          "isUnique": true
+        },
+        "workout_tm_native_date_idx": {
+          "name": "workout_tm_native_date_idx",
+          "columns": [
+            "owner_id",
+            "account_scope",
+            "date"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "workout_transformmate_native_owner_id_user_id_fk": {
+          "name": "workout_transformmate_native_owner_id_user_id_fk",
+          "tableFrom": "workout_transformmate_native",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "workout_tm_native_revision_positive": {
+          "name": "workout_tm_native_revision_positive",
+          "value": "\"workout_transformmate_native\".\"revision\" >= 1"
+        },
+        "workout_tm_native_remote_positive": {
+          "name": "workout_tm_native_remote_positive",
+          "value": "\"workout_transformmate_native\".\"remote_training_id\" > 0"
+        }
+      }
+    },
+    "workout_transformmate_links": {
+      "name": "workout_transformmate_links",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "plan_id": {
+          "name": "plan_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "workout_id": {
+          "name": "workout_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "remote_training_id": {
+          "name": "remote_training_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "workout_tm_local_unique": {
+          "name": "workout_tm_local_unique",
+          "columns": [
+            "owner_id",
+            "plan_id",
+            "workout_id"
+          ],
+          "isUnique": true
+        },
+        "workout_tm_remote_unique": {
+          "name": "workout_tm_remote_unique",
+          "columns": [
+            "owner_id",
+            "remote_training_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "workout_transformmate_links_owner_id_user_id_fk": {
+          "name": "workout_transformmate_links_owner_id_user_id_fk",
+          "tableFrom": "workout_transformmate_links",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "workout_videos": {
+      "name": "workout_videos",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "exercise_id": {
+          "name": "exercise_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "duration": {
+          "name": "duration",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parts": {
+          "name": "parts",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "workout_videos_session_idx": {
+          "name": "workout_videos_session_idx",
+          "columns": [
+            "owner_id",
+            "session_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "workout_videos_owner_id_user_id_fk": {
+          "name": "workout_videos_owner_id_user_id_fk",
+          "tableFrom": "workout_videos",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "workout_videos_session_id_workout_sessions_id_fk": {
+          "name": "workout_videos_session_id_workout_sessions_id_fk",
+          "tableFrom": "workout_videos",
+          "tableTo": "workout_sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "workout_plans": {
+      "name": "workout_plans",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "workout_plans_owner_idx": {
+          "name": "workout_plans_owner_idx",
+          "columns": [
+            "owner_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "workout_plans_owner_id_user_id_fk": {
+          "name": "workout_plans_owner_id_user_id_fk",
+          "tableFrom": "workout_plans",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "workout_sessions": {
+      "name": "workout_sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "workout_sessions_owner_date_idx": {
+          "name": "workout_sessions_owner_date_idx",
+          "columns": [
+            "owner_id",
+            "date"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "workout_sessions_owner_id_user_id_fk": {
+          "name": "workout_sessions_owner_id_user_id_fk",
+          "tableFrom": "workout_sessions",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "yazio_daily_steps": {
+      "name": "yazio_daily_steps",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "steps": {
+          "name": "steps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "observed_at": {
+          "name": "observed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "yazio_daily_steps_owner_id_user_id_fk": {
+          "name": "yazio_daily_steps_owner_id_user_id_fk",
+          "tableFrom": "yazio_daily_steps",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "yazio_daily_steps_owner_id_date_pk": {
+          "columns": [
+            "owner_id",
+            "date"
+          ],
+          "name": "yazio_daily_steps_owner_id_date_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "yazio_steps_date_check": {
+          "name": "yazio_steps_date_check",
+          "value": "\"yazio_daily_steps\".\"date\" glob '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        },
+        "yazio_steps_count_check": {
+          "name": "yazio_steps_count_check",
+          "value": "\"yazio_daily_steps\".\"steps\" is null or (typeof(\"yazio_daily_steps\".\"steps\") = 'integer' and \"yazio_daily_steps\".\"steps\" between 0 and 9007199254740991)"
+        }
+      }
+    },
+    "yazio_weight_entries": {
+      "name": "yazio_weight_entries",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider_date": {
+          "name": "provider_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "measured_date": {
+          "name": "measured_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "raw_value": {
+          "name": "raw_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "unit": {
+          "name": "unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "unit_context": {
+          "name": "unit_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "upstream_source": {
+          "name": "upstream_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "gateway": {
+          "name": "gateway",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "observed_at": {
+          "name": "observed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "yazio_weight_owner_date_idx": {
+          "name": "yazio_weight_owner_date_idx",
+          "columns": [
+            "owner_id",
+            "measured_date"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "yazio_weight_entries_owner_id_user_id_fk": {
+          "name": "yazio_weight_entries_owner_id_user_id_fk",
+          "tableFrom": "yazio_weight_entries",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "yazio_weight_entries_owner_id_external_id_pk": {
+          "columns": [
+            "owner_id",
+            "external_id"
+          ],
+          "name": "yazio_weight_entries_owner_id_external_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "yazio_weight_external_id_check": {
+          "name": "yazio_weight_external_id_check",
+          "value": "length(\"yazio_weight_entries\".\"external_id\") = 36 and \"yazio_weight_entries\".\"external_id\" = lower(\"yazio_weight_entries\".\"external_id\")"
+        },
+        "yazio_weight_provider_date_check": {
+          "name": "yazio_weight_provider_date_check",
+          "value": "length(\"yazio_weight_entries\".\"provider_date\") between 1 and 128"
+        },
+        "yazio_weight_measured_date_check": {
+          "name": "yazio_weight_measured_date_check",
+          "value": "\"yazio_weight_entries\".\"measured_date\" is null or \"yazio_weight_entries\".\"measured_date\" glob '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        },
+        "yazio_weight_unit_unknown_check": {
+          "name": "yazio_weight_unit_unknown_check",
+          "value": "\"yazio_weight_entries\".\"unit\" is null"
+        },
+        "yazio_weight_context_check": {
+          "name": "yazio_weight_context_check",
+          "value": "\"yazio_weight_entries\".\"unit_context\" is null or length(\"yazio_weight_entries\".\"unit_context\") <= 128"
+        },
+        "yazio_weight_source_check": {
+          "name": "yazio_weight_source_check",
+          "value": "\"yazio_weight_entries\".\"upstream_source\" is null or length(\"yazio_weight_entries\".\"upstream_source\") <= 128"
+        },
+        "yazio_weight_gateway_check": {
+          "name": "yazio_weight_gateway_check",
+          "value": "\"yazio_weight_entries\".\"gateway\" is null or length(\"yazio_weight_entries\".\"gateway\") <= 128"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

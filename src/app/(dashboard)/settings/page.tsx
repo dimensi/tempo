@@ -11,6 +11,7 @@ import { ru } from '@/config/messages';
 import { YazioSettingsForm } from './yazio/settings-form';
 import { TransformMateSettingsForm } from './transformmate/settings-form';
 import { SettingsNavigation } from './settings-navigation';
+import { AccessPanel } from '@/features/anamnesis';
 import { OfflineSettings } from '@/features/offline';
 
 export const metadata = { title: 'Настройки' };
@@ -50,6 +51,7 @@ export default async function Page() {
               initialTrainers={trainers}
               headingOrder={2}
             />
+            <AccessPanel ownerId={session.user.id} />
           </section>
           <StepsGoalForm initial={stepsGoal} />
           <OfflineSettings />

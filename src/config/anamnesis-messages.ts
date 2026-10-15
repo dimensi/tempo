@@ -1,4 +1,25 @@
 export const anamnesisMessages = {
+  workspace: {
+    markers: 'Показатели',
+    documents: 'Документы и распознавание',
+    export: 'Экспорт',
+    navigation: 'Разделы анамнеза',
+    dates: 'Даты измерений',
+    allHistory: 'Вся история',
+    preview: 'Предпросмотр',
+    previewLoading: 'Обновляем предпросмотр…',
+    download: 'Скачать PDF',
+    view: 'Посмотреть',
+    newTab: 'Открыть в новой вкладке',
+    month: 'месяц',
+    snapshots: 'Сохранённые отчёты',
+    stale:
+      'Данные изменились. Обновляем предпросмотр — затем скачайте отчёт снова.',
+    empty: 'Выберите показатели и даты для предпросмотра.',
+    selectedDates: 'Выбранные даты',
+    processing: 'Распознавание',
+    undated: 'Без даты',
+  },
   title: 'Анамнез',
   navDescription: 'Медицинские показатели, документы и отчёты.',
   overview: {

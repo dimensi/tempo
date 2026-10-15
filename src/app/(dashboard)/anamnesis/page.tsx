@@ -3,12 +3,8 @@ import { authorize, requireSession } from '@/server/auth/guards';
 import { getAccessibleOwnerId } from '@/server/access/owner';
 import { anamnesisMessages as m } from '@/features/anamnesis';
 import { getAnamnesisOverview } from '@/server/anamnesis';
-import {
-  AnamnesisOverviewCards,
-  AnamnesisUploadLink,
-} from '@/features/anamnesis';
-import Link from 'next/link';
-import { Alert, Group, Stack, Text } from '@mantine/core';
+import { AnamnesisWorkspace } from '@/features/anamnesis';
+import { Alert } from '@mantine/core';
 
 export const metadata = { title: m.title };
 
@@ -34,21 +30,10 @@ export default async function Page() {
     );
   if (!overview) return null;
   return (
-    <Stack gap="lg" data-testid="anamnesis-page">
-      {access.session.user.role === 'OWNER' && (
-        <Group>
-          <AnamnesisUploadLink />
-        </Group>
-      )}
-      <AnamnesisOverviewCards overview={overview} />
-      {!overview.documents && !overview.observations ? (
-        <Text>{m.overview.empty}</Text>
-      ) : null}
-      {overview.pendingReviews > 0 && (
-        <Alert color="orange" role="status">
-          <Link href="/anamnesis/reviews">{m.overview.goToReviews}</Link>
-        </Alert>
-      )}
-    </Stack>
+    <AnamnesisWorkspace
+      ownerId={ownerId}
+      writable={access.session.user.role === 'OWNER'}
+      initial={overview}
+    />
   );
 }
