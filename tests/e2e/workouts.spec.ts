@@ -717,15 +717,24 @@ test('actual draft survives conflict and access errors; unavailable storage requ
   const date = '2026-10-18';
   const route = `/workouts/sessions/new?date=${date}`;
   await page.goto(route);
-  await page
-    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
-    .fill('Draft actual');
-  await page
-    .getByRole('option', {
-      name: 'Добавить вручную: Draft actual',
+  async function addExercise() {
+    const input = page.getByRole('combobox', {
+      name: 'Добавить упражнение',
       exact: true,
-    })
-    .click();
+    });
+    await input.scrollIntoViewIfNeeded();
+    await input.click();
+    await input.fill('Draft actual');
+    await expect(
+      page.getByRole('option', {
+        name: 'Добавить вручную: Draft actual',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await input.press('ArrowDown');
+    await input.press('Enter');
+  }
+  await addExercise();
   const reps = page.getByRole('textbox', { name: /Факт · Повторения/ });
   await reps.fill('7');
   await page.route('**/api/offline/writes', (handler) =>
@@ -745,15 +754,7 @@ test('actual draft survives conflict and access errors; unavailable storage requ
     .click();
   await page.unroute('**/api/offline/writes');
   await page.goto(route);
-  await page
-    .getByRole('combobox', { name: 'Добавить упражнение', exact: true })
-    .fill('Draft actual');
-  await page
-    .getByRole('option', {
-      name: 'Добавить вручную: Draft actual',
-      exact: true,
-    })
-    .click();
+  await addExercise();
   await reps.fill('7');
   await page.route('**/api/workouts?*', (handler) =>
     handler.fulfill({ status: 503, json: { error: 'unavailable' } }),
@@ -966,7 +967,7 @@ test('retained planned and actual editors hide cached drafts before real access 
       expect((await response).status()).toBe(401);
       await expect(
         page.locator('#main-content').getByRole('alert'),
-      ).toContainText(workoutMessages.noAccess);
+      ).toContainText('Доступ изменился.');
       await expect(
         page.getByRole('textbox', {
           name: 'Название (необязательно)',

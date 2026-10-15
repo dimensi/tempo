@@ -4,10 +4,6 @@ test('held initial offline install cannot delay real logout behind a cache lock'
   page,
   request,
 }) => {
-  test.skip(
-    test.info().project.name !== 'desktop',
-    'The held-install diagnostic uses the desktop logout button; mobile privacy is covered separately.',
-  );
   let signOutCount = 0;
   let signOutStatus: number | undefined;
   page.on('request', (r) => {
@@ -48,6 +44,11 @@ test('held initial offline install cannot delay real logout behind a cache lock'
       marker.textContent = 'Synthetic private content';
       document.body.append(marker);
     });
+    const navigation = page.getByRole('button', {
+      name: 'Навигация',
+      exact: true,
+    });
+    if (await navigation.isVisible()) await navigation.click();
     await page.getByRole('button', { name: 'Выйти', exact: true }).click();
     const locks = await page.evaluate(async () => {
       const state = await navigator.locks.query();

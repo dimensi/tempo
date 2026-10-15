@@ -35,6 +35,7 @@ import {
 import { savedDiaryDay } from './offline-model';
 import { reconnectReads } from '@/lib/offline-reconnect';
 import { networkStatusEvent } from '@/lib/network-state';
+import { useReadOnline } from '@/lib/use-read-online';
 import { revealOfflineContent } from '@/lib/offline-device';
 import { workoutTitle } from '@/lib/workout-title';
 import {
@@ -301,6 +302,7 @@ function OfflineRouteContent() {
   );
 }
 function OfflineReadStatus({ offlineMode = false }: { offlineMode?: boolean }) {
+  const online = useReadOnline();
   const controller = getOfflineController();
   const state = useSyncExternalStore(
     controller.subscribe,
@@ -335,7 +337,7 @@ function OfflineReadStatus({ offlineMode = false }: { offlineMode?: boolean }) {
                 }
           }
         >
-          {offlineMode
+          {offlineMode || !online
             ? m.networkUnavailable
             : state.status === 'ready'
               ? m.reachable

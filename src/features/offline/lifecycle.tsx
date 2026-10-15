@@ -22,9 +22,6 @@ export function OfflineLifecycle({ role }: { role: string }) {
     const stopListening = controller.listen();
     const stopObserving = observeOfflineDenials();
     const stopReads = observeReadResources();
-    const stopSummary = controller.subscribe(() => {
-      void prepareMedicalReads();
-    });
     const networkMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OFFLINE_NETWORK_UNAVAILABLE')
         reportNetworkResult(false);
@@ -59,6 +56,25 @@ export function OfflineLifecycle({ role }: { role: string }) {
           running = false;
         });
     };
+    let readyScope = '';
+    let readyTimer: ReturnType<typeof setTimeout> | undefined;
+    const stopSummary = controller.subscribe(() => {
+      void prepareMedicalReads();
+      const state = controller.getSnapshot();
+      if (
+        state.status !== 'ready' ||
+        !state.bundle ||
+        state.bundle.snapshot.role !== 'OWNER'
+      )
+        return;
+      const scope = `${state.bundle.fence.partition}:${state.bundle.fence.deviceEpoch}`;
+      if (scope === readyScope) return;
+      readyScope = scope;
+      // The initial activation can be superseded by pageshow/navigation. Initialize
+      // the existing write catalog once the resulting read scope is actually ready.
+      clearTimeout(readyTimer);
+      readyTimer = setTimeout(sync, 0);
+    });
     sync();
     window.addEventListener('online', sync);
     window.addEventListener('focus', sync);
@@ -73,6 +89,7 @@ export function OfflineLifecycle({ role }: { role: string }) {
     }, 15000);
     return () => {
       clearInterval(timer);
+      clearTimeout(readyTimer);
       window.removeEventListener('online', sync);
       window.removeEventListener('focus', sync);
       document.removeEventListener('visibilitychange', sync);
