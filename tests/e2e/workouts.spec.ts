@@ -308,12 +308,16 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     ).toBe(403);
     await trainer.goto(`/workouts/plans/${plan.id}/edit?date=2026-10-11`);
     await expect(
-      trainer.getByText('Нет разрешения на доступ к тренировкам владельца.'),
+      trainer
+        .getByText('Нет разрешения на доступ к тренировкам владельца.')
+        .filter({ visible: true }),
     ).toBeVisible();
     await expect(trainer.getByLabel('Название (необязательно)')).toHaveCount(0);
     await trainer.goto(`/workouts/plans/${plan.id}/workouts/a?date=2026-10-11`);
     await expect(
-      trainer.getByText('Нет разрешения на доступ к тренировкам владельца.'),
+      trainer
+        .getByText('Нет разрешения на доступ к тренировкам владельца.')
+        .filter({ visible: true }),
     ).toBeVisible();
     await expect(
       trainer.getByRole('heading', { name: 'Силовая', exact: true }),
