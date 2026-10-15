@@ -9,6 +9,12 @@ motion accent. This is independent branding, not the YAZIO identity.
   with radius 40% of the canvas width.
 - PNG exports: 16/32px favicons, 180px Apple touch icon, 192/512px app icons and
   a separate 512px maskable icon. `src/app/favicon.ico` contains 16/32/48px PNGs.
+- `splash/`: branded portrait launch images for installed iOS web apps. Root
+  metadata maps each file to its exact device viewport and pixel ratio through
+  `apple-touch-startup-image`; the manifest background matches the artwork so
+  uncovered or newer device sizes still open without a white flash. Each launch
+  image composites the unchanged current `app-512.png` over the generated
+  background; the logo itself is not generated or redrawn.
 
 Keep the SVG geometry as the source of truth. Export each PNG directly from its
 master at the target size; avoid enlarging smaller PNGs. The adjacent application
