@@ -4,6 +4,7 @@ export function networkReachable() {
 }
 export const networkStatusEvent = 'tempo:network-status';
 export function reportNetworkResult(reachableResult: boolean) {
+  if (reachable === reachableResult) return;
   reachable = reachableResult;
   if (typeof window !== 'undefined')
     window.dispatchEvent(

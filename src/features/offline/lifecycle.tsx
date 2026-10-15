@@ -4,7 +4,6 @@ import {
   revalidateVisibleReads,
   prepareMedicalReads,
 } from '@/lib/client-read';
-import { reportNetworkResult } from '@/lib/network-state';
 import { useEffect } from 'react';
 import {
   observeOfflineDenials,
@@ -22,11 +21,6 @@ export function OfflineLifecycle({ role }: { role: string }) {
     const stopListening = controller.listen();
     const stopObserving = observeOfflineDenials();
     const stopReads = observeReadResources();
-    const networkMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'OFFLINE_NETWORK_UNAVAILABLE')
-        reportNetworkResult(false);
-    };
-    navigator.serviceWorker?.addEventListener('message', networkMessage);
     const detach = ['OWNER', 'TRAINER'].includes(role)
       ? attachOfflineRefresh(controller)
       : () => {};
@@ -97,7 +91,6 @@ export function OfflineLifecycle({ role }: { role: string }) {
       stopSummary();
       stopReads();
       stopObserving();
-      navigator.serviceWorker?.removeEventListener('message', networkMessage);
       detach();
     };
   }, [role]);

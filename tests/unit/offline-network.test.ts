@@ -1,8 +1,16 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { observeOfflineDenials } from '@/lib/offline-device';
-import { networkStatusEvent } from '@/lib/network-state';
-afterEach(() => vi.unstubAllGlobals());
+import {
+  networkStatusEvent,
+  reportNetworkResult,
+  networkReachable,
+} from '@/lib/network-state';
+afterEach(() => {
+  vi.unstubAllGlobals();
+  reportNetworkResult(true);
+});
 function windowDouble(request: typeof fetch) {
+  reportNetworkResult(true);
   const target = Object.assign(new EventTarget(), {
     fetch: request,
     location: new URL('https://tempo.example.test'),
@@ -38,16 +46,18 @@ it('successful data loads signal refresh while offline API/media cannot create r
   await env.target.fetch('/api/measurements?ownerId=owner');
   await env.target.fetch('/api/offline/snapshot');
   await env.target.fetch('/api/workouts/transformmate/exercises/123/video');
-  expect(env.statuses).toEqual([true, true, true]);
+  expect(env.statuses).toEqual([]);
+  expect(networkReachable()).toBe(true);
   expect(env.loaded()).toBe(1);
   env.stop();
 });
-it('server unavailability is reported even when the network interface is present', async () => {
+it('cache preparation HTTP failures do not report loss of transport', async () => {
   const env = windowDouble(
     vi.fn(async () => new Response('{}', { status: 503 })),
   );
   await env.target.fetch('/api/offline/identity');
-  expect(env.statuses).toEqual([false]);
+  expect(env.statuses).toEqual([]);
+  expect(networkReachable()).toBe(true);
   expect(env.loaded()).toBe(0);
   env.stop();
 });
@@ -60,7 +70,7 @@ it('refreshes safe settings after successful goal reads and saves', async () => 
   expect(env.loaded()).toBe(2);
   env.stop();
 });
-it('keeps feature HTTP failures local while reporting an unavailable cache service', async () => {
+it('keeps feature and cache HTTP failures local to their resources', async () => {
   const responses = [
     Response.json({ error: 'Renderer unavailable' }, { status: 503 }),
     new Response('Gateway unavailable', { status: 503 }),
@@ -68,11 +78,12 @@ it('keeps feature HTTP failures local while reporting an unavailable cache servi
   const env = windowDouble(vi.fn(async () => responses.shift()!));
   await env.target.fetch('/api/overview');
   await env.target.fetch('/api/offline/snapshot');
-  expect(env.statuses).toEqual([true, false]);
+  expect(env.statuses).toEqual([]);
+  expect(networkReachable()).toBe(true);
   expect(env.loaded()).toBe(0);
   env.stop();
 });
-it('keeps provider errors local without hiding unavailable offline snapshot responses', async () => {
+it('does not confuse provider or snapshot HTTP errors with lost connectivity', async () => {
   const env = windowDouble(
     vi.fn(async () =>
       Response.json({ error: 'Service unavailable' }, { status: 503 }),
@@ -80,7 +91,24 @@ it('keeps provider errors local without hiding unavailable offline snapshot resp
   );
   await env.target.fetch('/api/workouts/transformmate/exercises?q=manual');
   await env.target.fetch('/api/offline/snapshot');
-  expect(env.statuses).toEqual([true, false]);
+  expect(env.statuses).toEqual([]);
+  expect(networkReachable()).toBe(true);
   expect(env.loaded()).toBe(0);
+  env.stop();
+});
+
+it('recovers on an HTTP response and emits only actual transport state changes', async () => {
+  const request = vi
+    .fn<typeof fetch>()
+    .mockRejectedValueOnce(new TypeError('Network down'))
+    .mockResolvedValue(
+      Response.json({ error: 'OFFLINE_UNAVAILABLE' }, { status: 503 }),
+    );
+  const env = windowDouble(request);
+  await expect(env.target.fetch('/api/overview')).rejects.toThrow();
+  await env.target.fetch('/api/offline/snapshot');
+  await env.target.fetch('/api/offline/anamnesis');
+  expect(env.statuses).toEqual([false, true]);
+  expect(networkReachable()).toBe(true);
   env.stop();
 });
