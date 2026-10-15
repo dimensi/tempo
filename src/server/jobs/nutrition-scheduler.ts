@@ -431,9 +431,6 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         {
           work,
           force: options.mode === 'day-refresh',
-          ...(options.mode === 'day-refresh'
-            ? { photoFailurePolicy: 'independent' as const }
-            : {}),
         },
       );
       assertCurrent();

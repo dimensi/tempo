@@ -55,7 +55,6 @@ export async function syncNutritionPeriod(
   repository: NutritionRepository,
   images = { fetch: fetchCdnImage, store: storeImage },
   options?: {
-    photoFailurePolicy?: 'independent';
     work?: ReadonlyMap<string, DayWork>;
     force?: boolean;
   },
@@ -94,17 +93,15 @@ export async function syncNutritionPeriod(
             ? Promise.resolve<
                 Awaited<ReturnType<NutritionDayUpstream['images']>>
               >({})
-            : options?.photoFailurePolicy === 'independent' || !work.food
-              ? upstream
-                  .images(date)
-                  .catch(
-                    (): Awaited<ReturnType<NutritionDayUpstream['images']>> => {
-                      photoMetadataFailed = true;
-                      syncReadFailure('photo-metadata', date, started);
-                      return {};
-                    },
-                  )
-              : upstream.images(date),
+            : upstream
+                .images(date)
+                .catch(
+                  (): Awaited<ReturnType<NutritionDayUpstream['images']>> => {
+                    photoMetadataFailed = true;
+                    syncReadFailure('photo-metadata', date, started);
+                    return {};
+                  },
+                ),
         ]);
         const products: Record<string, Product | null> = {};
         const recipes: Record<string, Recipe | null> = {};
@@ -185,31 +182,19 @@ export async function syncNutritionPeriod(
                   }
                 },
               );
-        // Range/scheduled sync retains its existing empty-snapshot protection.
-        // A selected-day refresh trusts successfully fetched food independently
-        // of media, including a confirmed empty day.
-        const empty = day.meals.every((meal) => !meal.entries.length);
-        const preserveSnapshot =
-          work.food &&
-          options?.photoFailurePolicy !== 'independent' &&
-          photoFailed &&
-          empty &&
-          Boolean(repository.day(ownerId, date));
-        if (!preserveSnapshot) {
-          stage = 'persist-food-photos';
-          repository.replaceDay(
-            ownerId,
-            day,
-            photos.filter((photo): photo is PhotoRow => photo !== null),
-            {
-              ...(work.food ? { food: true } : {}),
-              ...(work.photos ? { photos: !photoFailed } : {}),
-            },
-          );
-        }
+        // Validated food, including an empty day, is independent of media failures.
+        stage = 'persist-food-photos';
+        repository.replaceDay(
+          ownerId,
+          day,
+          photos.filter((photo): photo is PhotoRow => photo !== null),
+          {
+            ...(work.food ? { food: true } : {}),
+            ...(work.photos ? { photos: !photoFailed } : {}),
+          },
+        );
         if (photoFailed) status.photoFailedDates.push(date);
-        if (preserveSnapshot) status.failedDates.push(date);
-        else if (work.food) status.completedDates.push(date);
+        if (work.food) status.completedDates.push(date);
         else status.skippedDates.push(date);
       } catch {
         syncReadFailure(stage, date, started);

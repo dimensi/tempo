@@ -284,6 +284,66 @@ describe('durable owner schedule', () => {
     expect(repository.day('owner', date)).toEqual(old);
     expect(syncProgress(database).get('owner', date)!.photos).toBe(true);
   });
+  it('persists new historical food despite failed photo metadata and never rereads it during repair', async () => {
+    const { deps, upstream, repository } = setup();
+    const { service } = withBody(deps);
+    const date = '2026-10-01';
+    const history = { from: date, to: date };
+    vi.mocked(upstream.items).mockResolvedValue({
+      products: [],
+      recipe_portions: [],
+      simple_products: [
+        {
+          id: 'food',
+          date: date + ' 12:00:00',
+          daytime: 'lunch',
+          name: 'Synthetic food',
+          nutrients: { 'energy.energy': 10 },
+          is_ai_generated: false,
+        },
+      ],
+    });
+    vi.mocked(upstream.images).mockRejectedValueOnce(
+      new Error('Synthetic unavailable metadata'),
+    );
+    expect(
+      await service.run('owner', history, {
+        mode: 'manual',
+        timezone: input.timezone,
+      }),
+    ).toMatchObject({
+      state: 'partial',
+      completedDates: [date],
+      failedDates: [],
+      photoFailedDates: [date],
+    });
+    expect(
+      repository.day('owner', date)!.meals.flatMap((meal) => meal.entries),
+    ).toHaveLength(1);
+    expect(syncProgress(database).get('owner', date)).toMatchObject({
+      food: true,
+      photos: false,
+    });
+    vi.clearAllMocks();
+    expect(
+      await service.run('owner', history, {
+        mode: 'manual',
+        timezone: input.timezone,
+      }),
+    ).toMatchObject({
+      state: 'completed',
+      skippedDates: [date],
+      completedDates: [],
+      photoFailedDates: [],
+    });
+    expect(upstream.items).not.toHaveBeenCalled();
+    expect(upstream.summary).not.toHaveBeenCalled();
+    expect(upstream.images).toHaveBeenCalledExactlyOnceWith(date);
+    expect(syncProgress(database).get('owner', date)).toMatchObject({
+      food: true,
+      photos: true,
+    });
+  });
   it('retries failed historical steps independently of completed food, weight and body', async () => {
     const { deps, upstream } = setup();
     const { service, bodySync } = withBody(deps);

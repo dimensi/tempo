@@ -1,5 +1,5 @@
 import 'server-only';
-import { syncProgress } from './sync-progress';
+import { syncProgress } from '@/server/yazio/sync-progress';
 import {
   canonicalYazioBodyValue,
   sameYazioBodyValue,

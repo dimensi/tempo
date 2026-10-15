@@ -158,7 +158,7 @@ describe('whole-day synchronization', () => {
         source,
         repository,
         images,
-        { photoFailurePolicy: 'independent' },
+        { force: true },
       );
       expect(result).toMatchObject({
         state: 'partial',
@@ -188,7 +188,7 @@ describe('whole-day synchronization', () => {
       source,
       repository,
       undefined,
-      { photoFailurePolicy: 'independent' },
+      { force: true },
     );
     expect(result).toMatchObject({
       state: 'partial',
@@ -209,7 +209,7 @@ describe('whole-day synchronization', () => {
         source,
         repository,
         undefined,
-        { photoFailurePolicy: 'independent' },
+        { force: true },
       ),
     ).toMatchObject({
       state: 'failed',
@@ -233,10 +233,10 @@ describe('whole-day synchronization', () => {
     expect(second.meals[1]!.delta.calories).toBe('9');
     expect(repository.list('owner', date, date)).toHaveLength(1);
   });
-  it('keeps the old snapshot on items, summary, reference, or photo failure', async () => {
+  it('keeps the old snapshot on food failures but accepts confirmed empty food despite failed media', async () => {
     await syncNutritionPeriod('owner', period, upstream(), repository);
     const old = repository.day('owner', date);
-    for (const endpoint of ['items', 'summary', 'images'] as const) {
+    for (const endpoint of ['items', 'summary'] as const) {
       const source = upstream();
       vi.mocked(source[endpoint]).mockRejectedValue(
         new Error('Synthetic upstream error'),
@@ -273,13 +273,29 @@ describe('whole-day synchronization', () => {
     vi.mocked(source.images).mockResolvedValue({
       lunch: 'https://images.yazio-cdn.com/synthetic.jpg',
     });
-    await syncNutritionPeriod('owner', period, source, repository, {
-      fetch: async () => {
-        throw new Error('Unavailable');
+    const result = await syncNutritionPeriod(
+      'owner',
+      period,
+      source,
+      repository,
+      {
+        fetch: async () => {
+          throw new Error('Unavailable');
+        },
+        store: vi.fn(),
       },
-      store: vi.fn(),
+    );
+    expect(result).toMatchObject({
+      state: 'partial',
+      completedDates: [date],
+      failedDates: [],
+      photoFailedDates: [date],
     });
-    expect(repository.day('owner', date)).toEqual(old);
+    expect(
+      repository
+        .day('owner', date)!
+        .meals.every((meal) => meal.entries.length === 0),
+    ).toBe(true);
   });
   it('deletes missing upstream entries/photos only after success and keeps manual photos', async () => {
     const source = upstream();

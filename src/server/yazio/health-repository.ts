@@ -2,7 +2,7 @@ import 'server-only';
 import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
 import { yazioObservationDate } from '@/lib/yazio-observations';
 import { z } from 'zod';
-import { syncProgress } from './sync-progress';
+import { syncProgress } from '@/server/yazio/sync-progress';
 import { getDatabase } from '@/server/db';
 import {
   yazioDailySteps,
