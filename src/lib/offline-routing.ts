@@ -41,8 +41,9 @@ export function useOfflineLocation() {
   );
   return typeof location === 'undefined' ? null : new URL(location.href);
 }
-export function interceptOfflineLinks(navigateOnline?: (href: string) => void) {
+export function interceptOfflineLinks() {
   let pending: AbortController | undefined;
+  let resuming: HTMLAnchorElement | undefined;
   const click = (event: MouseEvent) => {
     if (
       event.defaultPrevented ||
@@ -56,7 +57,7 @@ export function interceptOfflineLinks(navigateOnline?: (href: string) => void) {
     const link = (event.target as Element)?.closest<HTMLAnchorElement>(
       'a[href]',
     );
-    if (!link || link.target || link.download) return;
+    if (!link || link === resuming || link.target || link.download) return;
     const url = new URL(link.href, location.href);
     if (
       url.origin !== location.origin ||
@@ -92,11 +93,16 @@ export function interceptOfflineLinks(navigateOnline?: (href: string) => void) {
       2000,
     ).then(
       () => {
-        if (attempt.signal.aborted) return;
+        if (attempt.signal.aborted || link.isConnected === false) return;
         reportNetworkResult(true);
-        if (navigateOnline)
-          navigateOnline(url.pathname + url.search + url.hash);
-        else location.assign(url.href);
+        // Resume the original link so Next keeps its scroll options, pending
+        // state and keyboard-selection ordering. Bypass only this one replay.
+        resuming = link;
+        try {
+          link.click();
+        } finally {
+          resuming = undefined;
+        }
       },
       () => {
         if (attempt.signal.aborted) return;
@@ -105,9 +111,12 @@ export function interceptOfflineLinks(navigateOnline?: (href: string) => void) {
       },
     );
   };
+  const cancel = () => pending?.abort();
   document.addEventListener('click', click, true);
+  window.addEventListener('popstate', cancel);
   return () => {
     pending?.abort();
     document.removeEventListener('click', click, true);
+    window.removeEventListener('popstate', cancel);
   };
 }
