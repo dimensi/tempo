@@ -19,13 +19,16 @@ import {
   offlineDeviceLimits,
   type CachedBundle,
   type StoredPhoto,
+  type StoredOfflineFile,
+  offlineFileLimits,
 } from '@/lib/offline-device';
-import { prepareOfflineShell } from './shell';
+import { prepareOfflineShell } from './offline-shell';
 export interface OfflineState {
   status: 'checking' | 'disabled' | 'saving' | 'ready' | 'offline' | 'error';
   enabled: boolean;
   bundle: CachedBundle<OfflineSnapshot> | null;
   photos: StoredPhoto[];
+  files: StoredOfflineFile[];
   error: 'unavailable' | 'denied' | null;
 }
 const empty: OfflineState = {
@@ -33,11 +36,17 @@ const empty: OfflineState = {
   enabled: false,
   bundle: null,
   photos: [],
+  files: [],
   error: null,
 };
 export class OfflineReadError extends Error {
   constructor(public readonly reason: 'unavailable' | 'denied') {
     super(`Offline read ${reason}`);
+  }
+}
+export class OfflineNetworkError extends OfflineReadError {
+  constructor() {
+    super('unavailable');
   }
 }
 export class OfflineController {
@@ -103,7 +112,7 @@ export class OfflineController {
         signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
       });
     } catch {
-      throw new OfflineReadError('unavailable');
+      throw new OfflineNetworkError();
     }
     if (
       response.status === 401 ||
@@ -113,6 +122,7 @@ export class OfflineController {
       await purgeOfflineDevice().catch(() => {});
       throw new OfflineReadError('denied');
     }
+    if (response.status >= 500) throw new OfflineNetworkError();
     if (!response.ok) throw new OfflineReadError('unavailable');
     return response;
   }
@@ -123,6 +133,7 @@ export class OfflineController {
   }
   private sameIdentity(first: OfflineIdentity, second: OfflineIdentity) {
     return (
+      first.role === second.role &&
       first.partition === second.partition &&
       first.connectionGeneration === second.connectionGeneration
     );
@@ -221,6 +232,7 @@ export class OfflineController {
       status: this.optedIn ? (online ? 'ready' : 'offline') : 'disabled',
       bundle: cached.bundle,
       photos: cached.photos,
+      files: cached.files ?? [],
     });
   }
   private async load(
@@ -295,6 +307,19 @@ export class OfflineController {
       )
         await this.download(identity, operation, cached);
     } catch (error) {
+      if (
+        error instanceof OfflineNetworkError &&
+        !operation.signal.aborted &&
+        this.revision === operation.revision
+      ) {
+        try {
+          const cached = await this.storage.read(this.now(), this.timezone());
+          if (this.revision === operation.revision) this.publish(cached, false);
+          return;
+        } catch (storageError) {
+          error = storageError;
+        }
+      }
       await this.failed(error, operation.revision, verifiedCache);
     }
   }
@@ -346,14 +371,12 @@ export class OfflineController {
     identity: OfflineIdentity,
     operation: { revision: number; signal: AbortSignal },
     cached: Awaited<ReturnType<OfflineStorage['read']>>,
-    requestedPeriod?: { from: string; to: string },
   ) {
     this.lastRefreshAttempt = this.now();
     await this.prepareShell(operation.signal);
     if (this.revision !== operation.revision) return;
     const fence = await this.storage.currentFence();
-    const period =
-      requestedPeriod ?? offlineLocalWindow(this.now(), this.timezone());
+    const period = offlineLocalWindow(this.now(), this.timezone());
     const response = await this.request(
       `/api/offline/snapshot?from=${period.from}&to=${period.to}`,
       operation.signal,
@@ -462,22 +485,125 @@ export class OfflineController {
     });
   }
   async saveWorkoutDate(date: string) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !navigator.onLine) return;
-    await this.activate(true);
+    const window = offlineLocalWindow(this.now(), this.timezone());
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      date < window.from ||
+      date > window.to ||
+      !navigator.onLine
+    )
+      return;
     if (this.flight) await this.flight;
-    if (!this.state.enabled || this.state.error || this.flight) return;
+    await this.save();
+  }
+  async saveFile(input: {
+    id: string;
+    label: string;
+    kind: 'pdf' | 'video';
+    href: string;
+    size?: number;
+  }) {
+    const url = new URL(input.href, location.origin);
+    if (
+      url.origin !== location.origin ||
+      !(
+        url.pathname === '/api/reports' ||
+        /^\/api\/workouts\/(?:videos\/[A-Za-z0-9-]+\/playback|transformmate\/exercises\/[1-9][0-9]*\/video)$/.test(
+          url.pathname,
+        )
+      )
+    )
+      throw new OfflineReadError('unavailable');
+    let failure: unknown;
+    let committed = false;
     await this.runLocked('saving', true, async (operation) => {
       try {
         const identity = await this.identity(operation.signal);
         const cached = await this.storage.read(this.now(), this.timezone());
-        if (this.revision !== operation.revision) return;
-        await this.download(identity, operation, cached, {
-          from: date,
-          to: date,
+        if (
+          !cached.bundle ||
+          !this.sameIdentity(identity, cached.bundle.snapshot)
+        )
+          throw new OfflineReadError('denied');
+        const response = await this.request(
+          url.pathname + url.search,
+          operation.signal,
+        );
+        const mime = input.kind === 'pdf' ? 'application/pdf' : 'video/mp4';
+        if (
+          response.headers.get('content-type')?.split(';')[0] !== mime ||
+          !response.body
+        )
+          throw new OfflineReadError('unavailable');
+        const declared = Number(response.headers.get('content-length'));
+        if (
+          declared > offlineFileLimits.singleBytes ||
+          (input.size && input.size > offlineFileLimits.singleBytes)
+        )
+          throw new OfflineStorageError('quota');
+        const reader = response.body.getReader();
+        const chunks: Uint8Array<ArrayBuffer>[] = [];
+        let size = 0;
+        while (true) {
+          const part = await reader.read();
+          if (part.done) break;
+          size += part.value.byteLength;
+          if (size > offlineFileLimits.singleBytes) {
+            await reader.cancel();
+            throw new OfflineStorageError('quota');
+          }
+          chunks.push(new Uint8Array(part.value));
+        }
+        if (
+          !size ||
+          (declared > 0 && size !== declared) ||
+          (input.size && size !== input.size)
+        )
+          throw new OfflineReadError('unavailable');
+        const latest = await this.identity(operation.signal);
+        if (
+          !this.sameIdentity(identity, latest) ||
+          this.revision !== operation.revision
+        )
+          throw new OfflineReadError('denied');
+        await this.storage.writeFile({
+          id: input.id.slice(0, 200),
+          label: input.label.slice(0, 300),
+          kind: input.kind,
+          bytes: new Blob(chunks, { type: mime }),
+          savedAt: this.now(),
+          fence: cached.bundle.fence,
         });
+        committed = true;
+        const retained = await this.storage.read(this.now(), this.timezone());
+        if (this.revision === operation.revision) this.publish(retained, true);
       } catch (error) {
-        await this.failed(error, operation.revision);
+        failure = error;
+        if (error instanceof OfflineReadError && error.reason === 'denied')
+          await this.disable();
+        else {
+          const cached = await this.storage
+            .read(this.now(), this.timezone())
+            .catch(() => null);
+          if (this.revision === operation.revision) {
+            if (cached)
+              this.publish(cached, !(error instanceof OfflineNetworkError));
+            else this.set({ ...empty, status: 'error', error: 'unavailable' });
+          }
+        }
       }
+    });
+    if (failure) throw failure;
+    if (!committed) throw new OfflineReadError('unavailable');
+  }
+  async removeFile(id: string) {
+    const online = this.state.status === 'ready';
+    await this.runLocked('checking', online, async (operation) => {
+      const cached = await this.storage.read(this.now(), this.timezone());
+      if (!cached.bundle || this.revision !== operation.revision) return;
+      await this.storage.writeFile({ id, fence: cached.bundle.fence });
+      const retained = await this.storage.read(this.now(), this.timezone());
+      if (this.revision === operation.revision) this.publish(retained, online);
     });
   }
   async disable() {

@@ -528,3 +528,35 @@ it('fills unknown muscle membership once instead of hiding valid filtered result
   expect(page).toHaveBeenCalledTimes(1);
   expect(list).not.toHaveBeenCalled();
 });
+
+it('offline projection reads only 201 recent records in the current connection scope', () => {
+  const store = catalogStore();
+  const rows = Array.from({ length: 250 }, (_, index) => ({
+    id: index + 1,
+    name: `Exercise ${index + 1}`,
+    metrics: [],
+  }));
+  store.full(scope, rows, '2026-10-01T00:00:00.000Z');
+  store.detail(
+    scope,
+    {
+      id: 250,
+      name: 'Recently opened',
+      description: 'Saved description',
+      other_names: [],
+      image: null,
+      previewCoverage: 'absent',
+      previewCheckedAt: null,
+      muscles: [],
+      metrics: [],
+      kinescope_data: null,
+    },
+    '2026-10-12T00:00:00.000Z',
+  );
+  expect(store.offlineRecords(scope)).toHaveLength(201);
+  expect(store.offlineRecords(scope)[0]!.id).toBe(250);
+  expect(store.offlineRecords({ ...scope, generation: 'other' })).toEqual([]);
+  expect(store.offlineRecords({ ...scope, accountScope: 'other' })).toEqual([]);
+  expect(list).not.toHaveBeenCalled();
+  expect(details).not.toHaveBeenCalled();
+});

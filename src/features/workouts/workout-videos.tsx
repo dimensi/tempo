@@ -15,6 +15,7 @@ import {
   type WorkoutVideo,
 } from '@/contracts/workout-videos';
 import { subscribeOfflineBlocked } from '@/lib/offline-device';
+import { OfflineFile } from '@/components/shared/offline-file';
 import { TeachingVideo } from './teaching-video';
 import { compressWorkoutVideo } from './compress-video';
 import { sendVideoPart } from './video-upload';
@@ -320,6 +321,13 @@ function ExerciseVideos({
               src={`${base}/${row.id}/playback${query}`}
               label={`${m.ownVideos}: ${name}`}
               compact
+            />
+            <OfflineFile
+              id={`video:${row.id}`}
+              label={name}
+              kind="video"
+              size={row.size}
+              href={`${base}/${row.id}/playback?ownerId=${encodeURIComponent(ownerId)}`}
             />
             {canUpload && (
               <Button

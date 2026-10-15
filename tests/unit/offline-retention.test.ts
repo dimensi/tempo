@@ -36,7 +36,7 @@ describe('offline local calendar retention', () => {
       ),
     ).toEqual({ from: '2026-10-18', to: '2026-11-01' });
   });
-  it('prunes diary observations inclusively and retains bounded workout copies without changing genuine server metadata or zero/null', () => {
+  it('prunes all dated details inclusively without changing genuine server metadata or zero/null', () => {
     const snapshot = offlineFixture(Date.parse('2026-10-12T12:00:00Z'));
     const dates = ['2026-09-27', '2026-09-28', '2026-10-12', '2026-10-13'];
     snapshot.diary = dates.map((date) => ({ ...snapshot.diary[0]!, date }));
@@ -104,7 +104,10 @@ describe('offline local calendar retention', () => {
       result.transformMateFacts,
       result.nativeTrainings,
     ])
-      expect(collection.map((item) => item.date)).toEqual(dates);
+      expect(collection.map((item) => item.date)).toEqual([
+        '2026-09-28',
+        '2026-10-12',
+      ]);
     expect(result.dailySteps[0]!.steps).toBe(0);
     expect(result.importedWeights[0]!.rawValue).toBeNull();
     expect(result.expiresAt).toBe(snapshot.expiresAt);
@@ -112,7 +115,7 @@ describe('offline local calendar retention', () => {
   });
 });
 
-it('retains old visited workout links across diary refresh and never crosses an account generation', () => {
+it('removes expired workout details across diary refresh and never crosses an account generation', () => {
   const old = offlineFixture(Date.parse('2026-09-01T12:00:00Z'));
   const fresh = offlineFixture(Date.parse('2026-10-12T12:00:00Z'));
   old.workoutSessions[0]!.href = '/workouts/sessions/old-visited';
@@ -121,10 +124,10 @@ it('retains old visited workout links across diary refresh and never crosses an 
     offlineLocalWindow(Date.parse(fresh.serverNow), 'UTC'),
   );
   expect(merged.diary.map((item) => item.date)).toEqual(['2026-10-12']);
-  expect(merged.workoutSessions.map((item) => item.href)).toContain(
+  expect(merged.workoutSessions.map((item) => item.href)).not.toContain(
     '/workouts/sessions/old-visited',
   );
-  expect(merged.workoutDates).toContain('2026-09-01');
+  expect(merged.workoutDates).not.toContain('2026-09-01');
   fresh.connectionGeneration = 'Z'.repeat(43);
   expect(
     mergeOfflineSnapshots(old, fresh).workoutSessions.map((item) => item.href),

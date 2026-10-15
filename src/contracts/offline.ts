@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { offlineViewsSchema } from './offline-views';
 import { transformMateNativeItemSchema } from './transformmate-native';
 import {
   ownerConfirmedYazioWeightPolicyVersion,
@@ -84,11 +85,11 @@ export const offlinePeriodSchema = z
   });
 export const offlineIdentitySchema = z
   .object({
-    contractVersion: z.literal(1),
+    contractVersion: z.literal(2),
     weightPolicyVersion: z.literal(ownerConfirmedYazioWeightPolicyVersion),
     partition: opaque,
     connectionGeneration: opaque,
-    role: z.literal('OWNER'),
+    role: z.enum(['OWNER', 'TRAINER']),
     serverNow: timestamp,
     sessionExpiresAt: timestamp,
     expiresAt: timestamp,
@@ -146,6 +147,7 @@ const totals = {
 };
 export const offlineSnapshotSchema = offlineIdentitySchema
   .extend({
+    views: offlineViewsSchema,
     from: date,
     to: date,
     workoutDates: z.array(date).max(300),

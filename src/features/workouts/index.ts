@@ -10,3 +10,5 @@ export {
   WorkoutReadContent,
   type WorkoutReadContentProps,
 } from './read-content';
+
+export { CatalogPage } from './catalog-page';

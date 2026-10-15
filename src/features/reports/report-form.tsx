@@ -15,9 +15,14 @@ import {
   Text,
   TextInput,
   Title,
+  Table,
 } from '@mantine/core';
 import { DateNavigation } from '@/components/shared/date-navigation';
 import { browserToday } from '@/components/shared/date-navigation-dates';
+import type { NutritionDay } from '@/contracts/nutrition';
+import { formatDecimal } from '@/lib/number-display';
+import { OfflineFile } from '@/components/shared/offline-file';
+import { offlineFileMessages } from '@/config/offline-files';
 import { reportRequestSchema } from '@/contracts/reports';
 import { reportMessages as m } from './messages';
 import { weeklyRange } from './weekly-range';
@@ -27,7 +32,13 @@ const clientReady = () => true;
 const serverReady = () => false;
 const inputStyles = { input: { fontSize: 16 } };
 
-export function ReportForm({ ownerId }: { ownerId: string | null }) {
+export function ReportForm({
+  ownerId,
+  offlineDays,
+}: {
+  ownerId: string | null;
+  offlineDays?: NutritionDay[];
+}) {
   const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
   const [period, setPeriod] = useState('daily');
   const [start, setStart] = useState<string | null>(null);
@@ -74,6 +85,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
         ? (week?.end ?? '')
         : (end ?? '');
   useEffect(() => {
+    if (offlineDays) return;
     const controller = new AbortController();
     pending.current = controller;
     // Coalesce date edits before entering the measured Chromium pipeline.
@@ -151,6 +163,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
     finish,
     downloading,
     clearPrivatePreview,
+    offlineDays,
   ]);
   async function download() {
     const parsed = reportRequestSchema.safeParse({
@@ -290,7 +303,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
           styles={{ root: { fontSize: 16 } }}
           mih={44}
           loading={downloading}
-          disabled={!ready || ownerId === null || busy}
+          disabled={!!offlineDays || !ready || ownerId === null || busy}
           onClick={() => void download()}
         >
           {m.download}
@@ -301,12 +314,82 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
           </Text>
         )}
       </Group>
+      {!offlineDays && ownerId && finish && selectedStart && (
+        <>
+          <OfflineFile
+            id={`report:${period}:${selectedStart}:${finish}`}
+            label={`${m.title}: ${selectedStart} — ${finish}`}
+            kind="pdf"
+            href={`/api/reports?${new URLSearchParams({ ownerId, period, start: selectedStart, end: finish, format: 'pdf' })}`}
+          />
+          <Text size="sm" c="dimmed">
+            {offlineFileMessages.limit}
+          </Text>
+        </>
+      )}
+      {offlineDays && (
+        <>
+          <Text c="dimmed">{m.offlinePreview}</Text>
+          <Table.ScrollContainer minWidth={400}>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>{m.offlineDate}</Table.Th>
+                  <Table.Th>{m.energy}</Table.Th>
+                  <Table.Th>{m.proteinName}</Table.Th>
+                  <Table.Th>{m.fatName}</Table.Th>
+                  <Table.Th>{m.carbsName}</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {Array.from(
+                  {
+                    length: Math.min(
+                      366,
+                      Math.max(
+                        0,
+                        (Date.parse(finish) - Date.parse(selectedStart)) /
+                          86400000 +
+                          1,
+                      ),
+                    ),
+                  },
+                  (_, i) => {
+                    const date = new Date(
+                      Date.parse(selectedStart) + i * 86400000,
+                    )
+                      .toISOString()
+                      .slice(0, 10);
+                    const day = offlineDays.find((day) => day.date === date);
+                    return (
+                      <Table.Tr key={date}>
+                        <Table.Td>
+                          {date}
+                          {!day && <Text size="xs">{m.offlineMissing}</Text>}
+                        </Table.Td>
+                        {(['calories', 'protein', 'fat', 'carbs'] as const).map(
+                          (key) => (
+                            <Table.Td key={key}>
+                              {formatDecimal(day?.totals[key] ?? null) ??
+                                m.unavailable}
+                            </Table.Td>
+                          ),
+                        )}
+                      </Table.Tr>
+                    );
+                  },
+                )}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </>
+      )}
       {html && (
         <Text size="sm" c="dimmed">
           {m.preview}: {previewRange}
         </Text>
       )}
-      {ownerId !== null && (
+      {!offlineDays && ownerId !== null && (
         <iframe
           title={m.preview}
           aria-busy={busy}

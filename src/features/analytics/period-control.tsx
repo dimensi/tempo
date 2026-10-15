@@ -50,18 +50,33 @@ export function AnalyticsTimezone({
     </Stack>
   );
 }
-export function PeriodControl({
-  range,
-  previous,
-  timezone,
-  today,
-}: {
+interface PeriodControlProps {
   range: AnalyticsRange;
   previous: AnalyticsRange;
   timezone: string;
   today: string;
-}) {
+}
+export function PeriodControl(props: PeriodControlProps) {
   const router = useRouter();
+  return (
+    <PeriodControlView
+      {...props}
+      onNavigate={(range) =>
+        router.push(
+          `/analytics?${new URLSearchParams({ ...range, timezone: props.timezone })}`,
+          { scroll: false },
+        )
+      }
+    />
+  );
+}
+export function PeriodControlView({
+  range,
+  previous,
+  timezone,
+  today,
+  onNavigate,
+}: PeriodControlProps & { onNavigate: (range: AnalyticsRange) => void }) {
   const [pending, startTransition] = useTransition();
   const [custom, setCustom] = useState(false);
   const [draft, setDraft] = useState(range);
@@ -76,12 +91,7 @@ export function PeriodControl({
     setError(!parsed.success);
     if (!parsed.success) return;
     setCustom(false);
-    startTransition(() =>
-      router.push(
-        `/analytics?${new URLSearchParams({ ...parsed.data, timezone })}`,
-        { scroll: false },
-      ),
-    );
+    startTransition(() => onNavigate(parsed.data));
   }
   return (
     <Stack gap="sm">

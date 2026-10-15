@@ -1,4 +1,9 @@
 export const workoutMessages = {
+  exerciseCatalog: 'Каталог упражнений',
+  catalogPageCoverage:
+    'Показана загруженная часть каталога. Остальные упражнения доступны на следующих страницах.',
+  catalogPrevious: 'Предыдущие упражнения',
+  catalogNext: 'Следующие упражнения',
   ownVideos: 'Видео выполнения',
   videoSelect: 'Выбрать видео',
   videoPreview: 'Превью сжатого видео',

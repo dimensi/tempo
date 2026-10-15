@@ -26,10 +26,17 @@ import {
   useOfflineLocation,
 } from '@/features/offline';
 import { syncDeviceWrites } from '@/lib/offline-write-client';
+import {
+  OfflineSection,
+  OfflineComments,
+  OfflineVideos,
+  OfflineFiles,
+} from './offline-sections';
+import { savedDiaryDay } from './offline-model';
+import { networkStatusEvent } from '@/lib/network-state';
 import { revealOfflineContent } from '@/lib/offline-device';
 import { workoutTitle } from '@/lib/workout-title';
 import type { OfflineSnapshot } from '@/contracts/offline';
-import type { NutritionDay } from '@/contracts/nutrition';
 function OfflineRouteContent() {
   const url = useOfflineLocation();
   const controller = getOfflineController();
@@ -88,30 +95,14 @@ function OfflineRouteContent() {
   );
   let content: ReactNode = unknown;
   if (pathname === '/diary') {
-    const saved = snapshot?.diary.find((day) => day.date === date);
-    const day: NutritionDay | null = saved
-      ? {
-          ...saved,
-          meals: saved.meals.map((meal) => ({
-            ...meal,
-            entries: meal.entries.map(({ key, ...entry }) => ({
-              ...entry,
-              id: key,
-              sourceId: null,
-              addedAt: null,
-              consumedAt: null,
-              editedAt: null,
-            })),
-          })),
-        }
-      : null;
+    const day = savedDiaryDay(snapshot, date);
     content = (
       <Stack>
         <DiaryView
           date={date}
           day={day}
           privatePhotos
-          unavailableSlot={!saved ? unknown : undefined}
+          unavailableSlot={!day ? unknown : undefined}
           photos={photos.filter((photo) => photo.date === date)}
           navigationSlot={
             <Stack gap="sm">
@@ -132,6 +123,9 @@ function OfflineRouteContent() {
             photo.date === date &&
             !photos.some((saved) => saved.id === photo.id && saved.href),
         ) && <Text>{m.noPhoto}</Text>}
+        {snapshot && day && (
+          <OfflineComments snapshot={snapshot} target={`/diary?date=${date}`} />
+        )}
         {disabled}
       </Stack>
     );
@@ -151,6 +145,14 @@ function OfflineRouteContent() {
           labels={workoutMessages.dateNavigation}
           onSelect={(value) => offlineNavigate(`/workouts?date=${value}`)}
         />
+        <Button
+          component="a"
+          href="/workouts/catalog"
+          variant="subtle"
+          mih={44}
+        >
+          {m.cachedCatalog}
+        </Button>
         <Button disabled variant="subtle" mih={44}>
           {workoutMessages.syncRefresh}
         </Button>
@@ -159,6 +161,7 @@ function OfflineRouteContent() {
         ) : (
           <WorkoutDay snapshot={snapshot} date={date} />
         )}
+        <OfflineFiles kind="video" />
       </Stack>
     );
   } else if (
@@ -172,7 +175,10 @@ function OfflineRouteContent() {
         {disabled}
       </Stack>
     );
-  } else if (pathname.startsWith('/workouts/')) {
+  } else if (
+    pathname.startsWith('/workouts/') &&
+    pathname !== '/workouts/catalog'
+  ) {
     const plan = snapshot?.plannedWorkouts.find(
       (item) => item.href === pathname,
     );
@@ -239,6 +245,12 @@ function OfflineRouteContent() {
           )}
           {native && <WorkoutReadContent kind="native" item={native} />}
           {fact && <WorkoutReadContent kind="fact" item={fact} />}
+          {session && (
+            <>
+              <OfflineComments snapshot={snapshot} target={session.href} />
+              <OfflineVideos snapshot={snapshot} href={session.href} />
+            </>
+          )}
         </Stack>
       ) : (
         <Stack>
@@ -255,16 +267,12 @@ function OfflineRouteContent() {
       );
   } else
     content = (
-      <Stack>
-        <Title order={1}>{m.sectionTitle(pathname)}</Title>
-        <Alert>{m.requiresNetwork}</Alert>
-      </Stack>
+      <OfflineSection snapshot={snapshot} url={url} today={browserToday()} />
     );
   return (
     <Stack gap="lg">
-      <Text size="sm" role="status">
-        {m.offline}
-      </Text>
+      <OfflineReadStatus offlineMode />
+      {state.error && <Alert color="orange">{m[state.error]}</Alert>}
       {(pathname === '/workouts' || pathname === '/measurements') && (
         <OfflineWrites
           key={pathname}
@@ -273,8 +281,6 @@ function OfflineRouteContent() {
       )}
       {state.status === 'checking' || state.status === 'saving' ? (
         <Text role="status">{m.checking}</Text>
-      ) : state.error ? (
-        <Alert color="red">{m[state.error]}</Alert>
       ) : snapshot ? (
         <div data-offline-private hidden>
           {content}
@@ -285,6 +291,59 @@ function OfflineRouteContent() {
     </Stack>
   );
 }
+function OfflineReadStatus({ offlineMode = false }: { offlineMode?: boolean }) {
+  const controller = getOfflineController();
+  const state = useSyncExternalStore(
+    controller.subscribe,
+    controller.getSnapshot,
+    controller.getServerSnapshot,
+  );
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const update = () => setNow(Date.now());
+    update();
+    const timer = setInterval(update, 60000);
+    return () => clearInterval(timer);
+  }, []);
+  const retry = async () => {
+    await controller.activate(true, true);
+    if (controller.getSnapshot().status === 'ready' && offlineMode)
+      location.reload();
+  };
+  return (
+    <Stack gap={4}>
+      <Group gap="xs">
+        <Text size="xs" c="dimmed" role="status">
+          {offlineMode
+            ? m.networkUnavailable
+            : state.status === 'ready'
+              ? m.reachable
+              : state.error
+                ? m.unavailable
+                : m.checking}
+          {state.bundle &&
+            ` · ${m.saved}: ${new Date(state.bundle.savedAt).toLocaleString('ru-RU')}`}
+        </Text>
+        {offlineMode && (
+          <Button
+            size="compact-xs"
+            mih={44}
+            variant="subtle"
+            onClick={() => void retry()}
+          >
+            {m.retryConnection}
+          </Button>
+        )}
+      </Group>
+      {state.bundle && now >= state.bundle.sessionExpiresAt && (
+        <Text size="xs" c="dimmed">
+          {m.sessionExpired}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
 function LinkedWorkoutFacts({
   snapshot,
   href,
@@ -416,22 +475,31 @@ function WorkoutDay({
 export function OfflineApplication({ brandSrc }: { brandSrc: string }) {
   const url = useOfflineLocation();
   useEffect(interceptOfflineLinks, []);
+  const controller = getOfflineController();
+  const state = useSyncExternalStore(
+    controller.subscribe,
+    controller.getSnapshot,
+    controller.getServerSnapshot,
+  );
   useEffect(() => {
     const reconnect = async () => {
-      await getOfflineController().activate(true, true);
+      await controller.activate(true, true);
       await syncDeviceWrites().catch(() => {});
-      location.reload();
+      if (controller.getSnapshot().status === 'ready') location.reload();
     };
     window.addEventListener('online', reconnect);
     return () => window.removeEventListener('online', reconnect);
-  }, []);
+  }, [controller]);
+  useEffect(() => {
+    if (state.status === 'ready') location.reload();
+  }, [state.status]);
   return (
     <ApplicationShellFrame
-      role="OWNER"
+      role={state.bundle?.snapshot.role ?? 'OWNER'}
       demo={false}
       pathname={url?.pathname ?? '/'}
       brandSrc={brandSrc}
-      logoutDisabled={!navigator.onLine}
+      logoutDisabled
     >
       <ContentLayout>
         <OfflineRouteContent />
@@ -446,33 +514,54 @@ export function OfflineBoundary({
   children: ReactNode;
   role: string;
 }) {
-  const [offline, setOffline] = useState(false);
-  const [returning, setReturning] = useState(false);
+  const [disconnected, setOffline] = useState(false);
+  const controller = getOfflineController();
+  const state = useSyncExternalStore(
+    controller.subscribe,
+    controller.getSnapshot,
+    controller.getServerSnapshot,
+  );
+  const offline = disconnected || state.status === 'offline';
   useEffect(() => {
+    let verifying = false;
     const lost = () => {
       setOffline(true);
+      void getOfflineController().activate(false);
     };
-    const connected = () => {
-      if (!offline) return;
-      setReturning(true);
-      void getOfflineController()
-        .activate(true, true)
-        .then(() => {
-          // Genuine server authorization supplies the returned route after verification.
-          location.reload();
-        });
+    const connected = async () => {
+      if (!offline || verifying) return;
+      verifying = true;
+      await getOfflineController().activate(true, true);
+      verifying = false;
+      if (getOfflineController().getSnapshot().status === 'ready')
+        location.reload();
     };
+    const observed = (event: Event) => {
+      if (!(event as CustomEvent<boolean>).detail) lost();
+      // Successful responses are reflected by the controller after full scope verification.
+    };
+    if (!navigator.onLine) lost();
     window.addEventListener('offline', lost);
     window.addEventListener('online', connected);
+    window.addEventListener(networkStatusEvent, observed);
     return () => {
       window.removeEventListener('offline', lost);
       window.removeEventListener('online', connected);
+      window.removeEventListener(networkStatusEvent, observed);
     };
   }, [offline]);
   useEffect(() => (offline ? interceptOfflineLinks() : undefined), [offline]);
-  if (!offline) return children;
-  if (returning) return <Text role="status">{m.checking}</Text>;
-  return role === 'OWNER' ? (
+  useEffect(() => {
+    if (disconnected && state.status === 'ready') location.reload();
+  }, [disconnected, state.status]);
+  if (!offline)
+    return (
+      <Stack gap="md">
+        <OfflineReadStatus />
+        {children}
+      </Stack>
+    );
+  return ['OWNER', 'TRAINER'].includes(role) ? (
     <OfflineRouteContent />
   ) : (
     <Alert>{m.requiresNetwork}</Alert>

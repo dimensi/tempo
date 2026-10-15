@@ -7,6 +7,9 @@ import { createHmac } from 'node:crypto';
 import { resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { getAuth } from '@/server/auth';
+import { getAccessibleOwnerId } from '@/server/access/owner';
+import { readOfflineViews } from './views';
+import { getYazioStatus } from '@/server/yazio/settings';
 import { authorize } from '@/server/auth/guards';
 import { readServerEnv } from '@/server/env';
 import {
@@ -36,21 +39,30 @@ function checkSession(
   if (!session || new Date(session.session.expiresAt).getTime() <= Date.now())
     throw new OfflineError(401, 'OFFLINE_ACCESS_DENIED');
   if (
-    session.user.role !== 'OWNER' ||
+    !['OWNER', 'TRAINER'].includes(session.user.role) ||
     (expected &&
       (session.user.id !== expected.user.id ||
-        session.session.id !== expected.session.id))
+        session.session.id !== expected.session.id ||
+        session.user.role !== expected.user.role))
   )
     throw new OfflineError(403, 'OFFLINE_ACCESS_DENIED');
 }
-async function guard(headers: Headers, expected: Session) {
+async function guard(
+  headers: Headers,
+  expected: Session,
+  expectedOwnerId?: string,
+) {
   let latest = expected;
+  const ownerId = await getAccessibleOwnerId(headers);
+  if (!ownerId || (expectedOwnerId && ownerId !== expectedOwnerId))
+    throw new OfflineError(403, 'OFFLINE_ACCESS_DENIED');
   for (const permission of [
     'nutrition:read',
     'measurements:read',
     'workouts:read',
+    'reports:export',
   ] as const) {
-    const access = await authorize(headers, permission, expected.user.id);
+    const access = await authorize(headers, permission, ownerId);
     if (!access.ok)
       throw new OfflineError(access.status, 'OFFLINE_ACCESS_DENIED');
     checkSession(access.session, expected);
@@ -92,12 +104,10 @@ function config() {
 }
 async function identityContext(headers: Headers, session: Session) {
   const { secret, path } = config();
-  const tm = await readTransformMateOfflineBinding(
-    path,
-    session.user.id,
-    secret,
-  );
-  const nativeBinding = await getTransformMateBindingFence(session.user.id);
+  const ownerId = await getAccessibleOwnerId(headers);
+  if (!ownerId) throw new OfflineError(403, 'OFFLINE_ACCESS_DENIED');
+  const tm = await readTransformMateOfflineBinding(path, ownerId, secret);
+  const nativeBinding = await getTransformMateBindingFence(ownerId);
   try {
     await nativeBinding.assertCurrent();
   } catch (error) {
@@ -105,24 +115,30 @@ async function identityContext(headers: Headers, session: Session) {
       throw new OfflineError(409, 'OFFLINE_CONNECTION_CHANGED');
     throw error;
   }
-  session = await guard(headers, session);
+  session = await guard(headers, session, ownerId);
   const repo = offlineRepository();
-  const epoch = repo.generation(session.user.id);
+  const epoch = repo.generation(ownerId);
   const now = Date.now();
   const sessionExpires = new Date(session.session.expiresAt).getTime();
   const identity: OfflineIdentity = offlineIdentitySchema.parse({
-    contractVersion: 1,
+    contractVersion: 2,
     weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
-    partition: hash(secret, 'offline-owner/v1', [session.user.id]),
-    // Schema-only upgrades must not look like an account change to existing opt-in devices.
+    partition: hash(secret, 'offline-reader/v2', [
+      session.user.id,
+      session.user.role,
+      ownerId,
+    ]),
+    // Reader, role, subject and session bind the current access scope.
     connectionGeneration: hash(secret, 'offline-connection/v1', [
       session.user.id,
+      session.user.role,
+      ownerId,
       session.session.id,
       epoch,
       tm.configured,
       tm.connectionId,
     ]),
-    role: 'OWNER',
+    role: session.user.role,
     serverNow: new Date(now).toISOString(),
     sessionExpiresAt: new Date(sessionExpires).toISOString(),
     expiresAt: new Date(
@@ -136,6 +152,8 @@ async function identityContext(headers: Headers, session: Session) {
     epoch,
     path,
     tmRevision: tm.revision,
+    connectionId: tm.connectionId,
+    ownerId,
     nativeBinding,
     session,
   };
@@ -144,6 +162,7 @@ async function identityContext(headers: Headers, session: Session) {
 }
 function assertRelease(context: {
   repo: ReturnType<typeof offlineRepository>;
+  ownerId: string;
   epoch: number;
   path: string;
   tmRevision: number;
@@ -159,7 +178,7 @@ function assertRelease(context: {
     throw error;
   }
   if (
-    context.repo.generation(context.session.user.id) !== context.epoch ||
+    context.repo.generation(context.ownerId) !== context.epoch ||
     transformMateOfflineBindingRevision(context.path) !== context.tmRevision
   )
     throw new OfflineError(409, 'OFFLINE_CONNECTION_CHANGED');
@@ -189,12 +208,37 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
   session = context.session;
   const { from, to } = period.data;
   const rows = context.repo.read(
-    session.user.id,
+    context.ownerId,
     from,
     to,
     context.nativeBinding.accountScope,
   );
-  session = await guard(headers, session);
+  const views = readOfflineViews({
+    ownerId: context.ownerId,
+    role: context.identity.role,
+    from,
+    to,
+    accountScope: context.nativeBinding.accountScope,
+    connectionId: context.connectionId,
+    transformMateConnected: context.nativeBinding.configured,
+    key: (purpose, id) =>
+      hash(context.secret, 'offline-record/v1', [context.ownerId, purpose, id]),
+  });
+  if (views.settings) {
+    try {
+      const status = await getYazioStatus(headers);
+      views.settings.yazioConnected = status.configured;
+    } catch (error) {
+      const status =
+        error && typeof error === 'object' && 'status' in error
+          ? error.status
+          : null;
+      if (status === 401 || status === 403)
+        throw new OfflineError(status, 'OFFLINE_ACCESS_DENIED');
+      views.settings = null;
+    }
+  }
+  session = await guard(headers, session, context.ownerId);
   const after = await identityContext(headers, session);
   if (
     after.identity.connectionGeneration !==
@@ -202,7 +246,7 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
   )
     throw new OfflineError(409, 'OFFLINE_CONNECTION_CHANGED');
   const key = (purpose: string, id: string) =>
-    hash(context.secret, 'offline-record/v1', [session.user.id, purpose, id]);
+    hash(context.secret, 'offline-record/v1', [context.ownerId, purpose, id]);
   const exercise = (value: {
     name: string;
     comment?: string;
@@ -223,6 +267,7 @@ export async function offlineSnapshot(headers: Headers, url: URL) {
   });
   const result = offlineSnapshotSchema.safeParse({
     ...after.identity,
+    views,
     from,
     to,
     workoutDates: Array.from(
@@ -419,11 +464,11 @@ export async function offlinePhoto(headers: Headers, url: URL, opaque: string) {
   session = context.session;
   const find = () =>
     context.repo
-      .photoCandidates(session.user.id, date.data)
+      .photoCandidates(context.ownerId, date.data)
       .find(
         (photo) =>
           hash(context.secret, 'offline-record/v1', [
-            session.user.id,
+            context.ownerId,
             'photo',
             photo.id,
           ]) === opaque,
@@ -431,7 +476,7 @@ export async function offlinePhoto(headers: Headers, url: URL, opaque: string) {
   const photo = find();
   if (!photo) throw new OfflineError(404, 'OFFLINE_UNAVAILABLE');
   const bytes = await readImage(photo.storageKey);
-  session = await guard(headers, session);
+  session = await guard(headers, session, context.ownerId);
   const after = await identityContext(headers, session);
   if (
     after.identity.connectionGeneration !==

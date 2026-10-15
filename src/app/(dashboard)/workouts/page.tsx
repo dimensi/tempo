@@ -1,4 +1,4 @@
-import { Alert, Stack, Title } from '@mantine/core';
+import { Alert, Button, Stack, Title } from '@mantine/core';
 import { workoutMessages as m } from '@/features/workouts';
 import { WorkoutsWithComments } from './with-comments';
 import { headers } from 'next/headers';
@@ -17,7 +17,12 @@ export default async function Page() {
       ? { ownerId, canLog: session.user.role === 'OWNER' }
       : null;
   return access ? (
-    <WorkoutsWithComments {...access} />
+    <Stack>
+      <Button component="a" href="/workouts/catalog" variant="subtle" mih={44}>
+        {m.exerciseCatalog}
+      </Button>
+      <WorkoutsWithComments {...access} />
+    </Stack>
   ) : (
     <Stack>
       <Title order={1}>{m.title}</Title>

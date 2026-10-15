@@ -30,10 +30,13 @@ function exactSum(values: string[]): string {
 }
 export function summarizeNutrition(
   range: AnalyticsRange,
-  input: NutritionDay[],
+  input: Pick<NutritionDay, 'date' | 'totals' | 'knownTotals'>[],
 ): AnalyticsSummary {
   const dates = rangeDates(range);
-  const byDate = new Map<string, NutritionDay>();
+  const byDate = new Map<
+    string,
+    Pick<NutritionDay, 'date' | 'totals' | 'knownTotals'>
+  >();
   for (const day of input) {
     if (day.date < range.from || day.date > range.to) continue;
     if (byDate.has(day.date)) throw new Error('Duplicate nutrition day');

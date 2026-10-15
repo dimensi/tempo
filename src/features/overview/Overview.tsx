@@ -27,7 +27,7 @@ const date = (value: string) =>
   new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long' }).format(
     new Date(`${value}T12:00:00`),
   );
-export function Overview() {
+export function Overview({ saved }: { saved?: OverviewData } = {}) {
   const [calendar, setCalendar] = useState<ReturnType<
     typeof localCalendar
   > | null>(null);
@@ -38,6 +38,7 @@ export function Overview() {
   } | null>(null);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
+    if (saved) return;
     let timer: ReturnType<typeof setTimeout>;
     function update() {
       const next = localCalendar();
@@ -64,9 +65,9 @@ export function Overview() {
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', visible);
     };
-  }, []);
+  }, [saved]);
   useEffect(() => {
-    if (!calendar) return;
+    if (saved || !calendar) return;
     const controller = new AbortController();
     const key = `${calendar.timezone}:${calendar.today}:${revision}`;
     fetch(`/api/overview?timezone=${encodeURIComponent(calendar.timezone)}`, {
@@ -90,24 +91,27 @@ export function Overview() {
           });
       });
     return () => controller.abort();
-  }, [calendar, revision]);
+  }, [calendar, revision, saved]);
   const key = calendar
     ? `${calendar.timezone}:${calendar.today}:${revision}`
     : '';
   const data = resource?.key === key ? resource.data : null;
   const error = resource?.key === key ? resource.error : null;
   const current =
-    data &&
+    saved ??
+    (data &&
     data.today === calendar?.today &&
     data.timezone === calendar.timezone
       ? data
-      : null;
+      : null);
   return (
     <Stack gap={32} className={classes.surface}>
       <Stack gap={4}>
         <Title order={1}>{m.title}</Title>
         <Text c="dimmed">
-          {calendar ? `${date(calendar.today)} · ${m.subtitle}` : m.subtitle}
+          {saved || calendar
+            ? `${date(saved?.today ?? calendar!.today)} · ${m.subtitle}`
+            : m.subtitle}
         </Text>
       </Stack>
       {error ? (

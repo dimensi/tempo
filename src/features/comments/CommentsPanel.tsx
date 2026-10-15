@@ -4,13 +4,13 @@ import {
   Alert,
   Button,
   Group,
-  Paper,
   Stack,
   Text,
   Textarea,
   Title,
 } from '@mantine/core';
 import type { CommentDto, CommentTarget } from '@/contracts/comments';
+import { CommentReadContent } from './read';
 import { commentMessages as m } from './messages';
 function TargetCommentsPanel({
   ownerId,
@@ -114,66 +114,58 @@ function TargetCommentsPanel({
         <Text c="dimmed">{m.empty}</Text>
       ) : (
         rows.map((row) => (
-          <Paper key={row.id} withBorder p="sm">
-            <Stack gap="xs">
-              <Text fw={600}>{row.authorName}</Text>
-              {row.parentId && (
-                <Text size="xs" c="dimmed">
-                  {m.reply}:{' '}
-                  {
-                    rows.find((parent) => parent.id === row.parentId)
-                      ?.authorName
-                  }
-                </Text>
+          <CommentReadContent
+            key={row.id}
+            authorName={row.authorName}
+            body={row.body}
+            parentAuthor={
+              row.parentId
+                ? rows.find((parent) => parent.id === row.parentId)?.authorName
+                : undefined
+            }
+          >
+            <Group>
+              {!row.parentId && (
+                <Button
+                  mih={44}
+                  variant="subtle"
+                  disabled={busy}
+                  onClick={() => {
+                    setParentId(row.id);
+                    setEditing(undefined);
+                    setBody('');
+                  }}
+                >
+                  {m.reply}
+                </Button>
               )}
-              <Text
-                style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
-              >
-                {row.body}
-              </Text>
-              <Group>
-                {!row.parentId && (
+              {row.canEdit && (
+                <>
                   <Button
                     mih={44}
                     variant="subtle"
                     disabled={busy}
                     onClick={() => {
-                      setParentId(row.id);
-                      setEditing(undefined);
-                      setBody('');
+                      setEditing(row.id);
+                      setParentId(undefined);
+                      setBody(row.body);
                     }}
                   >
-                    {m.reply}
+                    {m.edit}
                   </Button>
-                )}
-                {row.canEdit && (
-                  <>
-                    <Button
-                      mih={44}
-                      variant="subtle"
-                      disabled={busy}
-                      onClick={() => {
-                        setEditing(row.id);
-                        setParentId(undefined);
-                        setBody(row.body);
-                      }}
-                    >
-                      {m.edit}
-                    </Button>
-                    <Button
-                      mih={44}
-                      variant="subtle"
-                      color="red"
-                      disabled={busy}
-                      onClick={() => void remove(row.id)}
-                    >
-                      {m.remove}
-                    </Button>
-                  </>
-                )}
-              </Group>
-            </Stack>
-          </Paper>
+                  <Button
+                    mih={44}
+                    variant="subtle"
+                    color="red"
+                    disabled={busy}
+                    onClick={() => void remove(row.id)}
+                  >
+                    {m.remove}
+                  </Button>
+                </>
+              )}
+            </Group>
+          </CommentReadContent>
         ))
       )}
       <form

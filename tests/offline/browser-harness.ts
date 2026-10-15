@@ -7,8 +7,8 @@ import {
   subscribeOfflineBlocked,
   withOfflineDevicePurge,
 } from '../../src/lib/offline-device';
-import { OfflineController } from '../../src/features/offline/controller';
-import { prepareOfflineShell } from '../../src/features/offline/shell';
+import { OfflineController } from '../../src/lib/offline-controller';
+import { prepareOfflineShell } from '../../src/lib/offline-shell';
 import { offlineFixture } from './fixtures';
 const storage = new OfflineStorage();
 let lastFence: Awaited<ReturnType<typeof storage.enable>>;
