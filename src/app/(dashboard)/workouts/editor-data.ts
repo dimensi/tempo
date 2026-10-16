@@ -1,13 +1,12 @@
+import 'server-only';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
-import { Alert } from '@mantine/core';
 import { z } from 'zod';
 import { requireSession, authorize } from '@/server/auth/guards';
 import { getAccessibleOwnerId } from '@/server/access/owner';
 import { listWorkouts } from '@/server/workouts';
-import { WorkoutEditorPage, workoutMessages as m } from '@/features/workouts';
 
-export async function EditorPage({
+export async function loadEditor({
   planId,
   query,
 }: {
@@ -21,7 +20,7 @@ export async function EditorPage({
     !ownerId ||
     !(await authorize(requestHeaders, 'workouts:plan', ownerId)).ok
   )
-    return <Alert color="red">{m.noAccess}</Alert>;
+    return null;
   const dateResult = z.iso.date().safeParse(query.date);
   const date = dateResult.success
     ? dateResult.data
@@ -41,18 +40,16 @@ export async function EditorPage({
   if (workoutId && !plan?.workouts.some((item) => item.id === workoutId))
     notFound();
   if (copyId && !workoutId) notFound();
-  return (
-    <WorkoutEditorPage
-      key={`${session.user.id}:${ownerId}:${plan?.id ?? 'new'}:${plan?.revision ?? 0}:${workoutId ?? ''}:${date}:${copyId ?? ''}`}
-      canLog={session.user.role === 'OWNER'}
-      userId={session.user.id}
-      ownerId={ownerId}
-      date={date}
-      returnDate={returnDate}
-      plan={plan}
-      workoutId={workoutId}
-      copying={Boolean(copyId)}
-      returnToView={query.from === 'view' && Boolean(plan && workoutId)}
-    />
-  );
+  return {
+    key: `${session.user.id}:${ownerId}:${plan?.id ?? 'new'}:${plan?.revision ?? 0}:${workoutId ?? ''}:${date}:${copyId ?? ''}`,
+    canLog: session.user.role === 'OWNER',
+    userId: session.user.id,
+    ownerId,
+    date,
+    returnDate,
+    plan,
+    workoutId,
+    copying: Boolean(copyId),
+    returnToView: query.from === 'view' && Boolean(plan && workoutId),
+  };
 }

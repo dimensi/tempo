@@ -37,6 +37,37 @@ async function login(page: import('@playwright/test').Page, role = 'owner') {
   } else expect(result.ok()).toBe(true);
   await expect(page).toHaveURL('/');
 }
+test('route compositions mount with their server layout titles', async ({
+  page,
+}) => {
+  await login(page);
+  const routes = [
+    ['/', 'Обзор'],
+    ['/diary?date=2026-06-14', 'Дневник питания'],
+    ['/workouts?date=2026-06-14', 'Тренировки'],
+    ['/workouts/catalog', 'Каталог упражнений'],
+    ['/measurements', 'Замеры'],
+    ['/anamnesis', 'Анамнез'],
+    ['/analytics?timezone=UTC&from=2026-06-01&to=2026-06-07', 'Аналитика'],
+    ['/reports', 'Отчёты'],
+    ['/settings', 'Настройки'],
+  ];
+  for (const [href, title] of routes) {
+    const response = await page.goto(href!);
+    expect(response?.status(), href).toBe(200);
+    await expect(page).toHaveTitle(new RegExp(title!));
+    if (href === '/workouts/catalog') {
+      await expect(
+        page.getByRole('button', { name: 'Следующие упражнения' }),
+      ).toBeVisible();
+    } else {
+      await expect(
+        page.getByRole('main').getByRole('heading').first(),
+      ).toBeVisible();
+    }
+  }
+});
+
 test('anonymous routes are protected and registration is closed', async ({
   page,
   request,

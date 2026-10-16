@@ -7,6 +7,7 @@ import {
 import type { WorkoutSession } from '@/contracts/workouts';
 import { apiFetch } from '@/lib/api-client';
 import { subscribeSessionReset } from '@/lib/offline-device';
+import { subscribeLocalDataReset } from '@/lib/local-data';
 import { videoDraft, type VideoDraft } from '@/lib/workout-video-draft';
 import {
   Alert,
@@ -143,9 +144,14 @@ function ExerciseVideos({
       // Recheck server authority before concealing recordings.
       void refresh().catch(() => {});
     });
+    const stopLocalData = subscribeLocalDataReset(() => {
+      controller.current?.abort();
+      setDraft(undefined);
+    });
     document.addEventListener('visibilitychange', pause);
     return () => {
       unsubscribe();
+      stopLocalData();
       mounted.current = false;
       check.abort();
       controller.current?.abort();
@@ -184,7 +190,7 @@ function ExerciseVideos({
       const value = await compressWorkoutVideo(file, abort.signal, (n) => {
         if (mounted.current) setProgress(n * 100);
       });
-      if (!mounted.current) return;
+      if (!mounted.current || abort.signal.aborted) return;
       setDraft(value);
       await retain(value);
     } catch (cause) {

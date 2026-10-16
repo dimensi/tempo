@@ -48,6 +48,11 @@ export function YazioSettingsForm({
 }) {
   const online = useReadOnline();
   const [status, setStatus] = useState(initial);
+  const [previous, setPrevious] = useState(initial);
+  if (initial !== previous) {
+    setPrevious(initial);
+    setStatus(initial);
+  }
   const ready = useSyncExternalStore(
     subscribeToHydration,
     clientReady,

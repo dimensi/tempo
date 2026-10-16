@@ -3,6 +3,7 @@ import { test, expect, type Page } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
 import { syntheticDay } from '../unit/reports/fixtures';
 import { seedVideoDraft, storedRows } from './local-storage';
+import { nutritionSyncMessages as yazioMessages } from '@/contracts/nutrition-sync';
 
 async function login(page: Page) {
   return signInFixture(page, 'owner');
@@ -346,6 +347,14 @@ test.describe('local device cleanup', () => {
       page.getByRole('link', { name: 'Открыть локальную копию', exact: true }),
     ).toBeVisible();
     expect(await storedRows(page, 'yazio-offline-read-v1', 'files', 3)).toBe(1);
+    const sibling = await context.newPage();
+    await sibling.goto('/reports');
+    const siblingFile = sibling.getByRole('link', {
+      name: 'Открыть локальную копию',
+      exact: true,
+    });
+    await expect(siblingFile).toBeVisible();
+    const oldFileUrl = (await siblingFile.getAttribute('href'))!;
     await seedVideoDraft(page);
     await navigate(page, 'Замеры');
     await expect(page.getByLabel('Заметка', { exact: true })).toBeVisible();
@@ -379,6 +388,19 @@ test.describe('local device cleanup', () => {
       .toBe(0);
     expect(await storedRows(page, 'tempo-video-upload', 'drafts', 1)).toBe(0);
     expect((await page.request.get('/api/read/context')).status()).toBe(200);
+    await expect(siblingFile).toHaveCount(0);
+    expect(
+      await sibling.evaluate(async (href) => {
+        try {
+          await fetch(href);
+          return true;
+        } catch {
+          return false;
+        }
+      }, oldFileUrl),
+    ).toBe(false);
+    expect((await sibling.request.get('/api/read/context')).status()).toBe(200);
+    await sibling.close();
     const queued = () =>
       page.evaluate(
         () =>
@@ -406,4 +428,56 @@ test.describe('local device cleanup', () => {
     expect(await queued()).toContain('Keep pending during cleanup');
     expect(await storedRows(page, 'yazio-offline-read-v1', 'files', 3)).toBe(0);
   });
+});
+
+test('refreshed YAZIO connection status preserves credentials and selected dates and starts polling', async ({
+  page,
+}) => {
+  await login(page);
+  let configured = false;
+  let latest: unknown;
+  let polls = 0;
+  await page.route('**/api/read/settings', async (route) => {
+    const response = await route.fetch();
+    const value = await response.json();
+    value.yazio.configured = configured;
+    value.yazio.tokenFileConfigured = true;
+    latest = value.yazio;
+    await route.fulfill({ response, json: value });
+  });
+  await page.route('**/api/yazio/status', (route) => {
+    polls++;
+    return route.fulfill({ json: latest });
+  });
+  await page.goto('/settings#connection');
+  const email = page.getByLabel(new RegExp('^' + yazioMessages.email));
+  const password = page.getByLabel(new RegExp('^' + yazioMessages.password));
+  const from = page
+    .getByLabel(new RegExp('^' + yazioMessages.from))
+    .filter({ visible: true });
+  await email.fill('draft-yazio@example.test');
+  await password.fill('unsent-secret');
+  await from.fill('2026-10-01');
+  await page.clock.install();
+  configured = true;
+  const refreshed = page.waitForResponse('**/api/read/settings');
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event('tempo:read-revalidate')),
+  );
+  expect((await refreshed).ok()).toBe(true);
+  await expect(
+    page.getByRole('button', { name: yazioMessages.disconnect, exact: true }),
+  ).toBeVisible();
+  await expect(from).toHaveValue('2026-10-01');
+  await page.clock.fastForward(31000);
+  await expect.poll(() => polls).toBeGreaterThan(0);
+  configured = false;
+  const disconnected = page.waitForResponse('**/api/read/settings');
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event('tempo:read-revalidate')),
+  );
+  expect((await disconnected).ok()).toBe(true);
+  await expect(email).toHaveValue('draft-yazio@example.test');
+  await expect(password).toHaveValue('unsent-secret');
+  await expect(from).toHaveValue('2026-10-01');
 });

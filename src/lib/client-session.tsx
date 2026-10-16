@@ -12,6 +12,7 @@ import {
 import { apiFetch } from './api-client';
 import { observeReadResources, revalidateVisibleReads } from './client-read';
 import { finishPendingLogout, hasPendingLogout } from './local-logout';
+import { observeLocalDataReset } from './local-data';
 import { subscribeSessionReset } from './offline-device';
 import { syncDeviceWrites } from './offline-write-client';
 import {
@@ -40,6 +41,7 @@ export function ClientSession({
   });
   useEffect(() => {
     const stopReads = observeReadResources();
+    const stopLocalData = observeLocalDataReset();
     const stop = subscribeSessionReset(() => {
       invalidateSession();
       setLoggedOut(true);
@@ -105,6 +107,7 @@ export function ClientSession({
       closed = true;
       stop();
       stopReads();
+      stopLocalData();
       clearInterval(timer);
       window.removeEventListener('storage', synced);
       window.removeEventListener('online', refresh);

@@ -5,6 +5,7 @@ import { requireSession } from '@/server/auth/guards';
 import { readServerEnv } from '@/server/env';
 import { readContext } from '@/server/read-context';
 import { headers } from 'next/headers';
+export const metadata = { title: 'Обзор' };
 export const dynamic = 'force-dynamic';
 export default async function DashboardLayout({
   children,

@@ -1,4 +1,6 @@
-import { EditorPage } from '../../../editor-page';
+import { loadEditor } from '@/app/(dashboard)/workouts/editor-data';
+import { WorkoutEditorPage, workoutMessages as m } from '@/features/workouts';
+import { Alert } from '@mantine/core';
 export default async function Page({
   params,
   searchParams,
@@ -6,7 +8,12 @@ export default async function Page({
   params: Promise<{ planId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  return (
-    <EditorPage planId={(await params).planId} query={await searchParams} />
-  );
+  const value = await params;
+  const data = await loadEditor({
+    planId: value.planId,
+    query: await searchParams,
+  });
+  if (!data) return <Alert color="red">{m.noAccess}</Alert>;
+  const { key, ...props } = data;
+  return <WorkoutEditorPage key={key} {...props} />;
 }

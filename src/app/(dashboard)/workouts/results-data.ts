@@ -1,14 +1,13 @@
+import 'server-only';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
-import { Alert } from '@mantine/core';
 import { z } from 'zod';
 import { authorize, requireSession } from '@/server/auth/guards';
 import { getAccessibleOwnerId } from '@/server/access/owner';
 import { listWorkouts } from '@/server/workouts';
-import { WorkoutResultsPage, workoutMessages as m } from '@/features/workouts';
 import type { ResultReturn } from '@/features/workouts';
 
-export async function ResultsPage({
+export async function loadResults({
   sessionId,
   planId,
   workoutId,
@@ -26,7 +25,7 @@ export async function ResultsPage({
     !ownerId ||
     !(await authorize(requestHeaders, 'workouts:log', ownerId)).ok
   )
-    return <Alert color="red">{m.noAccess}</Alert>;
+    return null;
   const dateParsed = z.iso.date().safeParse(query.date);
   const date = dateParsed.success
     ? dateParsed.data
@@ -70,18 +69,16 @@ export async function ResultsPage({
       planId: existing.planId,
       workoutId: existing.plannedWorkoutId,
     };
-  return (
-    <WorkoutResultsPage
-      key={`${session.user.id}:${ownerId}:${sessionId ?? planId ?? 'new'}:${existing?.revision ?? plan?.revision ?? 0}:${workoutId ?? ''}:${date}:${returnDate}:${JSON.stringify(destination)}`}
-      userId={session.user.id}
-      ownerId={ownerId}
-      date={date}
-      returnDate={returnDate}
-      destination={destination}
-      existing={existing}
-      planned={existing?.planSnapshot?.workout ?? workout}
-      planId={existing ? undefined : plan?.id}
-      planRevision={plan?.revision}
-    />
-  );
+  return {
+    key: `${session.user.id}:${ownerId}:${sessionId ?? planId ?? 'new'}:${existing?.revision ?? plan?.revision ?? 0}:${workoutId ?? ''}:${date}:${returnDate}:${JSON.stringify(destination)}`,
+    userId: session.user.id,
+    ownerId,
+    date,
+    returnDate,
+    destination,
+    existing,
+    planned: existing?.planSnapshot?.workout ?? workout,
+    planId: existing ? undefined : plan?.id,
+    planRevision: plan?.revision,
+  };
 }

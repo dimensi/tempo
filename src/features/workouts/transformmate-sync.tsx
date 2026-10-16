@@ -26,6 +26,7 @@ export function useTransformMateSync(
   const generation = useRef(0);
   const url = `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20' })}`;
   const resource = useReadResource(readResources.transformMate(url));
+  const refreshRead = resource.refresh;
   const currentData = useRef(resource.data);
   useEffect(() => {
     currentData.current = resource.data;
@@ -56,6 +57,13 @@ export function useTransformMateSync(
       const session = sessionGeneration();
       setBusy(true);
       try {
+        await refreshRead();
+        if (
+          controller.signal.aborted ||
+          current !== generation.current ||
+          session !== sessionGeneration()
+        )
+          return;
         const response = await apiFetch(
           `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20', ...(cursor ? { cursor } : {}) })}`,
           { method: 'POST', cache: 'no-store', signal: controller.signal },
@@ -98,7 +106,7 @@ export function useTransformMateSync(
         }
       }
     },
-    [ownerId, date, url],
+    [ownerId, date, url, refreshRead],
   );
   useEffect(() => {
     const effectGeneration = ++generation.current;
