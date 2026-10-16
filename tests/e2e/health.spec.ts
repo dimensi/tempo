@@ -130,9 +130,9 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
     await expect(page).toHaveURL(new RegExp(`from=${today()}&to=${today()}`));
     await expect(steps).toContainText('Данные за 1 из 1 дней');
     await expect(steps).toContainText('0 шагов в среднем за день');
-    await steps
-      .getByRole('button', { name: 'Показать данные по дням' })
-      .click();
+    await expect(
+      steps.getByRole('button', { name: 'Показать данные по дням' }),
+    ).toHaveAttribute('aria-expanded', 'true');
     await expect(steps.getByRole('row')).toHaveCount(2);
     await page.goto('/measurements');
     const weights = page.getByRole('main').getByTestId('health-weight');

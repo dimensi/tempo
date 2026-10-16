@@ -237,7 +237,13 @@ test('real overview shows empty, partial and populated data with local dates and
   expect(
     (await trainerPage.request.get('/api/overview?timezone=UTC')).status(),
   ).toBe(403);
-  await trainerPage.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await trainerPage
+    .evaluate(() => window.dispatchEvent(new Event('focus')))
+    .catch((error: Error) => {
+      // The already-running access check may have started the required logout navigation.
+      if (!error.message.includes('Execution context was destroyed'))
+        throw error;
+    });
   await expect(trainerPage).toHaveURL('/login');
   await expect(
     trainerPage.getByRole('heading', { name: 'Обзор', exact: true }),
