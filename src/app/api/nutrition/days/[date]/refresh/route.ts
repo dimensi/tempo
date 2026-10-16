@@ -1,14 +1,15 @@
-import { z } from 'zod';
 import { diaryDateSchema } from '@/contracts/nutrition';
-import { timezoneSchema } from '@/contracts/nutrition-sync-dates';
 import { resolveSyncPeriod } from '@/contracts/nutrition-sync';
-import { yazioOwner } from '@/server/yazio/settings';
+import { timezoneSchema } from '@/contracts/nutrition-sync-dates';
+import { withApiErrors } from '@/server/auth/api-response';
 import { runNutritionSync } from '@/server/jobs/nutrition-scheduler';
 import { json, readBody, respond, sameOrigin } from '@/server/nutrition/http';
+import { yazioOwner } from '@/server/yazio/settings';
+import { z } from 'zod';
 
 const inputSchema = z.object({ timezone: timezoneSchema }).strict();
 
-export async function POST(
+async function POSTHandler(
   request: Request,
   context: { params: Promise<{ date: string }> },
 ) {
@@ -33,3 +34,5 @@ export async function POST(
     return json(sync);
   });
 }
+
+export const POST = withApiErrors(POSTHandler);

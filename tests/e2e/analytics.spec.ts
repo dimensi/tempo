@@ -1,3 +1,4 @@
+import { signInFixture } from '../ci/real-auth';
 import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
@@ -6,6 +7,7 @@ import { shiftDate, dateInTimezone } from '@/contracts/nutrition-sync-dates';
 const timezone = 'America/Los_Angeles';
 test.use({ timezoneId: timezone });
 async function login(page: Page, role = 'owner') {
+  if (role === 'trainer') return signInFixture(page, role);
   await page.goto('/login');
   await page.getByLabel('Электронная почта').fill(`${role}@example.test`);
   await page
@@ -218,6 +220,25 @@ test('scoped analytics API, coverage, controls: hierarchy, comparisons, combined
         .getByRole('button', { name: 'Показать данные по дням' })
         .click();
     await body.getByRole('button', { name: 'Показать записи замеров' }).click();
+    const analyticsUrl = page.url();
+    await page.evaluate(() => window.scrollTo(0, 500));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(500);
+    await page.evaluate(() =>
+      document
+        .querySelector<HTMLAnchorElement>('a[href="/measurements"]')!
+        .click(),
+    );
+    await expect(page).toHaveURL('/measurements');
+    await page.goBack();
+    await expect(page).toHaveURL(analyticsUrl);
+    for (const panel of [nutrition, steps])
+      await expect(
+        panel.getByRole('button', { name: 'Показать данные по дням' }),
+      ).toHaveAttribute('aria-expanded', 'true');
+    await expect(
+      body.getByRole('button', { name: 'Показать записи замеров' }),
+    ).toHaveAttribute('aria-expanded', 'true');
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(500);
     await expect(
       body.getByRole('cell', { name: '108,6', exact: true }),
     ).toBeVisible();
@@ -362,9 +383,7 @@ test('scoped analytics API, coverage, controls: hierarchy, comparisons, combined
     db.prepare('DELETE FROM trainer_access WHERE trainer_id=?').run(trainer);
     expect((await trainerPage.request.get(query + ownerId)).status()).toBe(403);
     await trainerPage.reload();
-    await expect(trainerPage.getByRole('main')).toContainText(
-      'Нет доступа к данным владельца.',
-    );
+    await expect(trainerPage).toHaveURL('/login');
     await page.goto('/analytics');
     const localToday = dateInTimezone(new Date(), timezone);
     await expect(page).toHaveURL(new RegExp(`to=${localToday}`));
@@ -403,4 +422,38 @@ test('scoped analytics API, coverage, controls: hierarchy, comparisons, combined
     db.close();
     await context.close();
   }
+});
+
+test('bookmarked timezone determines the default range and server day selects the preset', async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date('2026-10-16T10:30:00Z'));
+  const selectedTimezone = 'Pacific/Kiritimati';
+  const selectedToday = '2026-10-17';
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await login(page);
+  await page.route('**/api/read/analytics?*', async (route) => {
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    const data = await response.json();
+    await route.fulfill({ response, json: { ...data, today: selectedToday } });
+  });
+  const requested = page.waitForRequest(
+    (request) => new URL(request.url()).pathname === '/api/read/analytics',
+  );
+  await page.goto(
+    `/analytics?timezone=${encodeURIComponent(selectedTimezone)}`,
+  );
+  const query = new URL((await requested).url()).searchParams;
+  expect(query.get('to')).toBe(selectedToday);
+  expect(query.get('from')).toBe(shiftDate(selectedToday, -6));
+  await expect(
+    page.getByRole('button', { name: '7 дней', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await page.goto('/analytics?timezone=not-a-timezone');
+  await expect(
+    page.getByText('Проверьте выбранный период.', { exact: true }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
 });

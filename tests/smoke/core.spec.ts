@@ -1,7 +1,7 @@
 import { test, expect } from '../ci/isolated-test';
 import { testOrigin } from '../ci/origin';
 
-test('production real login, diary, workout save/read, offline cold read, logout purge and trainer boundary', async ({
+test('production real login, diary, workout save/read, cached current screen, logout purge and trainer boundary', async ({
   page,
   context,
   request,
@@ -48,7 +48,6 @@ test('production real login, diary, workout save/read, offline cold read, logout
   await expect(
     page.getByRole('heading', { name: title, exact: true }),
   ).toBeVisible();
-  const route = page.url();
   await expect
     .poll(() =>
       page.evaluate(async (expectedTitle) => {
@@ -60,13 +59,13 @@ test('production real login, diary, workout save/read, offline cold read, logout
         try {
           return await new Promise<boolean>((resolve) => {
             const r = db
-              .transaction('bundle')
-              .objectStore('bundle')
-              .get('current');
+              .transaction('resources')
+              .objectStore('resources')
+              .getAll();
             r.onsuccess = () =>
               resolve(
-                !!r.result?.snapshot?.plannedWorkouts?.some(
-                  (item: { title: string }) => item.title === expectedTitle,
+                r.result.some((row) =>
+                  String(row.record?.body).includes(expectedTitle),
                 ),
               );
           });
@@ -76,18 +75,12 @@ test('production real login, diary, workout save/read, offline cold read, logout
       }, title),
     )
     .toBe(true);
-  await page.evaluate(() => navigator.serviceWorker.ready);
   await context.setOffline(true);
-  await page.goto(route);
   await expect(
     page.getByRole('heading', { name: title, exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: 'Изменить', exact: true }),
-  ).toBeDisabled();
   await context.setOffline(false);
-  // Reconnect verifies real authorization and reloads the offline document.
-  // Await that transition before starting a competing navigation.
+  // Reconnect revalidates the current feature without replacing it.
   await expect(
     page.getByRole('link', { name: 'Изменить план', exact: true }),
   ).toBeVisible();
@@ -109,10 +102,10 @@ test('production real login, diary, workout save/read, offline cold read, logout
       try {
         return await new Promise<boolean>((resolve) => {
           const r = db
-            .transaction('bundle')
-            .objectStore('bundle')
-            .get('current');
-          r.onsuccess = () => resolve(r.result === undefined);
+            .transaction('resources')
+            .objectStore('resources')
+            .count();
+          r.onsuccess = () => resolve(r.result === 0);
         });
       } finally {
         db.close();
@@ -122,30 +115,14 @@ test('production real login, diary, workout save/read, offline cold read, logout
   expect(
     (await page.request.get(`/api/workouts?ownerId=${owner}`)).status(),
   ).toBe(401);
-  await page.getByLabel('Электронная почта').fill('trainer@example.test');
-  await page
-    .getByRole('textbox', { name: 'Пароль', exact: true })
-    .fill('Test-only-password-12345');
-  let trainerLogin = page.waitForResponse((r) =>
-    r.url().endsWith('/api/auth/sign-in/email'),
-  );
-  await page.getByRole('button', { name: 'Войти', exact: true }).click();
-  const trainerResponse = await trainerLogin;
-  if (trainerResponse.status() === 429) {
-    const seconds = Number(
-      trainerResponse.headers()['retry-after'] ??
-        trainerResponse.headers()['x-retry-after'] ??
-        10,
-    );
-    test.setTimeout(test.info().timeout + (seconds + 1) * 1000);
-    await page.waitForTimeout((seconds + 1) * 1000);
-    trainerLogin = page.waitForResponse((r) =>
-      r.url().endsWith('/api/auth/sign-in/email'),
-    );
-    await page.getByRole('button', { name: 'Войти', exact: true }).click();
-    expect((await trainerLogin).status()).toBe(200);
-  } else expect(trainerResponse.status()).toBe(200);
-  await expect(page).toHaveURL('/');
+  const trainerLogin = await page.request.post('/api/auth/sign-in/email', {
+    headers: { origin: testOrigin },
+    data: {
+      email: 'trainer@example.test',
+      password: 'Test-only-password-12345',
+    },
+  });
+  expect(trainerLogin.status()).toBe(200);
   expect(
     (await page.request.get(`/api/workouts?ownerId=${owner}`)).status(),
   ).toBe(403);
@@ -170,5 +147,7 @@ test('production real login, diary, workout save/read, offline cold read, logout
       })
     ).status(),
   ).toBe(403);
-  expect((await page.request.get('/api/offline/identity')).status()).toBe(403);
+  const denied = await page.request.get('/api/read/context');
+  expect(denied.status()).toBe(403);
+  expect(await denied.json()).toEqual({ error: 'ACCESS_REVOKED' });
 });

@@ -1,10 +1,10 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { Image, Text } from '@mantine/core';
 import type { TransformMateCatalogItem } from '@/contracts/transformmate';
-import { clearPreviewRequests, requestPreview } from './preview-request';
-import { subscribeOfflineBlocked } from '@/lib/offline-device';
+import { subscribeSessionReset } from '@/lib/offline-device';
+import { Image, Text } from '@mantine/core';
+import { useEffect, useState } from 'react';
 import { workoutMessages as m } from './messages';
+import { clearPreviewRequests, requestPreview } from './preview-request';
 
 export function useExercisePreview(
   ownerId: string,
@@ -26,7 +26,7 @@ export function useExercisePreview(
     if (!enabled || !id || !revision) return;
     let active = true;
     let url: string | undefined;
-    const unsubscribe = subscribeOfflineBlocked(() => {
+    const unsubscribe = subscribeSessionReset(() => {
       active = false;
       clearPreviewRequests(ownerId);
       if (url) URL.revokeObjectURL(url);

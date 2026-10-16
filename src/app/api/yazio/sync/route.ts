@@ -1,11 +1,12 @@
-import { yazioOwner, refreshYazioAccount } from '@/server/yazio/settings';
-import { runNutritionSync } from '@/server/jobs/nutrition-scheduler';
-import { json, respond, sameOrigin, readBody } from '@/server/nutrition/http';
 import {
   resolveSyncPeriod,
   syncRequestSchema,
 } from '@/contracts/nutrition-sync';
-export async function POST(request: Request) {
+import { withApiErrors } from '@/server/auth/api-response';
+import { runNutritionSync } from '@/server/jobs/nutrition-scheduler';
+import { json, readBody, respond, sameOrigin } from '@/server/nutrition/http';
+import { refreshYazioAccount, yazioOwner } from '@/server/yazio/settings';
+async function POSTHandler(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const ownerId = await yazioOwner(request.headers);
@@ -28,3 +29,5 @@ export async function POST(request: Request) {
     return json(sync);
   });
 }
+
+export const POST = withApiErrors(POSTHandler);

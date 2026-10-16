@@ -13,6 +13,7 @@ vi.mock('@/server/auth', () => ({
 const database = openDatabase('file::memory:');
 vi.mock('@/server/db', () => ({ getDatabase: () => database }));
 const { createReportHandler } = await import('@/server/pdf/http');
+const reportRoutes = await import('@/app/api/reports/route');
 const source = {
   getStepsGoal: async () => null,
   getSteps: async () => [],
@@ -110,3 +111,35 @@ it('returns access denied when source authorization fails after mid-flight revoc
   expect(result.status).toBe(403);
   expect(await result.text()).not.toContain('Private upstream detail');
 });
+
+it.each(['GET', 'HEAD'] as const)(
+  'classifies report %s denials without logging out an object-level forbidden owner',
+  async (method) => {
+    database.db.delete(trainerAccess).run();
+    const invoke = (ownerId = 'owner') =>
+      reportRoutes[method](new Request(request(ownerId), { method }));
+    state.session = null;
+    const anonymous = await invoke();
+    expect(anonymous.status).toBe(401);
+    expect(await anonymous.json()).toEqual({ error: 'AUTH_REQUIRED' });
+    expect(anonymous.headers.get('X-Auth-Error')).toBe('AUTH_REQUIRED');
+    expect(anonymous.headers.get('cache-control')).toContain('no-store');
+    state.session = { user: { id: 'owner', role: 'OWNER' } };
+    const other = await invoke('other');
+    expect(other.status).toBe(403);
+    expect(await other.json()).toEqual({ error: 'FORBIDDEN' });
+    state.session = { user: { id: 'trainer', role: 'TRAINER' } };
+    const revoked = await invoke();
+    expect(revoked.status).toBe(403);
+    expect(await revoked.json()).toEqual({ error: 'ACCESS_REVOKED' });
+    expect(revoked.headers.get('X-Auth-Error')).toBe('ACCESS_REVOKED');
+    database.db
+      .insert(trainerAccess)
+      .values({ trainerId: 'trainer', ownerId: 'owner', createdAt: new Date() })
+      .run();
+    const unrelated = await invoke('other');
+    expect(unrelated.status).toBe(403);
+    expect(await unrelated.json()).toEqual({ error: 'FORBIDDEN' });
+    database.db.delete(trainerAccess).run();
+  },
+);

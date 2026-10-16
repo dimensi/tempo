@@ -1,7 +1,14 @@
 'use client';
-import { useReadOnline } from '@/lib/use-read-online';
+import {
+  transformMateConnectionMessages as m,
+  transformMateCredentialsSchema,
+  type TransformMateConnectionStatus,
+} from '@/contracts/transformmate-connection';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
 import { networkReachable } from '@/lib/network-state';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { refreshAfterMutation } from '@/lib/provider-mutation';
+import { useReadOnline } from '@/lib/use-read-online';
 import {
   Alert,
   Badge,
@@ -14,13 +21,7 @@ import {
   Text,
   Title,
 } from '@mantine/core';
-import {
-  transformMateConnectionMessages as m,
-  transformMateConnectionStatusSchema,
-  transformMateCredentialsSchema,
-  type TransformMateConnectionStatus,
-} from '@/contracts/transformmate-connection';
-import { withOfflineDevicePurge } from '@/lib/offline-device';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const copy = {
   cancel: 'Отмена',
@@ -73,7 +74,7 @@ export function TransformMateSettingsForm({
       setNotice(null);
       try {
         const request = () =>
-          fetch(`/api/transformmate/${action}`, {
+          apiFetch(`/api/transformmate/${action}`, {
             method: action === 'status' ? 'GET' : 'POST',
             cache: 'no-store',
             // Cancellation fences UI updates; a mutation must settle before final cache purge.
@@ -86,7 +87,7 @@ export function TransformMateSettingsForm({
                 }),
           });
         const response = mutation
-          ? await withOfflineDevicePurge(request)
+          ? await refreshAfterMutation(request)
           : await request();
         const result: unknown = await response.json();
         if (!response.ok) {
@@ -108,15 +109,14 @@ export function TransformMateSettingsForm({
             'errorCode' in result
               ? result.errorCode
               : null;
-          const known =
-            transformMateConnectionStatusSchema.shape.errorCode.safeParse(code);
+          const known = apiResults.connectionError(code);
           if (known.success && known.data && current())
             setStatus((current) => ({ ...current, errorCode: known.data }));
           throw new Error(
             known.success && known.data ? m[known.data] : m.requestError,
           );
         }
-        const parsed = transformMateConnectionStatusSchema.parse(
+        const parsed = apiResults.connection(
           typeof result === 'object' && result !== null && 'data' in result
             ? result.data
             : null,

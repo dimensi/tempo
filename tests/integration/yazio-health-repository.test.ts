@@ -1,11 +1,10 @@
-import { afterEach, expect, test, vi } from 'vitest';
-vi.mock('server-only', () => ({}));
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { openDatabase } from '@/server/db/connection';
 import { user } from '@/server/db/schema';
-import { yazioHealthRepository } from '@/server/yazio/health-repository';
-import { offlineRepository } from '@/server/offline/repository';
 import { normalizeYazioWeight } from '@/server/yazio/health-normalize';
+import { yazioHealthRepository } from '@/server/yazio/health-repository';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { afterEach, expect, test, vi } from 'vitest';
+vi.mock('server-only', () => ({}));
 
 const connections: ReturnType<typeof openDatabase>[] = [];
 afterEach(() => connections.splice(0).forEach(({ sqlite }) => sqlite.close()));
@@ -164,7 +163,7 @@ test('owner deletion cascades and database rejects unsafe step counts and claime
 });
 
 test('projects stored provider datetime without history rewrite, guesses, owner leakage or collapsing UUIDs', () => {
-  const { repo, sqlite, db } = fixture();
+  const { repo, sqlite } = fixture();
   const values = [
     '2026-10-07 10:55:11',
     '2026-10-07 10:55:43',
@@ -193,9 +192,10 @@ test('projects stored provider datetime without history rewrite, guesses, owner 
   expect(repo.weights('owner', period)).toHaveLength(3);
   expect(repo.weights('other', period)).toHaveLength(1);
   expect(
-    offlineRepository({ db, sqlite })
-      .read('owner', period.from, period.to)
-      .weights.map((row) => row.measuredDate),
+    repo
+      .weights('owner', period)
+      .map((row) => row.measuredDate)
+      .sort(),
   ).toEqual(['2026-10-07', '2026-10-07', '2026-10-12']);
   expect(
     sqlite

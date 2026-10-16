@@ -1,5 +1,6 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import { catalogResponse, listCatalog } from '@/server/transformmate/catalog';
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   const query = new URL(request.url).searchParams;
   return catalogResponse(
     () =>
@@ -18,3 +19,5 @@ export async function GET(request: Request) {
     true,
   );
 }
+
+export const GET = withApiErrors(GETHandler);

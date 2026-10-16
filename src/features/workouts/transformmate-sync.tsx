@@ -1,48 +1,51 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type TransformMateSyncItem } from '@/contracts/transformmate';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
+import { seedClientRead } from '@/lib/client-read';
+import { readResources } from '@/lib/read-descriptors';
+import { sessionGeneration } from '@/lib/session-state';
+import { useReadOnline } from '@/lib/use-read-online';
+import { useReadResource } from '@/lib/use-read-resource';
 import { Alert, Badge, Button, Group, Stack, Text } from '@mantine/core';
-import { z } from 'zod';
-import {
-  transformMateSyncItemSchema,
-  type TransformMateSyncItem,
-} from '@/contracts/transformmate';
-import {
-  transformMateNativePageSchema,
-  transformMateNativeRefreshSchema,
-  type TransformMateNativePage,
-  type TransformMateNativeRefresh,
-} from '@/contracts/transformmate-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   workoutMessages as m,
-  transformMateStatuses as statuses,
   transformMateReasons as reasons,
+  transformMateStatuses as statuses,
 } from './messages';
 export function useTransformMateSync(
   ownerId: string,
   version: unknown,
   date: string,
 ) {
-  const [nativePage, setNativePage] = useState<TransformMateNativePage>({
-    items: [],
-    nextCursor: null,
-  });
-  const [nativeRefresh, setNativeRefresh] =
-    useState<TransformMateNativeRefresh>({
-      status: 'idle',
-      checkedAt: null,
-      errorCode: null,
-    });
   const lastAutomatic = useRef(0);
-  const [items, setItems] = useState<TransformMateSyncItem[]>([]);
-  const [configured, setConfigured] = useState<boolean | null>(null);
-  const [denied, setDenied] = useState(false);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const inflight = useRef<AbortController | null>(null);
   const generation = useRef(0);
+  const url = `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20' })}`;
+  const resource = useReadResource(readResources.transformMate(url));
+  const refreshRead = resource.refresh;
+  const currentData = useRef(resource.data);
+  useEffect(() => {
+    currentData.current = resource.data;
+  }, [resource.data]);
+  const items = resource.data?.items ?? [];
+  const nativePage = resource.data?.nativePage ?? {
+    items: [],
+    nextCursor: null,
+  };
+  const nativeRefresh = resource.data?.nativeRefresh ?? {
+    status: 'idle' as const,
+    checkedAt: null,
+    errorCode: null,
+  };
+  const configured = resource.data?.configured ?? null;
   const refresh = useCallback(
-    async (method = 'POST', cursor?: string, automatic = false) => {
+    async (cursor?: string, automatic = false) => {
       if (
+        !navigator.onLine ||
         inflight.current ||
         (automatic && Date.now() - lastAutomatic.current < 60_000)
       )
@@ -51,57 +54,46 @@ export function useTransformMateSync(
       const controller = new AbortController();
       inflight.current = controller;
       const current = generation.current;
+      const session = sessionGeneration();
       setBusy(true);
       try {
-        const response = await fetch(
+        await refreshRead();
+        if (
+          controller.signal.aborted ||
+          current !== generation.current ||
+          session !== sessionGeneration()
+        )
+          return;
+        const response = await apiFetch(
           `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20', ...(cursor ? { cursor } : {}) })}`,
-          { method, cache: 'no-store', signal: controller.signal },
+          { method: 'POST', cache: 'no-store', signal: controller.signal },
         );
-        if (!response.ok) {
-          if (
-            !controller.signal.aborted &&
-            current === generation.current &&
-            (response.status === 401 || response.status === 403)
-          ) {
-            setItems([]);
-            setConfigured(null);
-            setNativePage({ items: [], nextCursor: null });
-            setDenied(true);
-          }
-          throw new Error();
-        }
+        if (!response.ok) throw new Error();
         const result = await response.json();
-        const parsed = z
-          .object({
-            configured: z.boolean(),
-            items: z.array(transformMateSyncItemSchema),
-            nativePage: transformMateNativePageSchema,
-            nativeRefresh: transformMateNativeRefreshSchema,
-          })
-          .parse(result.data);
+        const parsed = apiResults.transformMate(result.data);
         if (!controller.signal.aborted && current === generation.current) {
-          setItems(parsed.items);
-          setNativePage((previous) =>
-            cursor
+          const previous = currentData.current;
+          const data =
+            cursor && previous
               ? {
-                  items: [
-                    ...previous.items,
-                    ...parsed.nativePage.items.filter(
-                      (item) =>
-                        !previous.items.some(
-                          (entry) =>
-                            entry.remoteTrainingId === item.remoteTrainingId,
-                        ),
-                    ),
-                  ],
-                  nextCursor: parsed.nativePage.nextCursor,
+                  ...previous,
+                  nativePage: {
+                    items: [
+                      ...previous.nativePage.items,
+                      ...parsed.nativePage.items.filter(
+                        (item) =>
+                          !previous.nativePage.items.some(
+                            (entry) =>
+                              entry.remoteTrainingId === item.remoteTrainingId,
+                          ),
+                      ),
+                    ],
+                    nextCursor: parsed.nativePage.nextCursor,
+                  },
                 }
-              : parsed.nativePage,
-          );
-          if (!cursor) setNativeRefresh(parsed.nativeRefresh);
-          setConfigured(parsed.configured);
+              : parsed;
+          await seedClientRead(url, { data }, session);
           setError(false);
-          setDenied(false);
           window.dispatchEvent(new Event('yazio:workouts-loaded'));
         }
       } catch {
@@ -114,7 +106,7 @@ export function useTransformMateSync(
         }
       }
     },
-    [ownerId, date],
+    [ownerId, date, url, refreshRead],
   );
   useEffect(() => {
     const effectGeneration = ++generation.current;
@@ -123,15 +115,10 @@ export function useTransformMateSync(
     lastAutomatic.current = 0;
     void Promise.resolve().then(async () => {
       if (generation.current !== effectGeneration) return;
-      setNativePage({ items: [], nextCursor: null });
-      setNativeRefresh({ status: 'idle', checkedAt: null, errorCode: null });
-      await refresh('GET');
-      if (generation.current === effectGeneration)
-        await refresh('POST', undefined, true);
+      await refresh(undefined, true);
     });
     const visible = () => {
-      if (document.visibilityState === 'visible')
-        void refresh('POST', undefined, true);
+      if (document.visibilityState === 'visible') void refresh(undefined, true);
     };
     window.addEventListener('focus', visible);
     document.addEventListener('visibilitychange', visible);
@@ -150,12 +137,11 @@ export function useTransformMateSync(
     nativePage,
     nativeRefresh,
     configured,
-    error,
+    error: error || !!resource.error,
     busy,
     refresh,
-    denied,
-    loadMore: () =>
-      nativePage.nextCursor && refresh('POST', nativePage.nextCursor),
+    denied: resource.error === 'denied',
+    loadMore: () => nativePage.nextCursor && refresh(nativePage.nextCursor),
   };
 }
 export function SyncSummary({
@@ -163,6 +149,7 @@ export function SyncSummary({
 }: {
   sync: ReturnType<typeof useTransformMateSync>;
 }) {
+  const online = useReadOnline();
   if (sync.configured === false)
     return (
       <Text size="sm" c="dimmed">
@@ -191,6 +178,8 @@ export function SyncSummary({
           size="compact-sm"
           mih={44}
           loading={sync.busy}
+          disabled={!online}
+          title={!online ? m.syncError : undefined}
           onClick={() => void sync.refresh()}
         >
           {m.syncRefresh}
@@ -206,9 +195,11 @@ export function SyncSummary({
 }
 export function WorkoutSync({
   item,
+  representedExercises = [],
   showActual = true,
 }: {
   item?: TransformMateSyncItem;
+  representedExercises?: import('@/contracts/workouts').WorkoutExercise[];
   showActual?: boolean;
 }) {
   if (!item || (!showActual && item.reason === 'not_configured')) return null;
@@ -286,23 +277,34 @@ export function WorkoutSync({
               {m.remoteFinishedAt}: {item.actual.finished}
             </Text>
           )}
-          {item.actual.exercises.map((exercise, index) => (
-            <Stack gap={4} key={`${exercise.occurrenceKey}-${index}`}>
-              <Text>{exercise.name}</Text>
-              {exercise.comment && <Text size="sm">{exercise.comment}</Text>}
-              {exercise.sets.map((set) => (
-                <Text key={set.order} size="sm">
-                  {m.set} {set.order}: {set.done ? m.done : m.notDone} ·{' '}
-                  {set.metrics
-                    .map(
-                      (metric) =>
-                        `${metric.name}: ${metric.values.length ? metric.values.join(' / ') : '—'} ${metric.unit}`,
-                    )
-                    .join('; ')}
-                </Text>
-              ))}
-            </Stack>
-          ))}
+          {item.actual.exercises
+            .filter(
+              (exercise) =>
+                !representedExercises.some(
+                  (planned) =>
+                    planned.transformMate &&
+                    planned.transformMate.occurrenceKey ===
+                      exercise.occurrenceKey &&
+                    planned.transformMate.exerciseId === exercise.exerciseId,
+                ),
+            )
+            .map((exercise, index) => (
+              <Stack gap={4} key={`${exercise.occurrenceKey}-${index}`}>
+                <Text>{exercise.name}</Text>
+                {exercise.comment && <Text size="sm">{exercise.comment}</Text>}
+                {exercise.sets.map((set) => (
+                  <Text key={set.order} size="sm">
+                    {m.set} {set.order}: {set.done ? m.done : m.notDone} ·{' '}
+                    {set.metrics
+                      .map(
+                        (metric) =>
+                          `${metric.name}: ${metric.values.length ? metric.values.join(' / ') : '—'} ${metric.unit}`,
+                      )
+                      .join('; ')}
+                  </Text>
+                ))}
+              </Stack>
+            ))}
         </>
       )}
     </Stack>

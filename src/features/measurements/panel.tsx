@@ -1,10 +1,28 @@
 'use client';
 import { offlineMessages } from '@/config/offline';
+import { writeMessages } from '@/config/offline-write-messages';
+import { readWorkspaceMessages } from '@/config/read-workspace';
+import type { WeightHistory } from '@/contracts/health';
+import {
+  measurementInputSchema,
+  measurementMetrics,
+  type Measurement,
+  type MeasurementMetric,
+} from '@/contracts/measurements';
+import { type MeasurementPrecisionIssue } from '@/contracts/yazio-body';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
+import { updateClientRead } from '@/lib/client-read';
+import { formatDecimal } from '@/lib/number-display';
+import {
+  saveDeviceWrite,
+  synchronizeDeviceWrite,
+} from '@/lib/offline-write-client';
+import { readResources } from '@/lib/read-descriptors';
+import { sessionGeneration } from '@/lib/session-state';
 import { useReadResource } from '@/lib/use-read-resource';
-import { measurementSchema } from '@/contracts/measurements';
-import { z } from 'zod';
-import { useReadRefresh } from '@/lib/use-read-refresh';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useViewState } from '@/lib/use-view-state';
+import { LineChart } from '@mantine/charts';
 import {
   Alert,
   Button,
@@ -19,27 +37,10 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { LineChart } from '@mantine/charts';
-import {
-  measurementMetrics,
-  measurementInputSchema,
-  type Measurement,
-  type MeasurementMetric,
-} from '@/contracts/measurements';
-import { measurementMessages as m } from './messages';
+import { useEffect, useState, type ReactNode } from 'react';
 import { measurementChange, weightTrendChart } from './history';
-import {
-  measurementPrecisionIssueSchema,
-  type MeasurementPrecisionIssue,
-} from '@/contracts/yazio-body';
+import { measurementMessages as m } from './messages';
 import { MeasurementPrecisionWarnings } from './precision-warnings';
-import type { WeightHistory } from '@/contracts/health';
-import { writeMessages } from '@/config/offline-write-messages';
-import {
-  saveDeviceWrite,
-  synchronizeDeviceWrite,
-} from '@/lib/offline-write-client';
-import { formatDecimal } from '@/lib/number-display';
 function responseError(status: number) {
   return status === 401
     ? m.sessionExpired
@@ -55,33 +56,47 @@ export function MeasurementsPanel({
   writable,
   weightHistory,
   renderComments,
-  saved,
 }: {
   ownerId: string;
   writable: boolean;
   deviceWrites?: boolean;
-  saved?: Measurement[];
   weightHistory: WeightHistory;
   renderComments?: (measurementId: string) => ReactNode;
 }) {
-  const readRefresh = useReadRefresh();
   const [issues, setIssues] = useState<MeasurementPrecisionIssue[]>([]);
   const [retrying, setRetrying] = useState<string>();
-  const [loadedItems, setItems] = useState<Measurement[]>(saved ?? []);
-  const items = saved ?? loadedItems;
-  const [loading, setLoading] = useState(!saved);
-  const [readDenied, setReadDenied] = useState(false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [editingOriginal, setEditingOriginal] = useState<Measurement>();
-  const [editing, setEditing] = useState<string>();
+  const [editingOriginal, setEditingOriginal] = useViewState<
+    Measurement | undefined
+  >(`measurements:original`, undefined);
+  const [editing, setEditing] = useViewState<string | undefined>(
+    `measurements:editing`,
+    undefined,
+  );
   const [deleting, setDeleting] = useState<string>();
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [note, setNote] = useState('');
-  const [values, setValues] = useState<
+  const [date, setDate] = useViewState(
+    `measurements:date`,
+    new Date().toISOString().slice(0, 10),
+  );
+  const [note, setNote] = useViewState(`measurements:note`, '');
+  const [values, setValues] = useViewState<
     Partial<Record<MeasurementMetric, string>>
-  >({});
-  const [metric, setMetric] = useState<MeasurementMetric>('weight');
+  >(`measurements:values`, {});
+  const [metric, setMetric] = useViewState<MeasurementMetric>(
+    `measurements:metric`,
+    'weight',
+  );
+  const url = `/api/measurements?ownerId=${encodeURIComponent(ownerId)}`;
+  const measurements = useReadResource(readResources.measurements(url));
+  const items = measurements.data ?? [];
+  const refresh = measurements.refresh;
+  const loading = measurements.data === undefined && !measurements.error;
+  const hasPendingSync = items.some((item) =>
+    item.sync.some(
+      (status) => status.state === 'pending' || status.state === 'uncertain',
+    ),
+  );
   const currentEdited =
     editingOriginal && items.find((item) => item.id === editingOriginal.id);
   const content = (item: Measurement) =>
@@ -93,106 +108,34 @@ export function MeasurementsPanel({
   const conflict =
     !!editingOriginal &&
     (!currentEdited || content(currentEdited) !== content(editingOriginal));
-  const url = `/api/measurements?ownerId=${encodeURIComponent(ownerId)}`;
-  useReadResource(
-    saved ? undefined : url,
-    (value) => z.array(measurementSchema).parse(value),
-    (value) => {
-      setItems(value);
-      setLoading(false);
-    },
-  );
   useEffect(() => {
-    if (saved) return;
-    let active = true;
-    fetch(url)
-      .then(async (r) => {
-        if (!r.ok) {
-          if (active && (r.status === 401 || r.status === 403)) {
-            setItems([]);
-            setIssues([]);
-            setReadDenied(true);
-          }
-          throw new Error();
-        }
-        return r.json() as Promise<Measurement[]>;
-      })
-      .then((data) => {
-        if (active) {
-          setReadDenied(false);
-          setItems(data);
-        }
-      })
-      .catch(() => {
-        if (active) setError(m.loadError);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [url, saved, readRefresh]);
-  useEffect(() => {
-    if (saved) return;
-    let active = true;
-    void fetch(`/api/measurements/sync?ownerId=${encodeURIComponent(ownerId)}`)
+    const controller = new AbortController();
+    void apiFetch(
+      `/api/measurements/sync?ownerId=${encodeURIComponent(ownerId)}`,
+      { signal: controller.signal },
+    )
       .then(async (response) => {
-        if (response.status === 401 || response.status === 403) {
-          if (active) {
-            setIssues([]);
-            setItems([]);
-            setReadDenied(true);
-          }
-          return;
-        }
         if (response.ok) {
-          const data = measurementPrecisionIssueSchema
-            .array()
-            .parse(await response.json());
-          if (active) setIssues(data);
+          const data = apiResults.measurementIssues(await response.json());
+          if (!controller.signal.aborted) setIssues(data);
         }
       })
       .catch(() => {});
-    if (
-      !items.some((item) =>
-        item.sync.some(
-          (status) =>
-            status.state === 'pending' || status.state === 'uncertain',
-        ),
-      )
-    )
-      return () => {
-        active = false;
-      };
+    return () => controller.abort();
+  }, [ownerId, measurements.data]);
+  useEffect(() => {
+    if (!hasPendingSync) return;
     const timer = setInterval(() => {
-      void fetch(url, { cache: 'no-store' })
-        .then(async (response) => {
-          if (response.status === 401 || response.status === 403) {
-            if (active) {
-              setItems([]);
-              setIssues([]);
-              setReadDenied(true);
-            }
-            return;
-          }
-          if (response.ok) {
-            const data = await response.json();
-            if (active) setItems(data);
-          }
-        })
-        .catch(() => {});
+      void refresh();
     }, 5000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [ownerId, url, items, saved]);
+    return () => clearInterval(timer);
+  }, [hasPendingSync, refresh]);
   async function retrySync(id: string) {
+    const generation = sessionGeneration();
     setRetrying(id);
     setError(undefined);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/measurements/${id}/retry?ownerId=${encodeURIComponent(ownerId)}`,
         { method: 'POST' },
       );
@@ -200,8 +143,7 @@ export function MeasurementsPanel({
         setError(responseError(response.status));
         return;
       }
-      const updated = (await response.json()) as Measurement;
-      setItems((old) => old.map((item) => (item.id === id ? updated : item)));
+      if (generation === sessionGeneration()) await refresh();
     } catch {
       setError(m.error);
     } finally {
@@ -230,6 +172,7 @@ export function MeasurementsPanel({
       setError(m.validation);
       return;
     }
+    const generation = sessionGeneration();
     setBusy(true);
     setError(undefined);
     try {
@@ -257,15 +200,22 @@ export function MeasurementsPanel({
           editing,
           base,
         );
-        await synchronizeDeviceWrite(operation);
-        setItems((old) => [
-          ...old.filter((item) => item.id !== operation.recordId),
-          { ...parsed.data, id: operation.recordId, ownerId, sync: [] },
-        ]);
-        reset();
+        const acknowledged = await synchronizeDeviceWrite(operation);
+        if (generation !== sessionGeneration()) return;
+        if (acknowledged) await refresh();
+        else
+          await updateClientRead(
+            readResources.measurements(url),
+            (current = []) => [
+              ...current.filter((item) => item.id !== operation.recordId),
+              { ...parsed.data, id: operation.recordId, ownerId, sync: [] },
+            ],
+            generation,
+          );
+        if (generation === sessionGeneration()) reset();
         return;
       }
-      const r = await fetch(
+      const r = await apiFetch(
         editing
           ? `/api/measurements/${editing}?ownerId=${encodeURIComponent(ownerId)}`
           : url,
@@ -279,13 +229,9 @@ export function MeasurementsPanel({
         setError(responseError(r.status));
         return;
       }
-      const item = (await r.json()) as Measurement;
-      setItems((old) =>
-        [...old.filter((x) => x.id !== item.id), item].sort((a, b) =>
-          b.measuredAt.localeCompare(a.measuredAt),
-        ),
-      );
-      reset();
+      if (generation !== sessionGeneration()) return;
+      await refresh();
+      if (generation === sessionGeneration()) reset();
     } catch {
       setError(deviceWrites ? writeMessages.error : m.error);
     } finally {
@@ -293,10 +239,11 @@ export function MeasurementsPanel({
     }
   }
   async function remove(id: string) {
+    const generation = sessionGeneration();
     setBusy(true);
     setError(undefined);
     try {
-      const r = await fetch(
+      const r = await apiFetch(
         `/api/measurements/${id}?ownerId=${encodeURIComponent(ownerId)}`,
         { method: 'DELETE' },
       );
@@ -304,24 +251,18 @@ export function MeasurementsPanel({
         setError(responseError(r.status));
         return;
       }
-      setItems((old) => old.filter((x) => x.id !== id));
-      setDeleting(undefined);
-      if (editing === id) reset();
+      if (generation !== sessionGeneration()) return;
+      await refresh();
+      if (generation === sessionGeneration()) {
+        setDeleting(undefined);
+        if (editing === id) reset();
+      }
     } catch {
       setError(m.error);
     } finally {
       setBusy(false);
     }
   }
-  if (readDenied)
-    return (
-      <Stack data-testid="measurements-panel">
-        <Title order={1}>{m.title}</Title>
-        <Alert color="red" role="alert">
-          {m.denied}
-        </Alert>
-      </Stack>
-    );
   const chart =
     metric === 'weight'
       ? weightTrendChart({
@@ -347,9 +288,9 @@ export function MeasurementsPanel({
       {conflict && (
         <Alert color="orange">{offlineMessages.draftConflict}</Alert>
       )}
-      {error && (
+      {(error || measurements.error) && (
         <Alert color="red" role="alert">
-          {error}
+          {error ?? m.loadError}
         </Alert>
       )}
       {!writable && <Text>{m.readOnly}</Text>}
@@ -525,7 +466,12 @@ export function MeasurementsPanel({
                       <Button
                         variant="default"
                         mih={44}
-                        disabled={busy}
+                        disabled={busy || measurements.coverage !== 'complete'}
+                        title={
+                          measurements.coverage !== 'complete'
+                            ? readWorkspaceMessages.recordUnconfirmed
+                            : undefined
+                        }
                         onClick={() => {
                           setEditing(item.id);
                           setEditingOriginal(item);
@@ -543,7 +489,12 @@ export function MeasurementsPanel({
                       <Button
                         color="red"
                         mih={44}
-                        disabled={busy}
+                        disabled={busy || measurements.coverage !== 'complete'}
+                        title={
+                          measurements.coverage !== 'complete'
+                            ? readWorkspaceMessages.recordUnconfirmed
+                            : undefined
+                        }
                         onClick={() =>
                           deleting === item.id
                             ? void remove(item.id)

@@ -1,6 +1,5 @@
 'use client';
 import { Stack, Text, Title } from '@mantine/core';
-import type { OfflineSnapshot } from '@/contracts/offline';
 import { ExerciseTable } from './exercise-table';
 import { NativeWorkout, type NativeWorkoutReadItem } from './native-workout';
 import { workoutMessages as m } from './messages';
@@ -27,8 +26,7 @@ export type WorkoutReadContentProps =
       comments?: ReactNode;
       ownerId?: string;
     }
-  | { kind: 'native'; item: NativeWorkoutReadItem; ownerId?: string }
-  | { kind: 'fact'; item: OfflineSnapshot['transformMateFacts'][number] };
+  | { kind: 'native'; item: NativeWorkoutReadItem; ownerId?: string };
 export function WorkoutReadContent(props: WorkoutReadContentProps) {
   if (props.kind === 'native')
     return <NativeWorkout item={props.item} ownerId={props.ownerId} fullView />;
@@ -99,39 +97,5 @@ export function WorkoutReadContent(props: WorkoutReadContentProps) {
         {props.comments}
       </>
     );
-  return (
-    <Stack>
-      <Text>{m.publishedSnapshot}</Text>
-      {props.item.planSnapshot && (
-        <ExerciseTable exercises={props.item.planSnapshot.exercises} />
-      )}
-      {props.item.started && (
-        <Text size="sm">
-          {m.remoteStartedAt}: {props.item.started}
-        </Text>
-      )}
-      {props.item.finished && (
-        <Text size="sm">
-          {m.remoteFinishedAt}: {props.item.finished}
-        </Text>
-      )}
-      {props.item.exercises.map((exercise, index) => (
-        <Stack gap={4} key={index}>
-          <Text fw={600}>{exercise.name}</Text>
-          {exercise.comment && <Text size="sm">{exercise.comment}</Text>}
-          {exercise.sets.map((set) => (
-            <Text key={set.order} size="sm">
-              {m.set} {set.order}: {set.done ? m.done : m.notDone} ·{' '}
-              {set.metrics
-                .map(
-                  (metric) =>
-                    `${metric.name}: ${metric.values.length ? metric.values.join(' / ') : '—'} ${metric.unit}`,
-                )
-                .join('; ')}
-            </Text>
-          ))}
-        </Stack>
-      ))}
-    </Stack>
-  );
+  return null;
 }

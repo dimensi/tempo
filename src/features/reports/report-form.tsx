@@ -1,11 +1,12 @@
 'use client';
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import { DateNavigation } from '@/components/shared/date-navigation';
+import { browserToday } from '@/components/shared/date-navigation-dates';
+import { OfflineFile } from '@/components/shared/offline-file';
+import { offlineFileMessages } from '@/config/offline-files';
+import { reportMessages as m } from '@/config/reports';
+import { reportRequestSchema } from '@/contracts/reports';
+import { apiFetch } from '@/lib/api-client';
+import { useSearchParams } from 'next/navigation';
 import {
   Alert,
   Button,
@@ -16,41 +17,36 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { DateNavigation } from '@/components/shared/date-navigation';
-import { browserToday } from '@/components/shared/date-navigation-dates';
-import type { NutritionDay } from '@/contracts/nutrition';
-import { OfflineFile } from '@/components/shared/offline-file';
-import { offlineFileMessages } from '@/config/offline-files';
-import { reportRequestSchema } from '@/contracts/reports';
-import { reportMessages as m } from '@/config/reports';
-import { weeklyRange } from './weekly-range';
 import {
-  OfflineReportPreview,
-  type OfflineReportPhoto,
-} from './offline-preview';
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import { weeklyRange } from './weekly-range';
 
 const subscribe = () => () => {};
 const clientReady = () => true;
 const serverReady = () => false;
 const inputStyles = { input: { fontSize: 16 } };
 
-export function ReportForm({
-  ownerId,
-  offlineDays,
-  offlineSteps = [],
-  offlineStepsGoal = null,
-  offlinePhotos = [],
-}: {
-  ownerId: string | null;
-  offlineDays?: NutritionDay[];
-  offlineStepsGoal?: number | null;
-  offlineSteps?: { date: string; steps: number | null }[];
-  offlinePhotos?: OfflineReportPhoto[];
-}) {
+export function ReportForm({ ownerId }: { ownerId: string | null }) {
   const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
-  const [period, setPeriod] = useState('daily');
-  const [start, setStart] = useState<string | null>(null);
-  const [end, setEnd] = useState<string | null>(null);
+  const params = useSearchParams();
+  const period = params.get('period') ?? 'daily';
+  const today = ready ? browserToday() : '';
+  const start = params.get('start') ?? today;
+  const end = params.get('end') ?? today;
+  function select(name: 'period' | 'start' | 'end', value: string) {
+    const url = new URL(window.location.href);
+    // Include the effective dates so the selected setup remains reproducible.
+    if (!url.searchParams.has('period')) url.searchParams.set('period', period);
+    if (!url.searchParams.has('start')) url.searchParams.set('start', start);
+    if (!url.searchParams.has('end')) url.searchParams.set('end', end);
+    url.searchParams.set(name, value);
+    window.history.replaceState(null, '', url);
+  }
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -62,14 +58,17 @@ export function ReportForm({
   const html = preview?.ownerId === ownerId ? preview.html : '';
   const successfulPreviewKey = useRef('');
   const deniedPreviewKey = useRef('');
-  const clearPrivatePreview = useCallback((query: URLSearchParams) => {
-    const previewQuery = new URLSearchParams(query);
-    previewQuery.set('format', 'html');
-    deniedPreviewKey.current = previewQuery.toString();
-    successfulPreviewKey.current = '';
-    setPreview(null);
-    setPreviewRange('');
-  }, []);
+  const clearPrivatePreview = useCallback(
+    (query: URLSearchParams) => {
+      const previewQuery = new URLSearchParams(query);
+      previewQuery.set('format', 'html');
+      deniedPreviewKey.current = previewQuery.toString();
+      successfulPreviewKey.current = '';
+      setPreview(null);
+      setPreviewRange('');
+    },
+    [setPreview, setPreviewRange],
+  );
   const pending = useRef<AbortController | null>(null);
   const downloadPending = useRef<AbortController | null>(null);
   useEffect(
@@ -79,11 +78,6 @@ export function ReportForm({
     },
     [],
   );
-  if (ready && (start === null || end === null)) {
-    const localToday = browserToday();
-    if (start === null) setStart(localToday);
-    if (end === null) setEnd(localToday);
-  }
   const selectedStart = start ?? '';
   const week = weeklyRange(selectedStart);
   const finish =
@@ -93,7 +87,6 @@ export function ReportForm({
         ? (week?.end ?? '')
         : (end ?? '');
   useEffect(() => {
-    if (offlineDays) return;
     const controller = new AbortController();
     pending.current = controller;
     // Coalesce date edits before entering the measured Chromium pipeline.
@@ -129,7 +122,7 @@ export function ReportForm({
       setError('');
       setBusy(true);
       try {
-        const response = await fetch(`/api/reports?${query}`, {
+        const response = await apiFetch(`/api/reports?${query}`, {
           signal: controller.signal,
           cache: 'no-store',
         });
@@ -171,7 +164,6 @@ export function ReportForm({
     finish,
     downloading,
     clearPrivatePreview,
-    offlineDays,
   ]);
   async function download() {
     const parsed = reportRequestSchema.safeParse({
@@ -199,7 +191,7 @@ export function ReportForm({
         end: parsed.data.end,
         format: 'pdf',
       });
-      const response = await fetch(`/api/reports?${query}`, {
+      const response = await apiFetch(`/api/reports?${query}`, {
         signal: controller.signal,
         cache: 'no-store',
       });
@@ -246,7 +238,7 @@ export function ReportForm({
         allowDeselect={false}
         onChange={(value) => {
           deniedPreviewKey.current = '';
-          setPeriod(value ?? 'daily');
+          select('period', value ?? 'daily');
           setError('');
         }}
         data={[
@@ -262,7 +254,7 @@ export function ReportForm({
           labels={m}
           onSelect={(value) => {
             deniedPreviewKey.current = '';
-            setStart(value);
+            select('start', value);
             setError('');
           }}
           disabled={!ready || ownerId === null}
@@ -281,7 +273,7 @@ export function ReportForm({
         value={selectedStart}
         onChange={(event) => {
           deniedPreviewKey.current = '';
-          setStart(event.currentTarget.value);
+          select('start', event.currentTarget.value);
           setError('');
         }}
         required
@@ -295,7 +287,7 @@ export function ReportForm({
           value={end ?? ''}
           onChange={(event) => {
             deniedPreviewKey.current = '';
-            setEnd(event.currentTarget.value);
+            select('end', event.currentTarget.value);
             setError('');
           }}
           required
@@ -311,7 +303,7 @@ export function ReportForm({
           styles={{ root: { fontSize: 16 } }}
           mih={44}
           loading={downloading}
-          disabled={!!offlineDays || !ready || ownerId === null || busy}
+          disabled={!ready || ownerId === null || busy}
           onClick={() => void download()}
         >
           {m.download}
@@ -322,7 +314,7 @@ export function ReportForm({
           </Text>
         )}
       </Group>
-      {!offlineDays && ownerId && finish && selectedStart && (
+      {ownerId && finish && selectedStart && (
         <>
           <OfflineFile
             id={`report:${period}:${selectedStart}:${finish}`}
@@ -335,33 +327,12 @@ export function ReportForm({
           </Text>
         </>
       )}
-      {offlineDays &&
-        (() => {
-          const parsed = reportRequestSchema.safeParse({
-            ownerId: ownerId ?? '',
-            period,
-            start: selectedStart,
-            end: finish,
-            format: 'html',
-          });
-          return parsed.success ? (
-            <OfflineReportPreview
-              request={parsed.data}
-              dailyStepsGoal={offlineStepsGoal}
-              days={offlineDays}
-              steps={offlineSteps}
-              photos={offlinePhotos}
-            />
-          ) : (
-            <Alert>{m.invalid}</Alert>
-          );
-        })()}
       {html && (
-        <Text size="sm" c="dimmed">
+        <Text size="sm">
           {m.preview}: {previewRange}
         </Text>
       )}
-      {!offlineDays && ownerId !== null && (
+      {ownerId !== null && (
         <iframe
           title={m.preview}
           aria-busy={busy}

@@ -1,19 +1,14 @@
 'use client';
 import { OfflineFile } from '@/components/shared/offline-file';
-import { savedMedicalDocument } from '@/lib/client-read';
-import { useReadOnline } from '@/lib/use-read-online';
 import { offlineMessages } from '@/config/offline';
-import { useReadRefresh } from '@/lib/use-read-refresh';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadOnline } from '@/lib/use-read-online';
+import { useReadResource } from '@/lib/use-read-resource';
 
-import { useEffect, useState } from 'react';
-import { Alert, Button, Group, Paper, Stack, Text, Title } from '@mantine/core';
-import type {
-  MedicalDocument,
-  MedicalImportJob,
-  MedicalObservation,
-  MedicalObservationSource,
-} from '@/contracts/anamnesis';
 import { anamnesisMessages as m } from '@/config/anamnesis-messages';
+import type { MedicalImportJob } from '@/contracts/anamnesis';
+import { Alert, Button, Group, Paper, Stack, Text, Title } from '@mantine/core';
+import { useState } from 'react';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
 
 // Просмотр оригинала: PDF встроен через авторизованный маршрут API,
@@ -22,76 +17,30 @@ export function DocumentViewer({
   ownerId,
   documentId,
   writable,
-  preferSaved = false,
 }: {
   ownerId: string;
   documentId: string;
   writable: boolean;
-  preferSaved?: boolean;
 }) {
   const online = useReadOnline();
-  const readRefresh = useReadRefresh();
-  const [document, setDocument] = useState<MedicalDocument>();
-  const [sources, setSources] = useState<
-    Array<{ observation: MedicalObservation; source: MedicalObservationSource }>
-  >([]);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const query = ownerIdQuery(ownerId);
-
-  useEffect(() => {
-    let active = true;
-    let liveAuthoritative = false;
-    if (preferSaved)
-      void savedMedicalDocument(documentId, ownerId)
-        .then((saved) => {
-          if (active && !liveAuthoritative) setDocument(saved);
-        })
-        .catch(() => {});
-    void (async () => {
-      try {
-        const loaded = await fetchAnamnesis<MedicalDocument>(
-          `/api/anamnesis/documents/${documentId}?${query}`,
-        );
-        if (active) {
-          liveAuthoritative = true;
-          setDocument(loaded);
-        }
-        const reviews = await fetchAnamnesis<
-          Array<{
-            observation: MedicalObservation;
-            sources: MedicalObservationSource[];
-          }>
-        >(`/api/anamnesis/documents/${documentId}/observations?${query}`).catch(
-          () => [],
-        );
-        if (active)
-          setSources(
-            reviews.flatMap((review) =>
-              review.sources
-                .filter((source) => source.documentId === documentId)
-                .map((source) => ({ observation: review.observation, source })),
-            ),
-          );
-      } catch (cause) {
-        if (active) {
-          if (
-            cause instanceof Error &&
-            'status' in cause &&
-            [401, 403].includes(Number(cause.status))
-          ) {
-            liveAuthoritative = true;
-            setDocument(undefined);
-            setSources([]);
-          }
-          setError(m.errors.load);
-        }
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [documentId, ownerId, preferSaved, query, readRefresh]);
+  const documentRead = useReadResource(
+    readResources.document(`/api/anamnesis/documents/${documentId}?${query}`),
+  );
+  const observationsRead = useReadResource(
+    readResources.documentObservations(
+      `/api/anamnesis/documents/${documentId}/observations?${query}`,
+    ),
+  );
+  const document = documentRead.data;
+  const sources = (observationsRead.data ?? []).flatMap((review) =>
+    review.sources
+      .filter((source) => source.documentId === documentId)
+      .map((source) => ({ observation: review.observation, source })),
+  );
+  const loadError = documentRead.error || observationsRead.error;
 
   async function reprocess() {
     setBusy(true);
@@ -108,12 +57,12 @@ export function DocumentViewer({
     }
   }
 
-  if (error && !document)
+  if ((error || loadError) && !document)
     return (
       <Stack data-testid="anamnesis-document-viewer">
         <Title order={1}>{m.documents.title}</Title>
         <Alert color="red" role="alert">
-          {error}
+          {error ?? m.errors.load}
         </Alert>
       </Stack>
     );
@@ -124,6 +73,11 @@ export function DocumentViewer({
         {m.title} · {m.workspace.documents}
       </a>
       <Title order={1}>{document?.filename ?? '…'}</Title>
+      {(error || loadError) && (
+        <Alert color="red" role="alert">
+          {error ?? m.errors.load}
+        </Alert>
+      )}
       {document && (
         <Paper withBorder p="md">
           <Group>

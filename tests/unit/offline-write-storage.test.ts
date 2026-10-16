@@ -1,10 +1,10 @@
-import { expect, it, vi } from 'vitest';
+import { OfflineStorage } from '@/lib/offline-device';
 import {
   IndexedWriteStore,
   enqueueWrite,
   pendingWrites,
 } from '@/lib/offline-write-queue';
-import { OfflineStorage } from '@/lib/offline-device';
+import { expect, it, vi } from 'vitest';
 // Controlled IndexedDB boundary. It models commit/abort, not a real browser or eviction policy.
 function indexedBoundary() {
   const databases = new Map<string, Map<string, Map<IDBValidKey, unknown>>>();
@@ -147,8 +147,9 @@ it('read-cache purge uses another database and cannot erase old pending edits', 
     state.partition = partition;
     enqueueWrite(state, partition, payload);
   });
-  const cache = new OfflineStorage(boundary.factory);
-  await cache.purge(Date.parse('2026-10-15'));
+  vi.stubGlobal('indexedDB', boundary.factory);
+  const cache = new OfflineStorage();
+  await cache.purge();
   await cache.close();
   const state = await new IndexedWriteStore(boundary.factory).update((state) =>
     structuredClone(state),

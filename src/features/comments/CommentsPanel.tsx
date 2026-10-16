@@ -1,7 +1,10 @@
 'use client';
+import type { CommentTarget } from '@/contracts/comments';
+import { apiFetch } from '@/lib/api-client';
+import { readResources } from '@/lib/read-descriptors';
 import { useReadOnline } from '@/lib/use-read-online';
-import { useReadRefresh } from '@/lib/use-read-refresh';
-import { useEffect, useRef, useState } from 'react';
+import { useReadResource } from '@/lib/use-read-resource';
+import { useViewState } from '@/lib/use-view-state';
 import {
   Alert,
   Button,
@@ -11,9 +14,9 @@ import {
   Textarea,
   Title,
 } from '@mantine/core';
-import type { CommentDto, CommentTarget } from '@/contracts/comments';
-import { CommentReadContent } from './read';
+import { useRef, useState } from 'react';
 import { commentMessages as m } from './messages';
+import { CommentReadContent } from './read';
 function TargetCommentsPanel({
   ownerId,
   target,
@@ -22,47 +25,38 @@ function TargetCommentsPanel({
   target: CommentTarget;
 }) {
   const online = useReadOnline();
-  const readRefresh = useReadRefresh();
-  const [rows, setRows] = useState<CommentDto[]>([]);
-  const [body, setBody] = useState('');
+  const [body, setBody] = useViewState(
+    `comments:${target.type}:${target.id}:body`,
+    '',
+  );
   const draftRevision = useRef(0);
-  const [parentId, setParentId] = useState<string>();
-  const [editing, setEditing] = useState<string>();
+  const [parentId, setParentId] = useViewState<string | undefined>(
+    `comments:${target.type}:${target.id}:parent`,
+    undefined,
+  );
+  const [editing, setEditing] = useViewState<string | undefined>(
+    `comments:${target.type}:${target.id}:editing`,
+    undefined,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
   const targetType = target.type;
   const targetId = target.id;
-  useEffect(() => {
-    const controller = new AbortController();
-    const q = new URLSearchParams({ ownerId, type: targetType, targetId });
-    void fetch(`/api/comments?${q}`, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error();
-        const data = await response.json();
-        if (!controller.signal.aborted) setRows(data);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setError(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [ownerId, targetType, targetId, readRefresh]);
-  async function refresh() {
-    const q = new URLSearchParams({ ownerId, type: targetType, targetId });
-    const response = await fetch(`/api/comments?${q}`);
-    if (!response.ok) throw new Error();
-    setRows(await response.json());
-  }
+  const resource = useReadResource(
+    readResources.comments(
+      `/api/comments?${new URLSearchParams({ ownerId, type: targetType, targetId })}`,
+    ),
+  );
+  const rows = resource.data ?? [];
+  const loading = resource.data === undefined && !resource.error;
+  const refresh = resource.refresh;
   async function save() {
     if (!online || busy) return;
     const submittedRevision = draftRevision.current;
     setBusy(true);
     setError(false);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         editing ? `/api/comments/${editing}` : '/api/comments',
         {
           method: editing ? 'PATCH' : 'POST',
@@ -97,7 +91,7 @@ function TargetCommentsPanel({
     setBusy(true);
     setError(false);
     try {
-      const response = await fetch(`/api/comments/${id}`, {
+      const response = await apiFetch(`/api/comments/${id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ownerId }),
@@ -113,7 +107,7 @@ function TargetCommentsPanel({
   return (
     <Stack>
       <Title order={2}>{m.title}</Title>
-      {error && (
+      {(error || resource.error) && (
         <Alert color="red" role="alert">
           {m.error}
         </Alert>

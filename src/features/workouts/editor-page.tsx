@@ -1,23 +1,23 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { type WorkoutPlan, type WorkoutPlanInput } from '@/contracts/workouts';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
+import { subscribeSessionReset } from '@/lib/offline-device';
 import { Alert, Button, Group, Modal, Stack, Text, Title } from '@mantine/core';
+import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
-import { subscribeOfflineBlocked } from '@/lib/offline-device';
-import {
-  type WorkoutPlan,
-  type WorkoutPlanInput,
-  workoutPlanSchema,
-} from '@/contracts/workouts';
-import { PlanForm, emptyPlan } from './forms';
+import { copyPlanToDate } from './copy-plan';
+import { WorkoutCreateChoice } from './create-choice';
 import {
   clearWorkoutDraft,
   clearWorkoutDrafts,
   readWorkoutDraft,
   storeWorkoutDraft,
 } from './draft-storage';
-import { WorkoutCreateChoice } from './create-choice';
-import { copyPlanToDate } from './copy-plan';
+import { PlanForm, emptyPlan } from './forms';
 import { workoutMessages as m } from './messages';
 import classes from './workout-ui.module.css';
 
@@ -89,6 +89,11 @@ export function WorkoutEditorPage({
   canLog?: boolean;
 }) {
   const router = useRouter();
+  useReadResource(
+    readResources.workouts(
+      `/api/workouts?ownerId=${encodeURIComponent(ownerId)}`,
+    ),
+  );
   const identity = `${userId}:${ownerId}`;
   const key = `workout-draft:${identity}:${copying ? 'copy' : 'edit'}:${plan?.id ?? 'new'}:${workoutId ?? ''}:${plan?.revision ?? 0}:${date}`;
   const [draft, setDraft] = useState<WorkoutPlanInput>(() => {
@@ -130,42 +135,21 @@ export function WorkoutEditorPage({
   useEffect(() => {
     mounted.current = true;
     generation.current += 1;
-    let alive = true;
-    void fetch(`/api/workouts?ownerId=${encodeURIComponent(ownerId)}`, {
-      cache: 'no-store',
-    })
-      .then((response) => {
-        if (!alive) return;
-        if (response.status === 401 || response.status === 403) {
-          clearWorkoutDraft(key);
-          setReady(false);
-          setStored(false);
-          persisted.current = false;
-          dirty.current = false;
-          throw new Error(m.noAccess);
-        }
-        if (!response.ok) throw new Error(m.loadError);
-        if (!alive) return;
-        requestId.current = crypto.randomUUID();
-        const restored = readWorkoutDraft(key, identity, draftValue);
-        if (restored) {
-          setDraft(restored.value);
-          setStored(true);
-          persisted.current = true;
-          requestId.current = restored.requestId;
-          dirty.current = true;
-        }
-        setReady(true);
-      })
-      .catch((cause) => {
-        if (!alive) return;
-        setError(
-          cause instanceof Error && cause.message === m.noAccess
-            ? m.noAccess
-            : m.loadError,
-        );
-      });
-    const unsubscribe = subscribeOfflineBlocked(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      requestId.current = crypto.randomUUID();
+      const restored = readWorkoutDraft(key, identity, draftValue);
+      if (restored) {
+        setDraft(restored.value);
+        setStored(true);
+        persisted.current = true;
+        requestId.current = restored.requestId;
+        dirty.current = true;
+      }
+      setReady(true);
+    });
+    const unsubscribe = subscribeSessionReset(() => {
       clearWorkoutDrafts();
       setStored(false);
       persisted.current = false;
@@ -175,12 +159,9 @@ export function WorkoutEditorPage({
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
-      // A retained route must revalidate before showing its previous fields.
-      setReady(false);
-      setError(null);
+      active = false;
       mounted.current = false;
       generation.current += 1;
-      alive = false;
       unsubscribe();
       window.removeEventListener('beforeunload', beforeUnload);
     };
@@ -211,7 +192,7 @@ export function WorkoutEditorPage({
     setError(null);
     try {
       const editing = plan && !copying;
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/workouts/plans${editing ? `/${plan.id}` : ''}?ownerId=${encodeURIComponent(ownerId)}`,
         {
           method: editing ? 'PUT' : 'POST',
@@ -243,7 +224,7 @@ export function WorkoutEditorPage({
         );
       }
       const result = await response.json();
-      const saved = workoutPlanSchema.parse(result.data);
+      const saved = apiResults.plan(result.data);
       const savedWorkout =
         saved.workouts.find((item) => item.id === workoutId) ??
         saved.workouts[0]!;

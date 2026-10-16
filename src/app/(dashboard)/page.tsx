@@ -1,12 +1,9 @@
-import { requireSession } from '@/server/auth/guards';
+import { HealthOverviewSteps } from '@/features/health';
 import { Overview } from '@/features/overview';
 import { Stack } from '@mantine/core';
-import { HealthOverviewSteps } from '@/features/health';
-export const metadata = { title: 'Обзор' };
-export default async function Page() {
-  await requireSession();
+export default function Page() {
   return (
-    <Stack gap={32} style={{ minWidth: 0 }}>
+    <Stack gap={32}>
       <Overview />
       <HealthOverviewSteps />
     </Stack>

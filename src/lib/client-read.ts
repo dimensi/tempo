@@ -1,90 +1,126 @@
-import { offlineAnamnesisSchema } from '@/contracts/offline-anamnesis';
 import {
-  medicalDocumentSchema,
-  type MedicalDocument,
-} from '@/contracts/anamnesis';
+  offlineReadBody,
+  pruneReadRecords,
+  readRecordSchema,
+  readResponseSchema,
+} from '@/contracts/read-resources';
+import { apiFetch } from './api-client';
+import { browserStore } from './browser-storage';
+import { subscribeSessionReset } from './offline-device';
 import {
   ReadFailure,
   ReadResourceStore,
   type PersistedRead,
 } from './read-resource';
-import {
-  isCacheableReadUrl,
-  isMedicalDetail,
-  offlineReadBody,
-  readResponseSchema,
-} from '@/contracts/read-resources';
-import {
-  OfflineStorage,
-  subscribeOfflineBlocked,
-  withOfflineCacheLock,
-  type CacheFence,
-} from './offline-device';
-import { getOfflineController } from './offline-controller';
-import { reportNetworkResult } from './network-state';
-
+import type { ReadDescriptor } from './read-descriptors';
+import { readSession, sessionGeneration } from './session-state';
+export function canonicalReadKey(url: URL) {
+  const params = new URLSearchParams(url.search);
+  params.sort();
+  return url.pathname + (params.size ? `?${params}` : '');
+}
 let scope = '';
-let medicalRevision = 0;
-let fence: CacheFence | undefined;
+export function bindReadScope() {
+  const next = readSession()?.partition ?? '';
+  if (scope !== next) {
+    scope = next;
+    clientReads.clear();
+  }
+}
 const persistence = {
   async read(key: string): Promise<PersistedRead<string> | undefined> {
-    if (!fence) return;
-    const storage = new OfflineStorage();
-    try {
-      const row = (await storage.readResources(fence)).find(
-        (row) => row.key === key,
-      );
-      if (!row) return;
-      const schema = readResponseSchema(new URL(key, location.origin).pathname);
-      if (!schema) return;
-      const data = offlineReadBody(
-        key,
-        JSON.stringify(schema.parse(JSON.parse(row.body))),
-      );
-      if (data === undefined) return;
-      await storage
-        .writeResource(fence, { ...row, touchedAt: Date.now() })
-        .catch(() => {});
-      return { data, savedAt: row.savedAt, touchedAt: Date.now() };
-    } finally {
-      await storage.close();
-    }
-  },
-  async remove(key: string) {
-    if (!fence) return;
-    const storage = new OfflineStorage();
-    try {
-      await storage.removeResource(fence, key);
-    } finally {
-      await storage.close();
-    }
+    const partition = readSession()?.partition;
+    if (!partition) return;
+    return browserStore(['resources'], 'readonly', (tx, done) => {
+      const request = tx.objectStore('resources').get(`${partition}:${key}`);
+      request.onsuccess = () => {
+        const row = readRecordSchema.safeParse(request.result?.record);
+        try {
+          if (
+            row.success &&
+            readResponseSchema(
+              new URL(key, 'https://tempo.local').pathname,
+            )?.safeParse(JSON.parse(row.data.body)).success
+          )
+            return done({
+              data: row.data.body,
+              savedAt: row.data.savedAt,
+              touchedAt: Date.now(),
+              coverage: row.data.coverage,
+            });
+        } catch {
+          /* A corrupt record is a cache miss. */
+        }
+        done(undefined);
+      };
+    });
   },
   async write(key: string, value: PersistedRead<string>) {
-    if (!fence) return;
+    const partition = readSession()?.partition;
+    const generation = sessionGeneration();
+    if (!partition) return;
     const body = offlineReadBody(key, value.data);
-    if (
-      body === undefined ||
-      new TextEncoder().encode(body).length >
-        (isMedicalDetail(key) ? 10 : 4) * 1024 * 1024
-    )
-      return;
-    const storage = new OfflineStorage();
-    try {
-      const currentFence = fence;
-      await withOfflineCacheLock(() =>
-        storage.writeResource(currentFence, {
-          version: 1,
+    if (!body) return;
+    await browserStore<void>(['resources'], 'readwrite', (tx) => {
+      const store = tx.objectStore('resources');
+      const request = store.getAll();
+      request.onsuccess = () => {
+        if (generation !== sessionGeneration()) {
+          tx.abort();
+          return;
+        }
+        const rows = request.result.flatMap((value) => {
+          const parsed = readRecordSchema.safeParse(value.record);
+          return parsed.success &&
+            value.account === partition &&
+            parsed.data.key !== key
+            ? [parsed.data]
+            : [];
+        });
+        const record = {
+          version: 2 as const,
           key,
           body,
           savedAt: value.savedAt,
           touchedAt: value.touchedAt,
-        }),
-      );
-    } finally {
-      await storage.close();
-    }
+          coverage: value.coverage ?? ('complete' as const),
+        };
+        const retained = pruneReadRecords([record, ...rows], Date.now()).slice(
+          0,
+          200,
+        );
+        store.clear();
+        for (const row of retained)
+          store.put(
+            { record: row, account: partition },
+            `${partition}:${row.key}`,
+          );
+      };
+    });
+  },
+  async remove(key: string) {
+    const partition = readSession()?.partition;
+    if (partition)
+      await browserStore<void>(['resources'], 'readwrite', (tx) => {
+        tx.objectStore('resources').delete(`${partition}:${key}`);
+      });
   },
 };
+function resourceCoverage(body: string, key: string): 'complete' | 'partial' {
+  if (
+    new URL(key, 'https://tempo.local').pathname ===
+    '/api/workouts/transformmate/exercises'
+  ) {
+    const value = JSON.parse(body);
+    if (
+      value.catalog?.coverage !== 'complete' ||
+      value.catalog?.hasMore ||
+      Number(new URL(key, 'https://tempo.local').searchParams.get('offset')) > 0
+    )
+      return 'partial';
+  }
+  return 'complete';
+}
 export const clientReads = new ReadResourceStore<string>(
   persistence,
   Date.now,
@@ -93,317 +129,108 @@ export const clientReads = new ReadResourceStore<string>(
     weight: 14 * 1024 * 1024,
     size: (value) => new TextEncoder().encode(value).length,
   },
+  resourceCoverage,
 );
-export async function invalidateMedicalDocument(
-  documentId: string,
-  ownerId: string,
-) {
-  bindScope();
-  medicalRevision++;
-  const query = `?${new URLSearchParams({ ownerId })}`;
-  const base = `/api/anamnesis/documents/${encodeURIComponent(documentId)}`;
-  const expected = getOfflineController().getSnapshot().bundle?.snapshot;
-  const summary = await savedMedicalSummary().catch(() => undefined);
-  await Promise.all(
-    [
-      base + query,
-      base + '/observations' + query,
-      '/api/anamnesis/documents' + query,
-    ].map((key) => clientReads.invalidate(key)),
-  );
-  if (summary && summary.ownerId === ownerId && expected) {
-    const documents = summary.documents.filter(
-      (item) => item.id !== documentId,
-    );
-    await seedClientRead(
-      '/api/offline/anamnesis-local',
-      {
-        ...summary,
-        documents,
-        complete: false,
-        overview: {
-          ...summary.overview,
-          documents: Math.max(
-            0,
-            summary.overview.documents -
-              (documents.length !== summary.documents.length ? 1 : 0),
-          ),
-          pendingDocumentId:
-            summary.overview.pendingDocumentId === documentId
-              ? null
-              : summary.overview.pendingDocumentId,
-          activeDocumentId:
-            summary.overview.activeDocumentId === documentId
-              ? null
-              : summary.overview.activeDocumentId,
-        },
-      },
-      expected,
-    );
-  }
-  summaryVerified = '';
-  await getOfflineController()
-    .removeFile(`medical-document:${documentId}`)
-    .catch(() => {});
-  await prepareMedicalReads(true);
-}
-export function canonicalReadKey(url: URL) {
-  const search = new URLSearchParams(url.search);
-  search.sort();
-  return url.pathname + (search.size ? `?${search}` : '');
-}
-function bindScope() {
-  const bundle = getOfflineController().getSnapshot().bundle;
-  const next = bundle
-    ? `${bundle.fence.partition}:${bundle.fence.deviceEpoch}:${bundle.snapshot.connectionGeneration}`
-    : '';
-  if (scope !== next) {
-    clientReads.clear();
-    scope = next;
-  }
-  fence = bundle?.fence;
-}
 export const readRevalidateEvent = 'tempo:read-revalidate';
-/** Called only after current identity and the existing write queue have been checked. */
 export function revalidateVisibleReads() {
   window.dispatchEvent(new Event(readRevalidateEvent));
 }
 export async function seedClientRead(
   key: string,
-  body: unknown,
-  expected?: { partition: string; connectionGeneration: string },
+  value: unknown,
+  expectedGeneration = sessionGeneration(),
+  coverage?: 'complete' | 'partial',
 ) {
-  bindScope();
-  const latest = getOfflineController().getSnapshot().bundle?.snapshot;
-  if (
-    expected &&
-    (latest?.partition !== expected.partition ||
-      latest.connectionGeneration !== expected.connectionGeneration)
-  )
-    return;
-  const schema = readResponseSchema(new URL(key, location.origin).pathname);
-  if (!schema || !fence) return;
-  const data = JSON.stringify(schema.parse(body));
+  key = canonicalReadKey(new URL(key, 'https://tempo.local'));
+  if (expectedGeneration !== sessionGeneration() || !readSession()) return;
+  bindReadScope();
+  const schema = readResponseSchema(
+    new URL(key, 'https://tempo.local').pathname,
+  );
+  if (!schema) return;
+  const data = JSON.stringify(schema.parse(value));
   const savedAt = Date.now();
-  clientReads.seed(key, data, savedAt);
+  const savedCoverage = coverage ?? resourceCoverage(data, key);
+  clientReads.seed(key, data, savedAt, 'network', savedCoverage);
   await persistence
-    .write(key, { data, savedAt, touchedAt: savedAt })
+    .write(key, {
+      data,
+      savedAt,
+      touchedAt: savedAt,
+      coverage: savedCoverage,
+    })
     .catch(() => {});
 }
+/** Apply a local mutation to the latest shared snapshot, never a render capture. */
+export async function updateClientRead<T>(
+  resource: ReadDescriptor<T>,
+  update: (current: T | undefined) => T,
+  expectedGeneration = sessionGeneration(),
+) {
+  if (
+    !resource.href ||
+    !readSession() ||
+    expectedGeneration !== sessionGeneration()
+  )
+    return;
+  bindReadScope();
+  const key = canonicalReadKey(new URL(resource.href, 'https://tempo.local'));
+  await clientReads.restore(key);
+  if (expectedGeneration !== sessionGeneration()) return;
+  const state = clientReads.snapshot(key);
+  const current =
+    state.data === undefined ? undefined : resource.decode(state.data);
+  await seedClientRead(
+    key,
+    update(current),
+    expectedGeneration,
+    state.coverage === 'complete' ? 'complete' : 'partial',
+  );
+}
+export async function refreshClientRead(key: string) {
+  bindReadScope();
+  const generation = sessionGeneration();
+  return clientReads.read(
+    key,
+    navigator.onLine
+      ? async () => {
+          const response = await apiFetch(key, {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(15000),
+          });
+          if (generation !== sessionGeneration())
+            throw new ReadFailure('denied');
+          if (!response.ok)
+            throw new ReadFailure(
+              response.status === 403 ? 'denied' : 'unavailable',
+              response.status,
+            );
+          const schema = readResponseSchema(
+            new URL(key, 'https://tempo.local').pathname,
+          );
+          if (!schema) throw new ReadFailure('unavailable');
+          return JSON.stringify(schema.parse(await response.json()));
+        }
+      : undefined,
+  );
+}
 export function observeReadResources() {
-  const original = window.fetch;
-  const stopScope = getOfflineController().subscribe(bindScope);
-  bindScope();
-  const stopBlocked = subscribeOfflineBlocked(() => {
-    clientReads.clear();
+  return subscribeSessionReset(() => {
     scope = '';
-    fence = undefined;
-    summaryVerified = '';
-  });
-  const wrapped: typeof fetch = async (input, init) => {
-    const url = new URL(
-      typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.href
-          : input.url,
-      location.origin,
-    );
-    const method = (
-      init?.method ?? (input instanceof Request ? input.method : 'GET')
-    ).toUpperCase();
-    const schema =
-      url.origin === location.origin &&
-      method === 'GET' &&
-      isCacheableReadUrl(url)
-        ? readResponseSchema(url.pathname)
-        : undefined;
-    if (!schema) return original.call(window, input, init);
-    bindScope();
-    if (!fence) return original.call(window, input, init);
-    const key = canonicalReadKey(url);
-    let live: Response | undefined;
-    let validated = false;
-    const signal =
-      init?.signal ?? (input instanceof Request ? input.signal : undefined);
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    try {
-      const body = await clientReads.read(
-        key,
-        navigator.onLine
-          ? async () => {
-              // A caller's abort must not cancel a request shared with another reader.
-              try {
-                live = await original.call(window, input, {
-                  ...init,
-                  signal: AbortSignal.timeout(15000),
-                });
-              } catch (error) {
-                // This signal belongs to the shared transport, never to a caller.
-                reportNetworkResult(false);
-                throw error;
-              }
-              if (!live.ok)
-                throw new ReadFailure(
-                  live.status === 401 || live.status === 403
-                    ? 'denied'
-                    : 'unavailable',
-                  live.status,
-                );
-              const parsed = schema.safeParse(await live.clone().json());
-              if (!parsed.success) throw new ReadFailure('unavailable');
-              validated = true;
-              return JSON.stringify(parsed.data);
-            }
-          : undefined,
-      );
-      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      if (live?.ok && validated) return live;
-      const saved = offlineReadBody(key, body);
-      if (saved === undefined) throw new ReadFailure('unavailable', 404);
-      return new Response(saved, {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Tempo-Read-Source': clientReads.snapshot(key).source ?? 'memory',
-        },
-      });
-    } catch (error) {
-      if (
-        signal?.aborted ||
-        (error instanceof DOMException && error.name === 'AbortError')
-      )
-        throw error;
-      if (error instanceof ReadFailure && error.reason === 'denied' && live?.ok)
-        throw error;
-      if (live && !live.ok) return live;
-      if (live) throw error;
-      if (!(error instanceof DOMException && error.name === 'AbortError'))
-        reportNetworkResult(false);
-      throw error;
-    }
-  };
-  window.fetch = wrapped;
-  return () => {
-    stopScope();
-    stopBlocked();
-    if (window.fetch === wrapped) window.fetch = original;
     clientReads.clear();
-  };
+  });
 }
-
-let summaryFlight: Promise<void> | undefined;
-let summaryVerified = '';
-export function prepareMedicalReads(force = false) {
-  if (summaryFlight) return summaryFlight;
-  const state = getOfflineController().getSnapshot();
-  if (state.status !== 'ready' || !state.bundle || !navigator.onLine)
-    return Promise.resolve();
-  const current = state.bundle.snapshot;
-  const revision = medicalRevision;
-  const key = `${current.partition}:${current.connectionGeneration}:${state.bundle.savedAt}`;
-  if (!force && summaryVerified === key) return Promise.resolve();
-  summaryFlight = (async () => {
-    const response = await fetch('/api/offline/anamnesis', {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!response.ok) return;
-    const payload = await response.json();
-    if (
-      !payload ||
-      payload.partition !== current.partition ||
-      payload.connectionGeneration !== current.connectionGeneration
-    )
-      return;
-    const data = offlineAnamnesisSchema.parse(payload.data);
-    if (revision !== medicalRevision) return;
-    const latest = getOfflineController().getSnapshot().bundle?.snapshot;
-    if (
-      latest?.partition !== current.partition ||
-      latest.connectionGeneration !== current.connectionGeneration
-    )
-      return;
-    const query = `ownerId=${encodeURIComponent(data.ownerId)}`;
-    for (const [name, value] of [
-      ['overview', data.overview],
-      ['markers', data.markers],
-      ['documents', data.documents],
-      ['reports', data.reports],
-    ] as const)
-      if (
-        revision === medicalRevision &&
-        (force ||
-          clientReads.snapshot(`/api/anamnesis/${name}?${query}`).source !==
-            'network')
-      )
-        await seedClientRead(`/api/anamnesis/${name}?${query}`, value, current);
-    if (revision !== medicalRevision) return;
-    await seedClientRead('/api/offline/anamnesis-local', data, current);
-    summaryVerified = key;
-  })()
-    .catch(() => {})
-    .finally(() => {
-      summaryFlight = undefined;
-    });
-  return summaryFlight;
-}
-export async function savedMedicalSummary() {
-  bindScope();
-  const body = await clientReads.read('/api/offline/anamnesis-local');
-  return offlineAnamnesisSchema.parse(JSON.parse(body));
-}
-
-export async function savedMedicalDocument(
+export async function invalidateMedicalDocument(
   documentId: string,
   ownerId: string,
-): Promise<MedicalDocument> {
-  bindScope();
-  const key = canonicalReadKey(
-    new URL(
-      `/api/anamnesis/documents/${encodeURIComponent(documentId)}?ownerId=${encodeURIComponent(ownerId)}`,
-      location.origin,
-    ),
-  );
-  const body = await clientReads.read(key);
-  return medicalDocumentSchema.parse(JSON.parse(body));
-}
-
-export async function hasSavedMedicalRoute(url: URL) {
-  if (url.pathname !== '/anamnesis' && !url.pathname.startsWith('/anamnesis/'))
-    return false;
-  const summary = await savedMedicalSummary().catch(() => undefined);
-  if (!summary) return false;
-  if (url.pathname === '/anamnesis') return true;
-  const match = url.pathname.match(
-    /^\/anamnesis\/(markers|documents)\/([^/]+)$/,
-  );
-  if (!match) return false;
-  const kind = match[1];
-  const resourceId = match[2];
-  if (!kind || !resourceId) return false;
-  if (kind === 'documents')
-    return savedMedicalDocument(resourceId, summary.ownerId).then(
-      () => true,
-      () => false,
+) {
+  for (const key of [
+    `/api/anamnesis/documents/${documentId}`,
+    `/api/anamnesis/documents/${documentId}/observations`,
+    '/api/anamnesis/documents',
+  ])
+    await clientReads.invalidate(
+      `${key}?ownerId=${encodeURIComponent(ownerId)}`,
     );
-  const key = canonicalReadKey(
-    new URL(
-      `/api/anamnesis/${kind}/${resourceId}?ownerId=${encodeURIComponent(summary.ownerId)}`,
-      location.origin,
-    ),
-  );
-  const observationsKey = canonicalReadKey(
-    new URL(
-      `/api/anamnesis/markers/${resourceId}/observations?ownerId=${encodeURIComponent(summary.ownerId)}`,
-      location.origin,
-    ),
-  );
-  return Promise.all([
-    clientReads.read(key),
-    clientReads.read(observationsKey),
-  ]).then(
-    () => true,
-    () => false,
-  );
+  revalidateVisibleReads();
 }

@@ -1,3 +1,4 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import { playbackVideo } from '@/server/workouts/videos';
 import { workoutResponse } from '@/server/workouts/http';
 async function handle(
@@ -11,4 +12,5 @@ async function handle(
     return workoutResponse(() => Promise.reject(error));
   }
 }
-export { handle as GET, handle as HEAD };
+export const GET = withApiErrors(handle);
+export const HEAD = GET;

@@ -1,6 +1,8 @@
 'use client';
-import { useState } from 'react';
-import Link from 'next/link';
+import { passwordLimits } from '@/contracts/password';
+import { acceptInviteInput } from '@/contracts/trainers';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
 import {
   Alert,
   Anchor,
@@ -10,12 +12,8 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { passwordLimits } from '@/contracts/password';
-import {
-  acceptInviteInput,
-  acceptInviteErrorSchema,
-  acceptInviteResponseSchema,
-} from '@/contracts/trainers';
+import Link from 'next/link';
+import { useState } from 'react';
 import { trainerMessages as m } from './messages';
 export function AcceptInvite() {
   const [name, setName] = useState('');
@@ -41,14 +39,14 @@ export function AcceptInvite() {
     }
     setBusy(true);
     try {
-      const response = await fetch('/api/trainers/invitations/accept', {
+      const response = await apiFetch('/api/trainers/invitations/accept', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(parsed.data),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) {
-        const failure = acceptInviteErrorSchema.safeParse(body);
+        const failure = apiResults.inviteError(body);
         setError(
           response.status === 403
             ? m.originError
@@ -62,8 +60,7 @@ export function AcceptInvite() {
         );
         return;
       }
-      if (!acceptInviteResponseSchema.safeParse(body).success)
-        throw new Error();
+      if (!apiResults.invite(body).success) throw new Error();
       window.history.replaceState(null, '', '/invite');
       setPassword('');
       setAccepted(true);

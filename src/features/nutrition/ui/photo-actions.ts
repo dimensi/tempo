@@ -1,3 +1,4 @@
+import { apiFetch } from '@/lib/api-client';
 import type { SafeMealPhotoView } from '@/contracts/nutrition';
 import type { DiaryPhoto } from './diary-view';
 
@@ -18,7 +19,7 @@ export function diaryPhotos(
 
 export function createPhotoActions(ownerId: string, onUpdated: () => void) {
   async function request(url: string, options: RequestInit) {
-    const response = await fetch(url, options);
+    const response = await apiFetch(url, options);
     if (!response.ok) throw new Error('Photo operation failed');
     // Finish the mutation response before a router refresh can replace the view.
     await response.json();

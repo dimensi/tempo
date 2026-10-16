@@ -1,33 +1,15 @@
-import { headers } from 'next/headers';
-import { authorize, requireSession } from '@/server/auth/guards';
-import { getAccessibleOwnerId } from '@/server/access/owner';
-import { anamnesisMessages as m } from '@/features/anamnesis';
+'use client';
+import { useParams } from 'next/navigation';
 import { DocumentViewer } from '@/features/anamnesis';
-
-type Props = { params: Promise<{ documentId: string }> };
-
-export function generateMetadata() {
-  return { title: m.documents.title };
-}
-
-export default async function Page({ params }: Props) {
-  const { documentId } = await params;
-  await requireSession();
-  const requestHeaders = await headers();
-  const ownerId = await getAccessibleOwnerId(requestHeaders);
-  if (!ownerId) return <p>{m.errors.denied}</p>;
-  const access = await authorize(requestHeaders, 'anamnesis:read', ownerId);
-  if (!access.ok) return <p>{m.errors.denied}</p>;
-  const writeAccess = await authorize(
-    requestHeaders,
-    'anamnesis:write',
-    ownerId,
-  );
+import { useReadContext } from '@/lib/client-session';
+export default function Page() {
+  const { documentId } = useParams<{ documentId: string }>();
+  const context = useReadContext();
   return (
     <DocumentViewer
-      ownerId={ownerId}
+      ownerId={context.ownerId}
       documentId={documentId}
-      writable={writeAccess.ok}
+      writable={context.role === 'OWNER'}
     />
   );
 }

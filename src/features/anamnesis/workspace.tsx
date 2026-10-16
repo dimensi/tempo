@@ -1,17 +1,13 @@
 'use client';
-import { useReadResource } from '@/lib/use-read-resource';
-import { anamnesisOverviewSchema } from '@/contracts/anamnesis';
-import { useReadRefresh } from '@/lib/use-read-refresh';
-import { useEffect, useState } from 'react';
-import { Alert, Group, Stack, Text, Title } from '@mantine/core';
 import { SectionNavigation } from '@/components/shared/section-navigation';
-import type { AnamnesisOverview } from '@/contracts/anamnesis';
-import { MarkerTable } from './marker-table';
-import { DocumentsPanel } from './documents-panel';
-import { ReportsPanel } from './reports-panel';
 import { anamnesisMessages as m } from '@/config/anamnesis-messages';
-import { fetchAnamnesis, ownerIdQuery } from './api';
-import { useAnamnesisRevision } from './refresh';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
+import { Alert, Group, Stack, Text, Title } from '@mantine/core';
+import { ownerIdQuery } from './api';
+import { DocumentsPanel } from './documents-panel';
+import { MarkerTable } from './marker-table';
+import { ReportsPanel } from './reports-panel';
 const sections = [
   { id: 'markers', label: m.workspace.markers },
   { id: 'documents', label: m.workspace.documents },
@@ -20,46 +16,15 @@ const sections = [
 export function AnamnesisWorkspace({
   ownerId,
   writable,
-  initial,
 }: {
   ownerId: string;
   writable: boolean;
-  initial: AnamnesisOverview;
 }) {
-  const [overview, setOverview] = useState<AnamnesisOverview | null>(initial);
-  const [error, setError] = useState(false);
-  const readRefresh = useReadRefresh();
-  const revision = useAnamnesisRevision();
-  useReadResource(
-    `/api/anamnesis/overview?${ownerIdQuery(ownerId)}`,
-    (value) => anamnesisOverviewSchema.parse(value),
-    setOverview,
+  const resource = useReadResource(
+    readResources.anamnesis(`/api/anamnesis/overview?${ownerIdQuery(ownerId)}`),
   );
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetchAnamnesis<AnamnesisOverview>(
-      `/api/anamnesis/overview?${ownerIdQuery(ownerId)}`,
-      { signal: controller.signal, cache: 'no-store' },
-    )
-      .then((result) => {
-        if (!controller.signal.aborted) {
-          setOverview(result);
-          setError(false);
-        }
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted) {
-          if (
-            cause instanceof Error &&
-            'status' in cause &&
-            [401, 403].includes(Number(cause.status))
-          )
-            setOverview(null);
-          setError(true);
-        }
-      });
-    return () => controller.abort();
-  }, [ownerId, revision, readRefresh]);
+  const overview = resource.data;
+  const error = resource.error;
   return (
     <Stack data-testid="anamnesis-page">
       <Title order={1}>{m.title}</Title>

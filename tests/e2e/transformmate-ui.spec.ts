@@ -2,6 +2,93 @@ import { testOrigin } from '../ci/origin';
 import { richCatalogFields } from '../fixtures/workout-catalog';
 import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '../ci/isolated-test';
+import { workoutMessages as workoutMessages } from '@/features/workouts/messages';
+
+test('initial TransformMate GET finishes before automatic POST and fresh sync remains persisted', async ({
+  page,
+}) => {
+  await login(page);
+  let release!: () => void;
+  let started!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const initialRead = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let released = false;
+  let postedBeforeRead = false;
+  const data = (configured: boolean) => ({
+    data: {
+      configured,
+      items: [],
+      nativePage: { items: [], nextCursor: null },
+      nativeRefresh: {
+        status: configured ? 'fresh' : 'idle',
+        checkedAt: null,
+        errorCode: null,
+      },
+    },
+  });
+  await page.route('**/api/workouts/transformmate?*', async (route) => {
+    if (route.request().method() === 'GET') {
+      started();
+      await held;
+      await route.fulfill({ json: data(false) });
+    } else {
+      postedBeforeRead ||= !released;
+      await route.fulfill({ json: data(true) });
+    }
+  });
+  const refreshed = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/workouts/transformmate' &&
+      response.request().method() === 'POST',
+  );
+  await page.goto('/workouts?date=2026-06-14');
+  await initialRead;
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  released = true;
+  release();
+  await refreshed;
+  expect(postedBeforeRead).toBe(false);
+  await expect(
+    page.getByText(workoutMessages.notConfigured, { exact: true }),
+  ).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<boolean>((resolve, reject) => {
+            const request = indexedDB.open('yazio-offline-read-v1', 3);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+              const db = request.result;
+              const tx = db.transaction('resources', 'readonly');
+              const rows = tx.objectStore('resources').getAll();
+              rows.onsuccess = () =>
+                resolve(
+                  rows.result.some(
+                    (row) =>
+                      row.record.key.startsWith(
+                        '/api/workouts/transformmate?',
+                      ) &&
+                      JSON.parse(row.record.body).data.nativeRefresh.status ===
+                        'fresh',
+                  ),
+                );
+              tx.oncomplete = () => db.close();
+            };
+          }),
+      ),
+    )
+    .toBe(true);
+});
 
 async function login(page: Page) {
   await page.goto('/login');

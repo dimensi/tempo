@@ -104,7 +104,7 @@ test('real diary: week browsing, date selection, history and distant jump', asyn
   await expect(selected).toHaveAttribute('href', '/diary?date=2027-01-01');
   await expect(selected).toBeVisible();
   await expect(
-    page.getByText('Данные за этот день пока не загружены.'),
+    page.getByRole('main').getByText('Данные за этот день пока не загружены.'),
   ).toBeVisible();
   expect(
     await page.evaluate(
@@ -155,12 +155,9 @@ test('slow day navigation shows pending state and the last keyboard selection wi
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route('**/diary?*', async (route) => {
+  await page.route('**/api/nutrition/days?*', async (route) => {
     const request = route.request();
-    if (
-      new URL(request.url()).searchParams.get('date') === '2024-03-05' &&
-      request.headers()['rsc'] === '1'
-    )
+    if (new URL(request.url()).searchParams.get('from') === '2024-03-05')
       await gate;
     await route.continue();
   });
@@ -173,7 +170,7 @@ test('slow day navigation shows pending state and the last keyboard selection wi
     await expect(first.locator('[aria-busy="true"]')).toBeVisible();
     await expect(nav.locator('[aria-current="date"]')).toHaveAttribute(
       'href',
-      '/diary?date=2024-03-04',
+      '/diary?date=2024-03-05',
     );
     await nav.getByRole('link', { name: 'среда, 6 марта 2024 г.' }).focus();
     await page.keyboard.press('Enter');

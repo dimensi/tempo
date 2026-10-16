@@ -1,3 +1,4 @@
+import Database from 'better-sqlite3';
 import { testOrigin } from '../ci/origin';
 import { test, expect, type Page } from '../ci/isolated-test';
 const browserErrors = new WeakMap<Page, string[]>();
@@ -36,6 +37,37 @@ async function login(page: import('@playwright/test').Page, role = 'owner') {
   } else expect(result.ok()).toBe(true);
   await expect(page).toHaveURL('/');
 }
+test('route compositions mount with their server layout titles', async ({
+  page,
+}) => {
+  await login(page);
+  const routes = [
+    ['/', 'Обзор'],
+    ['/diary?date=2026-06-14', 'Дневник питания'],
+    ['/workouts?date=2026-06-14', 'Тренировки'],
+    ['/workouts/catalog', 'Каталог упражнений'],
+    ['/measurements', 'Замеры'],
+    ['/anamnesis', 'Анамнез'],
+    ['/analytics?timezone=UTC&from=2026-06-01&to=2026-06-07', 'Аналитика'],
+    ['/reports', 'Отчёты'],
+    ['/settings', 'Настройки'],
+  ];
+  for (const [href, title] of routes) {
+    const response = await page.goto(href!);
+    expect(response?.status(), href).toBe(200);
+    await expect(page).toHaveTitle(new RegExp(title!));
+    if (href === '/workouts/catalog') {
+      await expect(
+        page.getByRole('button', { name: 'Следующие упражнения' }),
+      ).toBeVisible();
+    } else {
+      await expect(
+        page.getByRole('main').getByRole('heading').first(),
+      ).toBeVisible();
+    }
+  }
+});
+
 test('anonymous routes are protected and registration is closed', async ({
   page,
   request,
@@ -166,6 +198,13 @@ test('owner shell, all pages, theme persistence, mobile overflow and logout', as
 test('trainer cannot access owner configuration or elevate their role', async ({
   page,
 }) => {
+  const fixture = new Database('.data/e2e.sqlite');
+  fixture
+    .prepare(
+      "INSERT OR REPLACE INTO trainer_access(trainer_id,owner_id,created_at) SELECT t.id,o.id,? FROM user t,user o WHERE t.email='trainer@example.test' AND o.email='owner@example.test'",
+    )
+    .run(Date.now());
+  fixture.close();
   await login(page, 'trainer');
   await page.goto('/settings');
   const settings = page.getByRole('main');

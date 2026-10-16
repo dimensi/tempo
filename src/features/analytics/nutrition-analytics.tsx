@@ -233,7 +233,7 @@ export function NutritionAnalytics({
           </Stack>
           <MacroDistribution data={data} />
         </div>
-        <Details>
+        <Details stateKey="nutrition">
           <Table.ScrollContainer minWidth={650}>
             <Table>
               <Table.Thead>

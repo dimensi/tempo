@@ -1,5 +1,6 @@
 'use client';
-import { useState } from 'react';
+import type { TrainerDto } from '@/contracts/trainers';
+import { apiFetch } from '@/lib/api-client';
 import {
   Alert,
   Button,
@@ -9,7 +10,7 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import type { TrainerDto } from '@/contracts/trainers';
+import { useState } from 'react';
 import { trainerMessages as m } from './messages';
 export function TrainerSettings({
   ownerId,
@@ -21,6 +22,11 @@ export function TrainerSettings({
   headingOrder?: 1 | 2;
 }) {
   const [trainers, setTrainers] = useState(initialTrainers);
+  const [previousTrainers, setPreviousTrainers] = useState(initialTrainers);
+  if (initialTrainers !== previousTrainers) {
+    setPreviousTrainers(initialTrainers);
+    setTrainers(initialTrainers);
+  }
   const [email, setEmail] = useState('');
   const [url, setUrl] = useState('');
   const [error, setError] = useState(false);
@@ -30,7 +36,7 @@ export function TrainerSettings({
     setError(false);
     setUrl('');
     try {
-      const response = await fetch('/api/trainers/invitations', {
+      const response = await apiFetch('/api/trainers/invitations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ownerId, email }),
@@ -48,7 +54,7 @@ export function TrainerSettings({
     setBusy(true);
     setError(false);
     try {
-      const response = await fetch('/api/trainers', {
+      const response = await apiFetch('/api/trainers', {
         method: trainer.granted ? 'DELETE' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ownerId, trainerId: trainer.id }),
@@ -56,7 +62,7 @@ export function TrainerSettings({
       if (!response.ok) throw new Error();
       setTrainers((rows) =>
         rows.map((row) =>
-          row.id === trainer.id ? { ...row, granted: !row.granted } : row,
+          row.id === trainer.id ? { ...row, granted: !trainer.granted } : row,
         ),
       );
     } catch {

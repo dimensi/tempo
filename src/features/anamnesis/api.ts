@@ -1,4 +1,5 @@
 'use client';
+import { apiFetch } from '@/lib/api-client';
 
 // Общий клиентский доступ к API анамнеза: ownerId всегда в query,
 // ошибки приводятся к русским сообщениям.
@@ -15,7 +16,7 @@ export async function fetchAnamnesis<T>(
   url: string,
   init?: RequestInit,
 ): Promise<T> {
-  const response = await fetch(url, init);
+  const response = await apiFetch(url, init);
   if (!response.ok) throw new AnamnesisFetchError(response.status);
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;

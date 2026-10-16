@@ -11,6 +11,7 @@ export interface PersistedRead<T> {
   data: T;
   savedAt: number;
   touchedAt: number;
+  coverage?: 'complete' | 'partial';
 }
 export interface ReadPersistence<T> {
   read(key: string): Promise<PersistedRead<T> | undefined>;
@@ -45,6 +46,10 @@ export class ReadResourceStore<T> {
       weight: number;
       size: (data: T) => number;
     },
+    private coverageFor: (
+      data: T,
+      key: string,
+    ) => 'complete' | 'partial' = () => 'complete',
   ) {}
   snapshot(key: string): ReadResource<T> {
     return this.entries.get(key) ?? empty;
@@ -67,6 +72,7 @@ export class ReadResourceStore<T> {
     data: T,
     savedAt = this.now(),
     source: 'storage' | 'network' = 'network',
+    coverage: 'complete' | 'partial' = this.coverageFor(data, key),
   ) {
     if (this.limits && this.limits.size(data) > this.limits.weight) {
       this.publish(key, {
@@ -76,12 +82,13 @@ export class ReadResourceStore<T> {
       });
       return;
     }
+    const previous = this.snapshot(key);
     this.entries.delete(key);
     this.publish(key, {
-      data,
+      data: previous.data === data ? previous.data : data,
       savedAt,
       source,
-      coverage: 'complete',
+      coverage,
       refreshing: false,
     });
     if (this.limits) {
@@ -115,7 +122,7 @@ export class ReadResourceStore<T> {
       epoch === this.epoch && revision === this.revisions.get(key);
     const value = await this.persistence.read(key).catch(() => undefined);
     if (value && valid() && this.snapshot(key).data === undefined)
-      this.seed(key, value.data, value.savedAt, 'storage');
+      this.seed(key, value.data, value.savedAt, 'storage', value.coverage);
   }
   async read(key: string, loader?: () => Promise<T>): Promise<T> {
     const existing = loader ? this.flights.get(key) : undefined;
@@ -131,7 +138,7 @@ export class ReadResourceStore<T> {
         const saved = await this.persistence.read(key).catch(() => undefined);
         if (!valid()) throw new ReadFailure('denied');
         if (saved && this.snapshot(key).data === undefined) {
-          this.seed(key, saved.data, saved.savedAt, 'storage');
+          this.seed(key, saved.data, saved.savedAt, 'storage', saved.coverage);
           state = this.snapshot(key);
         }
       }
@@ -144,10 +151,16 @@ export class ReadResourceStore<T> {
               data: state.data,
               savedAt: state.savedAt ?? this.now(),
               touchedAt: this.now(),
+              coverage: state.coverage === 'partial' ? 'partial' : 'complete',
             })
             .catch(() => {});
           return state.data;
         }
+        this.publish(key, {
+          coverage: 'missing',
+          refreshing: false,
+          error: 'network',
+        });
         throw new ReadFailure('network');
       }
       this.publish(key, { ...state, refreshing: true, error: undefined });
@@ -158,7 +171,12 @@ export class ReadResourceStore<T> {
         this.seed(key, data, savedAt);
         // Persistence is best effort; the live screen must survive quota/eviction.
         await this.persistence
-          .write(key, { data, savedAt, touchedAt: savedAt })
+          .write(key, {
+            data,
+            savedAt,
+            touchedAt: savedAt,
+            coverage: this.coverageFor(data, key),
+          })
           .catch(() => {});
         if (!valid()) throw new ReadFailure('denied');
         return data;
@@ -178,7 +196,7 @@ export class ReadResourceStore<T> {
           throw error;
         }
         this.publish(key, {
-          ...state,
+          ...this.snapshot(key),
           source: state.data !== undefined && memory ? 'memory' : state.source,
           refreshing: false,
           error: reason,

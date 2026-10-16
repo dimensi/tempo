@@ -1,16 +1,12 @@
 'use client';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { ru } from '@/config/messages';
+import { authClient } from '@/lib/auth-client';
+import { clearClientData, finishPendingLogout } from '@/lib/local-logout';
+import { offlineDeviceMessages } from '@/lib/offline-device';
 import { Alert, Button, PasswordInput, Stack, TextInput } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { authClient } from '@/lib/auth-client';
-import { ru } from '@/config/messages';
-import {
-  withOfflineDevicePurge,
-  offlineDeviceMessages,
-} from '@/lib/offline-device';
+import { useState } from 'react';
 export function LoginForm() {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const [cleanupError, setCleanupError] = useState(false);
@@ -26,16 +22,17 @@ export function LoginForm() {
     setBusy(true);
     setError(false);
     try {
-      const result = await withOfflineDevicePurge(
-        () => authClient.signIn.email(values),
-        () => setCleanupError(true),
-      );
+      if (!(await finishPendingLogout())) {
+        setError(true);
+        return;
+      }
+      await clearClientData().catch(() => setCleanupError(true));
+      const result = await authClient.signIn.email(values);
       if (result.error) {
         setError(true);
         return;
       }
-      router.replace('/');
-      router.refresh();
+      location.replace('/');
     } catch {
       setError(true);
     } finally {

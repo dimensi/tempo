@@ -1,11 +1,16 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import {
+  offlineWriteResponse,
   readOfflineWrites,
   saveOfflineWrite,
-  offlineWriteResponse,
 } from '@/server/offline/writes';
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   return offlineWriteResponse(() => readOfflineWrites(request.headers));
 }
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   return offlineWriteResponse(() => saveOfflineWrite(request));
 }
+
+export const GET = withApiErrors(GETHandler);
+
+export const POST = withApiErrors(POSTHandler);

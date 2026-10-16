@@ -1,4 +1,6 @@
 'use client';
+import { usePathname } from 'next/navigation';
+import { useViewState } from '@/lib/use-view-state';
 import { useTransition, type ReactNode } from 'react';
 import { dateInTimezone } from '@/contracts/nutrition-sync-dates';
 import {
@@ -15,14 +17,21 @@ import type { AnalyticsChange } from '@/contracts/analytics';
 import { analyticsMessages as m } from './messages';
 import { display, signed } from './display';
 export function Details({
+  stateKey,
   label = m.details,
   children,
 }: {
+  stateKey: string;
   label?: string;
   children: ReactNode;
 }) {
+  const path = usePathname();
+  const [open, setOpen] = useViewState<string | null>(
+    `analytics:${path}:${stateKey}`,
+    null,
+  );
   return (
-    <Accordion variant="default">
+    <Accordion variant="default" value={open} onChange={setOpen}>
       <Accordion.Item value="details">
         <Accordion.Control>{label}</Accordion.Control>
         <Accordion.Panel>{children}</Accordion.Panel>

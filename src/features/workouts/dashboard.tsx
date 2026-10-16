@@ -1,17 +1,18 @@
 'use client';
-import { useReadRefresh } from '@/lib/use-read-refresh';
+import { DateNavigation } from '@/components/shared/date-navigation';
 import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+  type PlannedWorkout,
+  type WorkoutPlan,
+  type WorkoutSession,
+} from '@/contracts/workouts';
+import { apiFetch } from '@/lib/api-client';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
+import { workoutTitle } from '@/lib/workout-title';
 import {
   ActionIcon,
-  Badge,
-  Tooltip,
   Alert,
+  Badge,
   Button,
   Group,
   Loader,
@@ -21,39 +22,36 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from '@mantine/core';
 import {
-  workoutPlanSchema,
-  workoutSessionSchema,
-  type WorkoutPlan,
-  type WorkoutSession,
-  type WorkoutsData,
-  type PlannedWorkout,
-} from '@/contracts/workouts';
-import { today } from './forms';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { requestReadNavigation } from '@/components/shared/read-link';
-import { z } from 'zod';
-import { workoutTitle } from '@/lib/workout-title';
-import { DateNavigation } from '@/components/shared/date-navigation';
-import { NativeWorkout } from './native-workout';
-import { WorkoutReadContent } from './read-content';
-import { ExerciseTable } from './exercise-table';
-import {
   IconArrowRight,
-  IconPencil,
-  IconCopy,
-  IconTrash,
-  IconClipboardCheck,
   IconCalendar,
+  IconClipboardCheck,
+  IconCopy,
+  IconPencil,
+  IconTrash,
 } from '@tabler/icons-react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { z } from 'zod';
+import { ExerciseTable } from './exercise-table';
+import { today } from './forms';
+import { workoutMessages as m } from './messages';
+import { NativeWorkout } from './native-workout';
+import { WorkoutReadContent } from './read-content';
 import {
   SyncSummary,
   WorkoutSync,
   useTransformMateSync,
 } from './transformmate-sync';
-import { workoutMessages as m } from './messages';
 import classes from './workout-ui.module.css';
 
 type Deletion = { kind: 'plans' | 'sessions'; id: string; revision: number };
@@ -161,72 +159,26 @@ function ScopedWorkoutsDashboard({
   const date = selectedDate.success ? selectedDate.data : today();
   const setDate = (value: string) => {
     const href = `/workouts?date=${value}`;
-    requestReadNavigation(href, { replace: true, scroll: false }, () =>
-      router.replace(href, { scroll: false }),
-    );
+    router.replace(href, { scroll: false });
   };
   const [copy, setCopy] = useState<{
     plan: WorkoutPlan;
     workout: PlannedWorkout;
   } | null>(null);
   const [copyDate, setCopyDate] = useState('');
-  const [data, setData] = useState<WorkoutsData | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const sync = useTransformMateSync(ownerId, data, date);
   const [deletion, setDeletion] = useState<Deletion | null>(null);
-  const readRefresh = useReadRefresh();
   const endpoint = useCallback(
     (path = '') =>
       `/api/workouts${path}?ownerId=${encodeURIComponent(ownerId)}`,
     [ownerId],
   );
-  const read = useCallback(
-    async (signal?: AbortSignal) => {
-      const response = await fetch(endpoint(), { cache: 'no-store', signal });
-      if (!response.ok) {
-        throw new Error(m.loadError);
-      }
-      const { data: incoming } = await response.json();
-      return {
-        contractVersion: 1,
-        source: 'user',
-        plans: incoming.plans.map((plan: unknown) =>
-          workoutPlanSchema.parse(plan),
-        ),
-        sessions: incoming.sessions.map((session: unknown) =>
-          workoutSessionSchema.parse(session),
-        ),
-      } satisfies WorkoutsData;
-    },
-    [endpoint],
-  );
-  useEffect(() => {
-    const controller = new AbortController();
-    void read(controller.signal)
-      .then((value) => {
-        if (!controller.signal.aborted) {
-          setData(value);
-          setError(null);
-          window.dispatchEvent(new Event('yazio:workouts-loaded'));
-        }
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted)
-          setError(error instanceof Error ? error.message : m.loadError);
-      });
-    return () => controller.abort();
-  }, [read, readRefresh]);
-  async function load() {
-    try {
-      setData(await read());
-      setError(null);
-    } catch (error) {
-      setData(null);
-      setError(error instanceof Error ? error.message : m.loadError);
-    }
-  }
+  const resource = useReadResource(readResources.workouts(endpoint()));
+  const data = resource.data;
+  const error = resource.error ? m.loadError : null;
+  const sync = useTransformMateSync(ownerId, data, date);
+  const load = resource.refresh;
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -238,7 +190,7 @@ function ScopedWorkoutsDashboard({
     setBusy(true);
     setEditorError(null);
     try {
-      const response = await fetch(endpoint(path), {
+      const response = await apiFetch(endpoint(path), {
         method,
         headers: {
           'Content-Type': 'application/json',
@@ -309,7 +261,7 @@ function ScopedWorkoutsDashboard({
         </Button>
       </Group>
       {!canLog && <Alert>{m.trainerHint}</Alert>}
-      {error && (
+      {error && !data && (
         <Alert color="red" role="alert">
           {error}
           <Button variant="subtle" mih={44} onClick={() => void load()}>

@@ -1,9 +1,15 @@
 'use client';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
 
-import { useEffect, useState, useRef } from 'react';
-import { useReadRefresh } from '@/lib/use-read-refresh';
-import { useReadOnline } from '@/lib/use-read-online';
 import { offlineMessages } from '@/config/offline';
+import {
+  stepsGoalMessages as m,
+  stepsGoalSchema,
+  type StepsGoal,
+} from '@/contracts/steps-goal';
+import { useReadOnline } from '@/lib/use-read-online';
+import { useReadRefresh } from '@/lib/use-read-refresh';
 import {
   Alert,
   Button,
@@ -13,11 +19,7 @@ import {
   Text,
   Title,
 } from '@mantine/core';
-import {
-  stepsGoalSchema,
-  stepsGoalMessages as m,
-  type StepsGoal,
-} from '@/contracts/steps-goal';
+import { useEffect, useRef, useState } from 'react';
 
 export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
   const online = useReadOnline();
@@ -45,10 +47,10 @@ export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
   }, [dirty, saved]);
   useEffect(() => {
     let active = true;
-    void fetch('/api/settings/steps-goal')
+    void apiFetch('/api/settings/steps-goal')
       .then(async (response) => {
         if (!response.ok) return;
-        const current = stepsGoalSchema.parse(
+        const current = apiResults.stepsGoal(
           await response.json(),
         ).dailyStepsGoal;
         if (!active) return;
@@ -90,7 +92,7 @@ export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
             setPending(true);
             setError(null);
             try {
-              const response = await fetch('/api/settings/steps-goal', {
+              const response = await apiFetch('/api/settings/steps-goal', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(parsed.data),
@@ -101,7 +103,7 @@ export function StepsGoalForm({ initial }: { initial: StepsGoal }) {
                     ? m.denied
                     : m.failed,
                 );
-              const result = stepsGoalSchema.parse(await response.json());
+              const result = apiResults.stepsGoal(await response.json());
               setSaved(result.dailyStepsGoal);
               setObserved(result.dailyStepsGoal);
               setNotice(result.dailyStepsGoal === null ? m.disabled : m.saved);

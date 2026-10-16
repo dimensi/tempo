@@ -1,9 +1,10 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import {
   checkMeasurementOrigin,
-  retryMeasurementSync,
   measurementErrorResponse,
+  retryMeasurementSync,
 } from '@/server/measurements';
-export async function POST(
+async function POSTHandler(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
@@ -20,3 +21,5 @@ export async function POST(
     return measurementErrorResponse(error);
   }
 }
+
+export const POST = withApiErrors(POSTHandler);

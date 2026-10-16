@@ -1,3 +1,4 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import {
   checkTransformMate,
   transformMateOwner,
@@ -7,7 +8,7 @@ import {
   readTransformMateJson,
   transformMateResponse,
 } from '@/server/transformmate/http';
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   return transformMateResponse(async () => {
     checkTransformMateOrigin(request);
     await transformMateOwner(request.headers);
@@ -17,3 +18,5 @@ export async function POST(request: Request) {
     );
   });
 }
+
+export const POST = withApiErrors(POSTHandler);

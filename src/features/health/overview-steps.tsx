@@ -1,79 +1,47 @@
 'use client';
-import { useReadRefresh } from '@/lib/use-read-refresh';
-import { useEffect, useState } from 'react';
-import { Alert, Skeleton } from '@mantine/core';
 import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
-import { stepsSummarySchema, type StepsSummary } from '@/contracts/health';
-import { StepsPanel } from './steps-panel';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
+import { Alert, Button, Skeleton } from '@mantine/core';
+import { useEffect, useState } from 'react';
 import { healthMessages as m } from './messages';
-
+import { StepsPanel } from './steps-panel';
 export function HealthOverviewSteps() {
-  const readRefresh = useReadRefresh();
-  const [resource, setResource] = useState<{
-    data: StepsSummary | null;
-    error: number | null;
-  }>({ data: null, error: null });
+  const [today, setToday] = useState(() =>
+    dateInTimezone(
+      new Date(),
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    ),
+  );
   useEffect(() => {
-    let controller: AbortController;
-    let timer: ReturnType<typeof setTimeout>;
-    function refresh() {
-      controller?.abort();
-      controller = new AbortController();
-      const active = controller;
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const today = dateInTimezone(new Date(), timezone);
-      const range = { from: shiftDate(today, -6), to: today };
-
-      fetch(`/api/health/steps?from=${range.from}&to=${range.to}`, {
-        signal: active.signal,
-        cache: 'no-store',
-      })
-        .then(async (response) => {
-          if (!response.ok) throw new Error(String(response.status));
-          const data = stepsSummarySchema.parse(await response.json());
-          if (data.range.from !== range.from || data.range.to !== range.to)
-            throw new Error('500');
-          if (!active.signal.aborted) setResource({ data, error: null });
-        })
-        .catch((error) => {
-          if (!active.signal.aborted)
-            setResource((previous) => ({
-              data: [401, 403].includes(Number(error.message))
-                ? null
-                : previous.data,
-              error:
-                previous.data && ![401, 403].includes(Number(error.message))
-                  ? null
-                  : Number(error.message) || 500,
-            }));
-        });
-      clearTimeout(timer);
-      const midnight = new Date();
-      midnight.setHours(24, 0, 0, 50);
-      timer = setTimeout(refresh, midnight.getTime() - Date.now());
-    }
-    function visible() {
-      if (document.visibilityState === 'visible') refresh();
-    }
-    refresh();
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', visible);
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', visible);
-    };
-  }, [readRefresh]);
+    const midnight = new Date();
+    midnight.setHours(24, 0, 0, 50);
+    const timer = setTimeout(
+      () =>
+        setToday(
+          dateInTimezone(
+            new Date(),
+            Intl.DateTimeFormat().resolvedOptions().timeZone,
+          ),
+        ),
+      midnight.getTime() - Date.now(),
+    );
+    return () => clearTimeout(timer);
+  }, [today]);
+  const resource = useReadResource(
+    readResources.steps(
+      `/api/health/steps?from=${shiftDate(today, -6)}&to=${today}`,
+    ),
+  );
+  if (resource.data) return <StepsPanel summary={resource.data} compact />;
   if (resource.error)
     return (
-      <Alert color={resource.error === 403 ? 'orange' : 'red'} role="alert">
-        {resource.error === 403 ? m.forbidden : m.unavailable}
+      <Alert role="alert">
+        {m.unavailable}
+        <Button variant="subtle" onClick={() => void resource.refresh()}>
+          Повторить
+        </Button>
       </Alert>
     );
-  return resource.data ? (
-    <StepsPanel summary={resource.data} compact />
-  ) : (
-    <Skeleton height={240} aria-label={m.loading} />
-  );
+  return <Skeleton height={240} aria-label={m.loading} />;
 }

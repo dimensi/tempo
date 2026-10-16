@@ -37,11 +37,13 @@ test('nutrition chart shares, missing and zero states fit the common content lay
     fat: '57.68',
     carbs: '126.92',
   } as Record<string, string | null>;
+  const base = await (
+    await page.request.get('/api/overview?timezone=Europe%2FMoscow')
+  ).json();
   await page.route('**/api/overview?*', async (route) => {
-    const response = await route.fetch();
-    const data = await response.json();
+    const data = structuredClone(base);
     data.nutrition.today = totals;
-    await route.fulfill({ response, json: data });
+    await route.fulfill({ status: 200, json: data });
   });
   await page.reload();
   const nutrition = page.getByRole('region', { name: 'Питание сегодня' });

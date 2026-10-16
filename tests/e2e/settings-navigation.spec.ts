@@ -1,6 +1,9 @@
 import { signInFixture } from '../ci/real-auth';
 import { test, expect, type Page } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
+import { syntheticDay } from '../unit/reports/fixtures';
+import { seedVideoDraft, storedRows } from './local-storage';
+import { nutritionSyncMessages as yazioMessages } from '@/contracts/nutrition-sync';
 
 async function login(page: Page) {
   return signInFixture(page, 'owner');
@@ -150,50 +153,331 @@ test('trainer form keeps values and request errors when navigating sections', as
   );
 });
 
-test('hydration preserves an already focused settings anchor for keyboard activation', async ({
+test('background settings refresh preserves an already focused anchor for keyboard activation', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await login(page);
+  await page.goto('/settings#trainers');
+  const navigation = page.getByRole('navigation', { name: 'Разделы настроек' });
+  const connection = navigation.getByRole('link', {
+    name: 'Подключение YAZIO',
+    exact: true,
+  });
+  await expect(
+    page.getByLabel('Загрузить данные начиная с…').filter({ visible: true }),
+  ).toBeEnabled();
+  await connection.focus();
+  await expect(connection).toBeFocused();
+  const refreshed = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/read/settings',
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await refreshed;
+  await expect(connection).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL('/settings#connection');
+  await expect(page.locator('#connection')).toBeFocused();
+  await expect(connection).toHaveAttribute('aria-current', 'location');
+});
+
+test('trainer grants follow refreshed settings after navigation without resetting invitation input', async ({
+  page,
+}) => {
+  const ownerId = await login(page);
+  const trainers = await page.request.get(`/api/trainers?ownerId=${ownerId}`);
+  expect(trainers.ok()).toBe(true);
+  const trainer = (await trainers.json()).find(
+    (row: { email: string }) => row.email === 'trainer@example.test',
+  );
+  expect(trainer).toBeDefined();
+  const grant = { ownerId, trainerId: trainer.id };
+  expect((await page.request.post('/api/trainers', { data: grant })).ok()).toBe(
+    true,
+  );
+  await page.goto('/settings#trainers');
+  const section = page.locator('#trainers');
+  await section
+    .getByRole('button', { name: 'Отозвать доступ', exact: true })
+    .click();
+  await expect(
+    section.getByRole('button', { name: 'Разрешить доступ', exact: true }),
+  ).toBeEnabled();
+
   let release!: () => void;
-  const scripts = new Promise<void>((resolve) => {
+  const held = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route(
-    (url) =>
-      url.pathname.startsWith('/_next/static/') && url.pathname.endsWith('.js'),
-    async (route) => {
-      await scripts;
-      await route.continue();
-    },
+  await page.route('**/api/read/settings', async (route) => {
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response });
+  });
+  async function navigate(name: string) {
+    const toggle = page.getByRole('button', { name: 'Навигация', exact: true });
+    if (await toggle.isVisible()) await toggle.click();
+    await page
+      .getByRole('navigation', { name: 'Навигация', exact: true })
+      .getByRole('link', { name, exact: true })
+      .click();
+  }
+  await navigate('Обзор');
+  await expect(page).toHaveURL('/');
+  await navigate('Настройки');
+  await expect(page).toHaveURL('/settings#trainers');
+  // The cached aggregate still has the old grant; the real server read is held.
+  await expect(
+    section.getByRole('button', { name: 'Отозвать доступ', exact: true }),
+  ).toBeVisible();
+  const email = section.getByRole('textbox', {
+    name: 'Email тренера',
+    exact: true,
+  });
+  await email.fill('invitation-draft@example.test');
+  await section
+    .getByRole('button', { name: 'Создать приглашение', exact: true })
+    .click();
+  const invitation = section.getByRole('textbox', {
+    name: 'Скопируйте ссылку приглашения',
+    exact: true,
+  });
+  await expect(invitation).not.toHaveValue('');
+  const invitationUrl = await invitation.inputValue();
+  await email.fill('unsent-draft@example.test');
+  const refreshed = page.waitForResponse('**/api/read/settings');
+  release();
+  expect((await refreshed).ok()).toBe(true);
+  await expect(
+    section.getByRole('button', { name: 'Разрешить доступ', exact: true }),
+  ).toBeEnabled();
+  await expect(email).toHaveValue('unsent-draft@example.test');
+  await expect(invitation).toHaveValue(invitationUrl);
+
+  // A change made elsewhere must also reach the mounted list on revalidation.
+  expect((await page.request.post('/api/trainers', { data: grant })).ok()).toBe(
+    true,
   );
-  try {
-    await page.goto('/settings#trainers', { waitUntil: 'commit' });
-    const navigation = page.getByRole('navigation', {
-      name: 'Разделы настроек',
-    });
-    const connection = navigation.getByRole('link', {
-      name: 'Подключение YAZIO',
+  const externalRefresh = page.waitForResponse('**/api/read/settings');
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event('tempo:read-revalidate')),
+  );
+  expect((await externalRefresh).ok()).toBe(true);
+  await expect(
+    section.getByRole('button', { name: 'Отозвать доступ', exact: true }),
+  ).toBeEnabled();
+  await expect(email).toHaveValue('unsent-draft@example.test');
+  await expect(invitation).toHaveValue(invitationUrl);
+
+  // Revalidation may publish the mutation before its acknowledgement arrives.
+  let acknowledge!: () => void;
+  let committed!: () => void;
+  const acknowledgement = new Promise<void>((resolve) => {
+    acknowledge = resolve;
+  });
+  const mutationCommitted = new Promise<void>((resolve) => {
+    committed = resolve;
+  });
+  await page.route('**/api/trainers', async (route) => {
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    committed();
+    await acknowledgement;
+    await route.fulfill({ response });
+  });
+  await section
+    .getByRole('button', { name: 'Отозвать доступ', exact: true })
+    .click();
+  await mutationCommitted;
+  const mutationRefresh = page.waitForResponse('**/api/read/settings');
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event('tempo:read-revalidate')),
+  );
+  expect((await mutationRefresh).ok()).toBe(true);
+  const allow = section.getByRole('button', {
+    name: 'Разрешить доступ',
+    exact: true,
+  });
+  await expect(allow).toBeDisabled();
+  acknowledge();
+  await expect(allow).toBeEnabled();
+  await expect(email).toHaveValue('unsent-draft@example.test');
+  await expect(invitation).toHaveValue(invitationUrl);
+});
+
+async function navigate(page: Page, name: string) {
+  const toggle = page.getByRole('button', { name: 'Навигация', exact: true });
+  if (await toggle.isVisible()) await toggle.click();
+  await page
+    .getByRole('navigation', { name: 'Навигация', exact: true })
+    .getByRole('link', { name, exact: true })
+    .click();
+}
+
+test.describe('local device cleanup', () => {
+  test.use({ timezoneId: 'UTC' });
+  test('clear local data removes saved PDF and video drafts but preserves pending measurements and session', async ({
+    page,
+    context,
+  }) => {
+    const ownerId = await signInFixture(page);
+    const date = new Date().toISOString().slice(0, 10);
+    const day = syntheticDay(date);
+    const db = new Database('.data/e2e.sqlite');
+    try {
+      db.prepare(
+        'INSERT INTO nutrition_days(owner_id,date,snapshot,fetched_at) VALUES(?,?,?,?)',
+      ).run(ownerId, date, JSON.stringify(day), day.fetchedAt);
+    } finally {
+      db.close();
+    }
+    await page.goto('/reports');
+    const size = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/reports' &&
+        response.request().method() === 'HEAD',
+    );
+    await page
+      .getByRole('button', { name: 'Узнать размер файла', exact: true })
+      .click();
+    expect((await size).ok()).toBe(true);
+    await page
+      .getByRole('button', { name: 'Сохранить для офлайна', exact: true })
+      .click();
+    await expect(
+      page.getByRole('link', { name: 'Открыть локальную копию', exact: true }),
+    ).toBeVisible();
+    expect(await storedRows(page, 'yazio-offline-read-v1', 'files', 3)).toBe(1);
+    const sibling = await context.newPage();
+    await sibling.goto('/reports');
+    const siblingFile = sibling.getByRole('link', {
+      name: 'Открыть локальную копию',
       exact: true,
     });
-    await connection.focus();
-    await expect(connection).toBeFocused();
-    release();
+    await expect(siblingFile).toBeVisible();
+    const oldFileUrl = (await siblingFile.getAttribute('href'))!;
+    await seedVideoDraft(page);
+    await navigate(page, 'Замеры');
+    await expect(page.getByLabel('Заметка', { exact: true })).toBeVisible();
+    await context.setOffline(true);
+    await page
+      .getByLabel('Заметка', { exact: true })
+      .fill('Keep pending during cleanup');
+    await page.getByLabel('Вес (кг)', { exact: true }).fill('73');
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(
-      page.getByLabel('Загрузить данные начиная с…').filter({ visible: true }),
-    ).toBeEnabled();
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-        ),
+      page.getByText('Сохранено на устройстве', { exact: true }).first(),
+    ).toBeVisible();
+    await page.route('**/api/offline/writes', (route) =>
+      route.request().method() === 'POST'
+        ? route.fulfill({ status: 503, json: { error: 'Unavailable' } })
+        : route.continue(),
     );
-    await expect(connection).toBeFocused();
-    await page.keyboard.press('Enter');
-    await expect(page).toHaveURL('/settings#connection');
-    await expect(page.locator('#connection')).toBeFocused();
-    await expect(connection).toHaveAttribute('aria-current', 'location');
-  } finally {
-    release();
-  }
+    await context.setOffline(false);
+    await navigate(page, 'Настройки');
+    await expect(
+      page.getByRole('button', {
+        name: 'Очистить локальные данные',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Очистить локальные данные', exact: true })
+      .click();
+    await expect
+      .poll(() => storedRows(page, 'yazio-offline-read-v1', 'files', 3))
+      .toBe(0);
+    expect(await storedRows(page, 'tempo-video-upload', 'drafts', 1)).toBe(0);
+    expect((await page.request.get('/api/read/context')).status()).toBe(200);
+    await expect(siblingFile).toHaveCount(0);
+    expect(
+      await sibling.evaluate(async (href) => {
+        try {
+          await fetch(href);
+          return true;
+        } catch {
+          return false;
+        }
+      }, oldFileUrl),
+    ).toBe(false);
+    expect((await sibling.request.get('/api/read/context')).status()).toBe(200);
+    await sibling.close();
+    const queued = () =>
+      page.evaluate(
+        () =>
+          new Promise<string>((resolve, reject) => {
+            const request = indexedDB.open('yazio-offline-writes-v1', 1);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+              const db = request.result;
+              const tx = db.transaction('state', 'readonly');
+              const row = tx.objectStore('state').get('current');
+              row.onsuccess = () => resolve(JSON.stringify(row.result));
+              tx.oncomplete = () => db.close();
+            };
+          }),
+      );
+    expect(await queued()).toContain('Keep pending during cleanup');
+    await navigate(page, 'Отчёты');
+    await expect(
+      page.getByRole('link', { name: 'Открыть локальную копию', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: 'Узнать размер файла', exact: true }),
+    ).toBeEnabled();
+    await page.reload();
+    expect(await queued()).toContain('Keep pending during cleanup');
+    expect(await storedRows(page, 'yazio-offline-read-v1', 'files', 3)).toBe(0);
+  });
+});
+
+test('refreshed YAZIO connection status preserves credentials and selected dates and starts polling', async ({
+  page,
+}) => {
+  await login(page);
+  let configured = false;
+  let latest: unknown;
+  let polls = 0;
+  await page.route('**/api/read/settings', async (route) => {
+    const response = await route.fetch();
+    const value = await response.json();
+    value.yazio.configured = configured;
+    value.yazio.tokenFileConfigured = true;
+    latest = value.yazio;
+    await route.fulfill({ response, json: value });
+  });
+  await page.route('**/api/yazio/status', (route) => {
+    polls++;
+    return route.fulfill({ json: latest });
+  });
+  await page.goto('/settings#connection');
+  const email = page.getByLabel(new RegExp('^' + yazioMessages.email));
+  const password = page.getByLabel(new RegExp('^' + yazioMessages.password));
+  const from = page
+    .getByLabel(new RegExp('^' + yazioMessages.from))
+    .filter({ visible: true });
+  await email.fill('draft-yazio@example.test');
+  await password.fill('unsent-secret');
+  await from.fill('2026-10-01');
+  await page.clock.install();
+  configured = true;
+  const refreshed = page.waitForResponse('**/api/read/settings');
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event('tempo:read-revalidate')),
+  );
+  expect((await refreshed).ok()).toBe(true);
+  await expect(
+    page.getByRole('button', { name: yazioMessages.disconnect, exact: true }),
+  ).toBeVisible();
+  await expect(from).toHaveValue('2026-10-01');
+  await page.clock.fastForward(31000);
+  await expect.poll(() => polls).toBeGreaterThan(0);
+  configured = false;
+  const disconnected = page.waitForResponse('**/api/read/settings');
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event('tempo:read-revalidate')),
+  );
+  expect((await disconnected).ok()).toBe(true);
+  await expect(email).toHaveValue('draft-yazio@example.test');
+  await expect(password).toHaveValue('unsent-secret');
+  await expect(from).toHaveValue('2026-10-01');
 });

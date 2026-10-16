@@ -1,21 +1,17 @@
 'use client';
-import {
-  clientReads,
-  seedClientRead,
-  prepareMedicalReads,
-} from '@/lib/client-read';
-import { useReadResource } from '@/lib/use-read-resource';
-import { getOfflineController } from '@/lib/offline-controller';
-import {
-  medicalMarkerSchema,
-  medicalObservationSchema,
-} from '@/contracts/anamnesis';
-import { z } from 'zod';
 import { offlineMessages } from '@/config/offline';
+import { clientReads, seedClientRead } from '@/lib/client-read';
+import { readResources } from '@/lib/read-descriptors';
+import { sessionGeneration } from '@/lib/session-state';
 import { useReadOnline } from '@/lib/use-read-online';
-import { useReadRefresh } from '@/lib/use-read-refresh';
+import { useReadResource } from '@/lib/use-read-resource';
 
-import { useEffect, useState } from 'react';
+import { anamnesisMessages as m } from '@/config/anamnesis-messages';
+import {
+  medicalObservationCorrectionSchema,
+  type MedicalObservation,
+} from '@/contracts/anamnesis';
+import { LineChart } from '@mantine/charts';
 import {
   Alert,
   Badge,
@@ -30,15 +26,10 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { LineChart } from '@mantine/charts';
-import {
-  medicalObservationCorrectionSchema,
-  type MedicalMarker,
-  type MedicalObservation,
-} from '@/contracts/anamnesis';
-import { anamnesisMessages as m } from '@/config/anamnesis-messages';
-import { MarkerAssessmentBadge } from './marker-table';
+import { useState } from 'react';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
+import { MarkerAssessmentBadge } from './marker-table';
+import { notifyAnamnesisChanged } from './refresh';
 
 export function MarkerDetail({
   ownerId,
@@ -50,64 +41,27 @@ export function MarkerDetail({
   writable: boolean;
 }) {
   const online = useReadOnline();
-  const readRefresh = useReadRefresh();
-  const [marker, setMarker] = useState<MedicalMarker>();
-  const [items, setItems] = useState<MedicalObservation[]>([]);
   const [error, setError] = useState<string>();
-  const [denied, setDenied] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<MedicalObservation>();
   const [value, setValue] = useState('');
   const [date, setDate] = useState('');
   const [unit, setUnit] = useState('');
   const [busy, setBusy] = useState(false);
-  useReadResource(
-    `/api/anamnesis/markers/${markerId}?${ownerIdQuery(ownerId)}`,
-    (value) => medicalMarkerSchema.parse(value),
-    setMarker,
+  const markerRead = useReadResource(
+    readResources.marker(
+      `/api/anamnesis/markers/${markerId}?${ownerIdQuery(ownerId)}`,
+    ),
   );
-  useReadResource(
-    `/api/anamnesis/markers/${markerId}/observations?${ownerIdQuery(ownerId)}`,
-    (value) => z.array(medicalObservationSchema).parse(value),
-    (value) => {
-      setItems(value);
-      setLoading(false);
-    },
+  const observationsRead = useReadResource(
+    readResources.observations(
+      `/api/anamnesis/markers/${markerId}/observations?${ownerIdQuery(ownerId)}`,
+    ),
   );
-
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        const loadedMarker = await fetchAnamnesis<MedicalMarker>(
-          `/api/anamnesis/markers/${markerId}?${ownerIdQuery(ownerId)}`,
-        );
-        const loaded = await fetchAnamnesis<MedicalObservation[]>(
-          `/api/anamnesis/markers/${markerId}/observations?${ownerIdQuery(ownerId)}`,
-        );
-        if (active) {
-          setMarker(loadedMarker);
-          setItems(loaded);
-        }
-      } catch (cause) {
-        if (!active) return;
-        if (
-          cause instanceof Error &&
-          'status' in cause &&
-          (cause as { status: number }).status === 403
-        ) {
-          setDenied(true);
-          return;
-        }
-        setError(m.errors.load);
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [ownerId, markerId, readRefresh]);
+  const marker = markerRead.data;
+  const items = observationsRead.data ?? [];
+  const loading =
+    observationsRead.data === undefined && !observationsRead.error;
+  const loadError = markerRead.error || observationsRead.error;
 
   async function save() {
     if (!editing || !online) return;
@@ -130,7 +84,7 @@ export function MarkerDetail({
     }
     setBusy(true);
     setError(undefined);
-    const expectedScope = getOfflineController().getSnapshot().bundle?.snapshot;
+    const expectedScope = sessionGeneration();
     try {
       const updated = await fetchAnamnesis<MedicalObservation>(
         `/api/anamnesis/observations/${editing.id}?${ownerIdQuery(ownerId)}`,
@@ -145,9 +99,9 @@ export function MarkerDetail({
       );
       const key = `/api/anamnesis/markers/${markerId}/observations?${ownerIdQuery(ownerId)}`;
       await clientReads.invalidate(key);
-      if (expectedScope) await seedClientRead(key, observations, expectedScope);
-      setItems(observations);
-      await prepareMedicalReads(true);
+      await seedClientRead(key, observations, expectedScope);
+      notifyAnamnesisChanged();
+
       setEditing(undefined);
     } catch (cause) {
       setError(
@@ -161,16 +115,6 @@ export function MarkerDetail({
       setBusy(false);
     }
   }
-
-  if (denied)
-    return (
-      <Stack data-testid="anamnesis-marker-detail">
-        <Title order={1}>{m.markers.title}</Title>
-        <Alert color="red" role="alert">
-          {m.errors.denied}
-        </Alert>
-      </Stack>
-    );
 
   const conflict =
     !!editing &&
@@ -196,9 +140,9 @@ export function MarkerDetail({
       {conflict && (
         <Alert color="orange">{offlineMessages.draftConflict}</Alert>
       )}
-      {error && (
+      {(error || loadError) && (
         <Alert color="red" role="alert">
-          {error}
+          {error ?? m.errors.load}
         </Alert>
       )}
       {loading && <Text>{m.markers.noMarkerData}</Text>}

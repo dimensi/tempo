@@ -63,3 +63,7 @@ describe('authorized photo transport', () => {
     expect(updated).not.toHaveBeenCalled();
   });
 });
+
+vi.mock('@/lib/api-client', () => ({
+  apiFetch: (...args: Parameters<typeof fetch>) => fetch(...args),
+}));

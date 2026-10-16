@@ -28,6 +28,9 @@ const root = await mkdtemp(join(tmpdir(), 'tempo-video-'));
 const storage = fsObjectStorage({ rootDir: root });
 vi.mock('@/server/storage', () => ({ getObjectStorage: () => storage }));
 const api = await import('@/server/workouts/videos');
+const routes = await import('@/app/api/workouts/videos/route');
+const playbackRoutes =
+  await import('@/app/api/workouts/videos/[id]/playback/route');
 const repository = workoutRepository(database.db);
 const exerciseId = randomUUID();
 let sessionId: string;
@@ -619,3 +622,46 @@ it('serializes new uploads behind parent cleanup so deleting the parent cannot c
     fixture.restore();
   }
 });
+
+it.each(['GET', 'POST'] as const)(
+  'classifies video %s session-wide denial separately from action forbidden',
+  async (method) => {
+    database.db.delete(trainerAccess).run();
+    const invoke = (owner = 'owner') =>
+      routes[method](
+        request('', method, method === 'POST' ? {} : undefined, owner),
+      );
+    state.session = null;
+    const anonymous = await invoke();
+    expect(anonymous.status).toBe(401);
+    expect(await anonymous.json()).toEqual({ error: 'AUTH_REQUIRED' });
+    expect(anonymous.headers.get('X-Auth-Error')).toBe('AUTH_REQUIRED');
+    state.session = { user: { id: 'trainer', role: 'TRAINER' } };
+    const revoked = await invoke();
+    expect(revoked.status).toBe(403);
+    expect(await revoked.json()).toEqual({ error: 'ACCESS_REVOKED' });
+    expect(revoked.headers.get('X-Auth-Error')).toBe('ACCESS_REVOKED');
+    database.db
+      .insert(trainerAccess)
+      .values({ trainerId: 'trainer', ownerId: 'owner', createdAt: new Date() })
+      .run();
+    const forbidden = await invoke(method === 'GET' ? 'other' : 'owner');
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toEqual({ error: 'FORBIDDEN' });
+    expect(forbidden.headers.get('X-Auth-Error')).toBe('FORBIDDEN');
+    state.session = { user: { id: 'owner', role: 'OWNER' } };
+  },
+);
+it.each(['GET', 'HEAD'] as const)(
+  'classifies video playback %s denial before releasing bytes',
+  async (method) => {
+    state.session = null;
+    const response = await playbackRoutes[method](
+      request('/unknown/playback', method),
+      { params: Promise.resolve({ id: 'unknown' }) },
+    );
+    expect(response.status).toBe(401);
+    expect(response.headers.get('X-Auth-Error')).toBe('AUTH_REQUIRED');
+    state.session = { user: { id: 'owner', role: 'OWNER' } };
+  },
+);

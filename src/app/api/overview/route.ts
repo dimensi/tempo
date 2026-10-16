@@ -1,5 +1,6 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import { getOverview, OverviewError } from '@/server/overview';
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   try {
     const data = await getOverview(
       request.headers,
@@ -18,3 +19,5 @@ export async function GET(request: Request) {
     );
   }
 }
+
+export const GET = withApiErrors(GETHandler);

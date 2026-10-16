@@ -138,3 +138,40 @@ it('invalidation removes saved details and fences an already running response', 
   expect(store.snapshot('document').data).toBeUndefined();
   expect(disk.has('document')).toBe(false);
 });
+
+it('publishes disk data while a concurrent network response is stalled', async () => {
+  const { store, disk } = setup();
+  disk.set('day', {
+    data: { value: 7 },
+    savedAt: 40,
+    touchedAt: 50,
+    coverage: 'partial',
+  });
+  const response = Promise.withResolvers<{ value: number }>();
+  const pending = store.read('day', () => response.promise);
+  await store.restore('day');
+  expect(store.snapshot('day')).toMatchObject({
+    data: { value: 7 },
+    coverage: 'partial',
+  });
+  response.resolve({ value: 8 });
+  await pending;
+  expect(store.snapshot('day')).toMatchObject({
+    data: { value: 8 },
+    coverage: 'complete',
+  });
+});
+it('a failed refresh cannot erase local data published after the request started', async () => {
+  const { store } = setup();
+  const response = Promise.withResolvers<{ value: number }>();
+  const pending = store.read('day', () => response.promise);
+  await Promise.resolve();
+  await Promise.resolve();
+  store.seed('day', { value: 4 }, 40, 'storage', 'partial');
+  response.reject(new ReadFailure('network'));
+  await pending.catch(() => {});
+  expect(store.snapshot('day')).toMatchObject({
+    data: { value: 4 },
+    coverage: 'partial',
+  });
+});

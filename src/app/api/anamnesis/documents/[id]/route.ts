@@ -1,14 +1,15 @@
 import {
-  getAnamnesisDocument,
-  deleteAnamnesisDocument,
-  checkAnamnesisOrigin,
   anamnesisErrorResponse,
+  checkAnamnesisOrigin,
+  deleteAnamnesisDocument,
+  getAnamnesisDocument,
 } from '@/server/anamnesis';
+import { withApiErrors } from '@/server/auth/api-response';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 type Context = { params: Promise<{ id: string }> };
-export async function GET(request: Request, context: Context) {
+async function GETHandler(request: Request, context: Context) {
   try {
     return Response.json(
       await getAnamnesisDocument(
@@ -21,7 +22,7 @@ export async function GET(request: Request, context: Context) {
     return anamnesisErrorResponse(error);
   }
 }
-export async function DELETE(request: Request, context: Context) {
+async function DELETEHandler(request: Request, context: Context) {
   try {
     checkAnamnesisOrigin(request);
     await deleteAnamnesisDocument(
@@ -34,3 +35,7 @@ export async function DELETE(request: Request, context: Context) {
     return anamnesisErrorResponse(error);
   }
 }
+
+export const GET = withApiErrors(GETHandler);
+
+export const DELETE = withApiErrors(DELETEHandler);

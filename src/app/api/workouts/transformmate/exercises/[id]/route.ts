@@ -1,9 +1,10 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import {
   catalogResponse,
-  exerciseInfo,
   exerciseId,
+  exerciseInfo,
 } from '@/server/transformmate/catalog';
-export async function GET(
+async function GETHandler(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
@@ -16,3 +17,5 @@ export async function GET(
     ),
   );
 }
+
+export const GET = withApiErrors(GETHandler);

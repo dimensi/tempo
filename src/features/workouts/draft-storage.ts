@@ -23,7 +23,7 @@ export function clearWorkoutDrafts() {
     /* Storage may be disabled. */
   }
 }
-/** Call only after current access has been verified. Values never enter a URL. */
+/** Restore only the current user partition. Values never enter a URL. */
 export function readWorkoutDraft<T>(
   key: string,
   identity: string,

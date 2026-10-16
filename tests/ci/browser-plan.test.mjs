@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { browserPlan } from '../../scripts/ci/browser-plan.mjs';
 import { selectAreas } from '../../scripts/ci/selection.mjs';
@@ -105,4 +106,61 @@ test('shared object storage keeps broad coverage including new Anamnesis tests',
     browserPlan(selection).find((run) => run.family === 'general').files,
     undefined,
   );
+});
+
+test('full and offline gates require real enumerated cases after shell retirement', () => {
+  const listed = new Map();
+  for (const selection of [
+    { mode: 'full', areas: [] },
+    { mode: 'selected', areas: ['offline'] },
+  ]) {
+    for (const run of browserPlan(selection).filter((run) =>
+      ['smoke', 'offline'].includes(run.family),
+    )) {
+      if (!listed.has(run.config))
+        listed.set(
+          run.config,
+          JSON.parse(
+            execFileSync(
+              'pnpm',
+              [
+                'exec',
+                'playwright',
+                'test',
+                '--config',
+                run.config,
+                '--list',
+                '--reporter=json',
+              ],
+              { encoding: 'utf8' },
+            ),
+          ),
+        );
+      const report = listed.get(run.config);
+      assert.equal(report.errors?.length ?? 0, 0);
+      const specs = [];
+      const visit = (suites) => {
+        for (const suite of suites ?? []) {
+          specs.push(...(suite.specs ?? []));
+          visit(suite.suites);
+        }
+      };
+      visit(report.suites);
+      assert.ok(specs.length);
+      for (const requirement of run.requiredCases) {
+        const { pattern, project } =
+          typeof requirement === 'string'
+            ? { pattern: requirement }
+            : requirement;
+        const cases = specs
+          .filter((spec) => new RegExp(pattern).test(spec.title))
+          .flatMap((spec) => spec.tests)
+          .filter((test) => !project || test.projectName === project);
+        assert.ok(
+          cases.length,
+          `${selection.mode} ${run.family}: missing ${pattern}`,
+        );
+      }
+    }
+  }
 });

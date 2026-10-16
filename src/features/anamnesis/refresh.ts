@@ -1,7 +1,9 @@
 'use client';
+import { revalidateVisibleReads } from '@/lib/client-read';
 import { useEffect, useState } from 'react';
 export function notifyAnamnesisChanged() {
   window.dispatchEvent(new Event('anamnesis-changed'));
+  revalidateVisibleReads();
 }
 export function useAnamnesisRevision() {
   const [revision, setRevision] = useState(0);

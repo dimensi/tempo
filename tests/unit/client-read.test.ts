@@ -1,332 +1,181 @@
+import { stepsGoalSchema } from '@/contracts/steps-goal';
+import { clearReadStorage } from '@/lib/browser-storage';
+import {
+  bindReadScope,
+  clientReads,
+  refreshClientRead,
+  seedClientRead,
+  updateClientRead,
+} from '@/lib/client-read';
+import {
+  bindSession,
+  readSession,
+  resetSession,
+  sessionGeneration,
+} from '@/lib/session-state';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-const state = vi.hoisted(() => ({
-  partition: 'owner',
-  generation: 'scope',
-  online: true,
-  disk: new Map<string, unknown>(),
-  listeners: new Set<() => void>(),
-  blocked: () => {},
-}));
-vi.mock('@/lib/offline-controller', () => ({
-  getOfflineController: () => ({
-    removeFile: vi.fn(async () => {}),
-    getSnapshot: () => ({
-      status: 'ready',
-      bundle: {
-        fence: {
-          partition: state.partition,
-          generation: 1,
-          deviceEpoch: state.generation,
-        },
-        savedAt: 100,
-        snapshot: {
-          partition: state.partition,
-          connectionGeneration: state.generation,
-          role: 'OWNER',
-        },
-      },
-    }),
-    subscribe: (callback: () => void) => {
-      state.listeners.add(callback);
-      return () => state.listeners.delete(callback);
-    },
-  }),
-}));
-vi.mock('@/lib/offline-device', () => ({
-  subscribeOfflineBlocked: (callback: () => void) => {
-    state.blocked = callback;
-    return () => {};
-  },
-  withOfflineCacheLock: async (action: () => Promise<unknown>) => {
-    await action();
-    return 'completed';
-  },
-  OfflineStorage: class {
-    readResources(fence: { partition: string }) {
-      return Promise.resolve(
-        [...state.disk.entries()]
-          .filter(([key]) => key.startsWith(fence.partition + ':'))
-          .map(([, value]) => value),
-      );
-    }
-    writeResource(fence: { partition: string }, record: { key: string }) {
-      state.disk.set(fence.partition + ':' + record.key, record);
-      return Promise.resolve();
-    }
-    removeResource(fence: { partition: string }, key: string) {
-      state.disk.delete(fence.partition + ':' + key);
-      return Promise.resolve();
-    }
-    close() {
-      return Promise.resolve();
-    }
-  },
-}));
-vi.mock('@/lib/network-state', () => ({ reportNetworkResult: vi.fn() }));
-let cleanup: (() => void) | undefined;
+import { indexedDBDriver } from './helpers/browser-db';
+const session = (partition = 'owner') => ({
+  readerId: partition,
+  ownerId: partition,
+  role: 'OWNER' as const,
+  partition,
+});
 beforeEach(() => {
-  vi.resetModules();
-  state.disk.clear();
-  state.listeners.clear();
-  state.partition = 'owner';
-  state.generation = 'scope';
-  state.online = true;
-  vi.stubGlobal('location', {
-    origin: 'https://tempo.test',
-    href: 'https://tempo.test/',
-  });
-  vi.stubGlobal('navigator', {
-    get onLine() {
-      return state.online;
-    },
-  });
+  const driver = indexedDBDriver();
+  vi.stubGlobal('indexedDB', driver.factory);
+  vi.stubGlobal('window', new EventTarget());
+  vi.stubGlobal('sessionStorage', {});
+  vi.stubGlobal('location', { origin: 'https://app.test' });
+  vi.stubGlobal('navigator', { onLine: true });
+  bindSession(session());
+  bindReadScope();
+  clientReads.clear();
 });
-afterEach(() => {
-  cleanup?.();
-  cleanup = undefined;
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-});
-async function install(fetcher: typeof fetch) {
-  vi.stubGlobal('window', { fetch: fetcher });
-  const reader = await import('@/lib/client-read');
-  cleanup = reader.observeReadResources();
-  return reader;
-}
-const path = '/api/settings/steps-goal';
-it('successful reads populate both tiers and transport failures transparently serve validated data', async () => {
-  const raw = vi
-    .fn<typeof fetch>()
-    .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 7000 }))
-    .mockRejectedValueOnce(new TypeError('offline'));
-  const { clientReads } = await install(raw);
-  expect(await (await window.fetch(path)).json()).toEqual({
-    dailyStepsGoal: 7000,
-  });
-  expect(state.disk.size).toBe(1);
-  const fallback = await window.fetch(path);
-  expect(await fallback.json()).toEqual({ dailyStepsGoal: 7000 });
-  expect(clientReads.snapshot(path)).toMatchObject({
-    source: 'memory',
-    error: 'network',
-  });
-  state.online = false;
-  expect(await (await window.fetch(path)).json()).toEqual({
-    dailyStepsGoal: 7000,
-  });
-  expect(raw).toHaveBeenCalledTimes(2);
-});
-it('one aborted caller does not cancel another reader of the same in-flight resource', async () => {
-  const result = Promise.withResolvers<Response>();
-  const raw = vi.fn<typeof fetch>(() => result.promise);
-  await install(raw);
-  const controller = new AbortController();
-  const first = window.fetch(path, { signal: controller.signal });
-  const rejected = expect(first).rejects.toMatchObject({ name: 'AbortError' });
-  const second = window.fetch(path);
-  await Promise.resolve();
-  await Promise.resolve();
-  controller.abort();
-  result.resolve(Response.json({ dailyStepsGoal: 1234 }));
-  await rejected;
-  expect(await (await second).json()).toEqual({ dailyStepsGoal: 1234 });
-  expect(raw).toHaveBeenCalledOnce();
-});
-it('late responses from another account cannot enter the current memory or disk scope', async () => {
-  const result = Promise.withResolvers<Response>();
-  const raw = vi.fn<typeof fetch>(() => result.promise);
-  const { clientReads } = await install(raw);
-  const first = window.fetch(path);
-  const rejected = expect(first).rejects.toMatchObject({ reason: 'denied' });
-  await Promise.resolve();
-  await Promise.resolve();
-  state.partition = 'other';
-  for (const listener of state.listeners) listener();
-  result.resolve(Response.json({ dailyStepsGoal: 1000 }));
-  await rejected;
-  expect(clientReads.snapshot(path).data).toBeUndefined();
-  expect(state.disk.size).toBe(0);
-});
-it('confirmed access denial is returned as denial and never disguised as an offline copy', async () => {
-  const raw = vi
-    .fn<typeof fetch>()
-    .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 1000 }))
-    .mockResolvedValueOnce(new Response(null, { status: 403 }));
-  const { clientReads } = await install(raw);
-  await window.fetch(path);
-  expect((await window.fetch(path)).status).toBe(403);
-  expect(clientReads.snapshot(path).data).toBeUndefined();
-  expect(state.disk.size).toBe(0);
-});
-it('credentials and responses outside approved schemas are not persisted', async () => {
-  const raw = vi
-    .fn<typeof fetch>()
-    .mockResolvedValueOnce(
-      Response.json({ dailyStepsGoal: 1000, token: 'synthetic-secret' }),
-    );
-  await install(raw);
-  await expect(window.fetch(path)).rejects.toBeDefined();
-  expect(state.disk.size).toBe(0);
-  state.online = false;
-  await expect(window.fetch(path)).rejects.toBeDefined();
-});
-it('an invalid successful payload serves validated saved data instead of the malformed live response', async () => {
-  const raw = vi
-    .fn<typeof fetch>()
-    .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 1000 }))
-    .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 'invalid' }));
-  await install(raw);
-  await window.fetch(path);
-  const response = await window.fetch(path);
-  expect(await response.json()).toEqual({ dailyStepsGoal: 1000 });
-  expect(response.headers.get('X-Tempo-Read-Source')).toBeTruthy();
-});
-it('a shared transport timeout reports unreachable even when cached data is returned', async () => {
-  const timeout = new AbortController();
-  vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
-  const raw = vi
-    .fn<typeof fetch>()
-    .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 1000 }))
-    .mockImplementationOnce(
-      (_input, init) =>
-        new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () =>
-            reject(new DOMException('timeout', 'AbortError')),
-          );
+afterEach(() => vi.unstubAllGlobals());
+const key = '/api/settings/steps-goal';
+it('publishes stored data while the network request remains pending', async () => {
+  await seedClientRead(key, { dailyStepsGoal: 123 });
+  clientReads.clear();
+  let resolve!: (value: Response) => void;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      () =>
+        new Promise<Response>((done) => {
+          resolve = done;
         }),
+    ),
+  );
+  const flight = refreshClientRead(key);
+  await vi.waitFor(() =>
+    expect(clientReads.snapshot(key).data).toContain('123'),
+  );
+  expect(clientReads.snapshot(key).refreshing).toBe(true);
+  resolve(Response.json({ dailyStepsGoal: 456 }));
+  await flight;
+  expect(clientReads.snapshot(key).data).toContain('456');
+});
+it('does not reuse another account cache', async () => {
+  await seedClientRead(key, { dailyStepsGoal: 123 });
+  bindSession(session('other'));
+  bindReadScope();
+  await clientReads.restore(key);
+  expect(clientReads.snapshot(key).data).toBeUndefined();
+});
+it('late network replies cannot refill a logged-out store', async () => {
+  let resolve!: (value: Response) => void;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      () =>
+        new Promise<Response>((done) => {
+          resolve = done;
+        }),
+    ),
+  );
+  const flight = refreshClientRead(key);
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+  resetSession();
+  clientReads.clear();
+  const rejected = expect(flight).rejects.toMatchObject({ reason: 'denied' });
+  resolve(Response.json({ dailyStepsGoal: 456 }));
+  await rejected;
+  expect(clientReads.snapshot(key).data).toBeUndefined();
+});
+it('corrupted disk records are cache misses', async () => {
+  const driver = indexedDBDriver();
+  vi.stubGlobal('indexedDB', driver.factory);
+  await seedClientRead(key, { dailyStepsGoal: 123 });
+  const records = driver.data.get('resources')!;
+  for (const [id, value] of records)
+    records.set(id, {
+      ...(value as { record: object }),
+      record: { ...(value as { record: object }).record, body: '{broken' },
+    });
+  clientReads.clear();
+  await clientReads.restore(key);
+  expect(clientReads.snapshot(key).data).toBeUndefined();
+});
+it('read cache clearing is independent of owner write queue', async () => {
+  await seedClientRead(key, { dailyStepsGoal: 123 });
+  await clearReadStorage();
+  clientReads.clear();
+  await clientReads.restore(key);
+  expect(clientReads.snapshot(key).data).toBeUndefined();
+});
+
+it.each([403, 404])(
+  'evicts only the denied or deleted GET resource (%s) from memory and disk',
+  async (status) => {
+    const otherKey = '/api/measurements';
+    await seedClientRead(key, { dailyStepsGoal: 123 });
+    await seedClientRead(otherKey, []);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json(
+          { error: status === 403 ? 'FORBIDDEN' : 'NOT_FOUND' },
+          { status },
+        ),
+      ),
     );
-  await install(raw);
-  const { reportNetworkResult } = await import('@/lib/network-state');
-  vi.mocked(reportNetworkResult).mockClear();
-  await window.fetch(path);
-  const pending = window.fetch(path);
-  await Promise.resolve();
-  await Promise.resolve();
-  timeout.abort();
-  expect(await (await pending).json()).toEqual({ dailyStepsGoal: 1000 });
-  expect(reportNetworkResult).toHaveBeenCalledWith(false);
-});
-it('document deletion removes both details and observations from memory and persistent storage', async () => {
-  const { clientReads, invalidateMedicalDocument } = await install(vi.fn());
-  for (const key of [
-    '/api/anamnesis/documents/doc?ownerId=owner',
-    '/api/anamnesis/documents/doc/observations?ownerId=owner',
-  ]) {
-    clientReads.seed(key, '{}');
-    state.disk.set('owner:' + key, { key, body: '{}' });
-  }
-  await invalidateMedicalDocument('doc', 'owner');
-  expect(state.disk.size).toBe(0);
-  expect(
-    clientReads.snapshot('/api/anamnesis/documents/doc?ownerId=owner').data,
-  ).toBeUndefined();
-  expect(
-    clientReads.snapshot(
-      '/api/anamnesis/documents/doc/observations?ownerId=owner',
-    ).data,
-  ).toBeUndefined();
-});
-it('document deletion preserves the medical workspace summary when its refresh fails', async () => {
-  const {
-    seedClientRead,
-    savedMedicalSummary,
-    hasSavedMedicalRoute,
-    invalidateMedicalDocument,
-  } = await install(
-    vi.fn(async () => {
-      throw new TypeError('offline');
-    }),
-  );
-  const document = {
-    id: '00000000-0000-4000-8000-000000000001',
-    ownerId: '00000000-0000-4000-8000-000000000003',
-    filename: 'lab.pdf',
-    mimeType: 'application/pdf',
-    sizeBytes: 1,
-    pageCount: 1,
-    laboratoryName: null,
-    title: null,
-    collectedAt: null,
-    issuedAt: null,
-    createdAt: 1,
-    updatedAt: 1,
+    await expect(refreshClientRead(key)).rejects.toMatchObject({ status });
+    expect(clientReads.snapshot(key).data).toBeUndefined();
+    expect(readSession()?.partition).toBe('owner');
+    expect(clientReads.snapshot(otherKey).data).toBe('[]');
+    clientReads.clear();
+    await clientReads.restore(key);
+    await clientReads.restore(otherKey);
+    expect(clientReads.snapshot(key).data).toBeUndefined();
+    expect(clientReads.snapshot(otherKey).data).toBe('[]');
+  },
+);
+
+it('local cache updates use the newest shared value and persist it', async () => {
+  await seedClientRead(key, { dailyStepsGoal: 123 });
+  await seedClientRead(key, { dailyStepsGoal: 456 });
+  const resource = {
+    href: key,
+    decode: (body: string) => stepsGoalSchema.parse(JSON.parse(body)),
   };
-  await seedClientRead('/api/offline/anamnesis-local', {
-    version: 1,
-    ownerId: '00000000-0000-4000-8000-000000000003',
-    complete: true,
-    overview: {
-      documents: 2,
-      markers: 0,
-      observations: 0,
-      pendingReviews: 0,
-      activeImports: 0,
-      pendingDocumentId: null,
-      activeDocumentId: null,
-      lastCollectedAt: null,
-    },
-    markers: [],
-    documents: [
-      document,
-      { ...document, id: '00000000-0000-4000-8000-000000000002' },
-    ],
-    reports: [],
+  await updateClientRead(resource, (current) => ({
+    dailyStepsGoal: (current?.dailyStepsGoal ?? 0) + 1,
+  }));
+  expect(clientReads.snapshot(key)).toMatchObject({
+    data: '{"dailyStepsGoal":457}',
+    coverage: 'complete',
   });
-  expect(
-    await hasSavedMedicalRoute(new URL('/anamnesis', 'https://tempo.test')),
-  ).toBe(true);
-  expect(
-    await hasSavedMedicalRoute(
-      new URL(
-        '/anamnesis/documents/00000000-0000-4000-8000-000000000001',
-        'https://tempo.test',
-      ),
-    ),
-  ).toBe(false);
-  await seedClientRead(
-    '/api/anamnesis/documents/00000000-0000-4000-8000-000000000001?ownerId=00000000-0000-4000-8000-000000000003',
-    document,
-  );
-  expect(
-    await hasSavedMedicalRoute(
-      new URL(
-        '/anamnesis/documents/00000000-0000-4000-8000-000000000001',
-        'https://tempo.test',
-      ),
-    ),
-  ).toBe(true);
-  const marker = {
-    id: 'blood-glucose',
-    code: 'GLU',
-    name: 'Glucose',
-    shortName: null,
-    category: 'biochemistry',
-    description: null,
-    preferredUnit: null,
-    definitionVersion: 1,
+  clientReads.clear();
+  await clientReads.restore(key);
+  expect(clientReads.snapshot(key).data).toBe('{"dailyStepsGoal":457}');
+});
+it('local updates without a complete GET snapshot remain partial after restore', async () => {
+  const resource = {
+    href: key,
+    decode: (body: string) => stepsGoalSchema.parse(JSON.parse(body)),
   };
-  const markerPath = '/anamnesis/markers/blood-glucose';
-  const markerApi =
-    '/api/anamnesis/markers/blood-glucose?ownerId=00000000-0000-4000-8000-000000000003';
-  await seedClientRead(markerApi, marker);
-  expect(
-    await hasSavedMedicalRoute(new URL(markerPath, 'https://tempo.test')),
-  ).toBe(false);
-  await seedClientRead(
-    '/api/anamnesis/markers/blood-glucose/observations?ownerId=00000000-0000-4000-8000-000000000003',
-    [],
-  );
-  expect(
-    await hasSavedMedicalRoute(new URL(markerPath, 'https://tempo.test')),
-  ).toBe(true);
-  await invalidateMedicalDocument(
-    '00000000-0000-4000-8000-000000000001',
-    '00000000-0000-4000-8000-000000000003',
-  );
-  const summary = await savedMedicalSummary();
-  expect(summary.documents.map((item) => item.id)).toEqual([
-    '00000000-0000-4000-8000-000000000002',
-  ]);
-  expect(summary.overview.documents).toBe(1);
-  expect(summary.complete).toBe(false);
+  await updateClientRead(resource, () => ({ dailyStepsGoal: 123 }));
+  await updateClientRead(resource, () => ({ dailyStepsGoal: 456 }));
+  expect(clientReads.snapshot(key).coverage).toBe('partial');
+  clientReads.clear();
+  await clientReads.restore(key);
+  expect(clientReads.snapshot(key)).toMatchObject({
+    data: '{"dailyStepsGoal":456}',
+    coverage: 'partial',
+  });
+});
+it('a local update waiting for restore cannot seed a replacement account', async () => {
+  const update = vi.fn(() => ({ dailyStepsGoal: 123 }));
+  const resource = {
+    href: key,
+    decode: (body: string) => stepsGoalSchema.parse(JSON.parse(body)),
+  };
+  const pending = updateClientRead(resource, update, sessionGeneration());
+  bindSession(session('other'));
+  bindReadScope();
+  await seedClientRead(key, { dailyStepsGoal: 999 });
+  await pending;
+  expect(update).not.toHaveBeenCalled();
+  expect(clientReads.snapshot(key).data).toBe('{"dailyStepsGoal":999}');
 });

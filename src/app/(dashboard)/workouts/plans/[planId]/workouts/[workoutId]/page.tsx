@@ -1,20 +1,29 @@
-import { DetailPage } from '../../../../detail-page';
-export default async function Page({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ planId: string; workoutId: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const value = await params;
+'use client';
+import { useParams } from 'next/navigation';
+import { useWorkoutDetail } from '@/app/(dashboard)/workouts/use-workout-detail';
+import { ResourcePending } from '@/components/shared/read-resource-pending';
+import { CommentsPanel } from '@/features/comments';
+import { WorkoutDetailView } from '@/features/workouts';
+export default function Page() {
+  const params = useParams<{ planId: string; workoutId: string }>();
+  const { context, date, read } = useWorkoutDetail({
+    kind: 'plan',
+    planId: params.planId,
+    workoutId: params.workoutId,
+  });
+  if (!read.data) return <ResourcePending {...read} />;
   return (
-    <DetailPage
-      resource={{
-        kind: 'plan',
-        planId: value.planId,
-        workoutId: value.workoutId,
-      }}
-      query={await searchParams}
+    <WorkoutDetailView
+      ownerId={context.ownerId}
+      canLog={context.role === 'OWNER'}
+      date={date}
+      detail={read.data}
+      renderComments={(id) => (
+        <CommentsPanel
+          ownerId={context.ownerId}
+          target={{ type: 'workout', id }}
+        />
+      )}
     />
   );
 }

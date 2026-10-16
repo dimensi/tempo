@@ -1,15 +1,17 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
 import { Alert, Button, Group, Stack } from '@mantine/core';
-import {
-  transformMateCatalogResultSchema,
-  type TransformMateCatalogResult,
-} from '@/contracts/transformmate';
+import { useViewState } from '@/lib/use-view-state';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { CatalogReadContent } from './catalog-read';
 import { ExerciseDetails } from './exercise-details';
 import { workoutMessages as m } from './messages';
 function CatalogDetails({ ownerId, id }: { ownerId: string; id: number }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useViewState(
+    `catalog:${ownerId}:${id}:details`,
+    false,
+  );
   return (
     <Stack gap="xs">
       <Button
@@ -25,37 +27,24 @@ function CatalogDetails({ ownerId, id }: { ownerId: string; id: number }) {
   );
 }
 export function CatalogPage({ ownerId }: { ownerId: string }) {
-  const [offset, setOffset] = useState(0);
-  const [resource, setResource] = useState<{
-    offset: number;
-    data: TransformMateCatalogResult;
-  } | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    const pending = new AbortController();
-    void fetch(
+  const params = useSearchParams();
+  const router = useRouter();
+  const offset = Math.max(0, Number(params.get('offset')) || 0);
+  const setOffset = (next: number) => {
+    const query = new URLSearchParams(params.toString());
+    query.set('offset', String(next));
+    router.push(`/workouts/catalog?${query}`, { scroll: false });
+  };
+  const read = useReadResource(
+    readResources.catalog(
       `/api/workouts/transformmate/exercises?${new URLSearchParams({ ownerId, offset: String(offset), limit: '50' })}`,
-      { signal: pending.signal, cache: 'no-store' },
-    )
-      .then(async (response) => {
-        if (!response.ok) throw Error();
-        return transformMateCatalogResultSchema.parse(await response.json());
-      })
-      .then((data) => {
-        if (!pending.signal.aborted) {
-          setResource({ offset, data });
-          setFailed(false);
-        }
-      })
-      .catch(() => {
-        if (!pending.signal.aborted) setFailed(true);
-      });
-    return () => pending.abort();
-  }, [ownerId, offset]);
-  const current = resource?.offset === offset ? resource.data : null;
+    ),
+  );
+  const current = read.data;
+  const failed = !!read.error;
   return (
     <Stack>
-      {failed && <Alert color="orange">{m.catalogError}</Alert>}
+      {failed && !current && <Alert color="orange">{m.catalogError}</Alert>}
       {!current && !failed && <Alert role="status">{m.loading}</Alert>}
       {current && (
         <CatalogReadContent

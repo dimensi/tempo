@@ -31,3 +31,5 @@ main {
     font-size: max(16px, var(--input-fz, 1rem)) !important;
   }
 }
+
+/* The synchronous server-entry gate runs before any private HTML is parsed. */

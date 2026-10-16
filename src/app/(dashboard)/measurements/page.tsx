@@ -1,50 +1,40 @@
-import { headers } from 'next/headers';
-import { authorize, requireSession } from '@/server/auth/guards';
-import { getAccessibleOwnerId } from '@/server/access/owner';
-import { MeasurementsWithComments } from './with-comments';
-import { measurementMessages as m } from '@/features/measurements';
-import { Alert, Stack } from '@mantine/core';
-import { WeightHistoryPanel, healthMessages } from '@/features/health';
-import { getWeightHistory, HealthReadError } from '@/server/health';
+'use client';
+import { browserToday } from '@/components/shared/date-navigation-dates';
+import { ResourcePending } from '@/components/shared/read-resource-pending';
 import { shiftDate } from '@/contracts/nutrition-sync-dates';
-export const metadata = { title: m.title };
-export default async function Page() {
-  const session = await requireSession();
-  const requestHeaders = await headers();
-  const ownerId = await getAccessibleOwnerId(requestHeaders);
-  if (!ownerId) return <p>{m.denied}</p>;
-  const access = await authorize(requestHeaders, 'measurements:read', ownerId);
-  if (!access.ok) return <p>{m.denied}</p>;
-  const writeAccess = await authorize(
-    requestHeaders,
-    'measurements:write',
-    ownerId,
+import { CommentsPanel } from '@/features/comments';
+import { WeightHistoryPanel } from '@/features/health';
+import { MeasurementsPanel } from '@/features/measurements';
+import { OfflineWrites } from '@/features/offline';
+import { useReadContext } from '@/lib/client-session';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
+import { Stack } from '@mantine/core';
+export default function Page() {
+  const context = useReadContext();
+  const today = browserToday();
+  const weight = useReadResource(
+    readResources.weight(
+      `/api/health/weight?from=${shiftDate(today, -365)}&to=${today}`,
+    ),
   );
-  const today = new Date().toISOString().slice(0, 10);
-  let history;
-  try {
-    history = await getWeightHistory(requestHeaders, {
-      from: shiftDate(today, -365),
-      to: today,
-    });
-  } catch (error) {
-    return (
-      <Alert color="red">
-        {error instanceof HealthReadError && error.status === 403
-          ? healthMessages.forbidden
-          : healthMessages.unavailable}
-      </Alert>
-    );
-  }
+  if (!weight.data) return <ResourcePending {...weight} />;
   return (
-    <Stack gap="lg" style={{ minWidth: 0 }}>
-      <MeasurementsWithComments
-        ownerId={ownerId}
-        writable={writeAccess.ok}
-        deviceWrites={session.user.role === 'OWNER'}
-        weightHistory={history}
+    <Stack>
+      {context.role === 'OWNER' && <OfflineWrites kind="measurement" />}
+      <MeasurementsPanel
+        ownerId={context.ownerId}
+        writable={context.role === 'OWNER'}
+        deviceWrites={context.role === 'OWNER'}
+        weightHistory={weight.data}
+        renderComments={(id) => (
+          <CommentsPanel
+            ownerId={context.ownerId}
+            target={{ type: 'measurement', id }}
+          />
+        )}
       />
-      <WeightHistoryPanel history={history} />
+      <WeightHistoryPanel history={weight.data} />
     </Stack>
   );
 }

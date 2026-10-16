@@ -1,14 +1,15 @@
 import {
-  getAnamnesisObservation,
-  correctAnamnesisObservation,
-  checkAnamnesisOrigin,
   anamnesisErrorResponse,
+  checkAnamnesisOrigin,
+  correctAnamnesisObservation,
+  getAnamnesisObservation,
 } from '@/server/anamnesis';
+import { withApiErrors } from '@/server/auth/api-response';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 type Context = { params: Promise<{ id: string }> };
-export async function GET(request: Request, context: Context) {
+async function GETHandler(request: Request, context: Context) {
   try {
     return Response.json(
       await getAnamnesisObservation(
@@ -21,7 +22,7 @@ export async function GET(request: Request, context: Context) {
     return anamnesisErrorResponse(error);
   }
 }
-export async function PATCH(request: Request, context: Context) {
+async function PATCHHandler(request: Request, context: Context) {
   try {
     checkAnamnesisOrigin(request);
     return Response.json(
@@ -36,3 +37,7 @@ export async function PATCH(request: Request, context: Context) {
     return anamnesisErrorResponse(error);
   }
 }
+
+export const GET = withApiErrors(GETHandler);
+
+export const PATCH = withApiErrors(PATCHHandler);

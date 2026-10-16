@@ -163,7 +163,7 @@ export function BodyAnalytics({
             }}
           />
         )}
-        <Details label={m.bodyDetails}>
+        <Details stateKey="body" label={m.bodyDetails}>
           <Table.ScrollContainer minWidth={360}>
             <Table>
               <Table.Thead>

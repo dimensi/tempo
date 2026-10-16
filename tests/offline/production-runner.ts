@@ -1,26 +1,24 @@
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createServer } from 'node:https';
-import { request } from 'node:http';
 import {
+  appendFileSync,
+  cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
-  readdirSync,
   rmSync,
-  appendFileSync,
-  mkdirSync,
   writeFileSync,
-  cpSync,
 } from 'node:fs';
+import { request } from 'node:http';
+import { createServer } from 'node:https';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { build } from 'esbuild';
-import { startUpstream } from '../transformmate-sync/upstream';
-import { testOrigin } from '../ci/origin';
 import { verifyFixtureSnapshot } from '../ci/fixture-snapshot';
+import { testOrigin } from '../ci/origin';
 import { serverSnapshot as createServerSnapshot } from '../ci/server-snapshot';
 import { stopServer } from '../ci/stop-server';
+import { startUpstream } from '../transformmate-sync/upstream';
 const family = process.argv[2] ?? 'offline';
 const gatewayPort = Number(new URL(testOrigin).port);
 const backendPort = Number(process.env.CI_E2E_BACKEND_PORT ?? 3161);
@@ -41,24 +39,7 @@ if (
 if (!existsSync('.next/standalone/server.js'))
   throw new Error('Build once before production tests');
 
-const assets = readdirSync('public/offline/assets').map(
-  (file) => `/offline/assets/${file}`,
-);
-const legacy = (
-  await build({
-    entryPoints: ['tests/offline/legacy-service-worker.ts'],
-    bundle: true,
-    write: false,
-    format: 'iife',
-    platform: 'browser',
-    tsconfig: 'tsconfig.json',
-    define: {
-      __OFFLINE_ASSETS__: JSON.stringify([...assets, '/offline/index.html']),
-      __OFFLINE_CACHE_NAME__: JSON.stringify('yazio-offline-shell-legacy-test'),
-      __OFFLINE_SHELL__: JSON.stringify('/offline/index.html'),
-    },
-  })
-).outputFiles[0]!.text;
+const legacy = `self.addEventListener('install',event=>event.waitUntil(self.skipWaiting())); self.addEventListener('activate',event=>event.waitUntil(self.clients.claim())); self.addEventListener('fetch',event=>event.respondWith(fetch(event.request)));`;
 let workerMode = 'current';
 let navigationStatus = 0;
 let holdInstall = false;

@@ -1,33 +1,34 @@
 'use client';
-import { useReadOnline } from '@/lib/use-read-online';
-import { networkReachable } from '@/lib/network-state';
-import { useState, useSyncExternalStore, useEffect } from 'react';
+import type { NutritionScheduleStatus } from '@/contracts/nutrition-schedule';
 import {
+  nutritionSyncMessages as messages,
+  resolveSyncPeriod,
+  syncResultKind,
+  type SyncStatus,
+  type YazioAccount,
+} from '@/contracts/nutrition-sync';
+import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
+import { apiFetch } from '@/lib/api-client';
+import { networkReachable } from '@/lib/network-state';
+import { refreshAfterMutation } from '@/lib/provider-mutation';
+import { useReadOnline } from '@/lib/use-read-online';
+import {
+  Accordion,
   Alert,
+  Avatar,
   Badge,
   Button,
+  Card,
   Group,
+  Modal,
+  PasswordInput,
   Stack,
   Text,
   TextInput,
   Textarea,
   Title,
-  PasswordInput,
-  Accordion,
-  Card,
-  Avatar,
-  Modal,
 } from '@mantine/core';
-import {
-  nutritionSyncMessages as messages,
-  type SyncStatus,
-  type YazioAccount,
-  resolveSyncPeriod,
-  syncResultKind,
-} from '@/contracts/nutrition-sync';
-import type { NutritionScheduleStatus } from '@/contracts/nutrition-schedule';
-import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
-import { withOfflineDevicePurge } from '@/lib/offline-device';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 const subscribeToHydration = () => () => {};
 const clientReady = () => true;
 const serverReady = () => false;
@@ -47,6 +48,11 @@ export function YazioSettingsForm({
 }) {
   const online = useReadOnline();
   const [status, setStatus] = useState(initial);
+  const [previous, setPrevious] = useState(initial);
+  if (initial !== previous) {
+    setPrevious(initial);
+    setStatus(initial);
+  }
   const ready = useSyncExternalStore(
     subscribeToHydration,
     clientReady,
@@ -92,7 +98,7 @@ export function YazioSettingsForm({
   }
   async function refreshStatus() {
     try {
-      const response = await fetch('/api/yazio/status', {
+      const response = await apiFetch('/api/yazio/status', {
         cache: 'no-store',
         signal: AbortSignal.timeout(10000),
       });
@@ -109,7 +115,7 @@ export function YazioSettingsForm({
       if (pending) return;
       pending = true;
       try {
-        const response = await fetch('/api/yazio/status', {
+        const response = await apiFetch('/api/yazio/status', {
           cache: 'no-store',
           signal: controller.signal,
         });
@@ -159,7 +165,7 @@ export function YazioSettingsForm({
     let outcome: Exclude<typeof result, null> = 'failure';
     try {
       const request = () =>
-        fetch(path, {
+        apiFetch(path, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -168,7 +174,7 @@ export function YazioSettingsForm({
         path === '/api/yazio/connect' ||
         path === '/api/yazio/token' ||
         path === '/api/yazio/disconnect'
-          ? await withOfflineDevicePurge(request)
+          ? await refreshAfterMutation(request)
           : await request();
       if (!response.ok) throw new Error();
       if (path === '/api/yazio/connect' || path === '/api/yazio/token') {

@@ -1,3 +1,4 @@
+export const metadata = { title: 'Анамнез' };
 import { requireSession } from '@/server/auth/guards';
 export default async function Layout({
   children,

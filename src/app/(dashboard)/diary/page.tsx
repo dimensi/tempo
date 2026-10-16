@@ -1,48 +1,50 @@
-import { headers } from 'next/headers';
-import { Alert, Stack, Title } from '@mantine/core';
-import { DiaryClient, diaryMessages as m } from '@/features/nutrition';
+'use client';
+import { browserToday } from '@/components/shared/date-navigation-dates';
+import { ResourcePending } from '@/components/shared/read-resource-pending';
 import { CommentsPanel } from '@/features/comments';
-import { diaryDateSchema } from '@/contracts/nutrition';
-import { requireSession } from '@/server/auth/guards';
-import { getAccessibleOwnerId } from '@/server/access/owner';
-import { getNutritionDay, listMealPhotos } from '@/server/nutrition';
-
-export const metadata = { title: 'Дневник питания' };
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<{ date?: string }>;
-}) {
-  const session = await requireSession();
-  const parsed = diaryDateSchema.safeParse((await searchParams).date);
-  const date = parsed.success
-    ? parsed.data
-    : new Date().toISOString().slice(0, 10);
-  const requestHeaders = await headers();
-  const ownerId = await getAccessibleOwnerId(requestHeaders);
-  if (!ownerId)
-    return (
-      <Stack>
-        <Title order={1}>{m.title}</Title>
-        <Alert>{m.denied}</Alert>
-      </Stack>
-    );
-  const [day, photos] = await Promise.all([
-    getNutritionDay(requestHeaders, ownerId, date),
-    listMealPhotos(requestHeaders, ownerId, { from: date, to: date }),
-  ]);
+import { DiaryClient } from '@/features/nutrition';
+import { useReadContext } from '@/lib/client-session';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
+import { useSearchParams } from 'next/navigation';
+import { z } from 'zod';
+function useSelectedDate() {
+  const params = useSearchParams();
+  const selected = z.iso.date().safeParse(params.get('date'));
+  return selected.success ? selected.data : browserToday();
+}
+export default function Page() {
+  const context = useReadContext();
+  const date = useSelectedDate();
+  const query = new URLSearchParams({
+    ownerId: context.ownerId,
+    from: date,
+    to: date,
+  });
+  const day = useReadResource(
+    readResources.diary(`/api/nutrition/days?${query}`),
+  );
+  const photos = useReadResource(
+    readResources.photos(`/api/nutrition/photos?${query}`),
+  );
   return (
     <DiaryClient
-      key={`${ownerId}:${date}`}
-      ownerId={ownerId}
+      ownerId={context.ownerId}
       date={date}
-      day={day}
-      photos={photos}
-      canWrite={session.user.role === 'OWNER' && session.user.id === ownerId}
+      day={day.data?.[0] ?? null}
+      photos={photos.data ?? []}
+      canWrite={context.role === 'OWNER'}
+      loading={day.data === undefined || photos.data === undefined}
+      unavailableSlot={
+        day.data === undefined ? <ResourcePending {...day} /> : undefined
+      }
+      photosPendingSlot={
+        photos.data === undefined ? <ResourcePending {...photos} /> : undefined
+      }
       commentsSlot={
-        day ? (
+        day.data?.[0] ? (
           <CommentsPanel
-            ownerId={ownerId}
+            ownerId={context.ownerId}
             target={{ type: 'nutrition_day', id: date }}
           />
         ) : undefined

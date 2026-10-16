@@ -50,7 +50,7 @@ export function AnalyticsDataQuality({ data }: { data: AnalyticsData }) {
             )}
           </>
         )}
-        <Details label={m.methods}>
+        <Details stateKey="quality" label={m.methods}>
           <Stack>
             <Text size="sm">{m.methodsText}</Text>
             <Text size="sm">{m.qualityExplanation}</Text>

@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
-import { test, expect, type Page } from '../ci/isolated-test';
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { expect, test, type Page } from '../ci/isolated-test';
 import { getSessionWith429Retry } from './auth-session';
 
 async function login(page: Page, role: 'owner' | 'trainer', origin: string) {
@@ -151,7 +151,7 @@ test('owner imports the reference PDF and trainer receives only granted access',
   const upload = await uploaded;
   expect(upload.status()).toBe(201);
   const document = (await upload.json()) as {
-    document: { id: string; pageCount: number };
+    document: { id: string; filename: string; pageCount: number };
     importJob: { id: string; status: string } | null;
     duplicate: boolean;
   };
@@ -219,6 +219,96 @@ test('owner imports the reference PDF and trainer receives only granted access',
   await expect(
     page.getByRole('cell', { name: 'Витамин D (25-OH)' }),
   ).toBeVisible();
+
+  // Document citations use the same durable read path as the document itself.
+  const documentPath = `/anamnesis/documents/${document.document.id}`;
+  const observationsPath = `/api/anamnesis/documents/${document.document.id}/observations?${ownerQuery}`;
+  const citations = (await (
+    await page.request.get(observationsPath)
+  ).json()) as Array<{ sources: Array<{ rawText: string }> }>;
+  const quote = citations.flatMap((row) => row.sources)[0]!.rawText;
+  await page.goto(documentPath);
+  const viewer = page.getByTestId('anamnesis-document-viewer');
+  await expect(viewer.getByText(quote, { exact: false }).first()).toBeVisible();
+  await page.route(
+    `**/api/anamnesis/documents/${document.document.id}/observations?*`,
+    (route) => route.fulfill({ status: 503, json: { error: 'Unavailable' } }),
+  );
+  let failedRefresh = false;
+  const observeRefresh = (response: import('@playwright/test').Response) => {
+    if (
+      response
+        .url()
+        .includes(`/documents/${document.document.id}/observations?`) &&
+      response.status() === 503
+    )
+      failedRefresh = true;
+  };
+  page.on('response', observeRefresh);
+  await page.bringToFront();
+  await expect
+    .poll(() => page.evaluate(() => globalThis.document.visibilityState))
+    .toBe('visible');
+  // Reconnect can coalesce with the initial access flight. Observe the actual
+  // failed resource read before asserting that its current citations survive.
+  await expect
+    .poll(async () => {
+      if (!failedRefresh)
+        await page.evaluate(() => window.dispatchEvent(new Event('online')));
+      return failedRefresh;
+    })
+    .toBe(true);
+  page.off('response', observeRefresh);
+  await expect(viewer.getByText(quote, { exact: false }).first()).toBeVisible();
+  await page.reload();
+  await expect(
+    viewer.getByRole('heading', {
+      name: document.document.filename,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(viewer.getByText(quote, { exact: false }).first()).toBeVisible();
+  await page.unroute(
+    `**/api/anamnesis/documents/${document.document.id}/observations?*`,
+  );
+
+  // A slow marker must not trigger a second observations GET after the hook's
+  // first request has completed. Background access checks are held separately.
+  await page.route('**/api/read/context', (route) => route.abort('failed'));
+  let releaseMarker!: () => void;
+  const heldMarker = new Promise<void>((resolve) => {
+    releaseMarker = resolve;
+  });
+  let observationReads = 0;
+  await page.route('**/api/anamnesis/markers/alt?*', async (route) => {
+    await heldMarker;
+    await route.continue().catch(() => {});
+  });
+  await page.route(
+    '**/api/anamnesis/markers/alt/observations?*',
+    async (route) => {
+      observationReads++;
+      await route.continue();
+    },
+  );
+  try {
+    await page.goto('/anamnesis/markers/alt');
+    await expect.poll(() => observationReads).toBe(1);
+    releaseMarker();
+    await expect(
+      page.getByRole('heading', {
+        name: 'Аланинаминотрансфераза',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    expect(observationReads).toBe(1);
+  } finally {
+    releaseMarker();
+    await page.unroute('**/api/anamnesis/markers/alt?*');
+    await page.unroute('**/api/anamnesis/markers/alt/observations?*');
+    await page.unroute('**/api/read/context');
+  }
 
   // Synthetic pending review fixture in the disposable E2E DB; real auth, persistence and confirm API.
   const altRows = (await (
@@ -479,6 +569,89 @@ test('owner imports the reference PDF and trainer receives only granted access',
   expect(trainerFile.status()).toBe(200);
   expect(trainerFile.headers()['content-type']).toBe('application/pdf');
 
+  // An object-level denial clears only that detail; the trainer session stays valid.
+  await trainerPage.goto(documentPath);
+  await expect(
+    trainerPage.getByRole('heading', {
+      name: document.document.filename,
+      exact: true,
+    }),
+  ).toBeVisible();
+  const documentApiPath = `/api/anamnesis/documents/${document.document.id}`;
+  const savedDocumentReads = () =>
+    trainerPage.evaluate(
+      (path) =>
+        new Promise<string[]>((resolve, reject) => {
+          const request = indexedDB.open('yazio-offline-read-v1', 3);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction('resources', 'readonly');
+            const keys = tx.objectStore('resources').getAllKeys();
+            keys.onsuccess = () =>
+              resolve(
+                keys.result.filter(
+                  (key): key is string =>
+                    typeof key === 'string' && key.includes(path),
+                ),
+              );
+            keys.onerror = () => reject(keys.error);
+            tx.oncomplete = () => db.close();
+          };
+        }),
+      documentApiPath,
+    );
+  await expect.poll(savedDocumentReads).not.toHaveLength(0);
+  expect(
+    (
+      await page.request.put(
+        `/api/anamnesis/access/documents/${document.document.id}?${ownerQuery}`,
+        {
+          headers: { origin },
+          data: { trainerId: trainer.id, enabled: false },
+        },
+      )
+    ).status(),
+  ).toBe(204);
+  const deniedDocument = trainerPage.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === documentApiPath &&
+      response.status() === 403,
+  );
+  await trainerPage.bringToFront();
+  await expect
+    .poll(async () => {
+      await trainerPage.evaluate(() =>
+        window.dispatchEvent(new Event('focus')),
+      );
+      return trainerPage
+        .getByRole('heading', { name: document.document.filename, exact: true })
+        .count();
+    })
+    .toBe(0);
+  const deniedDocumentResponse = await deniedDocument;
+  expect((await deniedDocumentResponse.json()).error).toBe('FORBIDDEN');
+  await expect(
+    trainerPage.getByRole('heading', {
+      name: document.document.filename,
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(trainerPage.locator('object')).toHaveCount(0);
+  await expect(
+    trainerPage.locator(`a[href^="${documentApiPath}/file"]`),
+  ).toHaveCount(0);
+  await expect.poll(savedDocumentReads).toHaveLength(0);
+  expect((await getSessionWith429Retry(trainerPage.request)).user.id).toBe(
+    trainer.id,
+  );
+  expect(
+    (
+      await trainerPage.request.get(`/api/anamnesis/overview?${trainerQuery}`)
+    ).status(),
+  ).toBe(200);
+  await expect(trainerPage).toHaveURL(new RegExp(documentPath));
+
   // Отзыв гранта на показатель немедленно закрывает отчёт.
   await page.request.put(
     `/api/anamnesis/access/markers/vitamin-d-25oh?${ownerQuery}`,
@@ -629,6 +802,10 @@ test('owner imports the reference PDF and trainer receives only granted access',
   );
   await alt.check();
   await expect(builder.locator('iframe')).toHaveCount(0);
-  await expect(builder.getByRole('alert')).toBeVisible();
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'Доступ к разделу анамнеза не предоставлен.' }),
+  ).toBeVisible();
   await trainerContext.close();
 });

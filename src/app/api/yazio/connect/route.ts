@@ -1,12 +1,13 @@
+import { nutritionSyncMessages as messages } from '@/contracts/nutrition-sync';
+import { withApiErrors } from '@/server/auth/api-response';
+import { json, readBody, respond, sameOrigin } from '@/server/nutrition/http';
 import {
   connectYazio,
   YazioConnectionUnavailableError,
 } from '@/server/yazio/connection';
 import { yazioOwner } from '@/server/yazio/settings';
-import { sameOrigin, readBody, respond, json } from '@/server/nutrition/http';
-import { nutritionSyncMessages as messages } from '@/contracts/nutrition-sync';
 
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     await yazioOwner(request.headers);
@@ -24,3 +25,5 @@ export async function POST(request: Request) {
     }
   });
 }
+
+export const POST = withApiErrors(POSTHandler);

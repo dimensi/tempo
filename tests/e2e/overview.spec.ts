@@ -1,3 +1,4 @@
+import { signInFixture } from '../ci/real-auth';
 import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '../ci/isolated-test';
 import { execFileSync } from 'node:child_process';
@@ -8,6 +9,7 @@ import {
 const timezone = 'America/Los_Angeles';
 test.use({ timezoneId: timezone });
 async function login(page: Page, role = 'owner') {
+  if (role === 'trainer') return signInFixture(page, role);
   await page.goto('/login');
   await page.getByLabel('Электронная почта').fill(`${role}@example.test`);
   await page
@@ -67,7 +69,13 @@ test('real overview shows empty, partial and populated data with local dates and
     page.getByText('Не удалось загрузить обзор. Попробуйте ещё раз.'),
   ).toBeVisible();
   await page.unroute('**/api/overview?*');
-  await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await page.evaluate(() => {
+    // A background revalidation may already have recovered between these steps.
+    const retry = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Повторить',
+    );
+    retry?.click();
+  });
   fixture(today, 'empty');
   await page.reload();
   await expect(
@@ -214,7 +222,7 @@ test('real overview shows empty, partial and populated data with local dates and
   const granted = await trainerPage.request.get('/api/overview?timezone=UTC');
   expect(granted.status()).toBe(200);
   expect(await granted.json()).not.toHaveProperty('sync');
-  await trainerPage.reload();
+  await trainerPage.goto('/');
   await expect(
     trainerPage.getByText('Синхронизация дневника', { exact: true }),
   ).toHaveCount(0);
@@ -229,12 +237,48 @@ test('real overview shows empty, partial and populated data with local dates and
   expect(
     (await trainerPage.request.get('/api/overview?timezone=UTC')).status(),
   ).toBe(403);
-  await trainerPage.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(
-    trainerPage.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
-  ).toBeVisible();
+  await trainerPage
+    .evaluate(() => window.dispatchEvent(new Event('focus')))
+    .catch((error: Error) => {
+      // The already-running access check may have started the required logout navigation.
+      if (!error.message.includes('Execution context was destroyed'))
+        throw error;
+    });
+  await expect(trainerPage).toHaveURL('/login');
   await expect(
     trainerPage.getByRole('heading', { name: 'Обзор', exact: true }),
   ).not.toBeVisible();
   await trainerContext.close();
+});
+
+test('overview refreshes on local midnight without a focus event', async ({
+  page,
+}) => {
+  const beforeMidnight = new Date('2026-10-17T06:59:58Z');
+  const today = dateInTimezone(beforeMidnight, timezone);
+  const tomorrow = shiftDate(today, 1);
+  // Let Next.js finish its initial navigation before pausing all timers.
+  await page.clock.install({ time: new Date('2026-10-17T06:59:00Z') });
+  let responseDay = today;
+  let reads = 0;
+  await page.route('**/api/overview?*', async (route) => {
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    const data = await response.json();
+    reads++;
+    await route.fulfill({ response, json: { ...data, today: responseDay } });
+  });
+  await login(page);
+  const diary = page.getByRole('link', {
+    name: 'Открыть дневник',
+    exact: true,
+  });
+  await expect(diary).toHaveAttribute('href', `/diary?date=${today}`);
+  await page.clock.pauseAt(beforeMidnight);
+  const initialReads = reads;
+  responseDay = tomorrow;
+  await page.clock.fastForward(2100);
+  await expect(diary).toHaveAttribute('href', `/diary?date=${tomorrow}`);
+  expect(reads).toBeGreaterThan(initialReads);
+  await expect(diary).toBeVisible();
 });

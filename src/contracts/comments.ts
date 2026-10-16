@@ -31,7 +31,7 @@ export const updateCommentInput = z
 export type CommentTarget = z.infer<typeof commentTarget>;
 export type CommentDto = {
   id: string;
-  authorId: string;
+  authorId: string | null;
   authorName: string;
   body: string;
   parentId: string | null;

@@ -1,13 +1,14 @@
-import { updateWorkoutPlan, deleteWorkoutPlan } from '@/server/workouts';
+import { withApiErrors } from '@/server/auth/api-response';
+import { deleteWorkoutPlan, updateWorkoutPlan } from '@/server/workouts';
 import {
   checkWorkoutOrigin,
+  readWorkoutJson,
+  workoutDeleteBody,
   workoutResponse,
   workoutUpdateBody,
-  workoutDeleteBody,
-  readWorkoutJson,
 } from '@/server/workouts/http';
 type Context = { params: Promise<{ id: string }> };
-export async function PUT(request: Request, context: Context) {
+async function PUTHandler(request: Request, context: Context) {
   return workoutResponse(async () => {
     checkWorkoutOrigin(request);
     const { revision, data } = workoutUpdateBody.parse(
@@ -22,7 +23,7 @@ export async function PUT(request: Request, context: Context) {
     );
   });
 }
-export async function DELETE(request: Request, context: Context) {
+async function DELETEHandler(request: Request, context: Context) {
   return workoutResponse(async () => {
     checkWorkoutOrigin(request);
     const { revision } = workoutDeleteBody.parse(
@@ -37,3 +38,7 @@ export async function DELETE(request: Request, context: Context) {
     return null;
   });
 }
+
+export const PUT = withApiErrors(PUTHandler);
+
+export const DELETE = withApiErrors(DELETEHandler);

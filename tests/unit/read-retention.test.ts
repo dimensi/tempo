@@ -1,12 +1,14 @@
 import { expect, it } from 'vitest';
 import {
   pruneReadRecords,
+  readRecordSchema,
   readResponseSchema,
   type ReadRecord,
 } from '@/contracts/read-resources';
 const now = Date.parse('2026-10-15T12:00:00Z');
 const row = (key: string, touchedAt = now): ReadRecord => ({
-  version: 1,
+  version: 2,
+  coverage: 'complete',
   key,
   body: '{}',
   savedAt: now - 1000,
@@ -57,4 +59,20 @@ it('does not put credentials, raw providers, import diagnostics or file response
     refreshToken: 'never-store',
   });
   expect(parsed.success).toBe(false);
+});
+
+it('requires explicit coverage and discards obsolete response records instead of guessing completeness', () => {
+  expect(
+    readRecordSchema.safeParse({
+      version: 1,
+      key: '/api/measurements',
+      body: '[]',
+      savedAt: now,
+      touchedAt: now,
+    }).success,
+  ).toBe(false);
+  expect(
+    readRecordSchema.parse({ ...row('/api/measurements'), coverage: 'partial' })
+      .coverage,
+  ).toBe('partial');
 });

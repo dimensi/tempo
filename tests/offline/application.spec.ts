@@ -1,998 +1,460 @@
-import { test, expect, type Page } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
-import { build } from 'esbuild';
-import { offlineFixture } from './fixtures';
-import { shiftDate } from '../../src/contracts/nutrition-sync-dates';
-// These fixtures seed calendar days with toISOString(), independent of host timezone.
+import { expect, test, type Page } from '../ci/isolated-test';
+import { syntheticDay } from '../unit/reports/fixtures';
+import { seedVideoDraft, storedRows } from '../e2e/local-storage';
 test.use({ timezoneId: 'UTC' });
-let harness: string;
-test.beforeAll(async () => {
-  harness = (
-    await build({
-      entryPoints: ['tests/offline/browser-harness.ts'],
-      bundle: true,
-      write: false,
-      format: 'iife',
-      platform: 'browser',
-      tsconfig: 'tsconfig.json',
-    })
-  ).outputFiles[0]!.text;
-});
 async function signIn(page: Page, role = 'owner') {
-  const login = () =>
-    page.request.post('/api/auth/sign-in/email', {
-      headers: { origin: String(test.info().project.use.baseURL) },
-      data: {
-        email: `${role}@example.test`,
-        password: 'Test-only-password-12345',
-      },
-    });
-  let response = await login();
-  if (response.status() === 429) {
-    const seconds = Number(
-      response.headers()['retry-after'] ??
-        response.headers()['x-retry-after'] ??
-        10,
-    );
-    await new Promise((resolve) => setTimeout(resolve, (seconds + 1) * 1000));
-    response = await login();
-  }
+  const response = await page.request.post('/api/auth/sign-in/email', {
+    headers: { origin: String(test.info().project.use.baseURL) },
+    data: {
+      email: `${role}@example.test`,
+      password: 'Test-only-password-12345',
+    },
+  });
   expect(response.status()).toBe(200);
 }
-function seedReal() {
+async function menu(page: Page) {
+  const button = page.getByRole('button', { name: 'Навигация', exact: true });
+  if (await button.isVisible()) {
+    if ((await button.getAttribute('aria-expanded')) !== 'true')
+      await button.click();
+  }
+}
+function seed() {
   const db = new Database('.data/e2e.sqlite');
   const owner = db
     .prepare('SELECT id FROM user WHERE email = ?')
     .get('owner@example.test') as { id: string };
   const date = new Date().toISOString().slice(0, 10);
-  const old = shiftDate(date, -30);
-  const fixture = offlineFixture(Date.now());
-  const day = {
-    ...fixture.diary[0]!,
-    meals: fixture.diary[0]!.meals.map((meal) => ({
-      ...meal,
-      entries: meal.entries.map(({ key, ...entry }) => ({
-        ...entry,
-        id: key,
-        sourceId: null,
-        addedAt: null,
-        consumedAt: null,
-        editedAt: null,
-      })),
-    })),
-  };
+  const day = syntheticDay(date);
   db.prepare(
     'INSERT OR REPLACE INTO nutrition_days(owner_id,date,snapshot,fetched_at) VALUES(?,?,?,?)',
   ).run(owner.id, date, JSON.stringify(day), new Date().toISOString());
-  const exercises = [
-    { name: 'Synthetic shared squat', sets: [{ reps: 8, weightKg: 0 }] },
-  ];
-  const session = (value: string) => ({
-    date: value,
-    title:
-      value === date ? 'Synthetic ordinary result' : 'Synthetic older result',
-    exercises,
-    note: 'Literal result note',
-    status: 'completed',
-    planId: null,
-    plannedWorkoutId: null,
-    planSnapshot: null,
-  });
-  for (const [id, value] of [
-    ['offline-real-session', date],
-    ['offline-older-session', old],
-  ])
-    db.prepare(
-      'INSERT OR REPLACE INTO workout_sessions(id,owner_id,date,data,revision,created_at,updated_at) VALUES(?,?,?,?,1,?,?)',
-    ).run(
-      id,
-      owner.id,
-      value,
-      JSON.stringify(session(value!)),
-      new Date().toISOString(),
-      new Date().toISOString(),
-    );
-  return { db, ownerId: owner.id, date, old };
-}
-async function waitSaved(page: Page) {
-  await page.addScriptTag({ content: harness });
-  await expect
-    .poll(() => page.evaluate('window.offlineTest.read(Date.now())'))
-    .toMatchObject({ present: true, enabled: true });
-  await page.evaluate(() =>
-    navigator.serviceWorker.ready.then(() => undefined),
+  db.prepare(
+    'INSERT OR REPLACE INTO measurements(id,owner_id,measured_at,values_json,note) VALUES(?,?,?,?,?)',
+  ).run(
+    'cached-measurement',
+    owner.id,
+    date,
+    JSON.stringify([{ metric: 'weight', value: '72', unit: 'kg' }]),
+    'Synthetic cached observation',
   );
-  if (
-    !(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))
-  ) {
-    await page.reload();
-    await page.addScriptTag({ content: harness });
-  }
+  const trainer = db
+    .prepare('SELECT id FROM user WHERE email = ?')
+    .get('trainer@example.test') as { id: string };
+  db.prepare(
+    'INSERT OR REPLACE INTO trainer_access(owner_id,trainer_id,created_at) VALUES(?,?,?)',
+  ).run(owner.id, trainer.id, Date.now());
+  db.close();
+  return date;
 }
-async function openNavigation(page: Page) {
-  const burger = page.getByRole('button', { name: 'Навигация', exact: true });
-  if (await burger.isVisible()) await burger.click();
+async function stored(page: Page) {
+  return page.evaluate(
+    () =>
+      new Promise<number>((resolve, reject) => {
+        const request = indexedDB.open('yazio-offline-read-v1', 3);
+        request.onsuccess = () => {
+          const db = request.result;
+          const tx = db.transaction('resources', 'readonly');
+          const rows = tx.objectStore('resources').count();
+          rows.onsuccess = () => resolve(rows.result);
+          tx.oncomplete = () => db.close();
+        };
+        request.onerror = () => reject(request.error);
+      }),
+  );
 }
-test('stale online flag and stalled requests keep navigation local without loading screens', async ({
-  page,
-  request,
-}) => {
-  const data = seedReal();
-  try {
-    await signIn(page);
-    await page.goto(`/diary?date=${data.date}`);
-    await waitSaved(page);
-    await expect(
-      page.getByText('Synthetic breakfast', { exact: true }),
-    ).toBeVisible();
-    await page.evaluate(() => {
-      Reflect.set(window, 'retainedDocument', 'same document');
-    });
-    await request.post('/__offline-test/control', {
-      data: {
-        stalledNavigation: true,
-        stalledIdentity: true,
-        stalledApi: true,
-      },
-    });
-    expect(await page.evaluate(() => navigator.onLine)).toBe(true);
-    await openNavigation(page);
-    await page.getByRole('link', { name: 'Обзор', exact: true }).click();
-    // The saved destination appears before the stalled identity/RSC work and
-    // replaces the current route without a document reload or loading screen.
-    await expect(
-      page.getByRole('heading', { name: 'Обзор', exact: true }),
-    ).toBeVisible();
-    await expect(
-      page
-        .getByRole('status')
-        .filter({ hasText: 'Сеть или сервер недоступны' }),
-    ).toBeVisible();
-    for (const [label, path] of [
-      ['Тренировки', '/workouts'],
-      ['Аналитика', '/analytics'],
-      ['Обзор', '/'],
-    ]) {
-      await openNavigation(page);
-      await page.getByRole('link', { name: label!, exact: true }).click();
-      await expect.poll(() => new URL(page.url()).pathname).toBe(path);
-      await expect(page.locator('.mantine-Loader-root:visible')).toHaveCount(0);
-      await expect(
-        page.getByRole('link', { name: label!, exact: true }),
-      ).toHaveAttribute('aria-current', 'page');
-    }
-    expect(
-      await page.evaluate(() => Reflect.get(window, 'retainedDocument')),
-    ).toBe('same document');
-    await request.post('/__offline-test/control', {
-      data: {
-        stalledNavigation: false,
-        stalledIdentity: false,
-        stalledApi: false,
-      },
-    });
-    await page
-      .getByRole('button', { name: 'Проверить соединение', exact: true })
-      .click();
-    await expect(
-      page.getByRole('status').filter({ hasText: 'Сеть доступна' }),
-    ).toBeVisible();
-    expect(
-      await page.evaluate(() => Reflect.get(window, 'retainedDocument')),
-    ).toBe('same document');
-    await expect(
-      page.getByRole('heading', { name: 'Обзор', exact: true }),
-    ).toBeVisible();
-    await openNavigation(page);
-    await page
-      .getByRole('link', { name: 'Дневник питания', exact: true })
-      .click();
-    await expect(
-      page.getByRole('button', { name: 'Обновить день', exact: true }),
-    ).toBeEnabled();
-    await openNavigation(page);
-    await page.getByRole('link', { name: 'Тренировки', exact: true }).click();
-    await expect(
-      page.getByRole('button', { name: 'Добавить тренировку', exact: true }),
-    ).toBeEnabled();
-  } finally {
-    await request.post('/__offline-test/control', {
-      data: {
-        stalledNavigation: false,
-        stalledIdentity: false,
-        stalledApi: false,
-      },
-    });
-    data.db.close();
-  }
-});
-test('automatic cache reuses ordinary routes, cold reload, navigation and shared views without writes', async ({
-  page,
-  context,
-}, info) => {
-  const data = seedReal();
-  try {
-    await signIn(page);
-    await page.goto(`/diary?date=${data.date}`);
-    await waitSaved(page);
-    await expect(
-      page.getByText('Synthetic breakfast', { exact: true }),
-    ).toBeVisible();
-    await page.goto(
-      `/workouts/sessions/offline-real-session?date=${data.date}`,
-    );
-    await expect(
-      page.getByRole('heading', {
-        name: 'Synthetic ordinary result',
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect
-      .poll(
-        async () => {
-          await page.addScriptTag({ content: harness });
-          return page.evaluate(async () => {
-            const request = indexedDB.open('yazio-offline-read-v1', 3);
-            return new Promise((resolve) => {
-              request.onsuccess = () => {
-                const db = request.result;
-                const tx = db.transaction('bundle');
-                const read = tx.objectStore('bundle').get('current');
-                read.onsuccess = () => {
-                  resolve(
-                    read.result?.snapshot.workoutSessions.some(
-                      (item: { href: string }) =>
-                        item.href === '/workouts/sessions/offline-real-session',
-                    ),
-                  );
-                  db.close();
-                };
-              };
-            });
-          });
-        },
-        { timeout: 15000 },
-      )
-      .toBe(true);
-    expect(
-      await page.evaluate(
-        async () =>
-          (
-            await fetch('/api/settings/steps-goal', {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ dailyStepsGoal: 12345 }),
-            })
-          ).status,
-      ),
-    ).toBe(200);
-    await page.addScriptTag({ content: harness });
-    await expect
-      .poll(() => page.evaluate('window.offlineTest.savedGoal()'), {
-        timeout: 15000,
-      })
-      .toBe(12345);
-    await context.setOffline(true);
-    // The already-open genuine Next route switches before any cold document fallback.
-    await expect(
-      page
-        .getByRole('status')
-        .filter({ hasText: 'Сеть или сервер недоступны · сохранённые данные' }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole('heading', {
-        name: 'Synthetic ordinary result',
-        exact: true,
-      }),
-    ).toBeVisible();
-    await page
-      .getByRole('link', { name: 'К тренировкам', exact: true })
-      .click();
-    await expect(page).toHaveURL(new RegExp(`/workouts\\?date=${data.date}`));
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
-      'Тренировки',
-    );
-    await expect(
-      page
-        .getByRole('status')
-        .filter({ hasText: 'Сеть или сервер недоступны' }),
-    ).toHaveCount(1);
 
-    await page
-      .getByRole('link', { name: 'Открыть', exact: true })
-      .and(page.locator('a[href^="/workouts/sessions/offline-real-session?"]'))
-      .click();
-    await expect(page).toHaveURL(
-      new RegExp(`/workouts/sessions/offline-real-session\\?date=${data.date}`),
-    );
-    await page.reload();
-    await expect(
-      page.getByRole('heading', {
-        name: 'Synthetic ordinary result',
-        exact: true,
-      }),
-    ).toBeVisible();
-    await page
-      .getByRole('link', { name: 'К тренировкам', exact: true })
-      .click();
-    await expect(page).toHaveURL(new RegExp(`/workouts\\?date=${data.date}`));
-    await expect(
-      page.getByRole('heading', {
-        name: 'Synthetic ordinary result',
-        exact: true,
-      }),
-    ).toBeVisible();
-    await openNavigation(page);
-    await page
-      .getByRole('link', { name: 'Дневник питания', exact: true })
-      .click();
-    await expect(
-      page.getByText('Synthetic breakfast', { exact: true }),
-    ).toBeVisible();
-    const writes: string[] = [];
-    page.on('request', (request) => {
-      if (request.url().includes('/api/') && request.method() !== 'GET')
-        writes.push(request.url());
-    });
-    const burger = page.getByRole('button', { name: 'Навигация', exact: true });
-    if (await burger.isVisible())
-      await expect(burger).toHaveAttribute('aria-expanded', 'false');
-    for (const theme of ['light', 'dark']) {
-      if (theme === 'dark')
-        await page
-          .getByRole('button', { name: 'Переключить тему', exact: true })
-          .click();
-      await page.screenshot({
-        path: info.outputPath(`offline-diary-${theme}.png`),
-        fullPage: true,
-        animations: 'disabled',
-      });
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth,
-        ),
-      ).toBe(true);
-    }
-    await expect(
-      page.getByRole('button', { name: 'Обновить день', exact: true }),
-    ).toBeDisabled();
-    await page.goto(`/diary?date=${shiftDate(data.date, -15)}`);
-    await expect(
-      page.getByText('Нет сохранённых данных, нужна сеть', { exact: true }),
-    ).toBeVisible();
-    await page.goto(
-      `/workouts/sessions/offline-real-session?date=${data.date}`,
-    );
-    await expect(
-      page.getByRole('heading', {
-        name: 'Synthetic ordinary result',
-        exact: true,
-      }),
-    ).toBeVisible();
-    for (const label of ['Изменить', 'Результат', 'Копировать', 'Удалить'])
-      await expect(
-        page.getByRole('button', { name: label, exact: true }),
-      ).toBeDisabled();
-    await expect(page.locator('video')).toHaveCount(0);
-    for (const theme of ['dark', 'light']) {
-      if (theme === 'light')
-        await page
-          .getByRole('button', { name: 'Переключить тему', exact: true })
-          .click();
-      await page.screenshot({
-        path: info.outputPath(`offline-workout-${theme}.png`),
-        fullPage: true,
-        animations: 'disabled',
-      });
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth,
-        ),
-      ).toBe(true);
-    }
-
-    await page.goto(`/workouts/native/987654?date=${data.date}`);
-    await expect(
-      page.getByText('Нет сохранённых данных, нужна сеть', { exact: true }),
-    ).toBeVisible();
-    await openNavigation(page);
-    await page.getByRole('link', { name: 'Настройки', exact: true }).click();
-    await expect(
-      page.getByLabel('Часовой пояс', { exact: true }),
-    ).toBeDisabled();
-    await expect(page.getByLabel('Цель шагов', { exact: true })).toHaveValue(
-      '12345',
-    );
-    expect(writes).toEqual([]);
-    data.db
-      .prepare('UPDATE session SET expires_at=0 WHERE user_id=?')
-      .run(data.ownerId);
-    await context.setOffline(false);
-    // Reconnect conceals expired private data but must not navigate automatically.
-    await expect(page.getByRole('link', { name: 'Войти заново' })).toBeVisible({
-      timeout: 15000,
-    });
-    await expect(page).not.toHaveURL(/\/login$/);
-    await page.getByRole('link', { name: 'Войти заново' }).click();
-    await expect(page).toHaveURL(/\/login$/, { timeout: 15000 });
-    await page.addScriptTag({ content: harness });
-    await expect
-      .poll(() => page.evaluate('window.offlineTest.rawCounts()'))
-      .toEqual({ bundle: 0, photos: 0 });
-    await signIn(page, 'trainer');
-    expect((await page.request.get('/api/offline/identity')).status()).toBe(
-      403,
-    );
-  } finally {
-    await context.setOffline(false);
-    data.db
-      .prepare('DELETE FROM nutrition_days WHERE owner_id=? AND date=?')
-      .run(data.ownerId, data.date);
-    data.db
-      .prepare('DELETE FROM owner_settings WHERE owner_id=?')
-      .run(data.ownerId);
-    data.db
-      .prepare('DELETE FROM workout_sessions WHERE id IN (?,?)')
-      .run('offline-real-session', 'offline-older-session');
-    data.db.close();
-  }
-});
-test('automatic activation waits for pending auth or provider mutation across tabs', async ({
+test('cached measurements render before stalled API reads finish', async ({
   page,
-  context,
 }) => {
-  await page.goto('/login');
-  await page.addScriptTag({ content: harness });
-  await page.evaluate('window.offlineTest.startMutation()');
-  await expect
-    .poll(() => page.evaluate('window.offlineTest.enteredMutation()'))
-    .toBe(true);
-  const sibling = await context.newPage();
-  await signIn(sibling);
-  await sibling.goto('/settings#offline');
-  await sibling.addScriptTag({ content: harness });
-  await expect
-    .poll(() => sibling.evaluate('window.offlineTest.read(Date.now())'))
-    .toEqual({ present: false, photos: 0, enabled: false });
-  await page.evaluate('window.offlineTest.finishMutation()');
-  await sibling.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await waitSaved(sibling);
-});
-
-test('refill holds a shared lock past advisory-check gap and cannot publish during a held provider request', async ({
-  page,
-  context,
-}) => {
-  await page.goto('/login');
-  await page.addScriptTag({ content: harness });
-  const provider = await context.newPage();
-  await provider.goto('/login');
-  await provider.addScriptTag({ content: harness });
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
+  await expect(
+    page.getByText('Synthetic cached observation').first(),
+  ).toBeVisible();
+  await expect.poll(() => stored(page)).toBeGreaterThan(0);
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await provider.route('**/api/transformmate/connect', async (route) => {
-    await held;
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: '{}',
-    });
-  });
-  await page.evaluate('window.offlineTest.startRefillRace()');
-  await expect
-    .poll(() => page.evaluate('window.offlineTest.raceState().entered'))
-    .toBe(true);
+  await page.route(
+    /\/api\/(?:measurements(?:\?|$)|health\/weight)/,
+    async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    },
+  );
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByLabel('Заметка', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('Synthetic cached observation').first(),
+    ).toBeVisible();
+  } finally {
+    release();
+  }
+});
+test('connection changes and background refresh preserve the current form node and draft', async ({
+  page,
+  context,
+}) => {
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
+  const note = page.getByLabel('Заметка', { exact: true });
+  await note.fill('Unsent resilience draft');
+  await page.evaluate(() =>
+    Reflect.set(
+      window,
+      'originalDraftNode',
+      document.querySelector('textarea'),
+    ),
+  );
+  await context.setOffline(true);
+  await expect(note).toHaveValue('Unsent resilience draft');
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(note).toHaveValue('Unsent resilience draft');
   expect(
-    await page.evaluate(async () =>
-      (await navigator.locks.query()).held?.some(
-        (lock) =>
-          lock.name === 'yazio-offline-mutation' && lock.mode === 'shared',
-      ),
+    await page.evaluate(
+      () =>
+        Reflect.get(window, 'originalDraftNode') ===
+        document.querySelector('textarea'),
     ),
   ).toBe(true);
-  await provider.evaluate('window.offlineTest.startHeldProvider()');
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        Object.keys(localStorage).some((key) =>
-          key.startsWith('yazio.offline.intent:'),
-        ),
-      ),
-    )
-    .toBe(true);
-  expect(
-    await provider.evaluate('window.offlineTest.heldProviderEntered()'),
-  ).toBe(false);
-  await page.evaluate('window.offlineTest.releaseRefillIdentity()');
-  await page.evaluate('window.offlineTest.waitRefill()');
-  await expect
-    .poll(() => provider.evaluate('window.offlineTest.heldProviderEntered()'))
-    .toBe(true);
-  expect(await page.evaluate('window.offlineTest.raceState()')).toMatchObject({
-    commits: 0,
-    published: [],
-  });
-  await expect(page.getByTestId('race-private')).toBeHidden();
-  const before = Number(
-    await page.evaluate('window.offlineTest.raceState().requests'),
-  );
-  await page.evaluate('window.offlineTest.retryRefill()');
-  expect(await page.evaluate('window.offlineTest.raceState()')).toMatchObject({
-    commits: 0,
-    published: [],
-    requests: before,
-  }); // ifAvailable skips rather than queues.
-  release();
-  expect(
-    await provider.evaluate('window.offlineTest.finishHeldProvider()'),
-  ).toBe(200);
-  await page.evaluate('window.offlineTest.setRaceGeneration()');
-  await page.evaluate('window.offlineTest.retryRefill()');
-  expect(await page.evaluate('window.offlineTest.raceState()')).toMatchObject({
-    commits: 1,
-    published: ['Z'.repeat(43)],
-    status: 'ready',
-  });
-  await expect(page.getByTestId('race-private')).toBeVisible();
-  expect(await page.evaluate('window.offlineTest.cacheWithoutLocks()')).toEqual(
-    { requests: 0, status: 'error', error: 'unavailable', bundle: null },
-  );
 });
-
-test('old workout detail bookmark without a query does not bypass the rolling retention window', async ({
+test('ordinary Next navigation and Back restore a measurement draft', async ({
   page,
-  context,
 }) => {
-  const data = seedReal();
-  try {
-    await signIn(page);
-    await page.goto('/workouts/sessions/offline-older-session');
-    await expect(
-      page.getByRole('heading', {
-        name: 'Synthetic older result',
-        exact: true,
-      }),
-    ).toBeVisible();
-    await waitSaved(page);
-    await expect
-      .poll(() =>
-        page.evaluate(async () => {
-          const request = indexedDB.open('yazio-offline-read-v1', 3);
-          return new Promise((resolve) => {
-            request.onsuccess = () => {
-              const db = request.result;
-              const tx = db.transaction('bundle');
-              const read = tx.objectStore('bundle').get('current');
-              read.onsuccess = () => {
-                resolve(
-                  read.result?.snapshot.workoutSessions.some(
-                    (item: { href: string }) =>
-                      item.href === '/workouts/sessions/offline-older-session',
-                  ),
-                );
-                db.close();
-              };
-            };
-          });
-        }),
-      )
-      .toBe(false);
-    await context.setOffline(true);
-    await page.reload();
-    await expect(page).toHaveURL('/workouts/sessions/offline-older-session');
-    await expect(
-      page.getByText('Нет сохранённых данных, нужна сеть', { exact: true }),
-    ).toBeVisible();
-  } finally {
-    await context.setOffline(false);
-    data.db
-      .prepare('DELETE FROM nutrition_days WHERE owner_id=? AND date=?')
-      .run(data.ownerId, data.date);
-    data.db
-      .prepare('DELETE FROM workout_sessions WHERE id IN (?,?)')
-      .run('offline-real-session', 'offline-older-session');
-    data.db.close();
-  }
-});
-
-test('linked TransformMate literal facts remain visible exactly once in plan day and deep detail', async ({
-  page,
-  context,
-}) => {
-  await page.goto('/login');
-  await page.addScriptTag({ content: harness });
-  await page.evaluate('window.offlineTest.seed(\u0027linked-plan\u0027)');
-  await page.evaluate('window.offlineTest.prepareShell()');
-  const date = new Date().toISOString().slice(0, 10);
-  await context.setOffline(true);
-  try {
-    await page.goto(`/workouts?date=${date}`);
-    await expect(page.getByText('Weight: 0 кг', { exact: true })).toHaveCount(
-      1,
-    );
-    await expect(
-      page.getByText('Duration: 01–03 мин', { exact: true }),
-    ).toHaveCount(1);
-    await page.goto(
-      `/workouts/plans/synthetic-plan/workouts/synthetic-workout?date=${date}`,
-    );
-    await expect(page.getByText('Weight: 0 кг', { exact: true })).toHaveCount(
-      1,
-    );
-    await page.addScriptTag({ content: harness });
-    await page.evaluate('window.offlineTest.removeLinkedNative()');
-    await page.reload();
-    await expect(
-      page.getByText('Synthetic movement', { exact: true }),
-    ).toHaveCount(1);
-    await page.goto(`/workouts?date=${date}`);
-    await expect(
-      page.getByText('Synthetic movement', { exact: true }),
-    ).toHaveCount(1);
-  } finally {
-    await context.setOffline(false);
-  }
-});
-
-test('owner results and manual measurements survive offline tab closure and synchronize once across two tabs', async ({
-  page,
-  context,
-}) => {
+  seed();
   await signIn(page);
-  await page.goto('/workouts');
-  await waitSaved(page);
-  const identity = await page.request.get('/api/auth/get-session');
-  const ownerId = (await identity.json()).user.id as string;
-  await expect
-    .poll(
-      async () =>
-        page.evaluate(
-          () =>
-            new Promise<boolean>((resolve) => {
-              const request = indexedDB.open('yazio-offline-writes-v1', 1);
-              request.onsuccess = () => {
-                const db = request.result;
-                const tx = db.transaction('state', 'readonly');
-                const get = tx.objectStore('state').get('current');
-                get.onsuccess = () => resolve(Boolean(get.result?.partition));
-                tx.oncomplete = () => db.close();
-              };
-            }),
-        ),
-      { timeout: 30000 },
-    )
-    .toBe(true);
-  const name = `Offline durable ${test.info().project.name}`;
-  await context.setOffline(true);
-  await page.goto('/workouts');
-  let panel = page.locator('[data-offline-write-private]');
-  await panel
-    .getByRole('button', { name: 'Записать тренировку', exact: true })
-    .click();
-  await panel.getByLabel('Упражнение').fill(name);
-  await panel.getByLabel('Вес, кг', { exact: true }).fill('42.5');
-  await panel.getByLabel('Повторения', { exact: true }).fill('9');
-  await panel
-    .getByRole('button', { name: 'Сохранить на устройстве', exact: true })
-    .click();
-  await expect(
-    panel.getByText('Сохранено на устройстве', { exact: true }),
-  ).toBeVisible();
   await page.goto('/measurements');
-  panel = page.locator('[data-offline-write-private]');
-  await panel
-    .getByRole('button', { name: 'Записать замер', exact: true })
-    .click();
-  await panel.getByLabel('Вес, кг', { exact: true }).fill('73.25');
-  await panel.getByLabel('Заметка', { exact: true }).fill(name);
-  await panel
-    .getByRole('button', { name: 'Сохранить на устройстве', exact: true })
-    .click();
+  await page.getByLabel('Заметка', { exact: true }).fill('Draft across routes');
+  await menu(page);
+  await page.getByRole('link', { name: 'Обзор', exact: true }).click();
+  await expect(page).toHaveURL('/');
+  await page.goBack();
+  await expect(page).toHaveURL('/measurements');
+  await expect(page.getByLabel('Заметка', { exact: true })).toHaveValue(
+    'Draft across routes',
+  );
+  await page.goForward();
+  await expect(page).toHaveURL('/');
+});
+test('server failure preserves last known data without offline banners or document navigation', async ({
+  page,
+}) => {
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
   await expect(
-    panel.getByText('Сохранено на устройстве', { exact: true }),
+    page.getByText('Synthetic cached observation').first(),
   ).toBeVisible();
-  await page.close();
-  const reopened = await context.newPage();
-  await reopened.goto('/workouts');
-  await expect(reopened.locator('[data-offline-write-private]')).toContainText(
-    name,
+  await page.route('**/api/measurements?*', (route) =>
+    route.fulfill({ status: 503, json: { error: 'Unavailable' } }),
   );
-  await expect(reopened.locator('[data-offline-write-private]')).toContainText(
-    '42.5 × 9',
-  );
-  const second = await context.newPage();
-  await second.goto('/measurements');
-  await expect(second.locator('[data-offline-write-private]')).toContainText(
-    '73.25',
-  );
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(
-    second.getByText('Сохранено на устройстве', { exact: true }),
+    page.getByText('Synthetic cached observation').first(),
+  ).toBeVisible();
+  await expect(page).toHaveURL('/measurements');
+  expect(await page.locator('[data-read-workspace]').count()).toBe(0);
+});
+test('trainer cached data remains available until reconnect discovers revoked grant', async ({
+  page,
+  context,
+}) => {
+  seed();
+  await signIn(page, 'trainer');
+  await page.goto('/measurements');
+  await expect(
+    page.getByText('Synthetic cached observation').first(),
+  ).toBeVisible();
+  await expect.poll(() => stored(page)).toBeGreaterThan(0);
+  await seedVideoDraft(page);
+  await context.setOffline(true);
+  const db = new Database('.data/e2e.sqlite');
+  db.prepare('DELETE FROM trainer_access').run();
+  db.close();
+  await expect(
+    page.getByText('Synthetic cached observation').first(),
   ).toBeVisible();
   await context.setOffline(false);
-  await expect
-    .poll(
-      async () => {
-        const sessions = await reopened.request.get(
-          `/api/workouts?ownerId=${ownerId}`,
-        );
-        return (await sessions.json()).data.sessions.filter(
-          (item: { exercises: { name: string }[] }) =>
-            item.exercises.some((exercise) => exercise.name === name),
-        ).length;
-      },
-      { timeout: 45000 },
-    )
-    .toBe(1);
-  await expect
-    .poll(
-      async () => {
-        const measurements = await reopened.request.get(
-          `/api/measurements?ownerId=${ownerId}`,
-        );
-        return (await measurements.json()).filter(
-          (item: { note: string | null }) => item.note === name,
-        ).length;
-      },
-      { timeout: 45000 },
-    )
-    .toBe(1);
-  // Reconnection already navigates both offline shells back to the live app.
-  // Observe the acknowledgement without racing that navigation with another load.
-  await expect(
-    reopened
-      .locator('[data-offline-write-private]')
-      .getByText('Синхронизировано', { exact: true }),
-  ).toBeVisible();
-  await expect(
-    second
-      .locator('[data-offline-write-private]')
-      .getByText('Синхронизировано', { exact: true }),
-  ).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(page).toHaveURL('/login');
+  await expect.poll(() => stored(page)).toBe(0);
+  expect(await storedRows(page, 'tempo-video-upload', 'drafts', 1)).toBe(0);
+  const response = await page.request.get('/api/measurements?ownerId=unknown');
+  expect(response.status()).toBe(401);
 });
-
-test('saved sections show ordinary content and the complete report without network requests', async ({
+test('an action-level forbidden check does not clear cached data or log out', async ({
+  page,
+}) => {
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
+  await expect(
+    page.getByText('Synthetic cached observation').first(),
+  ).toBeVisible();
+  await page.route('**/api/read/context', (route) =>
+    route.fulfill({ status: 403, json: { error: 'FORBIDDEN' } }),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(
+    page.getByText('Synthetic cached observation').first(),
+  ).toBeVisible();
+  await expect(page).toHaveURL('/measurements');
+  expect((await page.request.get('/api/auth/get-session')).status()).toBe(200);
+});
+test('offline logout clears read cache and durable intent blocks old-session restoration', async ({
   page,
   context,
 }) => {
-  await page.goto('/login');
-  await page.addScriptTag({ content: harness });
-  await page.evaluate("window.offlineTest.seed('sections')");
-  await page.evaluate('window.offlineTest.prepareShell()');
-  const failures: string[] = [];
-  const apiRequests: string[] = [];
-  page.on('request', (request) => {
-    if (new URL(request.url()).pathname.startsWith('/api/'))
-      apiRequests.push(request.url());
-  });
-  page.on('pageerror', (error) => failures.push(error.message));
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
+  await expect.poll(() => stored(page)).toBeGreaterThan(0);
+  await seedVideoDraft(page);
   await context.setOffline(true);
-  try {
-    await page.goto('/');
-    await expect(
-      page.getByRole('heading', { name: 'Питание сегодня', exact: true }),
-    ).toBeVisible();
-    await page.goto('/analytics');
-    await expect(
-      page.getByRole('button', { name: '30 дней', exact: true }),
-    ).toBeVisible();
-    await page.getByRole('button', { name: '30 дней', exact: true }).click();
-    await expect(page).toHaveURL(/from=/);
-    await page.goto('/measurements');
-    await expect(
-      page.getByRole('cell', { name: 'Synthetic manual', exact: true }),
-    ).toBeVisible();
-    await page.goto('/settings');
-    await expect(page.getByLabel('Часовой пояс', { exact: true })).toHaveValue(
-      'UTC',
-    );
-    await expect(
-      page.getByLabel('Часовой пояс', { exact: true }),
-    ).toBeDisabled();
-    await expect(page.getByLabel('Цель шагов', { exact: true })).toHaveValue(
-      '10000',
-    );
-    await expect(page.getByLabel('Цель шагов', { exact: true })).toBeDisabled();
-    const date = new Date().toISOString().slice(0, 10);
-    await page.goto(`/diary?date=${date}`);
-    await expect(
-      page.getByText('Saved offline comment', { exact: true }),
-    ).toBeVisible();
-    await page.goto('/workouts/catalog');
-    await expect(
-      page.getByText('Saved catalog exercise', { exact: true }),
-    ).toBeVisible();
-    await page.goto('/reports');
-    await expect(
-      page
-        .frameLocator('iframe')
-        .getByText('Synthetic breakfast', { exact: true }),
-    ).toBeVisible();
-    expect(failures).toEqual([]);
-    expect(apiRequests).toEqual([]);
-  } finally {
-    await context.setOffline(false);
-  }
+  await menu(page);
+  await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+  await expect(page.getByLabel('Электронная почта')).toBeVisible();
+  expect(
+    await page.evaluate(() => localStorage.getItem('tempo:logout-pending')),
+  ).toBe('true');
+  await expect.poll(() => stored(page)).toBe(0);
+  expect(await storedRows(page, 'tempo-video-upload', 'drafts', 1)).toBe(0);
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  // Reconnect completes sign-out and redirects itself; a second navigation races it.
+  await expect(page).toHaveURL('/login');
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem('tempo:logout-pending')),
+    )
+    .toBeNull();
+  await page.getByLabel('Электронная почта').fill('owner@example.test');
+  await page
+    .getByRole('textbox', { name: 'Пароль', exact: true })
+    .fill('Test-only-password-12345');
+  await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  await expect(page).toHaveURL('/');
+  expect(
+    await page.evaluate(() => localStorage.getItem('tempo:logout-pending')),
+  ).toBeNull();
 });
-
-test('HTTP cache preparation failures keep live data, a single connection status and ordinary menu navigation', async ({
-  page,
-}) => {
-  const data = seedReal();
-  try {
-    await page.addInitScript(() => {
-      const original = window.fetch;
-      window.fetch = async (input, init) => {
-        const url = new URL(
-          typeof input === 'string'
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url,
-          location.href,
-        );
-        if (/^\/api\/offline\/(snapshot|anamnesis)$/.test(url.pathname))
-          return Response.json(
-            { error: 'OFFLINE_UNAVAILABLE' },
-            { status: 503 },
-          );
-        return original.call(window, input, init);
-      };
-    });
-    await signIn(page);
-    await page.goto(`/diary?date=${data.date}`);
-    await expect(
-      page.getByText('Synthetic breakfast', { exact: true }),
-    ).toBeVisible();
-    // Make the observed HTTP failure deterministic after all root effects mount.
-    expect(
-      await page.evaluate(
-        async () => (await fetch('/api/offline/snapshot')).status,
-      ),
-    ).toBe(503);
-    await expect(
-      page.getByRole('status').filter({ hasText: 'Сеть доступна' }),
-    ).toHaveCount(1);
-    await expect(
-      page.getByText('Сеть или сервер недоступны', { exact: false }),
-    ).toHaveCount(0);
-    await openNavigation(page);
-    await page.getByRole('link', { name: 'Обзор', exact: true }).click();
-    await expect(page).toHaveURL('/');
-    await expect(
-      page.getByRole('heading', { name: 'Обзор', exact: true }),
-    ).toBeVisible();
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
-      'Обзор',
-    );
-    await expect(
-      page.getByText('Нет сохранённых данных, нужна сеть', { exact: true }),
-    ).toHaveCount(0);
-    await openNavigation(page);
-    await page
-      .getByRole('link', { name: 'Дневник питания', exact: true })
-      .click();
-    await expect(
-      page.getByText('Synthetic breakfast', { exact: true }),
-    ).toBeVisible();
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
-      'Дневник питания',
-    );
-  } finally {
-    data.db.close();
-  }
-});
-
-test('retained diary stays paused during repeated offline menu navigation and reads local photo bytes', async ({
+test('local measurement commits survive reopening and synchronize only once', async ({
   page,
   context,
 }) => {
-  const data = seedReal();
-  try {
-    await signIn(page);
-    const uploaded = await page.request.post(
-      `/api/nutrition/photos?${new URLSearchParams({ ownerId: data.ownerId, date: data.date, daytime: 'breakfast' })}`,
-      {
-        headers: {
-          Origin: String(test.info().project.use.baseURL),
-          'Content-Type': 'image/png',
-        },
-        data: Buffer.from(
-          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a8O8AAAAASUVORK5CYII=',
-          'base64',
-        ),
-      },
-    );
-    expect(uploaded.status()).toBe(201);
-    await page.goto(`/diary?date=${data.date}`);
-    await waitSaved(page);
-    await expect
-      .poll(() => page.evaluate('window.offlineTest.read(Date.now())'))
-      .toMatchObject({ photos: 1 });
-    const errors: string[] = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    page.on('console', (message) => {
-      if (
-        /width\(0\).*height\(0\)|width\(-1\).*height\(-1\)/.test(message.text())
-      )
-        errors.push(message.text());
-    });
-    await context.setOffline(true);
-    await expect(
-      page.getByRole('region', { name: 'Завтрак', exact: true }).locator('img'),
-    ).toHaveAttribute('src', /^blob:/);
-    const photoRequests: string[] = [];
-    page.on('request', (request) => {
-      if (new URL(request.url()).pathname.startsWith('/api/nutrition/photos/'))
-        photoRequests.push(request.url());
-    });
-    const initialHistoryLength = await page.evaluate(() => history.length);
-    for (let repeat = 0; repeat < 3; repeat++) {
-      for (const [label, path] of [
-        ['Обзор', '/'],
-        ['Дневник питания', '/diary'],
-        ['Замеры', '/measurements'],
-        ['Анамнез', '/anamnesis'],
-        ['Аналитика', '/analytics'],
-        ['Отчёты', '/reports'],
-        ['Настройки', '/settings'],
-        ['Тренировки', '/workouts'],
-        ['Обзор', '/'],
-      ]) {
-        await openNavigation(page);
-        await page.getByRole('link', { name: label, exact: true }).click();
-        await expect(page).toHaveURL((url) => url.pathname === path);
-        await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
-          label!,
-        );
-        await page.evaluate(
-          () =>
-            new Promise((resolve) =>
-              requestAnimationFrame(() => requestAnimationFrame(resolve)),
-            ),
-        );
-        expect(new URL(page.url()).pathname).toBe(path);
-        await expect(
-          page
-            .getByRole('status')
-            .filter({ hasText: 'Сеть или сервер недоступны' }),
-        ).toHaveCount(1);
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
+  await expect(page.getByLabel('Заметка', { exact: true })).toBeVisible();
+  await expect
+    .poll(async () => {
+      const response = await page.request.get('/api/offline/writes');
+      return response.status();
+    })
+    .toBe(200);
+  await context.setOffline(true);
+  await page
+    .getByLabel('Заметка', { exact: true })
+    .fill('Queued durable measurement');
+  await page.getByLabel('Вес (кг)', { exact: true }).fill('73');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(
+    page.getByText('Сохранено на устройстве', { exact: true }).first(),
+  ).toBeVisible();
+  await context.setOffline(false);
+  await page.reload();
+  await expect
+    .poll(async () => {
+      const db = new Database('.data/e2e.sqlite');
+      try {
+        return (
+          db
+            .prepare('SELECT count(*) as n FROM measurements WHERE note = ?')
+            .get('Queued durable measurement') as { n: number }
+        ).n;
+      } finally {
+        db.close();
       }
-    }
-    await page.goBack();
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
-      'Тренировки',
-    );
-    await page.goForward();
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(
-      'Обзор',
-    );
-    // Embedded report previews also participate in joint browser history.
-    // Return to the original entry, rather than assuming one entry per menu click.
-    const entries = await page.evaluate(() => history.length);
-    await page.evaluate(
-      (steps) => history.go(-steps),
-      entries - initialHistoryLength,
-    );
-    await expect(page).toHaveURL(`/diary?date=${data.date}`);
-    await expect(
-      page.getByRole('region', { name: 'Завтрак', exact: true }).locator('img'),
-    ).toHaveAttribute('src', /^blob:/);
-    await expect
-      .poll(() =>
-        page
-          .getByRole('region', { name: 'Завтрак', exact: true })
-          .locator('img')
-          .evaluate(
-            (image: HTMLImageElement) =>
-              image.complete && image.naturalWidth > 0,
-          ),
-      )
-      .toBe(true);
-    expect(photoRequests).toEqual([]);
-    expect(errors).toEqual([]);
-  } finally {
-    data.db.close();
-  }
+    })
+    .toBe(1);
+  const sibling = await context.newPage();
+  await sibling.goto('/measurements');
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await sibling.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(
+    page.getByText('Queued durable measurement').first(),
+  ).toBeVisible();
+  const db = new Database('.data/e2e.sqlite');
+  expect(
+    (
+      db
+        .prepare('SELECT count(*) as n FROM measurements WHERE note = ?')
+        .get('Queued durable measurement') as { n: number }
+    ).n,
+  ).toBe(1);
+  db.close();
+});
+
+test('account replacement clears the previous reader and notifies the other tab', async ({
+  page,
+  context,
+}) => {
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
+  await expect(
+    page.getByText('Synthetic cached observation').first(),
+  ).toBeVisible();
+  const sibling = await context.newPage();
+  await sibling.goto('/measurements');
+  await expect(
+    sibling.getByText('Synthetic cached observation').first(),
+  ).toBeVisible();
+  await seedVideoDraft(page);
+  await signIn(page, 'trainer');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page).toHaveURL('/login');
+  await expect(sibling.getByLabel('Электронная почта')).toBeVisible();
+  await expect(sibling.getByText('Synthetic cached observation')).toHaveCount(
+    0,
+  );
+  await expect.poll(() => stored(page)).toBe(0);
+  expect(await storedRows(page, 'tempo-video-upload', 'drafts', 1)).toBe(0);
+});
+test('two foreground tabs send one durable operation once after reconnect', async ({
+  page,
+  context,
+}) => {
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
+  const sibling = await context.newPage();
+  await sibling.goto('/measurements');
+  await expect(sibling.getByLabel('Заметка', { exact: true })).toBeVisible();
+  await context.setOffline(true);
+  await page
+    .getByLabel('Заметка', { exact: true })
+    .fill('Two-tab queued record');
+  await page.getByLabel('Вес (кг)', { exact: true }).fill('74');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(
+    page.getByText('Сохранено на устройстве', { exact: true }).first(),
+  ).toBeVisible();
+  let posts = 0;
+  context.on('request', (request) => {
+    if (
+      new URL(request.url()).pathname === '/api/offline/writes' &&
+      request.method() === 'POST'
+    )
+      posts++;
+  });
+  await context.setOffline(false);
+  await Promise.all(
+    [page, sibling].map((tab) =>
+      tab.evaluate(() => window.dispatchEvent(new Event('online'))),
+    ),
+  );
+  await expect
+    .poll(() => {
+      const db = new Database('.data/e2e.sqlite');
+      try {
+        return (
+          db
+            .prepare('SELECT count(*) as n FROM measurements WHERE note = ?')
+            .get('Two-tab queued record') as { n: number }
+        ).n;
+      } finally {
+        db.close();
+      }
+    })
+    .toBe(1);
+  await expect.poll(() => posts).toBe(1);
+  await Promise.all(
+    [page, sibling].map((tab) =>
+      tab.evaluate(() => window.dispatchEvent(new Event('online'))),
+    ),
+  );
+  await expect(page.getByText('Two-tab queued record').first()).toBeVisible();
+  expect(posts).toBe(1);
+});
+
+test('an unsaved queue form survives reconnect, route return, and remount', async ({
+  page,
+  context,
+}) => {
+  page.on('dialog', (dialog) => dialog.accept());
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
+  await expect(page.getByLabel('Заметка', { exact: true })).toBeVisible();
+  // Wait until the real owner write catalog is available locally.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<boolean>((resolve, reject) => {
+            const request = indexedDB.open('yazio-offline-writes-v1', 1);
+            request.onsuccess = () => {
+              const db = request.result;
+              const tx = db.transaction('state', 'readonly');
+              const row = tx.objectStore('state').get('current');
+              row.onsuccess = () => resolve(!!row.result?.partition);
+              tx.oncomplete = () => db.close();
+            };
+            request.onerror = () => reject(request.error);
+          }),
+      ),
+    )
+    .toBe(true);
+  await context.setOffline(true);
+  const queue = page.getByTestId('device-write-queue');
+  await queue
+    .getByRole('button', { name: 'Записать замер', exact: true })
+    .click();
+  await queue
+    .getByRole('textbox', { name: 'Дата', exact: true })
+    .fill('2026-08-14');
+  await queue.getByLabel('Вес, кг', { exact: true }).fill('75.5');
+  await queue
+    .getByLabel('Заметка', { exact: true })
+    .fill('Uncommitted queue draft');
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(queue.getByLabel('Заметка', { exact: true })).toHaveValue(
+    'Uncommitted queue draft',
+  );
+  await menu(page);
+  await page.getByRole('link', { name: 'Обзор', exact: true }).click();
+  await expect(page).toHaveURL('/');
+  await page.goBack();
+  await expect(
+    queue.getByRole('textbox', { name: 'Дата', exact: true }),
+  ).toHaveValue('2026-08-14');
+  await expect(queue.getByLabel('Вес, кг', { exact: true })).toHaveValue(
+    '75.5',
+  );
+  await expect(queue.getByLabel('Заметка', { exact: true })).toHaveValue(
+    'Uncommitted queue draft',
+  );
+  await page.reload();
+  await expect(queue.getByLabel('Заметка', { exact: true })).toHaveValue(
+    'Uncommitted queue draft',
+  );
+  await expect(
+    queue.getByRole('textbox', { name: 'Дата', exact: true }),
+  ).toHaveValue('2026-08-14');
+  await expect(queue.getByLabel('Вес, кг', { exact: true })).toHaveValue(
+    '75.5',
+  );
+  await queue.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(queue).toHaveCount(0);
+  await page.reload();
+  await expect(queue).toHaveCount(0);
 });

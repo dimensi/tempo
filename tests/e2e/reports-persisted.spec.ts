@@ -1,3 +1,4 @@
+import { signInFixture } from '../ci/real-auth';
 import { getSessionWith429Retry } from './auth-session';
 import { expect, test } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
@@ -8,9 +9,9 @@ const query = 'start=2026-10-10&end=2026-10-10&period=daily&format=pdf';
 test('anonymous bytes denied and oversized period rejected', async ({
   request,
 }) => {
-  expect(
-    (await request.get(`/api/reports?ownerId=owner&${query}`)).status(),
-  ).toBe(401);
+  const anonymous = await request.get(`/api/reports?ownerId=owner&${query}`);
+  expect(anonymous.status()).toBe(401);
+  expect(await anonymous.json()).toEqual({ error: 'AUTH_REQUIRED' });
   expect(
     (
       await request.get(
@@ -212,6 +213,9 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       page.getByRole('button', { name: 'Предпросмотр HTML' }),
     ).toHaveCount(0);
     const preview = page.frameLocator('iframe[title="Предпросмотр HTML"]');
+    await expect(
+      page.getByText(`Предпросмотр HTML: ${date} — ${date}`, { exact: true }),
+    ).toBeVisible();
     await expect(preview.locator('.steps-value')).toHaveText(/12[\s\u00a0]345/);
     await expect(
       preview.getByText('Яйцо · запись 1', { exact: true }),
@@ -338,22 +342,34 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
           await route.fulfill({
             status: denialStatus,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'Synthetic report failure' }),
+            body: JSON.stringify({
+              error:
+                denialStatus === 401
+                  ? 'AUTH_REQUIRED'
+                  : denialStatus === 403
+                    ? 'ACCESS_REVOKED'
+                    : 'Synthetic report failure',
+            }),
           });
         else await route.continue();
       });
     };
-    const assertPurged = async (selected: string) => {
-      await expect(page.locator('iframe')).toHaveAttribute('srcdoc', '');
+    const assertPurged = async () => {
+      await expect(page.locator('iframe')).toHaveCount(0);
+      await expect(page.getByText(/^Предпросмотр HTML:/)).toHaveCount(0);
+      await expect(page.getByRole('main').getByLabel('Начало')).toHaveCount(0);
+      await expect(
+        page.getByRole('button', { name: 'Скачать PDF' }),
+      ).toHaveCount(0);
+    };
+    const reopen = async () => {
+      await page.unroute('**/api/reports?**');
+      await signInFixture(page);
+      await page.goto('/reports');
+      await activeReports.getByLabel('Начало').fill(date);
       await expect(
         preview.getByText('Яйцо · запись 1', { exact: true }),
-      ).toHaveCount(0);
-      await expect(page.getByText(/^Предпросмотр HTML:/)).toHaveCount(0);
-      await expect(activeReports.getByLabel('Начало')).toHaveValue(selected);
-      await expect(activeReports.getByLabel('Начало')).toBeEnabled();
-      await expect(page.getByRole('combobox', { name: 'Период' })).toHaveValue(
-        'День',
-      );
+      ).toBeVisible();
     };
     await interceptDenial();
     await activeReports.getByLabel('Начало').fill('2026-02-09');
@@ -371,7 +387,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await expect(
       page.getByRole('button', { name: 'Скачать PDF' }),
     ).toBeEnabled();
-    await page.evaluate(() => {
+    const trackBlobs = () => {
       const create = URL.createObjectURL.bind(URL);
       const readBlob = Response.prototype.blob;
       let count = 0;
@@ -384,7 +400,9 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
         count++;
         return create(blob);
       };
-    });
+    };
+    await page.addInitScript(trackBlobs);
+    await page.evaluate(trackBlobs);
     const deniedDownloads: string[] = [];
     page.on('download', (download) =>
       deniedDownloads.push(download.suggestedFilename()),
@@ -394,41 +412,24 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       deniedFormat = 'html';
       await interceptDenial();
       await activeReports.getByLabel('Начало').fill('2026-02-10');
-      await expect(
-        page
-          .getByRole('alert')
-          .filter({ hasText: 'Нет доступа к данным владельца.' }),
-      ).toBeVisible();
-      await assertPurged('2026-02-10');
-      await page.unroute('**/api/reports?**');
-      await activeReports.getByLabel('Начало').fill(date);
-      await expect(
-        preview.getByText('Яйцо · запись 1', { exact: true }),
-      ).toBeVisible();
+      await expect(page).toHaveURL('/login');
+      await assertPurged();
+      await reopen();
       deniedFormat = 'pdf';
       denialRequests.length = 0;
       await interceptDenial();
       await page.getByRole('button', { name: 'Скачать PDF' }).click();
-      await expect(
-        page
-          .getByRole('alert')
-          .filter({ hasText: 'Нет доступа к данным владельца.' }),
-      ).toBeVisible();
-      await assertPurged(date);
+      await expect(page).toHaveURL('/login');
+      await assertPurged();
       // Download completion must not automatically refill a denied private preview.
       await page.waitForTimeout(500);
-      await assertPurged(date);
+      await assertPurged();
       expect(denialRequests).toEqual(['pdf']);
       expect(
         await page.evaluate(() => Reflect.get(window, 'reportBlobCount')),
       ).toBe(0);
       expect(deniedDownloads).toHaveLength(0);
-      await page.unroute('**/api/reports?**');
-      await activeReports.getByLabel('Начало').fill('2026-02-10');
-      await activeReports.getByLabel('Начало').fill(date);
-      await expect(
-        preview.getByText('Яйцо · запись 1', { exact: true }),
-      ).toBeVisible();
+      await reopen();
     }
     const signIn = () =>
       context.request.post(`${origin}/api/auth/sign-in/email`, {
@@ -471,23 +472,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect(Number(preflight.headers()['content-length'])).toBeGreaterThan(0);
     expect((await preflight.body()).length).toBe(0);
     const trainerPage = await context.newPage();
-    let releaseScripts!: () => void;
-    const scriptsReady = new Promise<void>((resolve) => {
-      releaseScripts = resolve;
-    });
-    await trainerPage.route('**/_next/**/*.js*', async (route) => {
-      await scriptsReady;
-      await route.continue();
-    });
-    try {
-      await trainerPage.goto(`${origin}/reports`, { waitUntil: 'commit' });
-      await expect(trainerPage.getByLabel('Начало')).toBeDisabled();
-      await expect(
-        trainerPage.getByRole('button', { name: 'Скачать PDF' }),
-      ).toBeDisabled();
-    } finally {
-      releaseScripts();
-    }
+    await trainerPage.goto(`${origin}/reports`);
     await expect(trainerPage.getByLabel('Начало')).toBeEnabled();
     await expect(trainerPage.getByLabel('Идентификатор владельца')).toHaveCount(
       0,
@@ -501,11 +486,25 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect(
       (await page.request.delete('/api/trainers', { data: grant })).ok(),
     ).toBe(true);
-    expect((await context.request.get(scopedUrl)).status()).toBe(403);
-    await trainerPage.reload();
-    await expect(
-      trainerPage.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
-    ).toBeVisible();
+    const deniedReport = await context.request.get(scopedUrl);
+    expect(deniedReport.status()).toBe(403);
+    expect(await deniedReport.json()).toEqual({ error: 'ACCESS_REVOKED' });
+    const deniedHead = await context.request.head(scopedUrl);
+    expect(deniedHead.status()).toBe(403);
+    expect(deniedHead.headers()['x-auth-error']).toBe('ACCESS_REVOKED');
+    expect((await deniedHead.body()).length).toBe(0);
+    // The report response itself must trigger cleanup, independently of access refresh.
+    await trainerPage.route('**/api/read/context', (route) =>
+      route.abort('failed'),
+    );
+    const denial = trainerPage.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/reports' &&
+        response.status() === 403,
+    );
+    await trainerPage.getByLabel('Начало').fill('2026-02-11');
+    expect(await (await denial).json()).toEqual({ error: 'ACCESS_REVOKED' });
+    await expect(trainerPage).toHaveURL('/login');
     await expect(
       trainerPage.getByRole('button', { name: 'Скачать PDF' }),
     ).toHaveCount(0);
@@ -532,4 +531,37 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       db.close();
     }
   }
+});
+
+test('report setup stays in the URL through Next navigation, Back and a full remount', async ({
+  page,
+}) => {
+  await signInFixture(page);
+  await page.goto('/reports?period=custom&start=2026-02-03&end=2026-02-09');
+  const period = page.getByRole('combobox', { name: 'Период', exact: true });
+  const start = page.getByRole('textbox', { name: 'Начало', exact: true });
+  const end = page.getByRole('textbox', { name: 'Окончание', exact: true });
+  await expect(period).toHaveValue('Произвольный период');
+  await expect(start).toHaveValue('2026-02-03');
+  await expect(end).toHaveValue('2026-02-09');
+  await start.fill('2026-02-04');
+  await end.fill('2026-02-11');
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('start'))
+    .toBe('2026-02-04');
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('end'))
+    .toBe('2026-02-11');
+  const menu = page.getByRole('button', { name: 'Навигация', exact: true });
+  if (await menu.isVisible()) await menu.click();
+  await page.getByRole('link', { name: 'Обзор', exact: true }).click();
+  await expect(page).toHaveURL('/');
+  await page.goBack();
+  await expect(period).toHaveValue('Произвольный период');
+  await expect(start).toHaveValue('2026-02-04');
+  await expect(end).toHaveValue('2026-02-11');
+  await page.reload();
+  await expect(period).toHaveValue('Произвольный период');
+  await expect(start).toHaveValue('2026-02-04');
+  await expect(end).toHaveValue('2026-02-11');
 });

@@ -4,6 +4,7 @@ export interface VideoDraft {
   duration: number;
   uploadId?: string;
 }
+let generation = 0;
 async function database() {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open('tempo-video-upload', 1);
@@ -33,8 +34,10 @@ export async function videoDraft(
   mode: 'read' | 'write' | 'delete',
   value?: VideoDraft,
 ): Promise<VideoDraft | undefined> {
+  const currentGeneration = generation;
   const db = await database();
   try {
+    if (currentGeneration !== generation) throw new Error('Drafts cleared');
     return await new Promise((resolve, reject) => {
       const transaction = db.transaction(
         'drafts',
@@ -67,6 +70,7 @@ export async function videoDraft(
 }
 
 export async function clearVideoDrafts() {
+  generation++;
   const db = await database();
   try {
     await new Promise<void>((resolve, reject) => {

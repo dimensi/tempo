@@ -1,4 +1,6 @@
-import { ResultsPage } from '@/app/(dashboard)/workouts/results-page';
+import { loadResults } from '@/app/(dashboard)/workouts/results-data';
+import { WorkoutResultsPage, workoutMessages as m } from '@/features/workouts';
+import { Alert } from '@mantine/core';
 export default async function Page({
   params,
   searchParams,
@@ -6,7 +8,12 @@ export default async function Page({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  return (
-    <ResultsPage sessionId={(await params).id} query={await searchParams} />
-  );
+  const value = await params;
+  const data = await loadResults({
+    sessionId: value.id,
+    query: await searchParams,
+  });
+  if (!data) return <Alert color="red">{m.noAccess}</Alert>;
+  const { key, ...props } = data;
+  return <WorkoutResultsPage key={key} {...props} />;
 }
