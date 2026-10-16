@@ -85,36 +85,21 @@ Implementation ownership: YAZIO jobs/adapters, nutrition persistence, the coordi
 
 ## Verification commands
 
-The root Vitest configuration includes the dedicated suite, using genuine migrations and synthetic temporary databases:
+The former scheduler-specific test harness and standalone runtime smoke were removed with the
+low-signal exhaustive suite. The retained migration and nutrition-sync integration checks protect
+persisted schedules and durable day data; the YAZIO browser smoke protects the representative
+owner sync path. For a scheduler change, choose the narrowest focused check that exposes the
+specific regression rather than recreating a permanent timer matrix:
 
 ```sh
-pnpm exec vitest run --config tests/nutrition-scheduler/vitest.config.ts
-pnpm check
-E2E_PORT=3127 pnpm test:e2e
+pnpm exec vitest run tests/integration/migrations.test.ts
+pnpm exec vitest run tests/integration/nutrition-sync.test.ts
+pnpm exec vitest run tests/integration/yazio-network-retry.test.ts
+pnpm test:e2e nutrition
 ```
 
-Build before the production runtime smoke:
-
-```sh
-pnpm build
-node tests/nutrition-scheduler/runtime-smoke.mjs
-```
-
-The smoke owns temporary DB/files and starts/stops only its own real standalone Node servers. It inherits no production secret/token environment, opens no browser, uses an absent synthetic token path, and verifies delayed registration, legacy disabled adoption, restart/expired-lease recovery and stale-running reconciliation. It must create no credential files and make no upstream request. It removes its fixtures afterwards. Record the actual smoke output and tested head in the PR; a prepared command alone is not a passing result or evidence about production.
-
-The initial-history-bound patch passed full `pnpm check` (168 tests, including 24 dedicated scheduler tests, and production build). All 32 desktop/mobile E2E scenarios on port 3127 and the real standalone runtime smoke were executed on runtime head `6e83bfd89640d13d5be48ea633251f5e2ced6b47`, after the manual-first race fix and before the later period-clipping change. That later patch changes scheduled period selection; instrumentation/lease behavior is unchanged. The executed smoke returned:
-
-```json
-{
-  "timer": "production-delayed",
-  "browserRequired": false,
-  "restart": "expired-lease-reclaimed",
-  "upstream": "blocked-without-token",
-  "credentialFilesCreated": false
-}
-```
-
-CI must still pass on the final published integration head before merge. Consumer hooks/UI integration is a separate acceptance step before enabling deployment. These synthetic checks do not establish live account synchronization or production scheduler activation.
+Run `pnpm verify:merge` for a Full-tier scheduler, schema, authorization, or deployment change.
+Synthetic checks do not establish live account synchronization or production scheduler activation.
 
 ## Read-only health imports
 

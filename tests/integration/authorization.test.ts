@@ -1,25 +1,62 @@
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { openDatabase } from '@/server/db/connection';
-import { user, trainerAccess } from '@/server/db/schema';
+import { trainerAccess, user } from '@/server/db/schema';
 
 const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
+  objects: new Map<string, Uint8Array>(),
+  beforeObjectRead: null as null | (() => void),
 }));
+const database = vi.hoisted(() => ({
+  handle: null as null | ReturnType<
+    (typeof import('@/server/db/connection'))['openDatabase']
+  >,
+}));
+
 vi.mock('server-only', () => ({}));
 vi.mock('@/server/auth', () => ({
   getAuth: () => ({ api: { getSession: async () => state.session } }),
 }));
-const database = openDatabase('file::memory:');
-vi.mock('@/server/db', () => ({ getDatabase: () => database }));
+vi.mock('@/server/db', async () => {
+  const { openDatabase } = await import('@/server/db/connection');
+  database.handle ??= openDatabase('file::memory:');
+  return { getDatabase: () => database.handle };
+});
+vi.mock('@/server/storage', () => ({
+  getObjectStorage: () => ({
+    put: async (key: string, bytes: Uint8Array) =>
+      state.objects.set(key, bytes),
+    get: async (key: string) => {
+      state.beforeObjectRead?.();
+      const bytes = state.objects.get(key);
+      if (!bytes) throw new Error('Missing synthetic PDF');
+      return bytes;
+    },
+    remove: async (key: string) => state.objects.delete(key),
+  }),
+}));
+vi.mock('@/server/anamnesis/worker', () => ({
+  kickAnamnesisImport: () => {},
+  anamnesisDocumentStorageKey: (ownerId: string, sha256: string) =>
+    `anamnesis/${ownerId}/${sha256}.pdf`,
+}));
+
 const { authorize } = await import('@/server/auth/guards');
-beforeAll(() => {
-  migrate(database.db, { migrationsFolder: './drizzle' });
+const { ensureAnamnesisCatalog } = await import('@/server/anamnesis/catalog');
+const { anamnesisRepository } = await import('@/server/anamnesis/repository');
+const anamnesis = await import('@/server/anamnesis');
+const headers = () => new Headers({ 'content-type': 'application/json' });
+const ownerId = 'owner';
+const trainerId = 'trainer';
+
+beforeAll(async () => {
+  const connection = database.handle!;
+  migrate(connection.db, { migrationsFolder: './drizzle' });
   for (const [id, role] of [
-    ['owner', 'OWNER'],
-    ['trainer', 'TRAINER'],
+    [ownerId, 'OWNER'],
+    [trainerId, 'TRAINER'],
   ] as const)
-    database.db
+    connection.db
       .insert(user)
       .values({
         id,
@@ -30,15 +67,19 @@ beforeAll(() => {
         updatedAt: new Date(),
       })
       .run();
+  await ensureAnamnesisCatalog(connection);
 });
-afterAll(() => database.sqlite.close());
-it('requires a session and fails closed without owner data scope', async () => {
+afterAll(() => database.handle?.sqlite.close());
+
+it('fails closed for generic and selective medical-PDF trainer access, including revocation during a read', async () => {
+  const connection = database.handle!;
   state.session = null;
-  expect(await authorize(new Headers(), 'nutrition:read', 'owner')).toEqual({
+  expect(await authorize(new Headers(), 'nutrition:read', ownerId)).toEqual({
     ok: false,
     status: 401,
   });
-  state.session = { user: { id: 'owner', role: 'OWNER' } };
+
+  state.session = { user: { id: ownerId, role: 'OWNER' } };
   expect(await authorize(new Headers(), 'nutrition:read')).toEqual({
     ok: false,
     status: 403,
@@ -46,34 +87,135 @@ it('requires a session and fails closed without owner data scope', async () => {
   expect(
     await authorize(new Headers(), 'nutrition:read', 'another-owner'),
   ).toEqual({ ok: false, status: 403 });
-  expect((await authorize(new Headers(), 'nutrition:read', 'owner')).ok).toBe(
+  expect((await authorize(new Headers(), 'nutrition:read', ownerId)).ok).toBe(
     true,
   );
-});
-it('trainer data access requires a grant and immediately respects revocation', async () => {
-  state.session = { user: { id: 'trainer', role: 'TRAINER' } };
-  expect(await authorize(new Headers(), 'nutrition:read', 'owner')).toEqual({
+
+  state.session = { user: { id: trainerId, role: 'TRAINER' } };
+  expect(await authorize(new Headers(), 'nutrition:read', ownerId)).toEqual({
     ok: false,
     status: 403,
   });
-  database.db
+  connection.db
     .insert(trainerAccess)
-    .values({ trainerId: 'trainer', ownerId: 'owner', createdAt: new Date() })
+    .values({ trainerId, ownerId, createdAt: new Date() })
     .run();
-  expect((await authorize(new Headers(), 'nutrition:read', 'owner')).ok).toBe(
+  expect((await authorize(new Headers(), 'nutrition:read', ownerId)).ok).toBe(
     true,
   );
-  expect(await authorize(new Headers(), 'yazio:manage')).toEqual({
+  expect(await authorize(new Headers(), 'nutrition:write', ownerId)).toEqual({
     ok: false,
     status: 403,
   });
-  expect(await authorize(new Headers(), 'nutrition:write', 'owner')).toEqual({
+  connection.db.delete(trainerAccess).run();
+  expect(await authorize(new Headers(), 'nutrition:read', ownerId)).toEqual({
     ok: false,
     status: 403,
   });
-  database.db.delete(trainerAccess).run();
-  expect(await authorize(new Headers(), 'nutrition:read', 'owner')).toEqual({
-    ok: false,
-    status: 403,
-  });
+
+  connection.db
+    .insert(trainerAccess)
+    .values({ trainerId, ownerId, createdAt: new Date() })
+    .run();
+  await assertMedicalPdfGrants();
 });
+
+async function assertMedicalPdfGrants() {
+  const repository = anamnesisRepository(database.handle!.db);
+  const now = Date.now();
+  repository.insertDocument({
+    id: 'granted-document',
+    ownerId,
+    filename: 'granted.pdf',
+    storageKey: 'private/granted.pdf',
+    sha256: 'a'.repeat(64),
+    mimeType: 'application/pdf',
+    sizeBytes: 3,
+    pageCount: 1,
+    laboratoryName: null,
+    title: null,
+    collectedAt: null,
+    issuedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  });
+  repository.insertDocument({
+    id: 'hidden-document',
+    ownerId,
+    filename: 'hidden.pdf',
+    storageKey: 'private/hidden.pdf',
+    sha256: 'b'.repeat(64),
+    mimeType: 'application/pdf',
+    sizeBytes: 3,
+    pageCount: 1,
+    laboratoryName: null,
+    title: null,
+    collectedAt: null,
+    issuedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  });
+  repository.insertReport({
+    id: 'medical-report',
+    ownerId,
+    createdBy: ownerId,
+    markerIdsJson: ['alt', 'vitamin-d-25oh'],
+    dateKeysJson: null,
+    historicalPeriodJson: null,
+    status: 'ready',
+    storageKey: 'private/medical-report.pdf',
+    filename: 'medical-report.pdf',
+    sizeBytes: 3,
+    createdAt: now,
+  });
+  state.objects.set('private/granted.pdf', new Uint8Array([1, 2, 3]));
+  state.objects.set('private/hidden.pdf', new Uint8Array([4, 5, 6]));
+  state.objects.set('private/medical-report.pdf', new Uint8Array([7, 8, 9]));
+  state.session = { user: { id: trainerId, role: 'TRAINER' } };
+
+  expect(
+    await anamnesis.listAnamnesisDocuments(headers(), ownerId),
+  ).toHaveLength(0);
+  await expect(
+    anamnesis.getAnamnesisDocumentFile(headers(), ownerId, 'granted-document'),
+  ).rejects.toMatchObject({ status: 403 });
+
+  repository.setDocumentGrant(ownerId, trainerId, 'granted-document', true);
+  expect(
+    (await anamnesis.listAnamnesisDocuments(headers(), ownerId)).map(
+      (document) => document.id,
+    ),
+  ).toEqual(['granted-document']);
+  await expect(
+    anamnesis.getAnamnesisDocumentFile(headers(), ownerId, 'hidden-document'),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(
+    anamnesis.getAnamnesisDocumentFile(headers(), ownerId, 'granted-document'),
+  ).resolves.toMatchObject({ filename: 'granted.pdf' });
+
+  repository.setMarkerGrant(ownerId, trainerId, 'alt', true);
+  expect(await anamnesis.listAnamnesisReports(headers(), ownerId)).toHaveLength(
+    0,
+  );
+  await expect(
+    anamnesis.getAnamnesisReportFile(headers(), ownerId, 'medical-report'),
+  ).rejects.toMatchObject({ status: 403 });
+
+  repository.setMarkerGrant(ownerId, trainerId, 'vitamin-d-25oh', true);
+  expect(
+    (await anamnesis.listAnamnesisReports(headers(), ownerId)).map(
+      (report) => report.id,
+    ),
+  ).toEqual(['medical-report']);
+  state.beforeObjectRead = () =>
+    repository.setMarkerGrant(ownerId, trainerId, 'vitamin-d-25oh', false);
+  try {
+    await expect(
+      anamnesis.getAnamnesisReportFile(headers(), ownerId, 'medical-report'),
+    ).rejects.toMatchObject({ status: 403 });
+  } finally {
+    state.beforeObjectRead = null;
+  }
+}

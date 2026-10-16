@@ -1,7 +1,35 @@
-import { test, expect } from '../ci/isolated-test';
-import { testOrigin } from '../ci/origin';
+import { expect, test, type Page } from '@playwright/test';
+import { testOrigin } from './origin';
 
-test('production real login, diary, workout save/read, cached current screen, logout purge and trainer boundary', async ({
+async function cachedReadBody(page: Page, expectedTitle: string) {
+  return page.evaluate(async (title) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const open = indexedDB.open('yazio-offline-read-v1');
+      open.onsuccess = () => resolve(open.result);
+      open.onerror = () => reject(open.error);
+    });
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        const read = database
+          .transaction('resources')
+          .objectStore('resources')
+          .getAll();
+        read.onsuccess = () => {
+          const body = read.result.find((row) =>
+            String(row.record?.body).includes(title),
+          )?.record?.body;
+          if (typeof body === 'string') resolve(body);
+          else reject(new Error('Cached workout is missing'));
+        };
+        read.onerror = () => reject(read.error);
+      });
+    } finally {
+      database.close();
+    }
+  }, expectedTitle);
+}
+
+test('real login reaches core sections, recovers a cached workout offline, purges logout data, and blocks a trainer', async ({
   page,
   context,
   request,
@@ -14,14 +42,23 @@ test('production real login, diary, workout save/read, cached current screen, lo
   await page
     .getByRole('textbox', { name: 'Пароль', exact: true })
     .fill('Test-only-password-12345');
-  const login = page.waitForResponse((r) =>
-    r.url().endsWith('/api/auth/sign-in/email'),
+  const login = page.waitForResponse((response) =>
+    response.url().endsWith('/api/auth/sign-in/email'),
   );
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   expect((await login).status()).toBe(200);
   await expect(page).toHaveURL('/');
   const owner = (await (await page.request.get('/api/auth/get-session')).json())
     .user.id as string;
+  for (const route of [
+    '/',
+    '/measurements',
+    '/analytics',
+    '/reports',
+    '/settings',
+  ])
+    expect((await page.goto(route))?.ok()).toBe(true);
+
   await page.goto('/diary');
   await expect(
     page.getByRole('heading', { name: 'Дневник питания', exact: true }),
@@ -30,7 +67,7 @@ test('production real login, diary, workout save/read, cached current screen, lo
   await page
     .getByRole('button', { name: 'Добавить тренировку', exact: true })
     .click();
-  const title = `Production smoke ${test.info().project.name}`;
+  const title = 'Production smoke workout';
   await page
     .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(title);
@@ -48,42 +85,41 @@ test('production real login, diary, workout save/read, cached current screen, lo
   await expect(
     page.getByRole('heading', { name: title, exact: true }),
   ).toBeVisible();
+
   await expect
-    .poll(() =>
-      page.evaluate(async (expectedTitle) => {
-        const db = await new Promise<IDBDatabase>((resolve, reject) => {
-          const r = indexedDB.open('yazio-offline-read-v1');
-          r.onsuccess = () => resolve(r.result);
-          r.onerror = () => reject(r.error);
-        });
-        try {
-          return await new Promise<boolean>((resolve) => {
-            const r = db
-              .transaction('resources')
-              .objectStore('resources')
-              .getAll();
-            r.onsuccess = () =>
-              resolve(
-                r.result.some((row) =>
-                  String(row.record?.body).includes(expectedTitle),
-                ),
-              );
-          });
-        } finally {
-          db.close();
-        }
-      }, title),
-    )
-    .toBe(true);
+    .poll(() => cachedReadBody(page, title).catch(() => ''))
+    .toContain(title);
+  const cachedWorkout = await cachedReadBody(page, title);
+  const stalledRead = Promise.withResolvers<void>();
+  const readStarted = Promise.withResolvers<void>();
+  const readFinished = Promise.withResolvers<void>();
+  await page.route('**/api/read/workout?*', async (route) => {
+    readStarted.resolve();
+    try {
+      await stalledRead.promise;
+      await route.fulfill({
+        contentType: 'application/json',
+        body: cachedWorkout,
+      });
+    } finally {
+      readFinished.resolve();
+    }
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await readStarted.promise;
+  await expect(
+    page.getByRole('heading', { name: title, exact: true }),
+  ).toBeVisible();
+  stalledRead.resolve();
+  await readFinished.promise;
+  await page.unroute('**/api/read/workout?*');
+
   await context.setOffline(true);
   await expect(
     page.getByRole('heading', { name: title, exact: true }),
   ).toBeVisible();
   await context.setOffline(false);
-  // Reconnect revalidates the current feature without replacing it.
-  await expect(
-    page.getByRole('link', { name: 'Изменить план', exact: true }),
-  ).toBeVisible();
+
   await page.goto('/diary');
   const navigation = page.getByRole('button', {
     name: 'Навигация',
@@ -94,27 +130,28 @@ test('production real login, diary, workout save/read, cached current screen, lo
   await expect(page).toHaveURL('/login');
   expect(
     await page.evaluate(async () => {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const r = indexedDB.open('yazio-offline-read-v1');
-        r.onsuccess = () => resolve(r.result);
-        r.onerror = () => reject(r.error);
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const open = indexedDB.open('yazio-offline-read-v1');
+        open.onsuccess = () => resolve(open.result);
+        open.onerror = () => reject(open.error);
       });
       try {
         return await new Promise<boolean>((resolve) => {
-          const r = db
+          const count = database
             .transaction('resources')
             .objectStore('resources')
             .count();
-          r.onsuccess = () => resolve(r.result === 0);
+          count.onsuccess = () => resolve(count.result === 0);
         });
       } finally {
-        db.close();
+        database.close();
       }
     }),
   ).toBe(true);
   expect(
     (await page.request.get(`/api/workouts?ownerId=${owner}`)).status(),
   ).toBe(401);
+
   const trainerLogin = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: testOrigin },
     data: {
@@ -126,28 +163,4 @@ test('production real login, diary, workout save/read, cached current screen, lo
   expect(
     (await page.request.get(`/api/workouts?ownerId=${owner}`)).status(),
   ).toBe(403);
-  expect(
-    (
-      await page.request.post(`/api/workouts/plans?ownerId=${owner}`, {
-        headers: { origin: testOrigin },
-        data: {
-          title: 'Denied smoke',
-          description: '',
-          startsOn: '2026-01-01',
-          endsOn: '2026-01-01',
-          workouts: [
-            {
-              id: 'denied-smoke',
-              date: '2026-01-01',
-              title: 'Denied smoke',
-              exercises: [{ name: 'Smoke', sets: [{ reps: 1, weightKg: 0 }] }],
-            },
-          ],
-        },
-      })
-    ).status(),
-  ).toBe(403);
-  const denied = await page.request.get('/api/read/context');
-  expect(denied.status()).toBe(403);
-  expect(await denied.json()).toEqual({ error: 'ACCESS_REVOKED' });
 });

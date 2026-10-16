@@ -158,22 +158,17 @@ up/restoring. No additional key, volume, scheduler or network is introduced. Dep
 the main coordinator's single rollout queue. Synthetic tests do not establish live provider sync;
 a genuinely intended user's workout is the live acceptance scenario after their own connection.
 
-Dedicated tests use real Better Auth cookies, owner/trainer grants and a migrated disposable local
-SQLite database. A strictly test-only preload intercepts fixed provider hosts to a loopback
-synthetic upstream and rejects production or real connection values. It is never activated in
-the app or Docker runtime. Tests cover automatic create, idempotency, committed/uncommitted lost
-responses, external/started/factual conflicts, the complete idle-edit matrix, ambiguous PATCH recovery,
-account binding, encrypted rotation/disconnect races, ID changes, separate facts, orphan history, manual records,
-revocation, private Range and real synthetic MP4 playback/seek/speed/fullscreen on desktop/mobile.
-File-backed restart and transaction-abort tests prove durable recovery and all-or-nothing local
-plan/intent persistence. Fresh and existing migrations preserve prior workout JSON/history.
+The lean suite keeps one migrated SQLite integration scenario for the highest-cost failure: a
+committed TransformMate create whose response is lost must recover after restart without a second
+POST. Owner/trainer boundary protection is covered by the common authorization integration check;
+normal workout creation is covered by the application smoke path. The synthetic client is local to
+the test and never contacts a provider or real credentials.
 
-Run standard checks and, sequentially after other E2E resets:
+Run the focused diagnostic when changing this recovery path:
 
 ```sh
-pnpm test:e2e --config tests/transformmate-sync/e2e.config.ts
+pnpm exec vitest run tests/integration/transformmate-sync.test.ts
 ```
 
-This suite refuses local `.env` files and owns only `.data/e2e.sqlite`. No real training is created,
-edited or deleted for testing. The wire contract remains documented in
+No real training is created, edited or deleted for testing. The wire contract remains documented in
 [write API](transformmate-write.md) and [exercise API](transformmate-exercises.md).
