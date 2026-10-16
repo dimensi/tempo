@@ -15,7 +15,7 @@ pnpm db:migrate
 pnpm dev --port 3001
 ```
 
-A relative `.data` database gives each checkout its own SQLite file. Assign each simultaneous dev server a distinct port and matching BETTER_AUTH_URL. Use independent secrets. Never copy production credentials/data into worktrees. Each worktree has independent ignored `.env`, `.data`, `.next`, and E2E DB. Use `pnpm verify:merge` for full pre-merge verification: its isolated workers select free dedicated HTTPS gateway/backend/provider groups, each with private SQLite and filesystem state. Do not substitute the shared serial runner or stop another task's processes when ports are occupied.
+A relative `.data` database gives each checkout its own SQLite file. Assign each simultaneous dev server a distinct port and matching BETTER_AUTH_URL. Use independent secrets. Never copy production credentials/data into worktrees. Each worktree has independent ignored `.env`, `.data`, `.next`, and E2E DB. `pnpm verify:merge` runs the compact pre-merge suite. Its serial E2E launcher selects one free dedicated HTTPS gateway/backend pair and locks that worktree's `.data/e2e.sqlite`; do not start another E2E run in the same worktree or stop another task's processes when ports are occupied.
 
 Before writing code: read AGENTS.md; record owned paths, contract version and acceptance checks using the task template. Agree shared contract changes first. Then independent examples are A YAZIO integration; B nutrition diary; C measurements/workouts; D analytics; E reports; F comments. Ownership mapping is in feature-boundaries.md.
 

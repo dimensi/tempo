@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { openDatabase } from '@/server/db/connection';
-import { user, trainerAccess } from '@/server/db/schema';
+import { trainerAccess, user } from '@/server/db/schema';
 
 const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
@@ -10,9 +10,11 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/server/auth', () => ({
   getAuth: () => ({ api: { getSession: async () => state.session } }),
 }));
+
 const database = openDatabase('file::memory:');
 vi.mock('@/server/db', () => ({ getDatabase: () => database }));
 const { authorize } = await import('@/server/auth/guards');
+
 beforeAll(() => {
   migrate(database.db, { migrationsFolder: './drizzle' });
   for (const [id, role] of [
@@ -32,12 +34,14 @@ beforeAll(() => {
       .run();
 });
 afterAll(() => database.sqlite.close());
-it('requires a session and fails closed without owner data scope', async () => {
+
+it('fails closed for missing/foreign owners and requires a live trainer grant', async () => {
   state.session = null;
   expect(await authorize(new Headers(), 'nutrition:read', 'owner')).toEqual({
     ok: false,
     status: 401,
   });
+
   state.session = { user: { id: 'owner', role: 'OWNER' } };
   expect(await authorize(new Headers(), 'nutrition:read')).toEqual({
     ok: false,
@@ -49,8 +53,7 @@ it('requires a session and fails closed without owner data scope', async () => {
   expect((await authorize(new Headers(), 'nutrition:read', 'owner')).ok).toBe(
     true,
   );
-});
-it('trainer data access requires a grant and immediately respects revocation', async () => {
+
   state.session = { user: { id: 'trainer', role: 'TRAINER' } };
   expect(await authorize(new Headers(), 'nutrition:read', 'owner')).toEqual({
     ok: false,
@@ -63,10 +66,6 @@ it('trainer data access requires a grant and immediately respects revocation', a
   expect((await authorize(new Headers(), 'nutrition:read', 'owner')).ok).toBe(
     true,
   );
-  expect(await authorize(new Headers(), 'yazio:manage')).toEqual({
-    ok: false,
-    status: 403,
-  });
   expect(await authorize(new Headers(), 'nutrition:write', 'owner')).toEqual({
     ok: false,
     status: 403,

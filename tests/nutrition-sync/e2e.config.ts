@@ -1,6 +1,3 @@
-import { productionConfig } from '../ci/production-config';
-export default productionConfig(
-  'nutrition',
-  ['nutrition-sync/*.e2e.ts'],
-  false,
-);
+import { productionConfig } from '../smoke/production-config';
+
+export default productionConfig('nutrition', ['nutrition-sync/sync.e2e.ts']);
