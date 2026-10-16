@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { expect, test, type Page } from '../ci/isolated-test';
 import { syntheticDay } from '../unit/reports/fixtures';
+import { seedVideoDraft, storedRows } from '../e2e/local-storage';
 test.use({ timezoneId: 'UTC' });
 async function signIn(page: Page, role = 'owner') {
   const response = await page.request.post('/api/auth/sign-in/email', {
@@ -172,6 +173,7 @@ test('trainer cached data remains available until reconnect discovers revoked gr
     page.getByText('Synthetic cached observation').first(),
   ).toBeVisible();
   await expect.poll(() => stored(page)).toBeGreaterThan(0);
+  await seedVideoDraft(page);
   await context.setOffline(true);
   const db = new Database('.data/e2e.sqlite');
   db.prepare('DELETE FROM trainer_access').run();
@@ -183,6 +185,7 @@ test('trainer cached data remains available until reconnect discovers revoked gr
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page).toHaveURL('/login');
   await expect.poll(() => stored(page)).toBe(0);
+  expect(await storedRows(page, 'tempo-video-upload', 'drafts', 1)).toBe(0);
   const response = await page.request.get('/api/measurements?ownerId=unknown');
   expect(response.status()).toBe(401);
 });
@@ -213,6 +216,7 @@ test('offline logout clears read cache and durable intent blocks old-session res
   await signIn(page);
   await page.goto('/measurements');
   await expect.poll(() => stored(page)).toBeGreaterThan(0);
+  await seedVideoDraft(page);
   await context.setOffline(true);
   await menu(page);
   await page.getByRole('button', { name: 'Выйти', exact: true }).click();
@@ -221,6 +225,7 @@ test('offline logout clears read cache and durable intent blocks old-session res
     await page.evaluate(() => localStorage.getItem('tempo:logout-pending')),
   ).toBe('true');
   await expect.poll(() => stored(page)).toBe(0);
+  expect(await storedRows(page, 'tempo-video-upload', 'drafts', 1)).toBe(0);
   await context.setOffline(false);
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   // Reconnect completes sign-out and redirects itself; a second navigation races it.
@@ -312,6 +317,7 @@ test('account replacement clears the previous reader and notifies the other tab'
   await expect(
     sibling.getByText('Synthetic cached observation').first(),
   ).toBeVisible();
+  await seedVideoDraft(page);
   await signIn(page, 'trainer');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(page).toHaveURL('/login');
@@ -320,6 +326,7 @@ test('account replacement clears the previous reader and notifies the other tab'
     0,
   );
   await expect.poll(() => stored(page)).toBe(0);
+  expect(await storedRows(page, 'tempo-video-upload', 'drafts', 1)).toBe(0);
 });
 test('two foreground tabs send one durable operation once after reconnect', async ({
   page,

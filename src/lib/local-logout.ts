@@ -1,4 +1,4 @@
-import { OfflineStorage } from './offline-device';
+import { clearLocalData } from './local-data';
 import { resetSession } from './session-state';
 const logoutKey = 'tempo:logout-pending';
 let memoryIntent = false;
@@ -50,7 +50,7 @@ export async function clearClientData() {
   } catch {
     /* Local reset still applies when storage is unavailable. */
   }
-  await new OfflineStorage().purge();
+  await clearLocalData();
 }
 export async function endClientSession(deleteWrites: boolean) {
   beginLocalLogout();

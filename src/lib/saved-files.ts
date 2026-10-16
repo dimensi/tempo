@@ -9,6 +9,7 @@ import { readSession, sessionGeneration } from './session-state';
 const empty = { files: [] as StoredOfflineFile[], ready: false };
 class SavedFiles {
   private state = empty;
+  private generation = 0;
   private listeners = new Set<() => void>();
   getSnapshot = () => this.state;
   getServerSnapshot = () => empty;
@@ -24,12 +25,21 @@ class SavedFiles {
     this.state = state;
     for (const listener of this.listeners) listener();
   }
+  clear() {
+    this.generation++;
+    this.set({ files: [], ready: true });
+  }
   async load() {
     const partition = readSession()?.partition;
     const generation = sessionGeneration();
+    const localGeneration = this.generation;
     if (!partition) return;
     const files = await new OfflineStorage().files(partition);
-    if (generation === sessionGeneration()) this.set({ files, ready: true });
+    if (
+      generation === sessionGeneration() &&
+      localGeneration === this.generation
+    )
+      this.set({ files, ready: true });
   }
   private url(href: string) {
     const url = new URL(href, location.origin);
@@ -66,6 +76,7 @@ class SavedFiles {
   }) {
     const partition = readSession()?.partition;
     const generation = sessionGeneration();
+    const localGeneration = this.generation;
     if (!partition) throw new Error('Session unavailable');
     if (input.size && input.size > offlineFileLimits.singleBytes)
       throw new Error('File too large');
@@ -74,7 +85,11 @@ class SavedFiles {
     });
     if (!response.ok) throw new Error('File unavailable');
     const bytes = await response.blob();
-    if (generation !== sessionGeneration()) throw new Error('Session changed');
+    if (
+      generation !== sessionGeneration() ||
+      localGeneration !== this.generation
+    )
+      throw new Error('Local data changed');
     if (
       !bytes.size ||
       bytes.size > offlineFileLimits.singleBytes ||
@@ -91,7 +106,9 @@ class SavedFiles {
         savedAt: Date.now(),
         fence: { partition, generation: 0, deviceEpoch: '' },
       },
-      () => generation === sessionGeneration(),
+      () =>
+        generation === sessionGeneration() &&
+        localGeneration === this.generation,
     );
     await this.load();
   }

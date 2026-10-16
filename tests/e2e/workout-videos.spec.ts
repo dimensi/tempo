@@ -303,6 +303,11 @@ test('video creation discovers an expired real session and clears private cache'
         }),
     );
   await expect.poll(cachedResources).toBeGreaterThan(0);
+  const { seedVideoDraft, storedRows } = await import('./local-storage');
+  await seedVideoDraft(page);
+  await expect
+    .poll(() => storedRows(page, 'tempo-video-upload', 'drafts', 1))
+    .toBeGreaterThan(1);
   // Isolate discovery through the video API; server authentication remains real.
   await page.route('**/api/read/context', (route) => route.abort('failed'));
   expect(
@@ -325,4 +330,5 @@ test('video creation discovers an expired real session and clears private cache'
   expect(await response.json()).toEqual({ error: 'AUTH_REQUIRED' });
   await expect(page).toHaveURL('/login');
   expect(await cachedResources()).toBe(0);
+  expect(await storedRows(page, 'tempo-video-upload', 'drafts', 1)).toBe(0);
 });

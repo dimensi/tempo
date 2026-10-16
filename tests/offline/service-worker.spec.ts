@@ -1,9 +1,11 @@
 import { expect, test } from '../ci/isolated-test';
+import { seedVideoDraft, storedRows } from '../e2e/local-storage';
 test('retirement removes only app shell caches and preserves files and the durable queue', async ({
   page,
   request,
 }) => {
   await page.goto('/login');
+  await seedVideoDraft(page);
   await request.post('/__offline-test/control', { data: { mode: 'legacy' } });
   await page.evaluate(async () => {
     await navigator.serviceWorker.register('/offline-sw.js', { scope: '/' });
@@ -108,6 +110,7 @@ test('retirement removes only app shell caches and preserves files and the durab
     ),
   ).toBe('pending');
   await expect(page).toHaveURL('/login');
+  expect(await storedRows(page, 'tempo-video-upload', 'drafts', 1)).toBe(1);
   expect((await page.request.get('/api/read/context')).status()).toBe(401);
 });
 test('ordinary application boot does not register an offline worker or request shell assets', async ({

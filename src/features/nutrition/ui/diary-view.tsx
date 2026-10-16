@@ -44,6 +44,7 @@ export interface DiaryViewProps {
   commentsSlot?: ReactNode;
   navigationSlot?: ReactNode;
   unavailableSlot?: ReactNode;
+  photosPendingSlot?: ReactNode;
   privatePhotos?: boolean;
   // Coordinator supplies authorized operations; absent operations hide mutation controls.
   photoActions?: {
@@ -123,6 +124,7 @@ export function DiaryView({
   commentsSlot,
   navigationSlot,
   unavailableSlot,
+  photosPendingSlot,
   privatePhotos = false,
   photoActions,
 }: DiaryViewProps) {
@@ -166,7 +168,7 @@ export function DiaryView({
       </Group>
       {navigationSlot}
       {!day ? (
-        (unavailableSlot ?? <Alert>{m.empty}</Alert>)
+        (unavailableSlot ?? (!photosPendingSlot && <Alert>{m.empty}</Alert>))
       ) : (
         <Card
           withBorder
@@ -178,7 +180,10 @@ export function DiaryView({
           <Summary {...day} showSource />
         </Card>
       )}
-      {day && mealSections.length === 0 && <Alert>{m.emptyDay}</Alert>}
+      {day && mealSections.length === 0 && !photosPendingSlot && (
+        <Alert>{m.emptyDay}</Alert>
+      )}
+      {photosPendingSlot}
       {error && (
         <Alert color="red" role="alert">
           {m.error}

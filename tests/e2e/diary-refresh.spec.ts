@@ -4,6 +4,92 @@ import Database from 'better-sqlite3';
 import { nutritionDaySchema } from '@/contracts/nutrition';
 import { day as syntheticDay } from '../unit/diary/fixture';
 
+test('missing day and photos never become a confirmed empty diary and can be retried independently', async ({
+  page,
+}) => {
+  const ownerId = await login(page, 'owner');
+  const date = '2026-06-14';
+  const image = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a8O8AAAAASUVORK5CYII=',
+    'base64',
+  );
+  expect(
+    (
+      await page.request.post(
+        `/api/nutrition/photos?${new URLSearchParams({ ownerId, date, daytime: 'lunch' })}`,
+        {
+          headers: {
+            origin: new URL(page.url()).origin,
+            'content-type': 'image/png',
+          },
+          data: image,
+        },
+      )
+    ).status(),
+  ).toBe(201);
+  let finishDay!: () => void;
+  let finishPhotos!: () => void;
+  const dayGate = new Promise<void>((resolve) => {
+    finishDay = resolve;
+  });
+  const photoGate = new Promise<void>((resolve) => {
+    finishPhotos = resolve;
+  });
+  let failDay = true;
+  let failPhotos = true;
+  await page.route('**/api/nutrition/days?*', async (route) => {
+    await dayGate;
+    if (failDay)
+      await route.fulfill({ status: 503, json: { error: 'Unavailable' } });
+    else await route.continue();
+  });
+  await page.route('**/api/nutrition/photos?*', async (route) => {
+    await photoGate;
+    if (failPhotos)
+      await route.fulfill({ status: 503, json: { error: 'Unavailable' } });
+    else await route.continue();
+  });
+  await page.goto(`/diary?date=${date}`);
+  await expect(
+    page.getByRole('heading', { name: 'Дневник питания', exact: true }),
+  ).toBeVisible();
+  const empty = page.getByText('Данные за этот день пока не загружены.', {
+    exact: true,
+  });
+  await expect(empty).toHaveCount(0);
+  await expect(
+    page.getByText('За этот день нет записей питания.', { exact: true }),
+  ).toHaveCount(0);
+  finishDay();
+  await expect(
+    page.getByRole('button', { name: 'Повторить', exact: true }),
+  ).toBeVisible();
+  failDay = false;
+  await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Повторить', exact: true }),
+  ).toHaveCount(0);
+  await expect(empty).toHaveCount(0);
+  finishPhotos();
+  await expect(
+    page.getByRole('button', { name: 'Повторить', exact: true }),
+  ).toBeVisible();
+  await expect(empty).toHaveCount(0);
+  failPhotos = false;
+  await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await expect(
+    page
+      .getByRole('region', { name: 'Обед', exact: true })
+      .getByRole('img', { name: 'Обед — Добавлено вручную', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Повторить', exact: true }),
+  ).toHaveCount(0);
+  // A genuinely empty result remains distinguishable from both missing reads.
+  await page.goto('/diary?date=2026-06-15');
+  await expect(empty).toBeVisible();
+});
+
 async function login(page: Page, role: 'owner' | 'trainer') {
   return signInFixture(page, role);
 }

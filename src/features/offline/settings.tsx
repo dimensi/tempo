@@ -1,7 +1,6 @@
 'use client';
 import { offlineMessages as m } from '@/config/offline';
-import { clearReadStorage } from '@/lib/browser-storage';
-import { clientReads } from '@/lib/client-read';
+import { clearLocalData } from '@/lib/local-data';
 import { Button, Stack, Text, Title } from '@mantine/core';
 import { useState } from 'react';
 export function OfflineSettings() {
@@ -14,9 +13,8 @@ export function OfflineSettings() {
         <Button
           variant="subtle"
           onClick={() => {
-            void clearReadStorage()
+            void clearLocalData()
               .then(() => {
-                clientReads.clear();
                 setFailed(false);
               })
               .catch(() => setFailed(true));
