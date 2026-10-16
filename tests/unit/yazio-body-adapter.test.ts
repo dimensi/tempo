@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
-vi.mock('@/server/yazio/client', () => ({
+vi.mock('@/server/yazio/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/server/yazio/client')>()),
   createYazioAuth: async (store: { load: () => Promise<unknown> }) => {
     await store.load();
     return {

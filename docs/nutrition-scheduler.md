@@ -51,7 +51,35 @@ After restart, an overdue enabled schedule is attempted once after the delayed p
 
 `yazio_sync_progress` stores owner/date completion for food, photos, steps, weight and body values, including successful empty responses. A selected part is marked pending before reads; success is committed in the same synchronous transaction as its data. Old photo repairs preserve food and reuse successful unchanged photo URLs; recent/forced refresh downloads images again. The existing 24-hour product/recipe cache remains unchanged.
 
-Migration 0016 adopts existing snapshots as complete, retaining known food/photo failures from the last stored status. It adds required `skippedDates` to persisted statuses and moves enabled schedules four hours ahead once. Unknown historic gaps in already-saved snapshots are deliberately trusted; use selected-day refresh to repair them. Manual photos alone do not establish a loaded day. Ready skipped dates are reported separately from newly fetched food and do not cause a failed result. Sanitized server diagnostics contain stage, date, duration and a generic failure category, never payloads, owner IDs, CDN URLs or credentials.
+Migration 0016 adopts existing snapshots as complete, retaining known food/photo failures from the last stored status. It adds required `skippedDates` to persisted statuses and moves enabled schedules four hours ahead once. Unknown historic gaps in already-saved snapshots are deliberately trusted; use selected-day refresh to repair them. Manual photos alone do not establish a loaded day. Ready skipped dates are reported separately from newly fetched food and do not cause a failed result.
+
+### Transient read failures
+
+Food, summary, photo metadata, product/recipe references, weight and body GET reads
+retry only allowlisted transient transport failures (including connect/header/body
+timeouts, connection reset and temporary DNS failure). Each read has at most three
+attempts, with 500 ms and 1000 ms backoffs and a 45-second read budget. Food and
+health share the same per-date summary retry sequence, including its final failure.
+Authentication completes before this loop; credential exchange, token refresh,
+token persistence, POST and PUT are never replayed by it. Connection-generation
+checks run before each attempt and before returning a successful result.
+
+HTTP errors (including 401/403/429/5xx), validation failures, persistence failures
+and unknown exceptions are not retried. An SDK request that exceeds the wrapper's
+30-second deadline is also not replayed: the SDK does not expose cancellation and
+a second attempt could overlap the original. Body GETs use an abortable 20-second
+transport timeout within the same budget; body writes retain their single-attempt
+transport and existing uncertainty/reconciliation lifecycle. Photo bytes retain
+their existing validated CDN/range transport policy; only metadata uses this loop.
+
+`yazio_read_retry`, `yazio_read_failed` and `yazio_read_recovered` identify the
+operation, optional date, attempt count and elapsed milliseconds; retry events
+include the next delay. `yazio_sync_failure` retains the failing persistence/read
+stage and carries the safe underlying category/code or numeric HTTP status and
+attempt count where available. Categories distinguish network, timeout, HTTP,
+validation, storage and unknown failures. Error messages, stacks, request/response
+payloads, owner IDs, product/recipe IDs, URLs and credentials are never logged.
+Unknown errors remain unknown instead of being mislabeled as network failures.
 
 Implementation ownership: YAZIO jobs/adapters, nutrition persistence, the coordinated progress schema/migration and sync-status contract, settings text/progress, and associated tests/docs. Authorization and transport payload semantics remain unchanged.
 

@@ -16,11 +16,15 @@ export interface YazioTokenStore {
   assertCurrent?(): Promise<void>;
 }
 export class YazioIntegrationError extends Error {
-  constructor(public readonly code: 'NOT_CONFIGURED' | 'UPSTREAM_FAILURE') {
+  constructor(
+    public readonly code: 'NOT_CONFIGURED' | 'UPSTREAM_FAILURE',
+    options?: ErrorOptions,
+  ) {
     super(
       code === 'NOT_CONFIGURED'
         ? 'YAZIO connection is not configured'
         : 'YAZIO request failed',
+      options,
     );
   }
 }
@@ -61,20 +65,25 @@ export async function createYazioAuth(store: YazioTokenStore) {
 export async function createYazioClient(store: YazioTokenStore) {
   return new Yazio(await createYazioAuth(store));
 }
-export async function yazioRequest<T>(operation: () => Promise<T>): Promise<T> {
+export class YazioRequestTimeoutError extends Error {}
+
+export async function yazioRequest<T>(
+  operation: () => Promise<T>,
+  timeoutMs = 30000,
+): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       operation(),
       new Promise<never>((_, reject) => {
         timeout = setTimeout(
-          () => reject(new Error('YAZIO request timeout')),
-          30000,
+          () => reject(new YazioRequestTimeoutError('YAZIO request timeout')),
+          timeoutMs,
         );
       }),
     ]);
-  } catch {
-    throw new YazioIntegrationError('UPSTREAM_FAILURE');
+  } catch (cause) {
+    throw new YazioIntegrationError('UPSTREAM_FAILURE', { cause });
   } finally {
     clearTimeout(timeout);
   }

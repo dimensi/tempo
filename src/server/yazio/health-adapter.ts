@@ -1,7 +1,5 @@
 import 'server-only';
 import { z } from 'zod';
-import type { Yazio } from '@dimensi/yazio';
-import { yazioRequest } from './client';
 import {
   normalizeHealthSummary,
   normalizeYazioWeight,
@@ -9,21 +7,22 @@ import {
 
 export class YazioHealthReadError extends Error {
   readonly code = 'HEALTH_READ_FAILED';
-  constructor() {
-    super('YAZIO health read failed');
+  constructor(options?: ErrorOptions) {
+    super('YAZIO health read failed', options);
   }
 }
 
 // Supply the existing lease-fenced client; this adapter creates no connection.
 // Consumers must fence persistence after awaiting and keep food status separate.
-export function yazioHealthUpstream(
-  user: Pick<Yazio['user'], 'getWeight' | 'getDailySummary'>,
-) {
+export function yazioHealthUpstream(user: {
+  getWeight(options: { date: string }): Promise<unknown>;
+  getDailySummary(options: { date: string }): Promise<unknown>;
+}) {
   const read = async <T>(operation: () => Promise<T>) => {
     try {
-      return await yazioRequest(operation);
-    } catch {
-      throw new YazioHealthReadError();
+      return await operation();
+    } catch (cause) {
+      throw new YazioHealthReadError({ cause });
     }
   };
   return {

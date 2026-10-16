@@ -1,6 +1,8 @@
 import 'server-only';
 import { z } from 'zod';
 import { createYazioAuth, type YazioTokenStore } from './client';
+import { retryYazioRead } from '@/server/yazio/read-request';
+import { YazioReadFailure } from '@/server/yazio/sync-diagnostics';
 import {
   bodySummarySchema,
   bodyRangeSchema,
@@ -28,31 +30,41 @@ export async function bodyUpstream(
     await store.assertCurrent?.();
     const token = await auth.authenticate();
     await store.assertCurrent?.();
-    // Fetch is aborted before the bounded request can leave its single-process slot.
-    const response = await fetch(`https://yzapi.yazio.com/v20${path}`, {
-      method,
-      headers: {
-        'User-Agent':
-          'YAZIO/26.30.1 (com.yazio.ios.YAZIO; build:2607271240; iOS 27.0.0) Ktor',
-        Authorization: `Bearer ${token.access_token}`,
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(30_000),
-      redirect: 'error',
-      cache: 'no-store',
-    });
-    await store.assertCurrent?.();
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw new Error('Body transport failed');
-    }
-    const result =
-      method === 'GET'
-        ? await response.json()
-        : await response.arrayBuffer().then(() => undefined);
-    await store.assertCurrent?.();
-    return result;
+    const send = async () => {
+      // Fetch is aborted before the bounded request can leave its single-process slot.
+      const response = await fetch(`https://yzapi.yazio.com/v20${path}`, {
+        method,
+        headers: {
+          'User-Agent':
+            'YAZIO/26.30.1 (com.yazio.ios.YAZIO; build:2607271240; iOS 27.0.0) Ktor',
+          Authorization: `Bearer ${token.access_token}`,
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(method === 'GET' ? 20000 : 30000),
+        redirect: 'error',
+        cache: 'no-store',
+      });
+      await store.assertCurrent?.();
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new YazioReadFailure(
+          { category: 'HTTP', status: response.status, retryable: false },
+          1,
+        );
+      }
+      const result =
+        method === 'GET'
+          ? await response.json()
+          : await response.arrayBuffer().then(() => undefined);
+      await store.assertCurrent?.();
+      return result;
+    };
+    return method === 'GET'
+      ? retryYazioRead(send, { operation: 'body' }, () =>
+          store.assertCurrent?.(),
+        )
+      : send();
   }
   return {
     summary: async (date) =>

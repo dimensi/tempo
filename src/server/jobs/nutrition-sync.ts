@@ -96,9 +96,11 @@ export async function syncNutritionPeriod(
             : upstream
                 .images(date)
                 .catch(
-                  (): Awaited<ReturnType<NutritionDayUpstream['images']>> => {
+                  (
+                    error: unknown,
+                  ): Awaited<ReturnType<NutritionDayUpstream['images']>> => {
                     photoMetadataFailed = true;
-                    syncReadFailure('photo-metadata', date, started);
+                    syncReadFailure('photo-metadata', date, started, error);
                     return {};
                   },
                 ),
@@ -174,8 +176,8 @@ export async function syncNutritionPeriod(
                       mime,
                       ...stored,
                     };
-                  } catch {
-                    syncReadFailure('photo-download', date, started);
+                  } catch (error) {
+                    syncReadFailure('photo-download', date, started, error);
                     photoFailed = true;
                     const existing = repository.photo(ownerId, id);
                     return existing?.source === 'yazio' ? existing : null;
@@ -196,8 +198,8 @@ export async function syncNutritionPeriod(
         if (photoFailed) status.photoFailedDates.push(date);
         if (work.food) status.completedDates.push(date);
         else status.skippedDates.push(date);
-      } catch {
-        syncReadFailure(stage, date, started);
+      } catch (error) {
+        syncReadFailure(stage, date, started, error);
         status.failedDates.push(date);
       }
       repository.saveStatus(ownerId, status);
