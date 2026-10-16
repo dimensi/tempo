@@ -7,23 +7,35 @@ No deployment receiver, custom archive protocol, installer or new server helper 
 
 ## Image and checks
 
-Release runs on main pushes or manually on main. One job executes checkout, Docker build,
-GHCR publication and SSH deployment as separate sequential steps. Deployment runs only
+Release runs on main pushes or manually on main. The `build` job checks out the revision,
+builds the image and publishes it to GHCR. The `deploy` job depends on `build` and
+checks out the same revision before SSH deployment. Deployment runs only
 when `NUTRITION_CD_ENABLED` is `true`; build and publication remain available otherwise.
 PR CI, formatting, lint, typecheck, unit/integration tests, browser gates and
 disposable Docker smoke do not run in this workflow. All three full E2E suites
 are mandatory before every merge into main, as specified in AGENTS.md.
 A main push publishes that exact local image as
 `ghcr.io/dimensi/yazio-dashboard:latest` using the job's `GITHUB_TOKEN`.
-There is no second build. The moving `latest` tag is used for publication and deployment;
-the immutable revision label must match the workflow SHA before startup and after deployment. There is no manual full-test CI branch.
+There is no second build. Publication updates `latest` and returns its immutable
+`ghcr.io/dimensi/yazio-dashboard@sha256:...` reference as a job output. Deployment
+pulls that exact digest, so a retry cannot accidentally pick a later `latest`.
+The immutable revision label must match the workflow SHA before startup and after deployment. There is no manual full-test CI branch.
 
-Deployment runs only after build and publication succeed in the same job, and accepts
+Deployment runs only after the `build` job succeeds, and accepts
 only the current main SHA. Manual runs have no external run ID or revision inputs.
 No Actions artifacts are uploaded or downloaded. Production concurrency remains
 `nutrition-production`, cancel-in-progress true: each new main push or manual main run cancels the
 previous running release in this group, including an in-progress build or deploy. SSH verifies the existing host key
 on port 2224. The pulled image revision label and final running image/revision must match.
+
+## Retrying a release
+
+In GitHub Actions, select the failed `deploy` job and use **Re-run jobs**, or choose
+**Re-run failed jobs** on the run. The successful `build` job and its image output
+are reused, so deployment retries do not rebuild or republish the image. A full
+workflow rerun executes both jobs. The current-main revision guard still applies:
+retrying an older release after main advances is intentionally rejected.
+Pruning remains after successful health verification inside `deploy`.
 
 ## Files and secrets
 
