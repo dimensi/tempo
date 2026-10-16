@@ -82,14 +82,17 @@ class SavedFiles {
       bytes.type !== (input.kind === 'pdf' ? 'application/pdf' : 'video/mp4')
     )
       throw new Error('Invalid file');
-    await new OfflineStorage().writeFile({
-      id: input.id,
-      label: input.label,
-      kind: input.kind,
-      bytes,
-      savedAt: Date.now(),
-      fence: { partition, generation: 0, deviceEpoch: '' },
-    });
+    await new OfflineStorage().writeFile(
+      {
+        id: input.id,
+        label: input.label,
+        kind: input.kind,
+        bytes,
+        savedAt: Date.now(),
+        fence: { partition, generation: 0, deviceEpoch: '' },
+      },
+      () => generation === sessionGeneration(),
+    );
     await this.load();
   }
   async removeFile(id: string) {

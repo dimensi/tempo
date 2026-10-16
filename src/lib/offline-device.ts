@@ -76,8 +76,15 @@ export class OfflineStorage {
         );
     });
   }
-  async writeFile(file: StoredOfflineFile | { id: string; fence: CacheFence }) {
+  async writeFile(
+    file: StoredOfflineFile | { id: string; fence: CacheFence },
+    isCurrent = () => true,
+  ) {
     await browserStore<void>(['files'], 'readwrite', (tx) => {
+      if (!isCurrent()) {
+        tx.abort();
+        return;
+      }
       const store = tx.objectStore('files');
       if (!('bytes' in file)) {
         store.delete(file.id);
@@ -85,6 +92,10 @@ export class OfflineStorage {
       }
       const request = store.getAll();
       request.onsuccess = () => {
+        if (!isCurrent()) {
+          tx.abort();
+          return;
+        }
         const rows = (request.result as StoredOfflineFile[]).filter(
           (row) => row.id !== file.id,
         );

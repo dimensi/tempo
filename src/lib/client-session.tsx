@@ -65,6 +65,7 @@ export function ClientSession({
           if (!response.ok || closed || generation !== sessionGeneration())
             return;
           const context = readContextSchema.parse(await response.json());
+          if (closed || generation !== sessionGeneration()) return;
           if (context.partition !== initial.partition) {
             const { endClientSession } = await import('./local-logout');
             await endClientSession(false);

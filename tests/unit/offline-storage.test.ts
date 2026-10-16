@@ -46,3 +46,10 @@ it('purges read/file stores without deleting a separate write database', async (
   expect(await storage.files('owner')).toEqual([]);
   expect(data.get('queue-other-database')?.size).toBe(1);
 });
+
+it('a session change before the file transaction completes prevents a late save', async () => {
+  const { storage } = setup();
+  const current = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+  await expect(storage.writeFile(file('late'), current)).rejects.toBeDefined();
+  expect(await storage.files('owner')).toEqual([]);
+});

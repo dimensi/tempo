@@ -1,3 +1,4 @@
+import { signInFixture } from '../ci/real-auth';
 import { testOrigin } from '../ci/origin';
 import { execFileSync } from 'node:child_process';
 import { test, expect, type Page } from '../ci/isolated-test';
@@ -41,6 +42,10 @@ function fixture(
   ) as { ownerId: string; status: SyncStatus };
 }
 async function login(page: Page, role: 'owner' | 'trainer') {
+  if (role === 'trainer') {
+    await signInFixture(page, role);
+    return;
+  }
   await page.goto('/login');
   await page.getByLabel('Электронная почта').fill(`${role}@example.test`);
   await page
