@@ -238,3 +238,75 @@ test('anonymous measurement API is protected', async ({ request, baseURL }) => {
     ).status(),
   ).toBe(401);
 });
+
+test('a queued save cannot overwrite a newer measurement snapshot', async ({
+  page,
+  baseURL,
+}) => {
+  const ownerId = await login(page, 'owner', baseURL!);
+  await page.goto('/measurements');
+  const note = page.getByLabel('Заметка', { exact: true });
+  await page
+    .getByRole('main')
+    .getByLabel('Вес (кг)', { exact: true })
+    .fill('74.125');
+  await note.fill('Queued snapshot race');
+  let releasePost!: () => void;
+  const held = new Promise<void>((resolve) => {
+    releasePost = resolve;
+  });
+  let serverCommitted!: () => void;
+  const committed = new Promise<void>((resolve) => {
+    serverCommitted = resolve;
+  });
+  await page.route('**/api/offline/writes', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    serverCommitted();
+    await held;
+    await route.fulfill({ response });
+  });
+  let failRefresh = false;
+  await page.route('**/api/measurements?*', (route) =>
+    failRefresh
+      ? route.fulfill({ status: 503, json: { error: 'Unavailable' } })
+      : route.continue(),
+  );
+  try {
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await committed;
+    const concurrent = await page.request.post(
+      `/api/measurements?ownerId=${ownerId}`,
+      {
+        headers: { origin: baseURL! },
+        data: {
+          measuredAt: '2026-10-13',
+          note: 'Concurrent snapshot record',
+          values: [{ metric: 'weight', value: '75', unit: 'kg' }],
+        },
+      },
+    );
+    expect(concurrent.ok()).toBe(true);
+    // Model the queue's revalidation completing before its save callback resumes.
+    await page.evaluate(() =>
+      window.dispatchEvent(new Event('tempo:read-revalidate')),
+    );
+    const table = page.getByRole('table');
+    await expect(
+      table.getByText('Concurrent snapshot record', { exact: true }),
+    ).toBeVisible();
+    failRefresh = true;
+    releasePost();
+    await expect(note).toHaveValue('');
+    await expect(
+      table.getByText('Concurrent snapshot record', { exact: true }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      table.getByText('Concurrent snapshot record', { exact: true }),
+    ).toBeVisible();
+  } finally {
+    releasePost();
+  }
+});

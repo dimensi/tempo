@@ -274,3 +274,55 @@ test('suspending the page pauses the upload and a manual retry resumes it', asyn
     page.getByRole('button', { name: m.videoDelete, exact: true }),
   ).toBeVisible({ timeout: 45000 });
 });
+
+test('video creation discovers an expired real session and clears private cache', async ({
+  page,
+}) => {
+  await login(page);
+  await createSession(page);
+  await page
+    .locator('input[type=file]')
+    .setInputFiles('tests/fixtures/workout-videos/rotated.mov');
+  await expect(page.getByText(new RegExp(m.videoPreview))).toBeVisible({
+    timeout: 45000,
+  });
+  const cachedResources = () =>
+    page.evaluate(
+      () =>
+        new Promise<number>((resolve, reject) => {
+          const request = indexedDB.open('yazio-offline-read-v1', 3);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction('resources', 'readonly');
+            const count = tx.objectStore('resources').count();
+            count.onsuccess = () => resolve(count.result);
+            count.onerror = () => reject(count.error);
+            tx.oncomplete = () => db.close();
+          };
+        }),
+    );
+  await expect.poll(cachedResources).toBeGreaterThan(0);
+  // Isolate discovery through the video API; server authentication remains real.
+  await page.route('**/api/read/context', (route) => route.abort('failed'));
+  expect(
+    (
+      await page.request.post('/api/auth/sign-out', {
+        headers: { origin: testOrigin },
+        data: {},
+      })
+    ).ok(),
+  ).toBe(true);
+  const denied = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/workouts/videos' &&
+      response.request().method() === 'GET',
+  );
+  await page.getByRole('button', { name: m.videoUpload, exact: true }).click();
+  const response = await denied;
+  expect(response.status()).toBe(401);
+  expect(response.headers()['x-auth-error']).toBe('AUTH_REQUIRED');
+  expect(await response.json()).toEqual({ error: 'AUTH_REQUIRED' });
+  await expect(page).toHaveURL('/login');
+  expect(await cachedResources()).toBe(0);
+});

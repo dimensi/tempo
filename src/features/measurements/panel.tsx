@@ -12,7 +12,7 @@ import {
 import { type MeasurementPrecisionIssue } from '@/contracts/yazio-body';
 import { apiFetch } from '@/lib/api-client';
 import { apiResults } from '@/lib/api-results';
-import { seedClientRead } from '@/lib/client-read';
+import { updateClientRead } from '@/lib/client-read';
 import { formatDecimal } from '@/lib/number-display';
 import {
   saveDeviceWrite,
@@ -143,12 +143,7 @@ export function MeasurementsPanel({
         setError(responseError(response.status));
         return;
       }
-      const updated = (await response.json()) as Measurement;
-      await seedClientRead(
-        url,
-        items.map((item) => (item.id === id ? updated : item)),
-        generation,
-      );
+      if (generation === sessionGeneration()) await refresh();
     } catch {
       setError(m.error);
     } finally {
@@ -205,16 +200,19 @@ export function MeasurementsPanel({
           editing,
           base,
         );
-        await synchronizeDeviceWrite(operation);
-        await seedClientRead(
-          url,
-          [
-            ...items.filter((item) => item.id !== operation.recordId),
-            { ...parsed.data, id: operation.recordId, ownerId, sync: [] },
-          ],
-          generation,
-        );
-        reset();
+        const acknowledged = await synchronizeDeviceWrite(operation);
+        if (generation !== sessionGeneration()) return;
+        if (acknowledged) await refresh();
+        else
+          await updateClientRead(
+            readResources.measurements(url),
+            (current = []) => [
+              ...current.filter((item) => item.id !== operation.recordId),
+              { ...parsed.data, id: operation.recordId, ownerId, sync: [] },
+            ],
+            generation,
+          );
+        if (generation === sessionGeneration()) reset();
         return;
       }
       const r = await apiFetch(
@@ -231,15 +229,9 @@ export function MeasurementsPanel({
         setError(responseError(r.status));
         return;
       }
-      const item = (await r.json()) as Measurement;
-      await seedClientRead(
-        url,
-        [...items.filter((x) => x.id !== item.id), item].sort((a, b) =>
-          b.measuredAt.localeCompare(a.measuredAt),
-        ),
-        generation,
-      );
-      reset();
+      if (generation !== sessionGeneration()) return;
+      await refresh();
+      if (generation === sessionGeneration()) reset();
     } catch {
       setError(deviceWrites ? writeMessages.error : m.error);
     } finally {
@@ -259,13 +251,12 @@ export function MeasurementsPanel({
         setError(responseError(r.status));
         return;
       }
-      await seedClientRead(
-        url,
-        items.filter((x) => x.id !== id),
-        generation,
-      );
-      setDeleting(undefined);
-      if (editing === id) reset();
+      if (generation !== sessionGeneration()) return;
+      await refresh();
+      if (generation === sessionGeneration()) {
+        setDeleting(undefined);
+        if (editing === id) reset();
+      }
     } catch {
       setError(m.error);
     } finally {

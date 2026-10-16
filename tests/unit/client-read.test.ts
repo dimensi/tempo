@@ -1,11 +1,18 @@
+import { stepsGoalSchema } from '@/contracts/steps-goal';
 import { clearReadStorage } from '@/lib/browser-storage';
 import {
   bindReadScope,
   clientReads,
   refreshClientRead,
   seedClientRead,
+  updateClientRead,
 } from '@/lib/client-read';
-import { bindSession, readSession, resetSession } from '@/lib/session-state';
+import {
+  bindSession,
+  readSession,
+  resetSession,
+  sessionGeneration,
+} from '@/lib/session-state';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { indexedDBDriver } from './helpers/browser-db';
 const session = (partition = 'owner') => ({
@@ -124,3 +131,51 @@ it.each([403, 404])(
     expect(clientReads.snapshot(otherKey).data).toBe('[]');
   },
 );
+
+it('local cache updates use the newest shared value and persist it', async () => {
+  await seedClientRead(key, { dailyStepsGoal: 123 });
+  await seedClientRead(key, { dailyStepsGoal: 456 });
+  const resource = {
+    href: key,
+    decode: (body: string) => stepsGoalSchema.parse(JSON.parse(body)),
+  };
+  await updateClientRead(resource, (current) => ({
+    dailyStepsGoal: (current?.dailyStepsGoal ?? 0) + 1,
+  }));
+  expect(clientReads.snapshot(key)).toMatchObject({
+    data: '{"dailyStepsGoal":457}',
+    coverage: 'complete',
+  });
+  clientReads.clear();
+  await clientReads.restore(key);
+  expect(clientReads.snapshot(key).data).toBe('{"dailyStepsGoal":457}');
+});
+it('local updates without a complete GET snapshot remain partial after restore', async () => {
+  const resource = {
+    href: key,
+    decode: (body: string) => stepsGoalSchema.parse(JSON.parse(body)),
+  };
+  await updateClientRead(resource, () => ({ dailyStepsGoal: 123 }));
+  await updateClientRead(resource, () => ({ dailyStepsGoal: 456 }));
+  expect(clientReads.snapshot(key).coverage).toBe('partial');
+  clientReads.clear();
+  await clientReads.restore(key);
+  expect(clientReads.snapshot(key)).toMatchObject({
+    data: '{"dailyStepsGoal":456}',
+    coverage: 'partial',
+  });
+});
+it('a local update waiting for restore cannot seed a replacement account', async () => {
+  const update = vi.fn(() => ({ dailyStepsGoal: 123 }));
+  const resource = {
+    href: key,
+    decode: (body: string) => stepsGoalSchema.parse(JSON.parse(body)),
+  };
+  const pending = updateClientRead(resource, update, sessionGeneration());
+  bindSession(session('other'));
+  bindReadScope();
+  await seedClientRead(key, { dailyStepsGoal: 999 });
+  await pending;
+  expect(update).not.toHaveBeenCalled();
+  expect(clientReads.snapshot(key).data).toBe('{"dailyStepsGoal":999}');
+});

@@ -12,6 +12,7 @@ import {
   ReadResourceStore,
   type PersistedRead,
 } from './read-resource';
+import type { ReadDescriptor } from './read-descriptors';
 import { readSession, sessionGeneration } from './session-state';
 export function canonicalReadKey(url: URL) {
   const params = new URLSearchParams(url.search);
@@ -138,6 +139,7 @@ export async function seedClientRead(
   key: string,
   value: unknown,
   expectedGeneration = sessionGeneration(),
+  coverage?: 'complete' | 'partial',
 ) {
   key = canonicalReadKey(new URL(key, 'https://tempo.local'));
   if (expectedGeneration !== sessionGeneration() || !readSession()) return;
@@ -147,15 +149,43 @@ export async function seedClientRead(
   );
   if (!schema) return;
   const data = JSON.stringify(schema.parse(value));
-  clientReads.seed(key, data);
+  const savedAt = Date.now();
+  const savedCoverage = coverage ?? resourceCoverage(data, key);
+  clientReads.seed(key, data, savedAt, 'network', savedCoverage);
   await persistence
     .write(key, {
       data,
-      savedAt: Date.now(),
-      touchedAt: Date.now(),
-      coverage: resourceCoverage(data, key),
+      savedAt,
+      touchedAt: savedAt,
+      coverage: savedCoverage,
     })
     .catch(() => {});
+}
+/** Apply a local mutation to the latest shared snapshot, never a render capture. */
+export async function updateClientRead<T>(
+  resource: ReadDescriptor<T>,
+  update: (current: T | undefined) => T,
+  expectedGeneration = sessionGeneration(),
+) {
+  if (
+    !resource.href ||
+    !readSession() ||
+    expectedGeneration !== sessionGeneration()
+  )
+    return;
+  bindReadScope();
+  const key = canonicalReadKey(new URL(resource.href, 'https://tempo.local'));
+  await clientReads.restore(key);
+  if (expectedGeneration !== sessionGeneration()) return;
+  const state = clientReads.snapshot(key);
+  const current =
+    state.data === undefined ? undefined : resource.decode(state.data);
+  await seedClientRead(
+    key,
+    update(current),
+    expectedGeneration,
+    state.coverage === 'complete' ? 'complete' : 'partial',
+  );
 }
 export async function refreshClientRead(key: string) {
   bindReadScope();
