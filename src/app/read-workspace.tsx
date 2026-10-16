@@ -89,7 +89,7 @@ export function PrivateReadWorkspace({
     const stopLinks = interceptReadLinks();
     const stopNavigation = installReadNavigation(navigateWorkspace);
     const recheck = () => {
-      void refreshContext();
+      if (!hasPendingLogout()) void refreshContext();
     };
     window.addEventListener('tempo:read-access-recheck', recheck);
     const blocked = () => {
@@ -99,8 +99,11 @@ export function PrivateReadWorkspace({
         accessDenied.current = true;
       setLoggedOut(hasPendingLogout());
       if (hasPendingLogout()) logoutSeen.current = true;
-      if (!hasMutationIntent() || hasPendingLogout()) {
+      const freshServerView =
+        initialContext && !accessDenied.current && !hasPendingLogout();
+      if ((!hasMutationIntent() && !freshServerView) || hasPendingLogout()) {
         setRoutes([]);
+        setRetainedContext(undefined);
         positions.current.clear();
       }
       if (
@@ -174,7 +177,7 @@ export function PrivateReadWorkspace({
       window.removeEventListener('tempo:read-access-denied', confirmedDenied);
       window.removeEventListener('tempo:action-unavailable', error);
     };
-  }, [controller, refreshContext]);
+  }, [controller, refreshContext, initialContext]);
   useEffect(() => installSnapshotReads(), []);
   useLayoutEffect(() => {
     if (
@@ -192,6 +195,12 @@ export function PrivateReadWorkspace({
       (authorizedPartition.current &&
         context.data.partition !== authorizedPartition.current)
     ) {
+      // A stored context from the previous account is discarded without ever
+      // becoming props for a fresh server-authorized view. A changed live actor
+      // is a real security transition and must discard route memory too.
+      if (clientReads.snapshot('/api/read/context').source === 'network') {
+        accessDenied.current = true;
+      }
       concealOfflineContent();
       void purgeOfflineDevice().catch(() => {});
       return;
@@ -245,9 +254,16 @@ export function PrivateReadWorkspace({
       window.removeEventListener('tempo:read-before-navigation', remember);
     };
   }, []);
-  if (context.data && retainedContext !== context.data && !denied)
-    setRetainedContext(context.data);
-  const reader = context.data ?? retainedContext;
+  const currentContext =
+    context.data &&
+    (!initialReaderId || context.data.readerId === initialReaderId) &&
+    (!initialRole || context.data.role === initialRole) &&
+    (!retainedContext || context.data.partition === retainedContext.partition)
+      ? context.data
+      : undefined;
+  if (currentContext && retainedContext !== currentContext && !denied)
+    setRetainedContext(currentContext);
+  const reader = currentContext ?? retainedContext;
   const managed =
     !publicSettings &&
     !!href &&

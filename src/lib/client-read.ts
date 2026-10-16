@@ -27,6 +27,7 @@ import { reportNetworkResult } from './network-state';
 
 let scope = '';
 let readBlocked = false;
+let readRevision = 0;
 let readTransport: typeof fetch = (...args) => fetch(...args);
 let medicalRevision = 0;
 let fence: CacheFence | undefined;
@@ -172,6 +173,7 @@ export function bindReadScope() {
     ? `${bundle.fence.partition}:${bundle.fence.deviceEpoch}:${bundle.snapshot.connectionGeneration}`
     : '';
   if (scope !== next) {
+    readRevision++;
     clientReads.clear();
     scope = next;
   }
@@ -215,6 +217,7 @@ export async function seedClientRead(
 }
 export async function refreshClientRead(key: string) {
   bindReadScope();
+  const revision = readRevision;
   if (readBlocked && key !== '/api/read/context')
     throw new ReadFailure('denied');
   const schema = readResponseSchema(new URL(key, location.origin).pathname);
@@ -228,6 +231,7 @@ export async function refreshClientRead(key: string) {
             credentials: 'same-origin',
             signal: AbortSignal.timeout(15000),
           });
+          if (revision !== readRevision) throw new ReadFailure('denied');
           if (!response.ok) {
             if (response.status === 401 || response.status === 403) {
               window.dispatchEvent(new Event('tempo:read-access-denied'));
@@ -243,6 +247,7 @@ export async function refreshClientRead(key: string) {
             );
           }
           const data = schema.parse(await response.json());
+          if (revision !== readRevision) throw new ReadFailure('denied');
           if (key === '/api/read/context') {
             const previous = clientReads.snapshot(key).data;
             const before =
@@ -256,7 +261,9 @@ export async function refreshClientRead(key: string) {
                   after.connectionGeneration ||
                 before.data.role !== after.role)
             ) {
-              window.dispatchEvent(new Event('tempo:read-access-denied'));
+              // A successful response confirms a new scope, rather than a
+              // server denial. Conceal/purge before requesting its fresh data;
+              // the workspace separately verifies the server entry's actor.
               const { purgeOfflineDevice } = await import('./offline-device');
               await purgeOfflineDevice().catch(() => {});
               throw new ReadFailure('denied');
@@ -285,6 +292,7 @@ export function observeReadResources() {
   bindReadScope();
   const stopBlocked = subscribeOfflineBlocked(() => {
     readBlocked = true;
+    readRevision++;
     clientReads.clear();
     scope = '';
     fence = undefined;

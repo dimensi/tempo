@@ -381,6 +381,12 @@ export async function withOfflineDevicePurge<T>(
       }
     }
     pendingDeviceMutations--;
+    try {
+      if (!hasMutationIntent())
+        window.dispatchEvent(new Event('tempo:read-access-recheck'));
+    } catch {
+      // Storage reporting cannot prevent authentication or provider completion.
+    }
   }
 }
 export class OfflineStorageError extends Error {

@@ -421,3 +421,32 @@ it('a freshly verified current network context permits new reads after the old p
     JSON.stringify({ dailyStepsGoal: 2 }),
   );
 });
+
+it('a late context from an old epoch cannot deny the newer current actor', async () => {
+  const pending = Promise.withResolvers<Response>();
+  const reader = await install(vi.fn(() => pending.promise));
+  const old = reader.refreshClientRead('/api/read/context');
+  const rejected = expect(old).rejects.toMatchObject({ reason: 'denied' });
+  await Promise.resolve();
+  await Promise.resolve();
+  state.partition = 'new-owner';
+  for (const listener of state.listeners) listener();
+  const current = {
+    readerId: 'new',
+    ownerId: 'new',
+    role: 'OWNER',
+    partition: 'N'.repeat(43),
+    connectionGeneration: 'G'.repeat(43),
+  };
+  reader.clientReads.seed('/api/read/context', JSON.stringify(current));
+  pending.resolve(
+    Response.json({ ...current, readerId: 'old', partition: 'O'.repeat(43) }),
+  );
+  await rejected;
+  expect(window.dispatchEvent).not.toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'tempo:read-access-denied' }),
+  );
+  expect(reader.clientReads.snapshot('/api/read/context').data).toBe(
+    JSON.stringify(current),
+  );
+});
