@@ -1,5 +1,7 @@
 'use client';
 import { type WorkoutPlan, type WorkoutPlanInput } from '@/contracts/workouts';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
 import { apiFetch } from '@/lib/api-client';
 import { apiResults } from '@/lib/api-results';
 import { subscribeSessionReset } from '@/lib/offline-device';
@@ -87,6 +89,11 @@ export function WorkoutEditorPage({
   canLog?: boolean;
 }) {
   const router = useRouter();
+  useReadResource(
+    readResources.workouts(
+      `/api/workouts?ownerId=${encodeURIComponent(ownerId)}`,
+    ),
+  );
   const identity = `${userId}:${ownerId}`;
   const key = `workout-draft:${identity}:${copying ? 'copy' : 'edit'}:${plan?.id ?? 'new'}:${workoutId ?? ''}:${plan?.revision ?? 0}:${date}`;
   const [draft, setDraft] = useState<WorkoutPlanInput>(() => {
@@ -128,41 +135,20 @@ export function WorkoutEditorPage({
   useEffect(() => {
     mounted.current = true;
     generation.current += 1;
-    let alive = true;
-    void apiFetch(`/api/workouts?ownerId=${encodeURIComponent(ownerId)}`, {
-      cache: 'no-store',
-    })
-      .then((response) => {
-        if (!alive) return;
-        if (response.status === 401 || response.status === 403) {
-          clearWorkoutDraft(key);
-          setReady(false);
-          setStored(false);
-          persisted.current = false;
-          dirty.current = false;
-          throw new Error(m.noAccess);
-        }
-        if (!response.ok) throw new Error(m.loadError);
-        if (!alive) return;
-        requestId.current = crypto.randomUUID();
-        const restored = readWorkoutDraft(key, identity, draftValue);
-        if (restored) {
-          setDraft(restored.value);
-          setStored(true);
-          persisted.current = true;
-          requestId.current = restored.requestId;
-          dirty.current = true;
-        }
-        setReady(true);
-      })
-      .catch((cause) => {
-        if (!alive) return;
-        setError(
-          cause instanceof Error && cause.message === m.noAccess
-            ? m.noAccess
-            : m.loadError,
-        );
-      });
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      requestId.current = crypto.randomUUID();
+      const restored = readWorkoutDraft(key, identity, draftValue);
+      if (restored) {
+        setDraft(restored.value);
+        setStored(true);
+        persisted.current = true;
+        requestId.current = restored.requestId;
+        dirty.current = true;
+      }
+      setReady(true);
+    });
     const unsubscribe = subscribeSessionReset(() => {
       clearWorkoutDrafts();
       setStored(false);
@@ -173,12 +159,9 @@ export function WorkoutEditorPage({
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
-      // A retained route must revalidate before showing its previous fields.
-      setReady(false);
-      setError(null);
+      active = false;
       mounted.current = false;
       generation.current += 1;
-      alive = false;
       unsubscribe();
       window.removeEventListener('beforeunload', beforeUnload);
     };

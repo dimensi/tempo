@@ -78,17 +78,17 @@ export function DiaryPage() {
   const photos = useReadResource(
     readResources.photos(`/api/nutrition/photos?${query}`),
   );
-  if (!day.data) return <ResourcePending {...day} />;
+  if (!day.data && day.error) return <ResourcePending {...day} />;
   return (
     <DiaryClient
       ownerId={context.ownerId}
       date={date}
-      day={day.data[0] ?? null}
+      day={day.data?.[0] ?? null}
       photos={photos.data ?? []}
       canWrite={context.role === 'OWNER'}
-      loading={false}
+      loading={!day.data}
       commentsSlot={
-        day.data[0] ? (
+        day.data?.[0] ? (
           <CommentsPanel
             ownerId={context.ownerId}
             target={{ type: 'nutrition_day', id: date }}

@@ -1,6 +1,6 @@
 'use client';
 import { writeMessages } from '@/config/offline-write-messages';
-import { requestLocalLogout } from '@/lib/local-logout';
+import { endClientSession, requestLocalLogout } from '@/lib/local-logout';
 import { syncDeviceWrites } from '@/lib/offline-write-client';
 import { Button, Group, Modal, Text } from '@mantine/core';
 import Link from 'next/link';
@@ -24,6 +24,7 @@ export function ApplicationShell(props: {
       }
     } catch {
       setCleanupError(true);
+      await endClientSession(false).catch(() => {});
     }
     if (navigator.onLine) router.replace('/login');
   }

@@ -185,16 +185,18 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
     });
     for (const status of [401, 403]) {
       await page.route('**/api/measurements?*', (route) =>
-        route.fulfill({ status, json: { error: 'Synthetic denial' } }),
+        route.fulfill({
+          status,
+          json: { error: status === 401 ? 'AUTH_REQUIRED' : 'ACCESS_REVOKED' },
+        }),
       );
       await page.goto('/measurements');
       const panel = page.getByRole('main').getByTestId('measurements-panel');
-      await expect(
-        page.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
-      ).toContainText('Доступ изменился. Войдите заново.');
+      await expect(page).toHaveURL('/login');
       await expect(panel.getByTestId('measurement-trend-chart')).toHaveCount(0);
       await expect(panel).toHaveCount(0);
       await page.unroute('**/api/measurements?*');
+      if (status === 401) await login(page.request, 'owner');
     }
     await login(page.request, 'trainer');
     db.prepare(
@@ -223,14 +225,12 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
     ).toBe(403);
     await page.reload();
     await expect(weights).toHaveCount(0);
-    await expect(page.getByRole('main')).toContainText(
-      'Доступ изменился. Войдите заново.',
-    );
+    await expect(page).toHaveURL('/login');
     expect(
       (
         await page.request.get(`/api/health/weight?from=${from}&to=${today()}`)
       ).status(),
-    ).toBe(403);
+    ).toBe(401);
   } finally {
     db.prepare(
       'DELETE FROM yazio_daily_steps WHERE owner_id = ? AND date IN (?,?)',

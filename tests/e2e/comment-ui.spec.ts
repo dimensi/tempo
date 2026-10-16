@@ -309,9 +309,7 @@ test('measurement and actual-session comments compose after CRUD with real train
     ).toBe(403);
     // A visible refresh checks the revoked grant before any further UI writes.
     await trainer.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect(
-      trainer.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
-    ).toBeVisible();
+    await expect(trainer).toHaveURL('/login');
     await expect(stalePanel).not.toBeVisible();
     await expect(stalePanel.getByLabel('Комментарий')).not.toBeVisible();
     await expect(

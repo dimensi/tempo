@@ -198,7 +198,7 @@ export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
   )
     return null;
   return (
-    <Paper withBorder p="md">
+    <Paper withBorder p="md" data-testid="device-write-queue">
       <Stack>
         <Title order={2} size="h3">
           {m.title}

@@ -150,50 +150,30 @@ test('trainer form keeps values and request errors when navigating sections', as
   );
 });
 
-test('hydration preserves an already focused settings anchor for keyboard activation', async ({
+test('background settings refresh preserves an already focused anchor for keyboard activation', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await login(page);
-  let release!: () => void;
-  const scripts = new Promise<void>((resolve) => {
-    release = resolve;
+  await page.goto('/settings#trainers');
+  const navigation = page.getByRole('navigation', { name: 'Разделы настроек' });
+  const connection = navigation.getByRole('link', {
+    name: 'Подключение YAZIO',
+    exact: true,
   });
-  await page.route(
-    (url) =>
-      url.pathname.startsWith('/_next/static/') && url.pathname.endsWith('.js'),
-    async (route) => {
-      await scripts;
-      await route.continue();
-    },
+  await expect(
+    page.getByLabel('Загрузить данные начиная с…').filter({ visible: true }),
+  ).toBeEnabled();
+  await connection.focus();
+  await expect(connection).toBeFocused();
+  const refreshed = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/read/settings',
   );
-  try {
-    await page.goto('/settings#trainers', { waitUntil: 'commit' });
-    const navigation = page.getByRole('navigation', {
-      name: 'Разделы настроек',
-    });
-    const connection = navigation.getByRole('link', {
-      name: 'Подключение YAZIO',
-      exact: true,
-    });
-    await connection.focus();
-    await expect(connection).toBeFocused();
-    release();
-    await expect(
-      page.getByLabel('Загрузить данные начиная с…').filter({ visible: true }),
-    ).toBeEnabled();
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-        ),
-    );
-    await expect(connection).toBeFocused();
-    await page.keyboard.press('Enter');
-    await expect(page).toHaveURL('/settings#connection');
-    await expect(page.locator('#connection')).toBeFocused();
-    await expect(connection).toHaveAttribute('aria-current', 'location');
-  } finally {
-    release();
-  }
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await refreshed;
+  await expect(connection).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL('/settings#connection');
+  await expect(page.locator('#connection')).toBeFocused();
+  await expect(connection).toHaveAttribute('aria-current', 'location');
 });

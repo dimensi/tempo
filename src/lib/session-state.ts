@@ -17,9 +17,13 @@ export function bindSession(context: ReadContext) {
 export function invalidateSession() {
   generation++;
   current = undefined;
-  for (const key of Object.keys(sessionStorage))
-    if (key.startsWith('workout-draft:') || key.startsWith('tempo:view:'))
-      sessionStorage.removeItem(key);
+  try {
+    for (const key of Object.keys(sessionStorage))
+      if (key.startsWith('workout-draft:') || key.startsWith('tempo:view:'))
+        sessionStorage.removeItem(key);
+  } catch {
+    /* Session invalidation does not depend on storage availability. */
+  }
 }
 
 export function resetSession() {

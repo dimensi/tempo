@@ -1,16 +1,20 @@
 import { OfflineStorage } from './offline-device';
 import { resetSession } from './session-state';
 const logoutKey = 'tempo:logout-pending';
+let memoryIntent = false;
 export function hasPendingLogout() {
   try {
-    return localStorage.getItem(logoutKey) === 'true';
+    return memoryIntent || localStorage.getItem(logoutKey) === 'true';
   } catch {
-    return false;
+    return memoryIntent;
   }
 }
 export function beginLocalLogout() {
+  memoryIntent = true;
   try {
     localStorage.setItem(logoutKey, 'true');
+  } catch {
+    // A storage refusal still permits local reset and server sign-out.
   } finally {
     resetSession();
   }
@@ -29,6 +33,7 @@ export function finishPendingLogout() {
         signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) return false;
+      memoryIntent = false;
       localStorage.removeItem(logoutKey);
       return true;
     } catch {
@@ -40,7 +45,11 @@ export function finishPendingLogout() {
 }
 export async function clearClientData() {
   resetSession();
-  localStorage.setItem('tempo:session-reset', crypto.randomUUID());
+  try {
+    localStorage.setItem('tempo:session-reset', crypto.randomUUID());
+  } catch {
+    /* Local reset still applies when storage is unavailable. */
+  }
   await new OfflineStorage().purge();
 }
 export async function endClientSession(deleteWrites: boolean) {

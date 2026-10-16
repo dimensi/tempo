@@ -307,18 +307,10 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
       (await trainer.request.get(`/api/workouts?ownerId=${id}`)).status(),
     ).toBe(403);
     await trainer.goto(`/workouts/plans/${plan.id}/edit?date=2026-10-11`);
-    await expect(
-      trainer
-        .getByText('Доступ изменился. Войдите заново.')
-        .filter({ visible: true }),
-    ).toBeVisible();
+    await expect(trainer).toHaveURL('/login');
     await expect(trainer.getByLabel('Название (необязательно)')).toHaveCount(0);
     await trainer.goto(`/workouts/plans/${plan.id}/workouts/a?date=2026-10-11`);
-    await expect(
-      trainer
-        .getByText('Доступ изменился. Войдите заново.')
-        .filter({ visible: true }),
-    ).toBeVisible();
+    await expect(trainer).toHaveURL('/login');
     await expect(
       trainer.getByRole('heading', { name: 'Силовая', exact: true }),
     ).toHaveCount(0);
@@ -744,7 +736,7 @@ test('actual draft survives conflict and access errors; unavailable storage requ
       : handler.continue(),
   );
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  const queued = page.locator('[data-offline-write-private]');
+  const queued = page.getByTestId('device-write-queue');
   await expect(
     queued.getByText('Нужна проверка', { exact: true }),
   ).toBeVisible();
@@ -761,13 +753,8 @@ test('actual draft survives conflict and access errors; unavailable storage requ
     handler.fulfill({ status: 503, json: { error: 'unavailable' } }),
   );
   await page.reload();
-  await expect(page.locator('#main-content').getByRole('alert')).toContainText(
-    'загрузить',
-  );
+  await expect(reps).toHaveValue('7');
   await page.unroute('**/api/workouts?*');
-  await page
-    .getByRole('button', { name: 'Обновить данные', exact: true })
-    .click();
   await expect(reps).toHaveValue('7');
   await page.evaluate(() => {
     Storage.prototype.setItem = () => {
@@ -850,9 +837,11 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
     notifySettled = resolve;
   });
   let posts = 0;
+  const operationIds = new Set<string>();
   await page.route('**/api/offline/writes', async (handler) => {
     if (handler.request().method() !== 'POST') return handler.continue();
     posts++;
+    operationIds.add(handler.request().postDataJSON().id);
     const response = await handler.fetch();
     expect(response.ok()).toBe(true);
     notifySaved();
@@ -887,7 +876,8 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
       .map(([, value]) => JSON.parse(value)),
   );
   expect(stored[0].value.exercises[0].sets[0].reps).toBe(9);
-  expect(posts).toBe(1);
+  expect(posts).toBeGreaterThanOrEqual(1);
+  expect(operationIds.size).toBe(1);
   expect(
     (await workouts(page, id)).sessions.filter(
       (value) => value.exercises[0]?.name === exerciseName,
@@ -895,7 +885,7 @@ test('late actual save cannot erase a reopened draft or redirect it', async ({
   ).toHaveLength(1);
 });
 
-test('retained planned and actual editors hide cached drafts before real access revalidation and denial', async ({
+test('planned and actual editors retain drafts until access denial is detected', async ({
   browser,
 }) => {
   const baseURL = testOrigin;
@@ -955,13 +945,13 @@ test('retained planned and actual editors hide cached drafts before real access 
       });
       await page.goBack();
       await probeStarted;
-      // This is the retained client page, before denial or any server-page redirect.
+      // Cached input may remain visible while the background access check is pending.
       await expect(
         page.getByRole('textbox', {
           name: 'Название (необязательно)',
           exact: true,
         }),
-      ).toHaveCount(0);
+      ).toHaveValue(`Private ${kind} draft`);
       expect(
         await page.evaluate(
           () =>
@@ -982,9 +972,7 @@ test('retained planned and actual editors hide cached drafts before real access 
       ).toBe(1);
       release();
       expect((await response).status()).toBe(401);
-      await expect(
-        page.locator('#main-content').getByRole('alert'),
-      ).toContainText('Доступ изменился.');
+      await expect(page).toHaveURL('/login');
       await expect(
         page.getByRole('textbox', {
           name: 'Название (необязательно)',

@@ -7,6 +7,7 @@ import {
 } from '@/contracts/offline-write';
 import { withOfflineCacheLock } from '@/lib/offline-device';
 import { apiFetch } from './api-client';
+import { revalidateVisibleReads } from './client-read';
 import {
   IndexedWriteStore,
   drainWrites,
@@ -96,6 +97,7 @@ export async function syncDeviceWrites() {
   if (!navigator.onLine) return;
   const controller = new AbortController();
   const generation = sessionGeneration();
+  let acknowledged = false;
   syncControllers.add(controller);
   try {
     await withOfflineCacheLock(async () =>
@@ -141,6 +143,7 @@ export async function syncDeviceWrites() {
                 AbortSignal.timeout(15000),
               ]),
             });
+            if (result.ok) acknowledged = true;
             return {
               status: result.status,
               ...(result.ok
@@ -154,6 +157,14 @@ export async function syncDeviceWrites() {
       }),
     );
     window.dispatchEvent(new Event('offline-writes-changed'));
+    if (acknowledged && generation === sessionGeneration()) {
+      revalidateVisibleReads();
+      try {
+        localStorage.setItem('tempo:writes-synced', crypto.randomUUID());
+      } catch {
+        /* Other tabs may refresh later. */
+      }
+    }
   } finally {
     syncControllers.delete(controller);
   }

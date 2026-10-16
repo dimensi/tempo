@@ -29,7 +29,7 @@ async function performApiFetch(input: RequestInfo | URL, init?: RequestInit) {
         resetSession();
         const { endClientSession } = await import('./local-logout');
         await endClientSession(false);
-        location.replace('/login');
+        if (navigator.onLine) location.replace('/login');
       })();
       await ending;
     }

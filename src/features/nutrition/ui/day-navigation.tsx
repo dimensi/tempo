@@ -29,6 +29,7 @@ function renderDay(
       component={Link}
       href={`/diary?date=${value}`}
       scroll={false}
+      prefetch={false}
       variant={selected ? 'filled' : 'subtle'}
       aria-current={selected ? 'date' : undefined}
       aria-label={label}

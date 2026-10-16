@@ -39,7 +39,9 @@ export async function signInFixture(
   const session = await getSessionWith429Retry(page.request);
   expect(session.user.email).toBe(`${role}@example.test`);
   expect(session.user.role).toBe(role.toUpperCase());
-  await page.goto('/');
-  await expect(page).toHaveURL('/');
+  if (role === 'owner') {
+    await page.goto('/');
+    await expect(page).toHaveURL('/');
+  }
   return session.user.id;
 }

@@ -1,3 +1,4 @@
+import { signInFixture } from '../ci/real-auth';
 import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
@@ -6,6 +7,7 @@ import { shiftDate, dateInTimezone } from '@/contracts/nutrition-sync-dates';
 const timezone = 'America/Los_Angeles';
 test.use({ timezoneId: timezone });
 async function login(page: Page, role = 'owner') {
+  if (role === 'trainer') return signInFixture(page, role);
   await page.goto('/login');
   await page.getByLabel('Электронная почта').fill(`${role}@example.test`);
   await page
@@ -362,9 +364,7 @@ test('scoped analytics API, coverage, controls: hierarchy, comparisons, combined
     db.prepare('DELETE FROM trainer_access WHERE trainer_id=?').run(trainer);
     expect((await trainerPage.request.get(query + ownerId)).status()).toBe(403);
     await trainerPage.reload();
-    await expect(trainerPage.getByRole('main')).toContainText(
-      'Доступ изменился. Войдите заново.',
-    );
+    await expect(trainerPage).toHaveURL('/login');
     await page.goto('/analytics');
     const localToday = dateInTimezone(new Date(), timezone);
     await expect(page).toHaveURL(new RegExp(`to=${localToday}`));

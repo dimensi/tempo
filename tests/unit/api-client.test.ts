@@ -14,6 +14,7 @@ beforeEach(() => {
   state.generation++;
   state.reset.mockClear();
   state.end.mockClear();
+  vi.stubGlobal('navigator', { onLine: true });
   vi.stubGlobal('location', { origin: 'https://app.test', replace: vi.fn() });
 });
 afterEach(() => vi.unstubAllGlobals());

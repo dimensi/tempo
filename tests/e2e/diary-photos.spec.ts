@@ -1,3 +1,4 @@
+import { signInFixture } from '../ci/real-auth';
 import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
@@ -10,6 +11,7 @@ const image = Buffer.from(
 );
 
 async function login(page: Page, role: 'owner' | 'trainer') {
+  if (role === 'trainer') return signInFixture(page, role);
   await page.goto('/login');
   await page.getByLabel('Электронная почта').fill(`${role}@example.test`);
   await page
@@ -206,9 +208,7 @@ test('real diary photos and comments persist; trainer is read-only and revoked U
     ).toBe(true);
     expect((await trainerPage.request.get(photoUrl)).status()).toBe(403);
     await trainerPage.reload();
-    await expect(
-      trainerPage.getByText('Доступ изменился. Войдите заново.'),
-    ).toBeVisible();
+    await expect(trainerPage).toHaveURL('/login');
     await expect(
       trainerPage.getByText('Синтетический обед', { exact: true }),
     ).toHaveCount(0);

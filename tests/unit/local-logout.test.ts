@@ -38,6 +38,6 @@ it('resets the in-memory session even when durable storage refuses a marker', ()
       throw Error('closed');
     },
   });
-  expect(() => beginLocalLogout()).toThrow();
+  expect(() => beginLocalLogout()).not.toThrow();
   expect(reset).toHaveBeenCalledOnce();
 });

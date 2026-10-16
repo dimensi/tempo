@@ -38,7 +38,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [, setPreviewRange] = useState('');
+  const [previewRange, setPreviewRange] = useState('');
   const [preview, setPreview] = useState<{
     ownerId: string;
     html: string;
@@ -316,6 +316,11 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
             {offlineFileMessages.limit}
           </Text>
         </>
+      )}
+      {html && (
+        <Text size="sm">
+          {m.preview}: {previewRange}
+        </Text>
       )}
       {ownerId !== null && (
         <iframe

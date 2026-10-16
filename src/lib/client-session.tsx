@@ -50,7 +50,9 @@ export function ClientSession({
       if (closed || document.visibilityState === 'hidden') return;
       if (hasPendingLogout()) {
         setLoggedOut(true);
-        void finishPendingLogout();
+        void finishPendingLogout().then((done) => {
+          if (done && !closed) location.replace('/login');
+        });
         return;
       }
       const generation = sessionGeneration();
@@ -66,7 +68,7 @@ export function ClientSession({
           if (context.partition !== initial.partition) {
             const { endClientSession } = await import('./local-logout');
             await endClientSession(false);
-            location.replace('/login');
+            if (navigator.onLine) location.replace('/login');
             return;
           }
           bindSession(context);
@@ -79,6 +81,11 @@ export function ClientSession({
         flight = undefined;
       });
     };
+    const synced = (event: StorageEvent) => {
+      if (event.key === 'tempo:writes-synced' && !hasPendingLogout())
+        revalidateVisibleReads();
+    };
+    window.addEventListener('storage', synced);
     refresh();
     window.addEventListener('online', refresh);
     window.addEventListener('focus', refresh);
@@ -97,6 +104,7 @@ export function ClientSession({
       stop();
       stopReads();
       clearInterval(timer);
+      window.removeEventListener('storage', synced);
       window.removeEventListener('online', refresh);
       window.removeEventListener('focus', refresh);
       window.removeEventListener('pageshow', refresh);

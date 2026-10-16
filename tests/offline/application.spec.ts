@@ -289,3 +289,84 @@ test('local measurement commits survive reopening and synchronize only once', as
   ).toBe(1);
   db.close();
 });
+
+test('account replacement clears the previous reader and notifies the other tab', async ({
+  page,
+  context,
+}) => {
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
+  await expect(
+    page.getByText('Synthetic cached observation').first(),
+  ).toBeVisible();
+  const sibling = await context.newPage();
+  await sibling.goto('/measurements');
+  await expect(
+    sibling.getByText('Synthetic cached observation').first(),
+  ).toBeVisible();
+  await signIn(page, 'trainer');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page).toHaveURL('/login');
+  await expect(sibling.getByLabel('Электронная почта')).toBeVisible();
+  await expect(sibling.getByText('Synthetic cached observation')).toHaveCount(
+    0,
+  );
+  await expect.poll(() => stored(page)).toBe(0);
+});
+test('two foreground tabs send one durable operation once after reconnect', async ({
+  page,
+  context,
+}) => {
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
+  const sibling = await context.newPage();
+  await sibling.goto('/measurements');
+  await expect(sibling.getByLabel('Заметка', { exact: true })).toBeVisible();
+  await context.setOffline(true);
+  await page
+    .getByLabel('Заметка', { exact: true })
+    .fill('Two-tab queued record');
+  await page.getByLabel('Вес (кг)', { exact: true }).fill('74');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(
+    page.getByText('Сохранено на устройстве', { exact: true }).first(),
+  ).toBeVisible();
+  let posts = 0;
+  context.on('request', (request) => {
+    if (
+      new URL(request.url()).pathname === '/api/offline/writes' &&
+      request.method() === 'POST'
+    )
+      posts++;
+  });
+  await context.setOffline(false);
+  await Promise.all(
+    [page, sibling].map((tab) =>
+      tab.evaluate(() => window.dispatchEvent(new Event('online'))),
+    ),
+  );
+  await expect
+    .poll(() => {
+      const db = new Database('.data/e2e.sqlite');
+      try {
+        return (
+          db
+            .prepare('SELECT count(*) as n FROM measurements WHERE note = ?')
+            .get('Two-tab queued record') as { n: number }
+        ).n;
+      } finally {
+        db.close();
+      }
+    })
+    .toBe(1);
+  await expect.poll(() => posts).toBe(1);
+  await Promise.all(
+    [page, sibling].map((tab) =>
+      tab.evaluate(() => window.dispatchEvent(new Event('online'))),
+    ),
+  );
+  await expect(page.getByText('Two-tab queued record').first()).toBeVisible();
+  expect(posts).toBe(1);
+});

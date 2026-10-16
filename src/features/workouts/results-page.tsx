@@ -5,6 +5,8 @@ import type {
   WorkoutSession,
   WorkoutSessionInput,
 } from '@/contracts/workouts';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
 import { apiFetch } from '@/lib/api-client';
 import { apiResults } from '@/lib/api-results';
 import { subscribeSessionReset } from '@/lib/offline-device';
@@ -75,6 +77,11 @@ export function WorkoutResultsPage({
   planRevision?: number;
 }) {
   const router = useRouter();
+  useReadResource(
+    readResources.workouts(
+      `/api/workouts?ownerId=${encodeURIComponent(ownerId)}`,
+    ),
+  );
   const identity = `${userId}:${ownerId}`;
   const resource = existing
     ? `edit:${existing.id}:${existing.revision}`
@@ -108,42 +115,20 @@ export function WorkoutResultsPage({
   useEffect(() => {
     mounted.current = true;
     generation.current += 1;
-    const controller = new AbortController();
-    void apiFetch(`/api/workouts?ownerId=${encodeURIComponent(ownerId)}`, {
-      signal: controller.signal,
-      cache: 'no-store',
-    })
-      .then((response) => {
-        if (controller.signal.aborted) return;
-        if (response.status === 401 || response.status === 403) {
-          clearWorkoutDraft(key);
-          setReady(false);
-          setStored(false);
-          persisted.current = false;
-          dirty.current = false;
-          throw new Error(m.noAccess);
-        }
-        if (!response.ok) throw new Error(m.loadError);
-        if (controller.signal.aborted) return;
-        requestId.current = crypto.randomUUID();
-        const restored = readWorkoutDraft(key, identity, resultDraftSchema);
-        if (restored) {
-          setDraft(restored.value);
-          requestId.current = restored.requestId;
-          persisted.current = true;
-          dirty.current = true;
-          setStored(true);
-        }
-        setReady(true);
-      })
-      .catch((cause) => {
-        if (!controller.signal.aborted)
-          setError(
-            cause instanceof Error && cause.message === m.noAccess
-              ? m.noAccess
-              : m.loadError,
-          );
-      });
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      requestId.current = crypto.randomUUID();
+      const restored = readWorkoutDraft(key, identity, resultDraftSchema);
+      if (restored) {
+        setDraft(restored.value);
+        setStored(true);
+        persisted.current = true;
+        requestId.current = restored.requestId;
+        dirty.current = true;
+      }
+      setReady(true);
+    });
     const unsubscribe = subscribeSessionReset(() => {
       clearWorkoutDrafts();
       setStored(false);
@@ -154,12 +139,9 @@ export function WorkoutResultsPage({
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
-      // A retained route must revalidate before showing its previous fields.
-      setReady(false);
-      setError(null);
+      active = false;
       mounted.current = false;
       generation.current += 1;
-      controller.abort();
       unsubscribe();
       window.removeEventListener('beforeunload', beforeUnload);
     };

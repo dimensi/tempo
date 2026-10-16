@@ -1,3 +1,4 @@
+import { signInFixture } from '../ci/real-auth';
 import { getSessionWith429Retry } from './auth-session';
 import { test, expect, type Page } from '../ci/isolated-test';
 import { execFileSync } from 'node:child_process';
@@ -8,6 +9,7 @@ import {
 const timezone = 'America/Los_Angeles';
 test.use({ timezoneId: timezone });
 async function login(page: Page, role = 'owner') {
+  if (role === 'trainer') return signInFixture(page, role);
   await page.goto('/login');
   await page.getByLabel('Электронная почта').fill(`${role}@example.test`);
   await page
@@ -220,7 +222,7 @@ test('real overview shows empty, partial and populated data with local dates and
   const granted = await trainerPage.request.get('/api/overview?timezone=UTC');
   expect(granted.status()).toBe(200);
   expect(await granted.json()).not.toHaveProperty('sync');
-  await trainerPage.reload();
+  await trainerPage.goto('/');
   await expect(
     trainerPage.getByText('Синхронизация дневника', { exact: true }),
   ).toHaveCount(0);
@@ -236,9 +238,7 @@ test('real overview shows empty, partial and populated data with local dates and
     (await trainerPage.request.get('/api/overview?timezone=UTC')).status(),
   ).toBe(403);
   await trainerPage.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(
-    trainerPage.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
-  ).toBeVisible();
+  await expect(trainerPage).toHaveURL('/login');
   await expect(
     trainerPage.getByRole('heading', { name: 'Обзор', exact: true }),
   ).not.toBeVisible();

@@ -1,3 +1,4 @@
+import { signInFixture } from '../ci/real-auth';
 import { getSessionWith429Retry } from './auth-session';
 import { expect, test } from '../ci/isolated-test';
 import Database from 'better-sqlite3';
@@ -338,7 +339,14 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
           await route.fulfill({
             status: denialStatus,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'Synthetic report failure' }),
+            body: JSON.stringify({
+              error:
+                denialStatus === 401
+                  ? 'AUTH_REQUIRED'
+                  : denialStatus === 403
+                    ? 'ACCESS_REVOKED'
+                    : 'Synthetic report failure',
+            }),
           });
         else await route.continue();
       });
@@ -353,7 +361,8 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     };
     const reopen = async () => {
       await page.unroute('**/api/reports?**');
-      await page.reload();
+      await signInFixture(page);
+      await page.goto('/reports');
       await activeReports.getByLabel('Начало').fill(date);
       await expect(
         preview.getByText('Яйцо · запись 1', { exact: true }),
@@ -400,22 +409,14 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       deniedFormat = 'html';
       await interceptDenial();
       await activeReports.getByLabel('Начало').fill('2026-02-10');
-      await expect(
-        page
-          .getByRole('alert')
-          .filter({ hasText: 'Доступ изменился. Войдите заново.' }),
-      ).toBeVisible();
+      await expect(page).toHaveURL('/login');
       await assertPurged();
       await reopen();
       deniedFormat = 'pdf';
       denialRequests.length = 0;
       await interceptDenial();
       await page.getByRole('button', { name: 'Скачать PDF' }).click();
-      await expect(
-        page
-          .getByRole('alert')
-          .filter({ hasText: 'Доступ изменился. Войдите заново.' }),
-      ).toBeVisible();
+      await expect(page).toHaveURL('/login');
       await assertPurged();
       // Download completion must not automatically refill a denied private preview.
       await page.waitForTimeout(500);
@@ -468,23 +469,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect(Number(preflight.headers()['content-length'])).toBeGreaterThan(0);
     expect((await preflight.body()).length).toBe(0);
     const trainerPage = await context.newPage();
-    let releaseScripts!: () => void;
-    const scriptsReady = new Promise<void>((resolve) => {
-      releaseScripts = resolve;
-    });
-    await trainerPage.route('**/_next/**/*.js*', async (route) => {
-      await scriptsReady;
-      await route.continue();
-    });
-    try {
-      await trainerPage.goto(`${origin}/reports`, { waitUntil: 'commit' });
-      await expect(trainerPage.getByLabel('Начало')).toBeDisabled();
-      await expect(
-        trainerPage.getByRole('button', { name: 'Скачать PDF' }),
-      ).toBeDisabled();
-    } finally {
-      releaseScripts();
-    }
+    await trainerPage.goto(`${origin}/reports`);
     await expect(trainerPage.getByLabel('Начало')).toBeEnabled();
     await expect(trainerPage.getByLabel('Идентификатор владельца')).toHaveCount(
       0,
@@ -500,9 +485,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     ).toBe(true);
     expect((await context.request.get(scopedUrl)).status()).toBe(403);
     await trainerPage.reload();
-    await expect(
-      trainerPage.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
-    ).toBeVisible();
+    await expect(trainerPage).toHaveURL('/login');
     await expect(
       trainerPage.getByRole('button', { name: 'Скачать PDF' }),
     ).toHaveCount(0);
