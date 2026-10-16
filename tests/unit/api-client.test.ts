@@ -176,3 +176,59 @@ it.each([
     );
   },
 );
+
+it.each(['q=squat', 'muscleGroup=legs&muscleGroup=back', 'visible=true'])(
+  'keeps transient catalog GET %s abortable and out of the read cache',
+  async (query) => {
+    const result = {
+      contractVersion: 1,
+      source: 'user',
+      data: [],
+      catalog: {
+        fetchedAt: null,
+        stale: false,
+        coverage: 'complete',
+        refreshState: 'idle',
+        total: 0,
+        hasMore: false,
+        unknownMembershipCount: 0,
+        filters: {
+          query: '',
+          commonMuscleGroup: null,
+          muscleGroups: [],
+          offset: 0,
+          limit: 50,
+        },
+      },
+    };
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input, init?: RequestInit) => {
+        const signal = init!.signal!;
+        signals.push(signal);
+        return new Promise<Response>((resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), {
+            once: true,
+          });
+          if (signals.length === 2) resolve(Response.json(result));
+        });
+      }),
+    );
+    const { apiFetch } = await import('@/lib/api-client');
+    const { seedClientRead } = await import('@/lib/client-read');
+    vi.mocked(seedClientRead).mockClear();
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const url = `/api/workouts/transformmate/exercises?${query}`;
+    const first = apiFetch(url, { signal: firstController.signal });
+    const second = apiFetch(url, { signal: secondController.signal });
+    const rejected = expect(first).rejects.toBeDefined();
+    firstController.abort();
+    await rejected;
+    expect(signals).toEqual([firstController.signal, secondController.signal]);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(await (await second).json()).toEqual(result);
+    expect(seedClientRead).not.toHaveBeenCalled();
+  },
+);

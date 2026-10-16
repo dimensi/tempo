@@ -717,14 +717,24 @@ test('actual draft survives conflict and access errors; unavailable storage requ
     });
     await input.scrollIntoViewIfNeeded();
     await input.click();
+    const searched = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === '/api/workouts/transformmate/exercises' &&
+        url.searchParams.get('q') === 'Draft actual'
+      );
+    });
     await input.fill('Draft actual');
+    await searched;
+    // The catalog response can move mobile focus; reopen before selection.
+    await input.click();
+    await input.press('ArrowDown');
     await expect(
       page.getByRole('option', {
         name: 'Добавить вручную: Draft actual',
         exact: true,
       }),
     ).toBeVisible();
-    await input.press('ArrowDown');
     await input.press('Enter');
   }
   await addExercise();

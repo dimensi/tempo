@@ -60,7 +60,7 @@ export function Overview({
           : next,
       );
       clearTimeout(timer);
-      timer = setTimeout(update, nextMidnightDelay());
+      timer = setTimeout(refresh, nextMidnightDelay());
     }
     function refresh() {
       update();

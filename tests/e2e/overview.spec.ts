@@ -250,3 +250,35 @@ test('real overview shows empty, partial and populated data with local dates and
   ).not.toBeVisible();
   await trainerContext.close();
 });
+
+test('overview refreshes on local midnight without a focus event', async ({
+  page,
+}) => {
+  const beforeMidnight = new Date('2026-10-17T06:59:58Z');
+  const today = dateInTimezone(beforeMidnight, timezone);
+  const tomorrow = shiftDate(today, 1);
+  // Let Next.js finish its initial navigation before pausing all timers.
+  await page.clock.install({ time: new Date('2026-10-17T06:59:00Z') });
+  let responseDay = today;
+  let reads = 0;
+  await page.route('**/api/overview?*', async (route) => {
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    const data = await response.json();
+    reads++;
+    await route.fulfill({ response, json: { ...data, today: responseDay } });
+  });
+  await login(page);
+  const diary = page.getByRole('link', {
+    name: 'Открыть дневник',
+    exact: true,
+  });
+  await expect(diary).toHaveAttribute('href', `/diary?date=${today}`);
+  await page.clock.pauseAt(beforeMidnight);
+  const initialReads = reads;
+  responseDay = tomorrow;
+  await page.clock.fastForward(2100);
+  await expect(diary).toHaveAttribute('href', `/diary?date=${tomorrow}`);
+  expect(reads).toBeGreaterThan(initialReads);
+  await expect(diary).toBeVisible();
+});

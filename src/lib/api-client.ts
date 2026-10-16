@@ -1,4 +1,7 @@
-import { readResponseSchema } from '@/contracts/read-resources';
+import {
+  isCacheableReadUrl,
+  readResponseSchema,
+} from '@/contracts/read-resources';
 import { reportNetworkResult } from './network-state';
 import { sessionGeneration } from './session-state';
 let ending: Promise<void> | undefined;
@@ -59,7 +62,7 @@ async function performApiFetch(input: RequestInfo | URL, init?: RequestInit) {
       : undefined;
   if (response.ok && schema) {
     const parsed = schema.parse(await response.clone().json());
-    if (generation === sessionGeneration()) {
+    if (generation === sessionGeneration() && isCacheableReadUrl(url)) {
       const { seedClientRead, canonicalReadKey } =
         await import('./client-read');
       await seedClientRead(canonicalReadKey(url), parsed, generation);
@@ -94,7 +97,7 @@ export async function apiFetch(
   );
   // Downloads and other non-resource GETs keep their caller's signal through
   // body consumption; only shared JSON reads use the bounded read deadline.
-  if (url.origin !== location.origin || !readResponseSchema(url.pathname))
+  if (url.origin !== location.origin || !isCacheableReadUrl(url))
     return performApiFetch(input, init);
   url.searchParams.sort();
   const key = `${sessionGeneration()}:${url}:${JSON.stringify([...new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))])}`;
