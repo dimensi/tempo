@@ -25,16 +25,44 @@ for (const file of [
 let child: ReturnType<typeof spawn> | undefined;
 let server: ReturnType<typeof createServer> | undefined;
 let directory: string | undefined;
-let closing = false;
+let closing: Promise<void> | undefined;
+
+const stopChild = () =>
+  new Promise<void>((resolve) => {
+    if (!child || child.exitCode !== null || child.signalCode !== null) {
+      resolve();
+      return;
+    }
+    child.once('exit', () => resolve());
+    if (!child.kill('SIGTERM')) resolve();
+  });
+
+const stopServer = () =>
+  new Promise<void>((resolve) => {
+    if (!server?.listening) {
+      resolve();
+      return;
+    }
+    server.close(() => resolve());
+  });
+
 const close = () => {
-  if (closing) return;
-  closing = true;
-  child?.kill('SIGTERM');
-  server?.close();
-  if (directory) rmSync(directory, { recursive: true, force: true });
+  if (closing) return closing;
+  closing = Promise.all([stopChild(), stopServer()]).then(() => {
+    if (directory) rmSync(directory, { recursive: true, force: true });
+  });
+  return closing;
 };
-process.once('SIGINT', close);
-process.once('SIGTERM', close);
+
+const shutdown = (code = 0) => {
+  void close().then(
+    () => process.exit(code),
+    () => process.exit(1),
+  );
+};
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
 
 try {
   directory = mkdtempSync(`${tmpdir()}/yazio-e2e-tls-`);
@@ -90,11 +118,8 @@ try {
     },
     stdio: 'inherit',
   });
-  child.on('exit', (code) => {
-    if (!closing) {
-      close();
-      process.exit(code ?? 1);
-    }
+  child.once('exit', (code) => {
+    if (!closing) shutdown(code ?? 1);
   });
   server = createServer(
     {
