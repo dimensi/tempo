@@ -633,12 +633,14 @@ export function OfflineBoundary({
     });
     window.addEventListener('tempo:read-access-denied', blocked);
     window.addEventListener('tempo:read-access-recheck', recheck);
+    window.addEventListener('tempo:offline-source-loaded', recheck);
     window.addEventListener('focus', recheck);
     window.addEventListener('online', recheck);
     return () => {
       verified();
       window.removeEventListener('tempo:read-access-denied', blocked);
       window.removeEventListener('tempo:read-access-recheck', recheck);
+      window.removeEventListener('tempo:offline-source-loaded', recheck);
       window.removeEventListener('focus', recheck);
       window.removeEventListener('online', recheck);
     };
