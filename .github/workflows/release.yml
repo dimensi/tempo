@@ -9,13 +9,14 @@ concurrency:
   group: nutrition-production
   cancel-in-progress: true
 jobs:
-  release:
+  build:
     if: github.ref == 'refs/heads/main'
-    environment: nutrition-production
     runs-on: self-hosted
     permissions:
       contents: read
       packages: write
+    outputs:
+      image: ${{ steps.publish.outputs.image }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -28,6 +29,7 @@ jobs:
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             --label "org.opencontainers.image.tree=$(git rev-parse HEAD^{tree})" .
       - name: Publish built image to GHCR
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -36,17 +38,39 @@ jobs:
           export DOCKER_CONFIG=$(mktemp -d)
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          image="ghcr.io/${GITHUB_REPOSITORY,,}:latest"
+          export IMAGE_REPOSITORY="ghcr.io/${GITHUB_REPOSITORY,,}"
+          image="$IMAGE_REPOSITORY:latest"
           docker tag nutrition-foundation "$image"
           docker push "$image"
+          export IMAGE_DIGESTS=$(docker image inspect "$image" --format '{{json .RepoDigests}}')
+          python3 - <<'PYIMAGE'
+          import json, os, re
+          pattern = re.escape(os.environ['IMAGE_REPOSITORY']) + r'@sha256:[0-9a-f]{64}'
+          refs = [ref for ref in json.loads(os.environ['IMAGE_DIGESTS']) if re.fullmatch(pattern, ref)]
+          assert len(refs) == 1, 'Expected one published image digest'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'image={refs[0]}\n')
+          PYIMAGE
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && vars.NUTRITION_CD_ENABLED == 'true'
+    environment: nutrition-production
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - name: Copy env and Compose, then pull and start over SSH
-        if: vars.NUTRITION_CD_ENABLED == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           DEPLOY_KEY: ${{ secrets.NUTRITION_DEPLOY_KEY }}
           KNOWN_HOSTS: ${{ vars.NUTRITION_DEPLOY_KNOWN_HOSTS }}
           DEPLOY_HOST: ${{ vars.NUTRITION_DEPLOY_HOST }}
           DEPLOY_USER: ${{ vars.NUTRITION_DEPLOY_USER }}
+          IMAGE_REF: ${{ needs.build.outputs.image }}
           REVISION: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
           S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
@@ -91,7 +115,10 @@ jobs:
           values = {key: os.environ[key] for key in keys}
           assert all(values[key] == value for key, value in fixed.items()), 'Unapproved runtime setting'
           assert all(0 < len(value) <= 2048 and all(32 <= ord(c) <= 126 and c not in "'\\" for c in value) for value in values.values()), 'Invalid runtime setting'
-          values.update(NUTRITION_IMAGE='ghcr.io/' + os.environ['GITHUB_REPOSITORY'].lower() + ':latest', DEPLOYED_COMMIT=os.environ['REVISION'])
+          import re
+          image = os.environ['IMAGE_REF']
+          assert re.fullmatch(re.escape('ghcr.io/' + os.environ['GITHUB_REPOSITORY'].lower()) + r'@sha256:[0-9a-f]{64}', image), 'Invalid release image'
+          values.update(NUTRITION_IMAGE=image, DEPLOYED_COMMIT=os.environ['REVISION'])
           with open(os.environ['DEPLOY_ENV_PATH'], 'x') as output:
               output.write(''.join(f"{key}='{value}'\n" for key, value in values.items()))
           PYENV
