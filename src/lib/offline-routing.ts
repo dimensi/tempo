@@ -8,6 +8,25 @@ import { useSyncExternalStore } from 'react';
 const listeners = new Set<() => void>();
 let version = 0;
 let pendingNavigation: AbortController | undefined;
+let releasedOfflineRouteId: string | null = null;
+let releasedLegacyOfflineRoute: string | null = null;
+const releasedOfflineRouteStorageKey = 'tempo:released-offline-route';
+export const liveResumeParam = '__tempoLive';
+function storedReleasedRoute() {
+  try {
+    return typeof sessionStorage === 'undefined'
+      ? null
+      : sessionStorage.getItem(releasedOfflineRouteStorageKey);
+  } catch {
+    return null;
+  }
+}
+function storeReleasedRoute(value: string) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.setItem(releasedOfflineRouteStorageKey, value);
+  } catch {}
+}
 interface SavedReadIdentity {
   partition: string;
   connectionGeneration: string;
@@ -16,18 +35,56 @@ interface SavedReadIdentity {
 function changed() {
   version++;
   for (const listener of listeners) listener();
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.dispatchEvent === 'function'
+  )
+    window.dispatchEvent(new Event('tempo:offline-location-change'));
 }
 export function isOfflineRoute(url: URL | null) {
-  return (
-    url !== null &&
-    history.state?.tempoOfflineRoute === url.pathname + url.search
-  );
+  if (url === null) return false;
+  const route = new URL(url);
+  route.searchParams.delete(liveResumeParam);
+  const key = route.pathname + route.search;
+  if (history.state?.tempoOfflineRoute !== key) return false;
+  const id = history.state?.tempoOfflineRouteId;
+  const released = storedReleasedRoute();
+  const matchesReleased =
+    `route:${key}` === released ||
+    (typeof id === 'string'
+      ? id === releasedOfflineRouteId || `id:${id}` === released
+      : key === releasedLegacyOfflineRoute);
+  return !matchesReleased || !navigator.onLine || !networkReachable();
+}
+export function releaseOfflineRoute(url: URL) {
+  const route = new URL(url);
+  const resumable = route.searchParams.has(liveResumeParam);
+  if (!isOfflineRoute(url) && !resumable) return false;
+  route.searchParams.delete(liveResumeParam);
+  const state =
+    history.state && typeof history.state === 'object' ? history.state : {};
+  const id = state.tempoOfflineRouteId;
+  if (typeof id === 'string') {
+    releasedOfflineRouteId = id;
+  } else {
+    releasedLegacyOfflineRoute = route.pathname + route.search;
+  }
+  storeReleasedRoute(`route:${route.pathname + route.search}`);
+  delete state.tempoOfflineRoute;
+  delete state.tempoOfflineRouteId;
+  history.replaceState(state, '', route.pathname + route.search + route.hash);
+  changed();
+  return true;
 }
 export function offlineNavigate(href: string, replace = false, scroll = true) {
   const url = new URL(href, location.href);
   if (url.origin !== location.origin) return;
+  releasedLegacyOfflineRoute = null;
   history[replace ? 'replaceState' : 'pushState'](
-    { tempoOfflineRoute: url.pathname + url.search },
+    {
+      tempoOfflineRoute: url.pathname + url.search,
+      tempoOfflineRouteId: crypto.randomUUID(),
+    },
     '',
     url.pathname + url.search + url.hash,
   );
@@ -39,9 +96,11 @@ export function useOfflineLocation() {
     (listener) => {
       listeners.add(listener);
       window.addEventListener('popstate', listener);
+      window.addEventListener('tempo:offline-location-change', listener);
       return () => {
         listeners.delete(listener);
         window.removeEventListener('popstate', listener);
+        window.removeEventListener('tempo:offline-location-change', listener);
       };
     },
     () => `${version}:${location.pathname}${location.search}`,

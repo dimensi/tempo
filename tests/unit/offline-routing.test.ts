@@ -2,7 +2,9 @@ import { afterEach, expect, it, vi } from 'vitest';
 import {
   interceptOfflineLinks,
   isOfflineRoute,
+  liveResumeParam,
   offlineNavigate,
+  releaseOfflineRoute,
 } from '@/lib/offline-routing';
 import { reportNetworkResult } from '@/lib/network-state';
 import { purgeOfflineDevice } from '@/lib/offline-device';
@@ -62,7 +64,14 @@ it.each([
   reportNetworkResult(false);
   click(event);
   expect(preventDefault).toHaveBeenCalledOnce();
-  expect(pushState).toHaveBeenCalledWith({ tempoOfflineRoute: path }, '', path);
+  expect(pushState).toHaveBeenCalledWith(
+    {
+      tempoOfflineRoute: path,
+      tempoOfflineRouteId: expect.any(String),
+    },
+    '',
+    path,
+  );
 
   cleanup();
 });
@@ -79,6 +88,49 @@ it('matches a saved route to its exact URL so ordinary navigation cannot inherit
     isOfflineRoute(new URL('https://tempo.test/diary?date=2026-10-14')),
   ).toBe(false);
   expect(isOfflineRoute(null)).toBe(false);
+});
+it('releases only the current saved route while preserving Next history state', () => {
+  const replaceState = vi.fn();
+  vi.stubGlobal('history', {
+    state: {
+      __NA: true,
+      __PRIVATE_NEXTJS_INTERNALS_TREE: 'tree',
+      tempoOfflineRoute: '/diary?date=2026-10-15',
+      tempoOfflineRouteId: 'entry-1',
+    },
+    replaceState,
+  });
+  expect(
+    releaseOfflineRoute(
+      new URL(
+        `https://tempo.test/diary?date=2026-10-15&${liveResumeParam}=7#meal`,
+      ),
+    ),
+  ).toBe(true);
+  expect(replaceState).toHaveBeenCalledWith(
+    { __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: 'tree' },
+    '',
+    '/diary?date=2026-10-15#meal',
+  );
+
+  replaceState.mockClear();
+  expect(
+    releaseOfflineRoute(new URL('https://tempo.test/diary?date=2026-10-14')),
+  ).toBe(false);
+  expect(replaceState).not.toHaveBeenCalled();
+});
+it('finishes a verified resume after Next has already replaced the offline marker', () => {
+  const replaceState = vi.fn();
+  vi.stubGlobal('history', {
+    state: { __NA: true },
+    replaceState,
+  });
+  expect(
+    releaseOfflineRoute(
+      new URL(`https://tempo.test/workouts?${liveResumeParam}=resume-1`),
+    ),
+  ).toBe(true);
+  expect(replaceState).toHaveBeenCalledWith({ __NA: true }, '', '/workouts');
 });
 
 function navigationDouble(
@@ -141,7 +193,10 @@ it('shows a saved destination before identity and RSC settle', async () => {
   const env = navigationDouble((url) => url.pathname === '/analytics');
   env.click('/analytics');
   expect(env.pushState).toHaveBeenCalledWith(
-    { tempoOfflineRoute: '/analytics' },
+    {
+      tempoOfflineRoute: '/analytics',
+      tempoOfflineRouteId: expect.any(String),
+    },
     '',
     '/analytics',
   );
@@ -296,7 +351,10 @@ it('opens saved data while onLine stays true and the identity probe never settle
   env.click('/');
   expect(env.navigate).not.toHaveBeenCalled();
   expect(env.pushState).toHaveBeenCalledWith(
-    { tempoOfflineRoute: '/' },
+    {
+      tempoOfflineRoute: '/',
+      tempoOfflineRouteId: expect.any(String),
+    },
     '',
     '/',
   );

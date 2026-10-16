@@ -183,6 +183,18 @@ test('stale online flag and stalled requests keep navigation local without loadi
     await expect(
       page.getByRole('heading', { name: 'Обзор', exact: true }),
     ).toBeVisible();
+    await openNavigation(page);
+    await page
+      .getByRole('link', { name: 'Дневник питания', exact: true })
+      .click();
+    await expect(
+      page.getByRole('button', { name: 'Обновить день', exact: true }),
+    ).toBeEnabled();
+    await openNavigation(page);
+    await page.getByRole('link', { name: 'Тренировки', exact: true }).click();
+    await expect(
+      page.getByRole('button', { name: 'Добавить тренировку', exact: true }),
+    ).toBeEnabled();
   } finally {
     await request.post('/__offline-test/control', {
       data: {
