@@ -13,6 +13,7 @@ export async function readContext(headers: Headers) {
     new URL('http://localhost/api/offline/identity'),
   );
   return readContextSchema.parse({
+    readerId: access.session.user.id,
     ownerId,
     role: identity.role,
     partition: identity.partition,

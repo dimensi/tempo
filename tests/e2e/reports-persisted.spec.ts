@@ -343,17 +343,21 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
         else await route.continue();
       });
     };
-    const assertPurged = async (selected: string) => {
-      await expect(page.locator('iframe')).toHaveAttribute('srcdoc', '');
+    const assertPurged = async () => {
+      await expect(page.locator('iframe')).toHaveCount(0);
+      await expect(page.getByText(/^Предпросмотр HTML:/)).toHaveCount(0);
+      await expect(page.getByRole('main').getByLabel('Начало')).toHaveCount(0);
+      await expect(
+        page.getByRole('button', { name: 'Скачать PDF' }),
+      ).toHaveCount(0);
+    };
+    const reopen = async () => {
+      await page.unroute('**/api/reports?**');
+      await page.reload();
+      await activeReports.getByLabel('Начало').fill(date);
       await expect(
         preview.getByText('Яйцо · запись 1', { exact: true }),
-      ).toHaveCount(0);
-      await expect(page.getByText(/^Предпросмотр HTML:/)).toHaveCount(0);
-      await expect(activeReports.getByLabel('Начало')).toHaveValue(selected);
-      await expect(activeReports.getByLabel('Начало')).toBeEnabled();
-      await expect(page.getByRole('combobox', { name: 'Период' })).toHaveValue(
-        'День',
-      );
+      ).toBeVisible();
     };
     await interceptDenial();
     await activeReports.getByLabel('Начало').fill('2026-02-09');
@@ -371,7 +375,7 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     await expect(
       page.getByRole('button', { name: 'Скачать PDF' }),
     ).toBeEnabled();
-    await page.evaluate(() => {
+    const trackBlobs = () => {
       const create = URL.createObjectURL.bind(URL);
       const readBlob = Response.prototype.blob;
       let count = 0;
@@ -384,7 +388,9 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
         count++;
         return create(blob);
       };
-    });
+    };
+    await page.addInitScript(trackBlobs);
+    await page.evaluate(trackBlobs);
     const deniedDownloads: string[] = [];
     page.on('download', (download) =>
       deniedDownloads.push(download.suggestedFilename()),
@@ -397,14 +403,10 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       await expect(
         page
           .getByRole('alert')
-          .filter({ hasText: 'Нет доступа к данным владельца.' }),
+          .filter({ hasText: 'Доступ изменился. Войдите заново.' }),
       ).toBeVisible();
-      await assertPurged('2026-02-10');
-      await page.unroute('**/api/reports?**');
-      await activeReports.getByLabel('Начало').fill(date);
-      await expect(
-        preview.getByText('Яйцо · запись 1', { exact: true }),
-      ).toBeVisible();
+      await assertPurged();
+      await reopen();
       deniedFormat = 'pdf';
       denialRequests.length = 0;
       await interceptDenial();
@@ -412,23 +414,18 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       await expect(
         page
           .getByRole('alert')
-          .filter({ hasText: 'Нет доступа к данным владельца.' }),
+          .filter({ hasText: 'Доступ изменился. Войдите заново.' }),
       ).toBeVisible();
-      await assertPurged(date);
+      await assertPurged();
       // Download completion must not automatically refill a denied private preview.
       await page.waitForTimeout(500);
-      await assertPurged(date);
+      await assertPurged();
       expect(denialRequests).toEqual(['pdf']);
       expect(
         await page.evaluate(() => Reflect.get(window, 'reportBlobCount')),
       ).toBe(0);
       expect(deniedDownloads).toHaveLength(0);
-      await page.unroute('**/api/reports?**');
-      await activeReports.getByLabel('Начало').fill('2026-02-10');
-      await activeReports.getByLabel('Начало').fill(date);
-      await expect(
-        preview.getByText('Яйцо · запись 1', { exact: true }),
-      ).toBeVisible();
+      await reopen();
     }
     const signIn = () =>
       context.request.post(`${origin}/api/auth/sign-in/email`, {

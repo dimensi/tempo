@@ -363,7 +363,7 @@ test('scoped analytics API, coverage, controls: hierarchy, comparisons, combined
     expect((await trainerPage.request.get(query + ownerId)).status()).toBe(403);
     await trainerPage.reload();
     await expect(trainerPage.getByRole('main')).toContainText(
-      'Нет доступа к данным владельца.',
+      'Доступ изменился. Войдите заново.',
     );
     await page.goto('/analytics');
     const localToday = dateInTimezone(new Date(), timezone);

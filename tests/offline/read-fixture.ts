@@ -24,6 +24,7 @@ export async function seedReadFixture(
     });
   };
   await put('/api/read/context', {
+    readerId: ownerId,
     ownerId,
     role: snapshot.role,
     partition: snapshot.partition,

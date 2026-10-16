@@ -102,6 +102,7 @@ it('leaves modified, hash, external and prevented links alone', () => {
 });
 it('does not treat editor routes as read routes', () => {
   expect(isWorkspaceRoute('/workouts/new')).toBe(false);
+  expect(isWorkspaceRoute('/workouts/sessions/new')).toBe(false);
   expect(isWorkspaceRoute('/workouts/plans/p/edit')).toBe(false);
   expect(isWorkspaceRoute('/workouts/plans/p/workouts/w/results')).toBe(false);
 });

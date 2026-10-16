@@ -189,11 +189,11 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
       );
       await page.goto('/measurements');
       const panel = page.getByRole('main').getByTestId('measurements-panel');
-      await expect(panel.getByRole('alert')).toContainText(
-        'Доступ к замерам не предоставлен.',
-      );
+      await expect(
+        page.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
+      ).toContainText('Доступ изменился. Войдите заново.');
       await expect(panel.getByTestId('measurement-trend-chart')).toHaveCount(0);
-      await expect(panel).not.toContainText('YAZIO');
+      await expect(panel).toHaveCount(0);
       await page.unroute('**/api/measurements?*');
     }
     await login(page.request, 'trainer');
@@ -224,7 +224,7 @@ test('synthetic health history has safe sources, zero/gaps, owner-confirmed kg a
     await page.reload();
     await expect(weights).toHaveCount(0);
     await expect(page.getByRole('main')).toContainText(
-      'Доступ к замерам не предоставлен.',
+      'Доступ изменился. Войдите заново.',
     );
     expect(
       (

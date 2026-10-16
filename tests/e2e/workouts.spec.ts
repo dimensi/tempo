@@ -118,7 +118,7 @@ test('owner creates plan, logs actual, edits and deletes plan without changing h
     page.getByRole('dialog', { name: 'Удалить весь план', exact: true }),
   ).not.toBeVisible();
   await expect(page.getByRole('tab', { name: 'История' })).toHaveCount(0);
-  const history = page.getByTestId(`session-${session.id}`);
+  const history = page.getByRole('main').getByTestId(`session-${session.id}`);
   await expect(page).toHaveURL(/\/workouts\?date=/);
   await expect(history).toContainText(title);
   await expect(history).toContainText('Фактическая нагрузка');
@@ -316,7 +316,7 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     await trainer.goto(`/workouts/plans/${plan.id}/workouts/a?date=2026-10-11`);
     await expect(
       trainer
-        .getByText('Нет разрешения на доступ к тренировкам владельца.')
+        .getByText('Доступ изменился. Войдите заново.')
         .filter({ visible: true }),
     ).toBeVisible();
     await expect(

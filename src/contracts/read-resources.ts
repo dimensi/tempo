@@ -150,7 +150,11 @@ export function pruneReadRecords(records: ReadRecord[], now: number) {
       (row) =>
         row.version === 2 && now >= row.savedAt && now - row.touchedAt < ttl,
     )
-    .sort((a, b) => b.touchedAt - a.touchedAt);
+    .sort(
+      (a, b) =>
+        Number(b.key === '/api/read/context') -
+          Number(a.key === '/api/read/context') || b.touchedAt - a.touchedAt,
+    );
   let details = 0,
     detailBytes = 0,
     otherBytes = 0;

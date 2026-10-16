@@ -22,3 +22,5 @@ export const readSettingsSchema = z.strictObject({
   ),
   stepsGoal: stepsGoalSchema,
 });
+
+export type ReadSettings = z.infer<typeof readSettingsSchema>;

@@ -9,6 +9,7 @@ import {
 import { revalidateVisibleReads } from './client-read';
 import { networkReachable } from './network-state';
 export function isWorkspaceRoute(path: string) {
+  if (path === '/workouts/sessions/new') return false;
   return (
     [
       '/',
@@ -41,8 +42,8 @@ const subscribe = (listener: () => void) => {
   };
 };
 const current = () => location.pathname + location.search;
-export function useReadLocation() {
-  return useSyncExternalStore(subscribe, current, () => '');
+export function useReadLocation(initialHref = '') {
+  return useSyncExternalStore(subscribe, current, () => initialHref);
 }
 const RouteLocation = createContext<string | null>(null);
 export function ReadLocationProvider({

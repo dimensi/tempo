@@ -178,7 +178,9 @@ export function ApplicationShellFrame({
             </Stack>
           </Stack>
         </AppShell.Navbar>
-        <AppShell.Main id="main-content">{children}</AppShell.Main>
+        <AppShell.Main component="div" id="main-content">
+          {children}
+        </AppShell.Main>
       </AppShell>
     </>
   );

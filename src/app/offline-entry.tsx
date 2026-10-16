@@ -10,6 +10,7 @@ import { OfflineLifecycle } from '@/features/offline';
 import { ApplicationShell } from '@/components/layout/application-shell';
 import { ContentLayout } from '@/components/layout/content-layout';
 import { PrivateReadWorkspace } from './read-workspace';
+declare const __OFFLINE_BRAND__: string;
 if (location.pathname === '/offline/index.html')
   history.replaceState({}, '', '/');
 const root = document.getElementById('offline-root');
@@ -24,11 +25,12 @@ function Application() {
     <MantineProvider theme={theme} defaultColorScheme="auto">
       <OfflineLifecycle role="OWNER" />
       <ApplicationShell
+        brandSrc={__OFFLINE_BRAND__}
         role={state.bundle?.snapshot.role ?? 'OWNER'}
         demo={false}
       >
         <ContentLayout>
-          <PrivateReadWorkspace />
+          <PrivateReadWorkspace initialRole={state.bundle?.snapshot.role} />
         </ContentLayout>
       </ApplicationShell>
     </MantineProvider>

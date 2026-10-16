@@ -777,6 +777,7 @@ it('workspace context binds the authorized owner to the same partition and gener
     )
   ).json();
   expect(context).toEqual({
+    readerId: ownerId,
     ownerId,
     role: 'OWNER',
     partition: identity.partition,

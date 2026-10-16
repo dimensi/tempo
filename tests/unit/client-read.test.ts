@@ -33,6 +33,10 @@ vi.mock('@/lib/offline-controller', () => ({
   }),
 }));
 vi.mock('@/lib/offline-device', () => ({
+  purgeOfflineDevice: vi.fn(async () => {
+    state.blocked();
+    state.disk.clear();
+  }),
   subscribeOfflineBlocked: (callback: () => void) => {
     state.blocked = callback;
     return () => {};
@@ -88,7 +92,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 async function install(fetcher: typeof fetch) {
-  vi.stubGlobal('window', { fetch: fetcher });
+  vi.stubGlobal('window', { fetch: fetcher, dispatchEvent: vi.fn() });
   const reader = await import('@/lib/client-read');
   cleanup = reader.observeReadResources();
   return reader;
@@ -155,6 +159,9 @@ it('confirmed access denial is returned as denial and never disguised as an offl
   const { clientReads } = await install(raw);
   await window.fetch(path);
   expect((await window.fetch(path)).status).toBe(403);
+  expect(window.dispatchEvent).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'tempo:read-access-denied' }),
+  );
   expect(clientReads.snapshot(path).data).toBeUndefined();
   expect(state.disk.size).toBe(0);
 });
@@ -329,4 +336,37 @@ it('document deletion preserves the medical workspace summary when its refresh f
   ]);
   expect(summary.overview.documents).toBe(1);
   expect(summary.complete).toBe(false);
+});
+
+it('a delayed disk restore cannot touch an old record under a newer account fence', async () => {
+  const reader = await install((async () => Response.json([])) as typeof fetch);
+  const key = '/api/measurements?ownerId=o';
+  await window.fetch(key);
+  const { OfflineStorage } = await import('@/lib/offline-device');
+  const { readRecordSchema } = await import('@/contracts/read-resources');
+  const saved = [...state.disk.values()].map((row) =>
+    readRecordSchema.parse(row),
+  );
+  const delayed = Promise.withResolvers<typeof saved>();
+  vi.spyOn(OfflineStorage.prototype, 'readResources').mockImplementationOnce(
+    () => delayed.promise,
+  );
+  reader.clientReads.clear();
+  const restore = reader.clientReads.restore(key);
+  await Promise.resolve();
+  state.partition = 'another-owner';
+  state.generation = 'another-scope';
+  for (const listener of state.listeners) listener();
+  delayed.resolve(saved);
+  await restore;
+  expect(state.disk.has('another-owner:' + key)).toBe(false);
+  expect(reader.clientReads.snapshot(key).data).toBeUndefined();
+});
+
+it('private report bytes deny the common gate before the caller can consume the response', async () => {
+  await install(vi.fn(async () => new Response(null, { status: 401 })));
+  expect((await window.fetch('/api/reports?format=pdf')).status).toBe(401);
+  expect(window.dispatchEvent).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'tempo:read-access-denied' }),
+  );
 });

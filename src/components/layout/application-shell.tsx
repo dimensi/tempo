@@ -14,10 +14,14 @@ export function ApplicationShell(props: {
   children: React.ReactNode;
   role: string;
   demo: boolean;
+  initialHref?: string;
+  brandSrc?: string;
 }) {
   const [cleanupError, setCleanupError] = useState(false);
-  const pathname = new URL(useReadLocation() || '/', 'https://tempo.local')
-    .pathname;
+  const pathname = new URL(
+    useReadLocation(props.initialHref) || '/',
+    'https://tempo.local',
+  ).pathname;
   async function logout() {
     try {
       beginLocalLogout();

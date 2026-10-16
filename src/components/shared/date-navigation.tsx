@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   ActionIcon,
   Box,
@@ -172,6 +172,16 @@ export function DateNavigation({
   disabled?: boolean;
 }) {
   const [anchor, setAnchor] = useState(date);
+  // Activity preserves route state; on Back, bring its selected day back into view.
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (active) setAnchor(date);
+    });
+    return () => {
+      active = false;
+    };
+  }, [date]);
   const [touch, setTouch] = useState<{ x: number; y: number } | null>(null);
   const dates = weekDates(anchor);
   return (

@@ -2,7 +2,10 @@
 import { useState } from 'react';
 import { Stack, Text, Title, Skeleton } from '@mantine/core';
 import { useReadResource } from '@/lib/use-read-resource';
-import { readSettingsSchema } from '@/contracts/read-settings';
+import {
+  readSettingsSchema,
+  type ReadSettings,
+} from '@/contracts/read-settings';
 import { ru } from '@/config/messages';
 import { TrainerSettings } from '@/features/trainer';
 import { AccessPanel } from '@/features/anamnesis';
@@ -14,17 +17,30 @@ import { SettingsNavigation } from './settings-navigation';
 export function SettingsReadView({
   ownerId,
   owner,
+  initial,
 }: {
-  ownerId: string;
+  ownerId: string | null;
   owner: boolean;
+  initial?: ReadSettings;
 }) {
-  const resource = useReadResource({
-    href: owner ? '/api/read/settings' : undefined,
-    parse: (value) => readSettingsSchema.parse(value),
-  });
+  const resource = useReadResource(
+    {
+      href: owner ? '/api/read/settings' : undefined,
+      parse: (value) => readSettingsSchema.parse(value),
+    },
+    initial,
+  );
   const [retained, setRetained] = useState(resource.data);
   if (resource.data && resource.data !== retained) setRetained(resource.data);
-  if (!owner) return <Text>{ru.settings.ownerOnly}</Text>;
+  if (!owner || !ownerId)
+    return (
+      <Stack>
+        <Title order={1}>
+          {ru.sections.find((section) => section.href === '/settings')!.title}
+        </Title>
+        <Text>{ru.settings.ownerOnly}</Text>
+      </Stack>
+    );
   const data = resource.data ?? retained;
   if (!data) return <Skeleton height={180} />;
   return (

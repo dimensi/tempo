@@ -207,7 +207,7 @@ test('real diary photos and comments persist; trainer is read-only and revoked U
     expect((await trainerPage.request.get(photoUrl)).status()).toBe(403);
     await trainerPage.reload();
     await expect(
-      trainerPage.getByText('Доступ к дневнику не предоставлен.'),
+      trainerPage.getByText('Доступ изменился. Войдите заново.'),
     ).toBeVisible();
     await expect(
       trainerPage.getByText('Синтетический обед', { exact: true }),

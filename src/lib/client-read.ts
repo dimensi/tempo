@@ -32,9 +32,10 @@ let fence: CacheFence | undefined;
 const persistence = {
   async read(key: string): Promise<PersistedRead<string> | undefined> {
     if (!fence) return;
+    const expectedFence = fence;
     const storage = new OfflineStorage();
     try {
-      const row = (await storage.readResources(fence)).find(
+      const row = (await storage.readResources(expectedFence)).find(
         (row) => row.key === key,
       );
       if (!row) return;
@@ -46,13 +47,13 @@ const persistence = {
       );
       if (data === undefined) return;
       await storage
-        .writeResource(fence, { ...row, touchedAt: Date.now() })
+        .writeResource(expectedFence, { ...row, touchedAt: Date.now() })
         .catch(() => {});
       return {
         data,
         savedAt: row.savedAt,
         touchedAt: Date.now(),
-        coverage: row.coverage,
+        coverage: data === row.body ? row.coverage : 'partial',
       };
     } finally {
       await storage.close();
@@ -82,7 +83,8 @@ const persistence = {
       await withOfflineCacheLock(() =>
         storage.writeResource(currentFence, {
           version: 2,
-          coverage: value.coverage ?? 'complete',
+          coverage:
+            body === value.data ? (value.coverage ?? 'complete') : 'partial',
           key,
           body,
           savedAt: value.savedAt,
@@ -297,7 +299,18 @@ export function observeReadResources() {
       !schema
     )
       throw new ReadFailure('network');
-    if (!schema) return original.call(window, input, init);
+    if (!schema) {
+      const response = await original.call(window, input, init);
+      if (
+        url.origin === location.origin &&
+        method === 'GET' &&
+        (url.pathname === '/api/reports' ||
+          url.pathname.startsWith('/api/anamnesis/')) &&
+        (response.status === 401 || response.status === 403)
+      )
+        denyReadAccess();
+      return response;
+    }
     bindReadScope();
     if (!fence) return original.call(window, input, init);
     const key = canonicalReadKey(url);
@@ -322,13 +335,16 @@ export function observeReadResources() {
                 reportNetworkResult(false);
                 throw error;
               }
-              if (!live.ok)
+              if (!live.ok) {
+                if (live.status === 401 || live.status === 403)
+                  denyReadAccess();
                 throw new ReadFailure(
                   live.status === 401 || live.status === 403
                     ? 'denied'
                     : 'unavailable',
                   live.status,
                 );
+              }
               const parsed = schema.safeParse(await live.clone().json());
               if (!parsed.success) throw new ReadFailure('unavailable');
               validated = true;
@@ -485,4 +501,11 @@ export async function hasSavedMedicalRoute(url: URL) {
     () => true,
     () => false,
   );
+}
+
+function denyReadAccess() {
+  window.dispatchEvent(new Event('tempo:read-access-denied'));
+  void import('./offline-device')
+    .then(({ purgeOfflineDevice }) => purgeOfflineDevice())
+    .catch(() => {});
 }

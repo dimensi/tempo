@@ -629,6 +629,8 @@ test('owner imports the reference PDF and trainer receives only granted access',
   );
   await alt.check();
   await expect(builder.locator('iframe')).toHaveCount(0);
-  await expect(builder.getByRole('alert')).toBeVisible();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Доступ изменился.' }),
+  ).toBeVisible();
   await trainerContext.close();
 });

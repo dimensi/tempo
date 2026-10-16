@@ -1,4 +1,5 @@
 'use client';
+import type { ReadSettings } from '@/contracts/read-settings';
 import { useReportReadModel } from './snapshot-reads';
 import { SettingsReadView } from './(dashboard)/settings/read-view';
 import { OfflineWrites } from '@/features/offline';
@@ -22,6 +23,7 @@ import { HealthOverviewSteps, WeightHistoryPanel } from '@/features/health';
 import { weightHistorySchema } from '@/contracts/health';
 import {
   AnalyticsDashboard,
+  AnalyticsTimezone,
   PeriodControl,
   presetRange,
 } from '@/features/analytics';
@@ -57,6 +59,7 @@ function Diary({ context, date }: { context: ReadContext; date: string }) {
   });
   return (
     <DiaryClient
+      loading={day.data === undefined && day.refreshing}
       privatePhotos
       ownerId={context.ownerId}
       date={date}
@@ -120,6 +123,13 @@ function Analytics({ url, today }: { url: URL; today: string }) {
       : undefined,
     parse: (value) => analyticsDataSchema.parse(value),
   });
+  if (!url.searchParams.has('timezone'))
+    return (
+      <AnalyticsTimezone
+        from={url.searchParams.get('from') ?? undefined}
+        to={url.searchParams.get('to') ?? undefined}
+      />
+    );
   if (!range.success) return <Text>{m.invalidRange}</Text>;
   return resource.data ? (
     <AnalyticsDashboard
@@ -210,9 +220,11 @@ function Reports({ context }: { context: ReadContext }) {
 export function ReadWorkspaceRoute({
   href,
   context,
+  initialSettings,
 }: {
   href: string;
   context: ReadContext;
+  initialSettings?: ReadSettings;
 }) {
   const url = new URL(href, 'https://tempo.local');
   const today = browserToday();
@@ -261,6 +273,7 @@ export function ReadWorkspaceRoute({
   if (url.pathname === '/settings')
     return (
       <SettingsReadView
+        initial={initialSettings}
         ownerId={context.ownerId}
         owner={context.role === 'OWNER'}
       />
