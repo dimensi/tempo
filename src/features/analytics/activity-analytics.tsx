@@ -90,7 +90,7 @@ export function ActivityAnalytics({
             }}
           />
         )}
-        <Details>
+        <Details stateKey="activity">
           <Table.ScrollContainer minWidth={320}>
             <Table>
               <Table.Thead>

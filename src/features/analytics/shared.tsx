@@ -1,7 +1,7 @@
 'use client';
 import { usePathname } from 'next/navigation';
 import { useViewState } from '@/lib/use-view-state';
-import { useId, useTransition, type ReactNode } from 'react';
+import { useTransition, type ReactNode } from 'react';
 import { dateInTimezone } from '@/contracts/nutrition-sync-dates';
 import {
   Accordion,
@@ -17,16 +17,17 @@ import type { AnalyticsChange } from '@/contracts/analytics';
 import { analyticsMessages as m } from './messages';
 import { display, signed } from './display';
 export function Details({
+  stateKey,
   label = m.details,
   children,
 }: {
+  stateKey: string;
   label?: string;
   children: ReactNode;
 }) {
   const path = usePathname();
-  const id = useId();
   const [open, setOpen] = useViewState<string | null>(
-    `analytics:${path}:${label}:${id}`,
+    `analytics:${path}:${stateKey}`,
     null,
   );
   return (

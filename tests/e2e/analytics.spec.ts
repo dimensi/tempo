@@ -220,6 +220,25 @@ test('scoped analytics API, coverage, controls: hierarchy, comparisons, combined
         .getByRole('button', { name: 'Показать данные по дням' })
         .click();
     await body.getByRole('button', { name: 'Показать записи замеров' }).click();
+    const analyticsUrl = page.url();
+    await page.evaluate(() => window.scrollTo(0, 500));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(500);
+    await page.evaluate(() =>
+      document
+        .querySelector<HTMLAnchorElement>('a[href="/measurements"]')!
+        .click(),
+    );
+    await expect(page).toHaveURL('/measurements');
+    await page.goBack();
+    await expect(page).toHaveURL(analyticsUrl);
+    for (const panel of [nutrition, steps])
+      await expect(
+        panel.getByRole('button', { name: 'Показать данные по дням' }),
+      ).toHaveAttribute('aria-expanded', 'true');
+    await expect(
+      body.getByRole('button', { name: 'Показать записи замеров' }),
+    ).toHaveAttribute('aria-expanded', 'true');
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(500);
     await expect(
       body.getByRole('cell', { name: '108,6', exact: true }),
     ).toBeVisible();
