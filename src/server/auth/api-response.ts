@@ -16,7 +16,13 @@ export function withApiErrors<R extends Request, A extends unknown[]>(
     )
       return Response.json(
         { error: 'FORBIDDEN' },
-        { status: 403, headers: response.headers },
+        {
+          status: 403,
+          headers: new Headers([
+            ...response.headers,
+            ['X-Auth-Error', 'FORBIDDEN'],
+          ]),
+        },
       );
     const session =
       response.status === 401
@@ -31,7 +37,11 @@ export function withApiErrors<R extends Request, A extends unknown[]>(
           : 'FORBIDDEN';
     return Response.json(
       { error: code },
-      { status: response.status, headers: response.headers },
+      // HEAD has no body on the wire; keep the same code available to clients.
+      {
+        status: response.status,
+        headers: new Headers([...response.headers, ['X-Auth-Error', code]]),
+      },
     );
   };
 }

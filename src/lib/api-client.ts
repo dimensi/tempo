@@ -21,9 +21,10 @@ async function performApiFetch(input: RequestInfo | URL, init?: RequestInit) {
       .json()
       .catch(() => null);
     const code =
-      body && typeof body === 'object' && 'error' in body
+      response.headers.get('X-Auth-Error') ??
+      (body && typeof body === 'object' && 'error' in body
         ? body.error
-        : undefined;
+        : undefined);
     if (code === 'AUTH_REQUIRED' || code === 'ACCESS_REVOKED') {
       const { endClientSession } = await import('./local-logout');
       // Parsing the body and loading cleanup can outlive the requesting account.

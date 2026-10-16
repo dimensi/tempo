@@ -166,9 +166,6 @@ async function executeIsolated(run, concurrency, signal) {
   const groups = partitionCases(cases, concurrency);
   const gateways = await selectGateways(groups.length);
   const allowedMobileSkips = {
-    'smoke/slow-install.spec.ts': [
-      'held initial offline install cannot delay real logout behind a cache lock',
-    ],
     'transformmate-sync/preview.e2e.ts': [
       'owned preview negative requests coalesce across remounts, new revision retries once and revoked trainer cannot publish a late blob',
     ],

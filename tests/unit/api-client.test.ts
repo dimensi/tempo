@@ -92,6 +92,7 @@ it('a denial body arriving after account replacement cannot reset or redirect it
     vi.fn(async () => ({
       status: 403,
       ok: false,
+      headers: new Headers(),
       clone: () => ({
         json: () => {
           parsing.resolve();
@@ -152,3 +153,26 @@ it('a download keeps its caller deadline through a slow response body', async ()
     vi.restoreAllMocks();
   }
 });
+
+it.each([
+  [401, 'AUTH_REQUIRED'],
+  [403, 'ACCESS_REVOKED'],
+  [403, 'FORBIDDEN'],
+] as const)(
+  'handles bodyless HEAD %s %s through the server auth header',
+  async (status, code) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(null, { status, headers: { 'X-Auth-Error': code } }),
+      ),
+    );
+    const { apiFetch } = await import('@/lib/api-client');
+    await apiFetch('/api/reports?format=pdf', { method: 'HEAD' });
+    expect(state.end).toHaveBeenCalledTimes(code === 'FORBIDDEN' ? 0 : 1);
+    expect(location.replace).toHaveBeenCalledTimes(
+      code === 'FORBIDDEN' ? 0 : 1,
+    );
+  },
+);

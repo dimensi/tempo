@@ -9,9 +9,9 @@ const query = 'start=2026-10-10&end=2026-10-10&period=daily&format=pdf';
 test('anonymous bytes denied and oversized period rejected', async ({
   request,
 }) => {
-  expect(
-    (await request.get(`/api/reports?ownerId=owner&${query}`)).status(),
-  ).toBe(401);
+  const anonymous = await request.get(`/api/reports?ownerId=owner&${query}`);
+  expect(anonymous.status()).toBe(401);
+  expect(await anonymous.json()).toEqual({ error: 'AUTH_REQUIRED' });
   expect(
     (
       await request.get(
@@ -213,6 +213,9 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       page.getByRole('button', { name: 'Предпросмотр HTML' }),
     ).toHaveCount(0);
     const preview = page.frameLocator('iframe[title="Предпросмотр HTML"]');
+    await expect(
+      page.getByText(`Предпросмотр HTML: ${date} — ${date}`, { exact: true }),
+    ).toBeVisible();
     await expect(preview.locator('.steps-value')).toHaveText(/12[\s\u00a0]345/);
     await expect(
       preview.getByText('Яйцо · запись 1', { exact: true }),
@@ -483,8 +486,24 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
     expect(
       (await page.request.delete('/api/trainers', { data: grant })).ok(),
     ).toBe(true);
-    expect((await context.request.get(scopedUrl)).status()).toBe(403);
-    await trainerPage.reload();
+    const deniedReport = await context.request.get(scopedUrl);
+    expect(deniedReport.status()).toBe(403);
+    expect(await deniedReport.json()).toEqual({ error: 'ACCESS_REVOKED' });
+    const deniedHead = await context.request.head(scopedUrl);
+    expect(deniedHead.status()).toBe(403);
+    expect(deniedHead.headers()['x-auth-error']).toBe('ACCESS_REVOKED');
+    expect((await deniedHead.body()).length).toBe(0);
+    // The report response itself must trigger cleanup, independently of access refresh.
+    await trainerPage.route('**/api/read/context', (route) =>
+      route.abort('failed'),
+    );
+    const denial = trainerPage.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/reports' &&
+        response.status() === 403,
+    );
+    await trainerPage.getByLabel('Начало').fill('2026-02-11');
+    expect(await (await denial).json()).toEqual({ error: 'ACCESS_REVOKED' });
     await expect(trainerPage).toHaveURL('/login');
     await expect(
       trainerPage.getByRole('button', { name: 'Скачать PDF' }),
@@ -512,4 +531,37 @@ test('persisted diary and private photo PDF API; real trainer grant and revocati
       db.close();
     }
   }
+});
+
+test('report setup stays in the URL through Next navigation, Back and a full remount', async ({
+  page,
+}) => {
+  await signInFixture(page);
+  await page.goto('/reports?period=custom&start=2026-02-03&end=2026-02-09');
+  const period = page.getByRole('combobox', { name: 'Период', exact: true });
+  const start = page.getByRole('textbox', { name: 'Начало', exact: true });
+  const end = page.getByRole('textbox', { name: 'Окончание', exact: true });
+  await expect(period).toHaveValue('Произвольный период');
+  await expect(start).toHaveValue('2026-02-03');
+  await expect(end).toHaveValue('2026-02-09');
+  await start.fill('2026-02-04');
+  await end.fill('2026-02-11');
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('start'))
+    .toBe('2026-02-04');
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('end'))
+    .toBe('2026-02-11');
+  const menu = page.getByRole('button', { name: 'Навигация', exact: true });
+  if (await menu.isVisible()) await menu.click();
+  await page.getByRole('link', { name: 'Обзор', exact: true }).click();
+  await expect(page).toHaveURL('/');
+  await page.goBack();
+  await expect(period).toHaveValue('Произвольный период');
+  await expect(start).toHaveValue('2026-02-04');
+  await expect(end).toHaveValue('2026-02-11');
+  await page.reload();
+  await expect(period).toHaveValue('Произвольный период');
+  await expect(start).toHaveValue('2026-02-04');
+  await expect(end).toHaveValue('2026-02-11');
 });

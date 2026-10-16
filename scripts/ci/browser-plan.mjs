@@ -37,8 +37,8 @@ export function browserPlan(selection) {
       config: 'tests/smoke/production.config.ts',
       requiredCases: [
         'production real login',
-        'two tabs hide private DOM',
-        'refill holds a shared lock',
+        'account replacement clears the previous reader and notifies the other tab',
+        'two foreground tabs send one durable operation once after reconnect',
       ],
     },
   ];
@@ -66,9 +66,14 @@ export function browserPlan(selection) {
   if (selection.mode === 'full' || selection.areas.includes('offline'))
     runs.push({
       family: 'offline',
+      isolated: true,
       config: 'tests/offline/production.config.ts',
       requiredCases: [
-        { pattern: 'held initial offline install', project: 'desktop' },
+        {
+          pattern:
+            'normal login and logout do not install or wait for an offline shell',
+          project: 'desktop',
+        },
       ],
     });
   if (selection.mode === 'full' || selection.areas.includes('providers')) {
