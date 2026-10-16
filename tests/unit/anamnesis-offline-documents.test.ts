@@ -6,63 +6,59 @@ import { isValidElement, type ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   online: false,
-  index: 0,
-  viewer: false,
-  runEffects: false,
-  savedDocumentCalls: 0,
-  savedDocumentPromise: undefined as Promise<MedicalDocument> | undefined,
-  documentUpdates: [] as unknown[],
+  readError: undefined as string | undefined,
 }));
+const document: MedicalDocument = {
+  id: 'doc',
+  ownerId: 'owner',
+  filename: 'saved.pdf',
+  mimeType: 'application/pdf',
+  sizeBytes: 1,
+  pageCount: 1,
+  laboratoryName: null,
+  title: null,
+  collectedAt: null,
+  issuedAt: null,
+  createdAt: 1,
+  updatedAt: 1,
+};
 vi.mock('react', async (original) => ({
   ...(await original<typeof import('react')>()),
-  useState: (initial: unknown) => {
-    const index = state.index++;
-    return [
-      state.viewer && index === 0
-        ? { id: 'doc', filename: 'report.pdf', pageCount: 1 }
-        : !state.viewer && index === 8
-          ? { name: 'selected.pdf' }
-          : initial,
-      index === 0 && state.viewer
-        ? (value: unknown) => state.documentUpdates.push(value)
-        : vi.fn(),
-    ];
-  },
-  useEffect: (effect: () => void) => {
-    if (state.runEffects) effect();
-  },
+  useState: (initial: unknown) => [
+    initial === null ? { name: 'selected.pdf' } : initial,
+    vi.fn(),
+  ],
+  useEffect: vi.fn(),
   useRef: (current: unknown) => ({ current }),
 }));
-vi.mock('@/lib/api-client', () => ({
-  apiFetch: (...args: Parameters<typeof fetch>) => fetch(...args),
-}));
 vi.mock('@/lib/use-read-online', () => ({ useReadOnline: () => state.online }));
-vi.mock('@/lib/use-read-refresh', () => ({ useReadRefresh: () => 0 }));
 vi.mock('@/lib/use-read-resource', () => ({
-  useReadResource: vi.fn(() => ({ data: undefined })),
+  useReadResource: (resource: { href: string }) => ({
+    data: resource.href.includes('/observations?')
+      ? [
+          {
+            observation: {
+              originalName: 'Synthetic marker',
+              collectedAt: '2026-01-01',
+            },
+            sources: [
+              {
+                id: 'quote',
+                documentId: 'doc',
+                pageNumber: 1,
+                rawText: 'Cached citation',
+              },
+            ],
+          },
+        ]
+      : resource.href.includes('/documents/doc?')
+        ? document
+        : [],
+    error: state.readError,
+  }),
 }));
 vi.mock('@/lib/client-read', () => ({
   invalidateMedicalDocument: vi.fn(),
-  savedMedicalDocument: async () => {
-    state.savedDocumentCalls++;
-    return (
-      state.savedDocumentPromise ??
-      Promise.resolve({
-        id: 'doc',
-        ownerId: 'owner',
-        filename: 'saved.pdf',
-        mimeType: 'application/pdf',
-        sizeBytes: 1,
-        pageCount: 1,
-        laboratoryName: null,
-        title: null,
-        collectedAt: null,
-        issuedAt: null,
-        createdAt: 1,
-        updatedAt: 1,
-      })
-    );
-  },
 }));
 vi.mock('@/features/anamnesis/refresh', () => ({
   useAnamnesisRevision: () => 0,
@@ -86,65 +82,33 @@ function nodes(
   ];
 }
 afterEach(() => {
-  state.index = 0;
-  state.runEffects = false;
-  state.savedDocumentCalls = 0;
-  state.savedDocumentPromise = undefined;
-  state.documentUpdates = [];
+  state.readError = undefined;
   vi.unstubAllGlobals();
 });
-it('does not let a late saved document overwrite a fresher live response', async () => {
-  const saved = Promise.withResolvers<MedicalDocument>();
-  state.savedDocumentPromise = saved.promise;
-  state.viewer = true;
-  state.runEffects = true;
-  const live: MedicalDocument = {
-    id: 'doc',
-    ownerId: 'owner',
-    filename: 'live.pdf',
-    mimeType: 'application/pdf',
-    sizeBytes: 1,
-    pageCount: 1,
-    laboratoryName: null,
-    title: null,
-    collectedAt: null,
-    issuedAt: null,
-    createdAt: 1,
-    updatedAt: 2,
-  };
-  vi.stubGlobal(
-    'fetch',
-    vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json(live))
-      .mockResolvedValueOnce(Response.json([])),
-  );
-  DocumentViewer({
-    ownerId: 'owner',
-    documentId: 'doc',
-    writable: true,
-  });
-  await vi.waitFor(() => expect(state.documentUpdates).toContainEqual(live));
-  saved.resolve({ ...live, filename: 'stale.pdf', updatedAt: 1 });
-  await Promise.resolve();
-  expect(state.documentUpdates.at(-1)).toEqual(live);
-});
-
-it('loads a saved document before a stalled live refresh on an offline projection', async () => {
-  state.viewer = true;
-  state.runEffects = true;
-  DocumentViewer({
-    ownerId: 'owner',
-    documentId: 'doc',
-    writable: true,
-  });
-  await vi.waitFor(() => expect(state.savedDocumentCalls).toBe(1));
-});
+it.each([undefined, 'unavailable'])(
+  'renders the cached document and its citations during refresh error=%s',
+  (error) => {
+    state.readError = error;
+    vi.stubGlobal('fetch', vi.fn());
+    const tree = nodes(
+      DocumentViewer({ ownerId: 'owner', documentId: 'doc', writable: true }),
+    );
+    expect(tree.some((node) => node.type === 'object')).toBe(state.online);
+    expect(tree.some((node) => node.props.children === 'saved.pdf')).toBe(true);
+    expect(
+      tree.some(
+        (node) =>
+          Array.isArray(node.props.children) &&
+          node.props.children.includes('Cached citation'),
+      ),
+    ).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+  },
+);
 it.each([false, true])(
   'exposes direct document download only online=%s',
   (online) => {
     state.online = online;
-    state.viewer = true;
     const tree = DocumentViewer({
       ownerId: 'owner',
       documentId: 'doc',
@@ -162,7 +126,6 @@ it.each([false, true])(
   'disables picking and uploading a selected PDF while online=%s',
   (online) => {
     state.online = online;
-    state.viewer = false;
     const rendered = nodes(
       DocumentsPanel({ ownerId: 'owner', writable: true }),
     );

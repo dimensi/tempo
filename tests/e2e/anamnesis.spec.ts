@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
-import { test, expect, type Page } from '../ci/isolated-test';
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { expect, test, type Page } from '../ci/isolated-test';
 import { getSessionWith429Retry } from './auth-session';
 
 async function login(page: Page, role: 'owner' | 'trainer', origin: string) {
@@ -151,7 +151,7 @@ test('owner imports the reference PDF and trainer receives only granted access',
   const upload = await uploaded;
   expect(upload.status()).toBe(201);
   const document = (await upload.json()) as {
-    document: { id: string; pageCount: number };
+    document: { id: string; filename: string; pageCount: number };
     importJob: { id: string; status: string } | null;
     duplicate: boolean;
   };
@@ -219,6 +219,80 @@ test('owner imports the reference PDF and trainer receives only granted access',
   await expect(
     page.getByRole('cell', { name: 'Витамин D (25-OH)' }),
   ).toBeVisible();
+
+  // Document citations use the same durable read path as the document itself.
+  const documentPath = `/anamnesis/documents/${document.document.id}`;
+  const observationsPath = `/api/anamnesis/documents/${document.document.id}/observations?${ownerQuery}`;
+  const citations = (await (
+    await page.request.get(observationsPath)
+  ).json()) as Array<{ sources: Array<{ rawText: string }> }>;
+  const quote = citations.flatMap((row) => row.sources)[0]!.rawText;
+  await page.goto(documentPath);
+  const viewer = page.getByTestId('anamnesis-document-viewer');
+  await expect(viewer.getByText(quote, { exact: false }).first()).toBeVisible();
+  await page.route(
+    `**/api/anamnesis/documents/${document.document.id}/observations?*`,
+    (route) => route.fulfill({ status: 503, json: { error: 'Unavailable' } }),
+  );
+  const failedRefresh = page.waitForResponse(
+    (response) =>
+      response
+        .url()
+        .includes(`/documents/${document.document.id}/observations?`) &&
+      response.status() === 503,
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await failedRefresh;
+  await expect(viewer.getByText(quote, { exact: false }).first()).toBeVisible();
+  await page.reload();
+  await expect(
+    viewer.getByRole('heading', {
+      name: document.document.filename,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(viewer.getByText(quote, { exact: false }).first()).toBeVisible();
+  await page.unroute(
+    `**/api/anamnesis/documents/${document.document.id}/observations?*`,
+  );
+
+  // A slow marker must not trigger a second observations GET after the hook's
+  // first request has completed. Background access checks are held separately.
+  await page.route('**/api/read/context', (route) => route.abort('failed'));
+  let releaseMarker!: () => void;
+  const heldMarker = new Promise<void>((resolve) => {
+    releaseMarker = resolve;
+  });
+  let observationReads = 0;
+  await page.route('**/api/anamnesis/markers/alt?*', async (route) => {
+    await heldMarker;
+    await route.continue().catch(() => {});
+  });
+  await page.route(
+    '**/api/anamnesis/markers/alt/observations?*',
+    async (route) => {
+      observationReads++;
+      await route.continue();
+    },
+  );
+  try {
+    await page.goto('/anamnesis/markers/alt');
+    await expect.poll(() => observationReads).toBe(1);
+    releaseMarker();
+    await expect(
+      page.getByRole('heading', {
+        name: 'Аланинаминотрансфераза',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    expect(observationReads).toBe(1);
+  } finally {
+    releaseMarker();
+    await page.unroute('**/api/anamnesis/markers/alt?*');
+    await page.unroute('**/api/anamnesis/markers/alt/observations?*');
+    await page.unroute('**/api/read/context');
+  }
 
   // Synthetic pending review fixture in the disposable E2E DB; real auth, persistence and confirm API.
   const altRows = (await (

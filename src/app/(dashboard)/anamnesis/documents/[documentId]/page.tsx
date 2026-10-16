@@ -1,5 +1,5 @@
 import { anamnesisMessages as m } from '@/config/anamnesis-messages';
-import { DocumentPage } from '../../../read-pages';
+import { DocumentPage } from './page-client';
 export function generateMetadata() {
   return { title: m.documents.title };
 }

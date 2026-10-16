@@ -9,6 +9,13 @@ vi.mock('@/lib/session-state', () => ({
   resetSession: state.reset,
 }));
 vi.mock('@/lib/local-logout', () => ({ endClientSession: state.end }));
+vi.mock('@/lib/client-read', () => ({
+  seedClientRead: vi.fn(),
+  canonicalReadKey: (url: URL) => {
+    url.searchParams.sort();
+    return url.pathname + url.search;
+  },
+}));
 beforeEach(() => {
   vi.resetModules();
   state.generation++;
@@ -26,13 +33,15 @@ it('deduplicates equivalent GETs while one aborted observer does not cancel anot
   );
   const { apiFetch } = await import('@/lib/api-client');
   const controller = new AbortController();
-  const first = apiFetch('/api/unknown?b=2&a=1', { signal: controller.signal });
-  const second = apiFetch('/api/unknown?a=1&b=2');
+  const first = apiFetch('/api/settings/steps-goal?to=2&from=1', {
+    signal: controller.signal,
+  });
+  const second = apiFetch('/api/settings/steps-goal?from=1&to=2');
   const rejected = expect(first).rejects.toBeDefined();
   controller.abort();
   await rejected;
-  response.resolve(Response.json({ value: 1 }));
-  expect(await (await second).json()).toEqual({ value: 1 });
+  response.resolve(Response.json({ dailyStepsGoal: 1 }));
+  expect(await (await second).json()).toEqual({ dailyStepsGoal: 1 });
   expect(fetch).toHaveBeenCalledOnce();
 });
 it('an action forbidden response does not log out', async () => {
@@ -55,7 +64,8 @@ it.each([
   );
   const { apiFetch } = await import('@/lib/api-client');
   await apiFetch('/api/action', { method: 'POST' });
-  expect(state.reset).toHaveBeenCalledOnce();
+  // endClientSession owns the synchronous reset and durable logout intent.
+  expect(state.reset).not.toHaveBeenCalled();
   expect(state.end).toHaveBeenCalledExactlyOnceWith(false);
   expect(location.replace).toHaveBeenCalledWith('/login');
 });
@@ -72,4 +82,73 @@ it('a late denial from a previous account cannot log out its replacement', async
   await flight;
   expect(state.end).not.toHaveBeenCalled();
   expect(state.reset).not.toHaveBeenCalled();
+});
+
+it('a denial body arriving after account replacement cannot reset or redirect it', async () => {
+  const body = Promise.withResolvers<unknown>();
+  const parsing = Promise.withResolvers<void>();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({
+      status: 403,
+      ok: false,
+      clone: () => ({
+        json: () => {
+          parsing.resolve();
+          return body.promise;
+        },
+      }),
+    })),
+  );
+  const { apiFetch } = await import('@/lib/api-client');
+  const flight = apiFetch('/api/action', { method: 'POST' });
+  await parsing.promise;
+  state.generation++;
+  body.resolve({ error: 'ACCESS_REVOKED' });
+  await flight;
+  expect(state.end).not.toHaveBeenCalled();
+  expect(state.reset).not.toHaveBeenCalled();
+  expect(location.replace).not.toHaveBeenCalled();
+});
+it('a download keeps its caller deadline through a slow response body', async () => {
+  const timeout = AbortSignal.timeout;
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) =>
+    timeout(ms === 15000 ? 5 : ms),
+  );
+  const caller = new AbortController();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_input, init?: RequestInit) => {
+      const signal = init?.signal;
+      const stream = new ReadableStream({
+        start(controller) {
+          const abort = () => controller.error(signal?.reason);
+          signal?.addEventListener('abort', abort, { once: true });
+          setTimeout(() => {
+            signal?.removeEventListener('abort', abort);
+            if (!signal?.aborted) {
+              controller.enqueue(new TextEncoder().encode('%PDF-complete'));
+              controller.close();
+            }
+          }, 30);
+        },
+      });
+      return new Response(stream);
+    }),
+  );
+  try {
+    const { apiFetch } = await import('@/lib/api-client');
+    const response = await apiFetch(
+      '/api/anamnesis/documents/doc/file?ownerId=owner',
+      { signal: caller.signal },
+    );
+    expect(await response.text()).toBe('%PDF-complete');
+    expect(fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ signal: caller.signal }),
+    );
+    expect(caller.signal.aborted).toBe(false);
+  } finally {
+    vi.restoreAllMocks();
+  }
 });

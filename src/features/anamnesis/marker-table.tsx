@@ -1,6 +1,5 @@
 'use client';
 import { readResources } from '@/lib/read-descriptors';
-import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useReadResource } from '@/lib/use-read-resource';
 
 import { anamnesisMessages as m } from '@/config/anamnesis-messages';
@@ -17,79 +16,28 @@ import {
   Title,
 } from '@mantine/core';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
-import { useAnamnesisRevision } from './refresh';
+import { useState } from 'react';
+import { formatAnamnesisDate, ownerIdQuery } from './api';
 
 export function MarkerTable({ ownerId }: { ownerId: string }) {
-  const readRefresh = useReadRefresh();
-  const revision = useAnamnesisRevision();
-  const [items, setItems] = useState<AnamnesisMarkerSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>();
-  const [denied, setDenied] = useState(false);
   const [search, setSearch] = useState('');
   const url = `/api/anamnesis/markers?${ownerIdQuery(ownerId)}`;
-  const readResource1 = useReadResource(readResources.markers(url));
-  const [acceptedreadResource1, setAcceptedreadResource1] =
-    useState<typeof readResource1.data>();
-  if (
-    readResource1.data !== undefined &&
-    acceptedreadResource1 !== readResource1.data
-  ) {
-    setAcceptedreadResource1(readResource1.data);
-    setItems(readResource1.data);
-    setLoading(false);
-  }
-  useEffect(() => {
-    let active = true;
-    fetchAnamnesis<AnamnesisMarkerSummary[]>(url)
-      .then((data) => {
-        if (active) setItems(data);
-      })
-      .catch((cause: unknown) => {
-        if (!active) return;
-        if (cause instanceof Error && 'status' in cause) {
-          const status = (cause as { status: number }).status;
-          if (status === 401 || status === 403) {
-            setDenied(true);
-            return;
-          }
-        }
-        setError(m.errors.load);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [url, revision, readRefresh]);
+  const resource = useReadResource(readResources.markers(url));
+  const items = resource.data ?? [];
+  const loading = resource.data === undefined && !resource.error;
+  const error = resource.error;
 
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return items;
-    return items.filter((item) =>
-      item.marker.name.toLowerCase().includes(needle),
-    );
-  }, [items, search]);
-
-  if (denied)
-    return (
-      <Stack data-testid="anamnesis-markers">
-        <Title order={2}>{m.markers.title}</Title>
-        <Alert color="red" role="alert">
-          {m.errors.denied}
-        </Alert>
-      </Stack>
-    );
+  const needle = search.trim().toLowerCase();
+  const filtered = items.filter((item) =>
+    item.marker.name.toLowerCase().includes(needle),
+  );
 
   return (
     <Stack data-testid="anamnesis-markers">
       <Title order={2}>{m.markers.title}</Title>
       {error && (
         <Alert color="red" role="alert">
-          {error}
+          {m.errors.load}
         </Alert>
       )}
       <TextInput

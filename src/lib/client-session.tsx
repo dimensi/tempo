@@ -68,6 +68,7 @@ export function ClientSession({
           if (closed || generation !== sessionGeneration()) return;
           if (context.partition !== initial.partition) {
             const { endClientSession } = await import('./local-logout');
+            if (closed || generation !== sessionGeneration()) return;
             await endClientSession(false);
             if (navigator.onLine) location.replace('/login');
             return;

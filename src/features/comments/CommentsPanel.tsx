@@ -1,9 +1,8 @@
 'use client';
-import type { CommentDto, CommentTarget } from '@/contracts/comments';
+import type { CommentTarget } from '@/contracts/comments';
 import { apiFetch } from '@/lib/api-client';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadOnline } from '@/lib/use-read-online';
-import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useReadResource } from '@/lib/use-read-resource';
 import { useViewState } from '@/lib/use-view-state';
 import {
@@ -15,7 +14,7 @@ import {
   Textarea,
   Title,
 } from '@mantine/core';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { commentMessages as m } from './messages';
 import { CommentReadContent } from './read';
 function TargetCommentsPanel({
@@ -26,8 +25,6 @@ function TargetCommentsPanel({
   target: CommentTarget;
 }) {
   const online = useReadOnline();
-  const readRefresh = useReadRefresh();
-  const [rows, setRows] = useState<CommentDto[]>([]);
   const [body, setBody] = useViewState(
     `comments:${target.type}:${target.id}:body`,
     '',
@@ -43,7 +40,6 @@ function TargetCommentsPanel({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
   const targetType = target.type;
   const targetId = target.id;
   const resource = useReadResource(
@@ -51,36 +47,9 @@ function TargetCommentsPanel({
       `/api/comments?${new URLSearchParams({ ownerId, type: targetType, targetId })}`,
     ),
   );
-  const [acceptedRead, setAcceptedRead] = useState<typeof resource.data>();
-  if (resource.data && resource.data !== acceptedRead) {
-    setAcceptedRead(resource.data);
-    setRows(resource.data);
-    setLoading(false);
-    setError(false);
-  }
-  useEffect(() => {
-    const controller = new AbortController();
-    const q = new URLSearchParams({ ownerId, type: targetType, targetId });
-    void apiFetch(`/api/comments?${q}`, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error();
-        const data = await response.json();
-        if (!controller.signal.aborted) setRows(data);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setError(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [ownerId, targetType, targetId, readRefresh]);
-  async function refresh() {
-    const q = new URLSearchParams({ ownerId, type: targetType, targetId });
-    const response = await apiFetch(`/api/comments?${q}`);
-    if (!response.ok) throw new Error();
-    setRows(await response.json());
-  }
+  const rows = resource.data ?? [];
+  const loading = resource.data === undefined && !resource.error;
+  const refresh = resource.refresh;
   async function save() {
     if (!online || busy) return;
     const submittedRevision = draftRevision.current;
@@ -138,7 +107,7 @@ function TargetCommentsPanel({
   return (
     <Stack>
       <Title order={2}>{m.title}</Title>
-      {error && (
+      {(error || resource.error) && (
         <Alert color="red" role="alert">
           {m.error}
         </Alert>

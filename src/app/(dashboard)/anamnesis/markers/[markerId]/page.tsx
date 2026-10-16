@@ -1,5 +1,5 @@
 import { anamnesisMessages as m } from '@/config/anamnesis-messages';
-import { MarkerPage } from '../../../read-pages';
+import { MarkerPage } from './page-client';
 export function generateMetadata() {
   return { title: m.markers.title };
 }

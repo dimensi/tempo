@@ -222,7 +222,14 @@ test('offline logout clears read cache and durable intent blocks old-session res
   ).toBe('true');
   await expect.poll(() => stored(page)).toBe(0);
   await context.setOffline(false);
-  await page.goto('/login');
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  // Reconnect completes sign-out and redirects itself; a second navigation races it.
+  await expect(page).toHaveURL('/login');
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem('tempo:logout-pending')),
+    )
+    .toBeNull();
   await page.getByLabel('Электронная почта').fill('owner@example.test');
   await page
     .getByRole('textbox', { name: 'Пароль', exact: true })
@@ -369,4 +376,78 @@ test('two foreground tabs send one durable operation once after reconnect', asyn
   );
   await expect(page.getByText('Two-tab queued record').first()).toBeVisible();
   expect(posts).toBe(1);
+});
+
+test('an unsaved queue form survives reconnect, route return, and remount', async ({
+  page,
+  context,
+}) => {
+  page.on('dialog', (dialog) => dialog.accept());
+  seed();
+  await signIn(page);
+  await page.goto('/measurements');
+  await expect(page.getByLabel('Заметка', { exact: true })).toBeVisible();
+  // Wait until the real owner write catalog is available locally.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<boolean>((resolve, reject) => {
+            const request = indexedDB.open('yazio-offline-writes-v1', 1);
+            request.onsuccess = () => {
+              const db = request.result;
+              const tx = db.transaction('state', 'readonly');
+              const row = tx.objectStore('state').get('current');
+              row.onsuccess = () => resolve(!!row.result?.partition);
+              tx.oncomplete = () => db.close();
+            };
+            request.onerror = () => reject(request.error);
+          }),
+      ),
+    )
+    .toBe(true);
+  await context.setOffline(true);
+  const queue = page.getByTestId('device-write-queue');
+  await queue
+    .getByRole('button', { name: 'Записать замер', exact: true })
+    .click();
+  await queue
+    .getByRole('textbox', { name: 'Дата', exact: true })
+    .fill('2026-08-14');
+  await queue.getByLabel('Вес, кг', { exact: true }).fill('75.5');
+  await queue
+    .getByLabel('Заметка', { exact: true })
+    .fill('Uncommitted queue draft');
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(queue.getByLabel('Заметка', { exact: true })).toHaveValue(
+    'Uncommitted queue draft',
+  );
+  await menu(page);
+  await page.getByRole('link', { name: 'Обзор', exact: true }).click();
+  await expect(page).toHaveURL('/');
+  await page.goBack();
+  await expect(
+    queue.getByRole('textbox', { name: 'Дата', exact: true }),
+  ).toHaveValue('2026-08-14');
+  await expect(queue.getByLabel('Вес, кг', { exact: true })).toHaveValue(
+    '75.5',
+  );
+  await expect(queue.getByLabel('Заметка', { exact: true })).toHaveValue(
+    'Uncommitted queue draft',
+  );
+  await page.reload();
+  await expect(queue.getByLabel('Заметка', { exact: true })).toHaveValue(
+    'Uncommitted queue draft',
+  );
+  await expect(
+    queue.getByRole('textbox', { name: 'Дата', exact: true }),
+  ).toHaveValue('2026-08-14');
+  await expect(queue.getByLabel('Вес, кг', { exact: true })).toHaveValue(
+    '75.5',
+  );
+  await queue.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(queue).toHaveCount(0);
+  await page.reload();
+  await expect(queue).toHaveCount(0);
 });

@@ -2,7 +2,6 @@
 import { invalidateMedicalDocument } from '@/lib/client-read';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadOnline } from '@/lib/use-read-online';
-import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useReadResource } from '@/lib/use-read-resource';
 
 import { anamnesisMessages as m } from '@/config/anamnesis-messages';
@@ -31,59 +30,22 @@ export function DocumentsPanel({
   writable: boolean;
 }) {
   const online = useReadOnline();
-  const readRefresh = useReadRefresh();
   const revision = useAnamnesisRevision();
   const previousJobs = useRef(new Map<string, MedicalImportJob>());
   const [pending, setPending] = useState<Record<string, number>>({});
   const [jobs, setJobs] = useState<MedicalImportJob[]>([]);
   const [reviewing, setReviewing] = useState<string>();
-  const [items, setItems] = useState<MedicalDocument[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
-  const [denied, setDenied] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<string>();
   const query = ownerIdQuery(ownerId);
-  const readResource1 = useReadResource(
+  const resource = useReadResource(
     readResources.documents(`/api/anamnesis/documents?${query}`),
   );
-  const [acceptedreadResource1, setAcceptedreadResource1] =
-    useState<typeof readResource1.data>();
-  if (
-    readResource1.data !== undefined &&
-    acceptedreadResource1 !== readResource1.data
-  ) {
-    setAcceptedreadResource1(readResource1.data);
-    setItems(readResource1.data);
-    setLoading(false);
-  }
-  useEffect(() => {
-    let active = true;
-    fetchAnamnesis<MedicalDocument[]>(`/api/anamnesis/documents?${query}`)
-      .then((data) => {
-        if (active) setItems(data);
-      })
-      .catch((cause: unknown) => {
-        if (!active) return;
-        if (
-          cause instanceof Error &&
-          'status' in cause &&
-          (cause as { status: number }).status === 403
-        ) {
-          setDenied(true);
-          return;
-        }
-        setError(m.errors.load);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [query, revision, readRefresh]);
+  const items = resource.data ?? [];
+  const loading = resource.data === undefined && !resource.error;
 
   useEffect(() => {
     if (!online) return;
@@ -160,9 +122,6 @@ export function DocumentsPanel({
         body: form,
       });
       setNotice(result.duplicate ? m.documents.duplicate : undefined);
-      if (!result.duplicate && result.importJob) {
-        setItems((old) => [result.document, ...old]);
-      }
       setFile(null);
       notifyAnamnesisChanged();
     } catch (cause) {
@@ -186,7 +145,6 @@ export function DocumentsPanel({
         method: 'DELETE',
       });
       await invalidateMedicalDocument(id, ownerId);
-      setItems((old) => old.filter((item) => item.id !== id));
       setDeleting(undefined);
       notifyAnamnesisChanged();
     } catch {
@@ -196,22 +154,12 @@ export function DocumentsPanel({
     }
   }
 
-  if (denied)
-    return (
-      <Stack data-testid="anamnesis-documents">
-        <Title order={2}>{m.workspace.documents}</Title>
-        <Alert color="red" role="alert">
-          {m.documents.readOnly}
-        </Alert>
-      </Stack>
-    );
-
   return (
     <Stack data-testid="anamnesis-documents">
       <Title order={2}>{m.workspace.documents}</Title>
-      {error && (
+      {(error || resource.error) && (
         <Alert color="red" role="alert">
-          {error}
+          {error ?? m.errors.load}
         </Alert>
       )}
       {notice && (

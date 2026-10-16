@@ -72,6 +72,12 @@ export const transformMateReadSchema = z.object({
     nativeRefresh: transformMateNativeRefreshSchema,
   }),
 });
+export const documentObservationsReadSchema = z.array(
+  z.object({
+    observation: medicalObservationSchema,
+    sources: z.array(medicalObservationSourceSchema),
+  }),
+);
 export const commentsReadSchema = z.array(
   z.object({
     id: z.string(),
@@ -118,12 +124,7 @@ export function readResponseSchema(path: string): z.ZodType | undefined {
   if (/^\/api\/anamnesis\/documents\/[^/]+$/.test(path))
     return medicalDocumentSchema;
   if (/^\/api\/anamnesis\/documents\/[^/]+\/observations$/.test(path))
-    return z.array(
-      z.object({
-        observation: medicalObservationSchema,
-        sources: z.array(medicalObservationSourceSchema),
-      }),
-    );
+    return documentObservationsReadSchema;
 }
 export const readRecordSchema = z
   .object({

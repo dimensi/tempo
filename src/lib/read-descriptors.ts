@@ -15,6 +15,7 @@ import { analyticsDataSchema } from '@/contracts/read-analytics';
 import { readContextSchema } from '@/contracts/read-context';
 import {
   commentsReadSchema,
+  documentObservationsReadSchema,
   overviewReadSchema,
   transformMateReadSchema,
   workoutsReadSchema,
@@ -65,4 +66,5 @@ export const readResources = {
   observations: definition(z.array(medicalObservationSchema)),
   documents: definition(z.array(medicalDocumentSchema)),
   document: definition(medicalDocumentSchema),
+  documentObservations: definition(documentObservationsReadSchema),
 };

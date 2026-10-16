@@ -1,6 +1,6 @@
 import { readResponseSchema } from '@/contracts/read-resources';
 import { reportNetworkResult } from './network-state';
-import { resetSession, sessionGeneration } from './session-state';
+import { sessionGeneration } from './session-state';
 let ending: Promise<void> | undefined;
 async function performApiFetch(input: RequestInfo | URL, init?: RequestInit) {
   const generation = sessionGeneration();
@@ -25,15 +25,23 @@ async function performApiFetch(input: RequestInfo | URL, init?: RequestInit) {
         ? body.error
         : undefined;
     if (code === 'AUTH_REQUIRED' || code === 'ACCESS_REVOKED') {
-      ending ??= (async () => {
-        resetSession();
-        const { endClientSession } = await import('./local-logout');
-        await endClientSession(false);
-        if (navigator.onLine) location.replace('/login');
-      })();
-      await ending;
+      const { endClientSession } = await import('./local-logout');
+      // Parsing the body and loading cleanup can outlive the requesting account.
+      if (generation === sessionGeneration()) {
+        ending ??= (async () => {
+          const cleanup = endClientSession(false);
+          const resetGeneration = sessionGeneration();
+          await cleanup;
+          if (resetGeneration === sessionGeneration() && navigator.onLine)
+            location.replace('/login');
+        })().finally(() => {
+          ending = undefined;
+        });
+        await ending;
+      }
     }
   }
+
   const method =
     init?.method ?? (input instanceof Request ? input.method : 'GET');
   const url = new URL(
@@ -83,6 +91,10 @@ export async function apiFetch(
         : input.url,
     location.origin,
   );
+  // Downloads and other non-resource GETs keep their caller's signal through
+  // body consumption; only shared JSON reads use the bounded read deadline.
+  if (url.origin !== location.origin || !readResponseSchema(url.pathname))
+    return performApiFetch(input, init);
   url.searchParams.sort();
   const key = `${sessionGeneration()}:${url}:${JSON.stringify([...new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))])}`;
   let flight = pending.get(key);

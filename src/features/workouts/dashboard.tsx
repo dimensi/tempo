@@ -4,12 +4,9 @@ import {
   type PlannedWorkout,
   type WorkoutPlan,
   type WorkoutSession,
-  type WorkoutsData,
 } from '@/contracts/workouts';
 import { apiFetch } from '@/lib/api-client';
-import { apiResults } from '@/lib/api-results';
 import { readResources } from '@/lib/read-descriptors';
-import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useReadResource } from '@/lib/use-read-resource';
 import { workoutTitle } from '@/lib/workout-title';
 import {
@@ -169,70 +166,19 @@ function ScopedWorkoutsDashboard({
     workout: PlannedWorkout;
   } | null>(null);
   const [copyDate, setCopyDate] = useState('');
-  const [data, setData] = useState<WorkoutsData | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const sync = useTransformMateSync(ownerId, data, date);
   const [deletion, setDeletion] = useState<Deletion | null>(null);
-  const readRefresh = useReadRefresh();
   const endpoint = useCallback(
     (path = '') =>
       `/api/workouts${path}?ownerId=${encodeURIComponent(ownerId)}`,
     [ownerId],
   );
-  const read = useCallback(
-    async (signal?: AbortSignal) => {
-      const response = await apiFetch(endpoint(), {
-        cache: 'no-store',
-        signal,
-      });
-      if (!response.ok) {
-        throw new Error(m.loadError);
-      }
-      const { data: incoming } = await response.json();
-      return {
-        contractVersion: 1,
-        source: 'user',
-        plans: incoming.plans.map((plan: unknown) => apiResults.plan(plan)),
-        sessions: incoming.sessions.map((session: unknown) =>
-          apiResults.session(session),
-        ),
-      } satisfies WorkoutsData;
-    },
-    [endpoint],
-  );
   const resource = useReadResource(readResources.workouts(endpoint()));
-  const [acceptedRead, setAcceptedRead] = useState<typeof resource.data>();
-  if (resource.data && resource.data !== acceptedRead) {
-    setAcceptedRead(resource.data);
-    setData(resource.data);
-    setError(null);
-  }
-  useEffect(() => {
-    const controller = new AbortController();
-    void read(controller.signal)
-      .then((value) => {
-        if (!controller.signal.aborted) {
-          setData(value);
-          setError(null);
-          window.dispatchEvent(new Event('yazio:workouts-loaded'));
-        }
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted)
-          setError(error instanceof Error ? error.message : m.loadError);
-      });
-    return () => controller.abort();
-  }, [read, readRefresh]);
-  async function load() {
-    try {
-      setData(await read());
-      setError(null);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : m.loadError);
-    }
-  }
+  const data = resource.data;
+  const error = resource.error ? m.loadError : null;
+  const sync = useTransformMateSync(ownerId, data, date);
+  const load = resource.refresh;
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;

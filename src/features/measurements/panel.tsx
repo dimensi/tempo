@@ -12,13 +12,14 @@ import {
 import { type MeasurementPrecisionIssue } from '@/contracts/yazio-body';
 import { apiFetch } from '@/lib/api-client';
 import { apiResults } from '@/lib/api-results';
+import { seedClientRead } from '@/lib/client-read';
 import { formatDecimal } from '@/lib/number-display';
 import {
   saveDeviceWrite,
   synchronizeDeviceWrite,
 } from '@/lib/offline-write-client';
 import { readResources } from '@/lib/read-descriptors';
-import { useReadRefresh } from '@/lib/use-read-refresh';
+import { sessionGeneration } from '@/lib/session-state';
 import { useReadResource } from '@/lib/use-read-resource';
 import { useViewState } from '@/lib/use-view-state';
 import { LineChart } from '@mantine/charts';
@@ -55,22 +56,15 @@ export function MeasurementsPanel({
   writable,
   weightHistory,
   renderComments,
-  saved,
 }: {
   ownerId: string;
   writable: boolean;
   deviceWrites?: boolean;
-  saved?: Measurement[];
   weightHistory: WeightHistory;
   renderComments?: (measurementId: string) => ReactNode;
 }) {
-  const readRefresh = useReadRefresh();
   const [issues, setIssues] = useState<MeasurementPrecisionIssue[]>([]);
   const [retrying, setRetrying] = useState<string>();
-  const [loadedItems, setItems] = useState<Measurement[]>(saved ?? []);
-  const items = saved ?? loadedItems;
-  const [loading, setLoading] = useState(!saved);
-  const [readDenied, setReadDenied] = useState(false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [editingOriginal, setEditingOriginal] = useViewState<
@@ -93,6 +87,16 @@ export function MeasurementsPanel({
     `measurements:metric`,
     'weight',
   );
+  const url = `/api/measurements?ownerId=${encodeURIComponent(ownerId)}`;
+  const measurements = useReadResource(readResources.measurements(url));
+  const items = measurements.data ?? [];
+  const refresh = measurements.refresh;
+  const loading = measurements.data === undefined && !measurements.error;
+  const hasPendingSync = items.some((item) =>
+    item.sync.some(
+      (status) => status.state === 'pending' || status.state === 'uncertain',
+    ),
+  );
   const currentEdited =
     editingOriginal && items.find((item) => item.id === editingOriginal.id);
   const content = (item: Measurement) =>
@@ -104,107 +108,30 @@ export function MeasurementsPanel({
   const conflict =
     !!editingOriginal &&
     (!currentEdited || content(currentEdited) !== content(editingOriginal));
-  const url = `/api/measurements?ownerId=${encodeURIComponent(ownerId)}`;
-  const readResource1 = useReadResource(
-    readResources.measurements(saved ? undefined : url),
-  );
-  const [acceptedreadResource1, setAcceptedreadResource1] =
-    useState<typeof readResource1.data>();
-  if (
-    readResource1.data !== undefined &&
-    acceptedreadResource1 !== readResource1.data
-  ) {
-    setAcceptedreadResource1(readResource1.data);
-    setItems(readResource1.data);
-    setLoading(false);
-  }
   useEffect(() => {
-    if (saved) return;
-    let active = true;
-    apiFetch(url)
-      .then(async (r) => {
-        if (!r.ok) {
-          if (active && (r.status === 401 || r.status === 403)) {
-            setItems([]);
-            setIssues([]);
-            setReadDenied(true);
-          }
-          throw new Error();
-        }
-        return r.json() as Promise<Measurement[]>;
-      })
-      .then((data) => {
-        if (active) {
-          setReadDenied(false);
-          setItems(data);
-        }
-      })
-      .catch(() => {
-        if (active) setError(m.loadError);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [url, saved, readRefresh]);
-  useEffect(() => {
-    if (saved) return;
-    let active = true;
+    const controller = new AbortController();
     void apiFetch(
       `/api/measurements/sync?ownerId=${encodeURIComponent(ownerId)}`,
+      { signal: controller.signal },
     )
       .then(async (response) => {
-        if (response.status === 401 || response.status === 403) {
-          if (active) {
-            setIssues([]);
-            setItems([]);
-            setReadDenied(true);
-          }
-          return;
-        }
         if (response.ok) {
           const data = apiResults.measurementIssues(await response.json());
-          if (active) setIssues(data);
+          if (!controller.signal.aborted) setIssues(data);
         }
       })
       .catch(() => {});
-    if (
-      !items.some((item) =>
-        item.sync.some(
-          (status) =>
-            status.state === 'pending' || status.state === 'uncertain',
-        ),
-      )
-    )
-      return () => {
-        active = false;
-      };
+    return () => controller.abort();
+  }, [ownerId, measurements.data]);
+  useEffect(() => {
+    if (!hasPendingSync) return;
     const timer = setInterval(() => {
-      void apiFetch(url, { cache: 'no-store' })
-        .then(async (response) => {
-          if (response.status === 401 || response.status === 403) {
-            if (active) {
-              setItems([]);
-              setIssues([]);
-              setReadDenied(true);
-            }
-            return;
-          }
-          if (response.ok) {
-            const data = await response.json();
-            if (active) setItems(data);
-          }
-        })
-        .catch(() => {});
+      void refresh();
     }, 5000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [ownerId, url, items, saved]);
+    return () => clearInterval(timer);
+  }, [hasPendingSync, refresh]);
   async function retrySync(id: string) {
+    const generation = sessionGeneration();
     setRetrying(id);
     setError(undefined);
     try {
@@ -217,7 +144,11 @@ export function MeasurementsPanel({
         return;
       }
       const updated = (await response.json()) as Measurement;
-      setItems((old) => old.map((item) => (item.id === id ? updated : item)));
+      await seedClientRead(
+        url,
+        items.map((item) => (item.id === id ? updated : item)),
+        generation,
+      );
     } catch {
       setError(m.error);
     } finally {
@@ -246,6 +177,7 @@ export function MeasurementsPanel({
       setError(m.validation);
       return;
     }
+    const generation = sessionGeneration();
     setBusy(true);
     setError(undefined);
     try {
@@ -274,10 +206,14 @@ export function MeasurementsPanel({
           base,
         );
         await synchronizeDeviceWrite(operation);
-        setItems((old) => [
-          ...old.filter((item) => item.id !== operation.recordId),
-          { ...parsed.data, id: operation.recordId, ownerId, sync: [] },
-        ]);
+        await seedClientRead(
+          url,
+          [
+            ...items.filter((item) => item.id !== operation.recordId),
+            { ...parsed.data, id: operation.recordId, ownerId, sync: [] },
+          ],
+          generation,
+        );
         reset();
         return;
       }
@@ -296,10 +232,12 @@ export function MeasurementsPanel({
         return;
       }
       const item = (await r.json()) as Measurement;
-      setItems((old) =>
-        [...old.filter((x) => x.id !== item.id), item].sort((a, b) =>
+      await seedClientRead(
+        url,
+        [...items.filter((x) => x.id !== item.id), item].sort((a, b) =>
           b.measuredAt.localeCompare(a.measuredAt),
         ),
+        generation,
       );
       reset();
     } catch {
@@ -309,6 +247,7 @@ export function MeasurementsPanel({
     }
   }
   async function remove(id: string) {
+    const generation = sessionGeneration();
     setBusy(true);
     setError(undefined);
     try {
@@ -320,7 +259,11 @@ export function MeasurementsPanel({
         setError(responseError(r.status));
         return;
       }
-      setItems((old) => old.filter((x) => x.id !== id));
+      await seedClientRead(
+        url,
+        items.filter((x) => x.id !== id),
+        generation,
+      );
       setDeleting(undefined);
       if (editing === id) reset();
     } catch {
@@ -329,15 +272,6 @@ export function MeasurementsPanel({
       setBusy(false);
     }
   }
-  if (readDenied)
-    return (
-      <Stack data-testid="measurements-panel">
-        <Title order={1}>{m.title}</Title>
-        <Alert color="red" role="alert">
-          {m.denied}
-        </Alert>
-      </Stack>
-    );
   const chart =
     metric === 'weight'
       ? weightTrendChart({
@@ -363,9 +297,9 @@ export function MeasurementsPanel({
       {conflict && (
         <Alert color="orange">{offlineMessages.draftConflict}</Alert>
       )}
-      {error && (
+      {(error || measurements.error) && (
         <Alert color="red" role="alert">
-          {error}
+          {error ?? m.loadError}
         </Alert>
       )}
       {!writable && <Text>{m.readOnly}</Text>}
@@ -541,9 +475,9 @@ export function MeasurementsPanel({
                       <Button
                         variant="default"
                         mih={44}
-                        disabled={busy || readResource1.coverage !== 'complete'}
+                        disabled={busy || measurements.coverage !== 'complete'}
                         title={
-                          readResource1.coverage !== 'complete'
+                          measurements.coverage !== 'complete'
                             ? readWorkspaceMessages.recordUnconfirmed
                             : undefined
                         }
@@ -564,9 +498,9 @@ export function MeasurementsPanel({
                       <Button
                         color="red"
                         mih={44}
-                        disabled={busy || readResource1.coverage !== 'complete'}
+                        disabled={busy || measurements.coverage !== 'complete'}
                         title={
-                          readResource1.coverage !== 'complete'
+                          measurements.coverage !== 'complete'
                             ? readWorkspaceMessages.recordUnconfirmed
                             : undefined
                         }

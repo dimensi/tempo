@@ -1,4 +1,3 @@
-import { medicalDocumentSchema } from '@/contracts/anamnesis';
 import {
   offlineReadBody,
   pruneReadRecords,
@@ -140,6 +139,7 @@ export async function seedClientRead(
   value: unknown,
   expectedGeneration = sessionGeneration(),
 ) {
+  key = canonicalReadKey(new URL(key, 'https://tempo.local'));
   if (expectedGeneration !== sessionGeneration() || !readSession()) return;
   bindReadScope();
   const schema = readResponseSchema(
@@ -200,15 +200,4 @@ export async function invalidateMedicalDocument(
       `${key}?ownerId=${encodeURIComponent(ownerId)}`,
     );
   revalidateVisibleReads();
-}
-export async function savedMedicalDocument(
-  documentId: string,
-  ownerId: string,
-) {
-  const key = `/api/anamnesis/documents/${encodeURIComponent(documentId)}?ownerId=${encodeURIComponent(ownerId)}`;
-  bindReadScope();
-  await clientReads.restore(key);
-  const body = clientReads.snapshot(key).data;
-  if (!body) throw new ReadFailure('unavailable');
-  return medicalDocumentSchema.parse(JSON.parse(body));
 }

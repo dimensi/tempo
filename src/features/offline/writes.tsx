@@ -35,9 +35,10 @@ const exercise = () => ({
 export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
   const [online, setOnline] = useState(true);
   const [state, setState] = useState<WriteState>(emptyWriteState);
-  const [editing, setEditing] = useState<{ id?: string; base?: string } | null>(
-    null,
-  );
+  const [editing, setEditing] = useViewState<{
+    id?: string;
+    base?: string;
+  } | null>(`queue:${kind}:editing`, null);
   const [date, setDate] = useViewState(`queue:${kind}:date`, '');
   const [title, setTitle] = useViewState(`queue:${kind}:title`, '');
   const [note, setNote] = useViewState(`queue:${kind}:note`, '');
@@ -85,7 +86,7 @@ export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
       clearInterval(timer);
       window.removeEventListener('offline-writes-changed', refresh);
     };
-  }, [setExercises, setNote, setTitle, setValues]);
+  }, [setEditing, setExercises, setNote, setTitle, setValues]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (editing) event.preventDefault();
@@ -194,6 +195,7 @@ export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
   if (
     !state.partition ||
     (online &&
+      !editing &&
       !state.operations.some((item) => item.operation.payload.kind === kind))
   )
     return null;
