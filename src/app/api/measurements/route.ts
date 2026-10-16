@@ -1,10 +1,11 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import {
-  listMeasurements,
-  saveMeasurement,
-  measurementErrorResponse,
   checkMeasurementOrigin,
+  listMeasurements,
+  measurementErrorResponse,
+  saveMeasurement,
 } from '@/server/measurements';
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   try {
     return Response.json(
       await listMeasurements(
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
     return measurementErrorResponse(error);
   }
 }
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   try {
     checkMeasurementOrigin(request);
     return Response.json(
@@ -31,3 +32,7 @@ export async function POST(request: Request) {
     return measurementErrorResponse(error);
   }
 }
+
+export const GET = withApiErrors(GETHandler);
+
+export const POST = withApiErrors(POSTHandler);

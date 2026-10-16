@@ -1,19 +1,17 @@
 'use client';
-import { useState } from 'react';
-import { Stack, Text, Title, Skeleton } from '@mantine/core';
-import { useReadResource } from '@/lib/use-read-resource';
-import {
-  readSettingsSchema,
-  type ReadSettings,
-} from '@/contracts/read-settings';
 import { ru } from '@/config/messages';
-import { TrainerSettings } from '@/features/trainer';
+import { type ReadSettings } from '@/contracts/read-settings';
 import { AccessPanel } from '@/features/anamnesis';
 import { OfflineSettings } from '@/features/offline';
-import { StepsGoalForm } from './steps-goal-form';
-import { YazioSettingsForm } from './yazio/settings-form';
-import { TransformMateSettingsForm } from './transformmate/settings-form';
+import { TrainerSettings } from '@/features/trainer';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
+import { Skeleton, Stack, Text, Title } from '@mantine/core';
+import { useState } from 'react';
 import { SettingsNavigation } from './settings-navigation';
+import { StepsGoalForm } from './steps-goal-form';
+import { TransformMateSettingsForm } from './transformmate/settings-form';
+import { YazioSettingsForm } from './yazio/settings-form';
 export function SettingsReadView({
   ownerId,
   owner,
@@ -24,10 +22,7 @@ export function SettingsReadView({
   initial?: ReadSettings;
 }) {
   const resource = useReadResource(
-    {
-      href: owner ? '/api/read/settings' : undefined,
-      parse: (value) => readSettingsSchema.parse(value),
-    },
+    readResources.settings(owner ? '/api/read/settings' : undefined),
     initial,
   );
   const [retained, setRetained] = useState(resource.data);

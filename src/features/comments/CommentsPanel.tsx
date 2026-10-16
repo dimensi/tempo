@@ -1,9 +1,11 @@
 'use client';
-import { useReadResource } from '@/lib/use-read-resource';
-import { z } from 'zod';
+import type { CommentDto, CommentTarget } from '@/contracts/comments';
+import { apiFetch } from '@/lib/api-client';
+import { readResources } from '@/lib/read-descriptors';
 import { useReadOnline } from '@/lib/use-read-online';
 import { useReadRefresh } from '@/lib/use-read-refresh';
-import { useEffect, useRef, useState } from 'react';
+import { useReadResource } from '@/lib/use-read-resource';
+import { useViewState } from '@/lib/use-view-state';
 import {
   Alert,
   Button,
@@ -13,9 +15,9 @@ import {
   Textarea,
   Title,
 } from '@mantine/core';
-import type { CommentDto, CommentTarget } from '@/contracts/comments';
-import { CommentReadContent } from './read';
+import { useEffect, useRef, useState } from 'react';
 import { commentMessages as m } from './messages';
+import { CommentReadContent } from './read';
 function TargetCommentsPanel({
   ownerId,
   target,
@@ -26,33 +28,29 @@ function TargetCommentsPanel({
   const online = useReadOnline();
   const readRefresh = useReadRefresh();
   const [rows, setRows] = useState<CommentDto[]>([]);
-  const [body, setBody] = useState('');
+  const [body, setBody] = useViewState(
+    `comments:${target.type}:${target.id}:body`,
+    '',
+  );
   const draftRevision = useRef(0);
-  const [parentId, setParentId] = useState<string>();
-  const [editing, setEditing] = useState<string>();
+  const [parentId, setParentId] = useViewState<string | undefined>(
+    `comments:${target.type}:${target.id}:parent`,
+    undefined,
+  );
+  const [editing, setEditing] = useViewState<string | undefined>(
+    `comments:${target.type}:${target.id}:editing`,
+    undefined,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
   const targetType = target.type;
   const targetId = target.id;
-  const resource = useReadResource({
-    href: `/api/comments?${new URLSearchParams({ ownerId, type: targetType, targetId })}`,
-    parse: (value) =>
-      z
-        .array(
-          z.object({
-            id: z.string(),
-            authorId: z.string().nullable(),
-            authorName: z.string(),
-            body: z.string(),
-            parentId: z.string().nullable(),
-            createdAt: z.string(),
-            updatedAt: z.string(),
-            canEdit: z.boolean(),
-          }),
-        )
-        .parse(value),
-  });
+  const resource = useReadResource(
+    readResources.comments(
+      `/api/comments?${new URLSearchParams({ ownerId, type: targetType, targetId })}`,
+    ),
+  );
   const [acceptedRead, setAcceptedRead] = useState<typeof resource.data>();
   if (resource.data && resource.data !== acceptedRead) {
     setAcceptedRead(resource.data);
@@ -63,7 +61,7 @@ function TargetCommentsPanel({
   useEffect(() => {
     const controller = new AbortController();
     const q = new URLSearchParams({ ownerId, type: targetType, targetId });
-    void fetch(`/api/comments?${q}`, { signal: controller.signal })
+    void apiFetch(`/api/comments?${q}`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error();
         const data = await response.json();
@@ -79,7 +77,7 @@ function TargetCommentsPanel({
   }, [ownerId, targetType, targetId, readRefresh]);
   async function refresh() {
     const q = new URLSearchParams({ ownerId, type: targetType, targetId });
-    const response = await fetch(`/api/comments?${q}`);
+    const response = await apiFetch(`/api/comments?${q}`);
     if (!response.ok) throw new Error();
     setRows(await response.json());
   }
@@ -89,7 +87,7 @@ function TargetCommentsPanel({
     setBusy(true);
     setError(false);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         editing ? `/api/comments/${editing}` : '/api/comments',
         {
           method: editing ? 'PATCH' : 'POST',
@@ -124,7 +122,7 @@ function TargetCommentsPanel({
     setBusy(true);
     setError(false);
     try {
-      const response = await fetch(`/api/comments/${id}`, {
+      const response = await apiFetch(`/api/comments/${id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ownerId }),

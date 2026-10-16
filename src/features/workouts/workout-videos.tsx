@@ -1,5 +1,13 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { OfflineFile } from '@/components/shared/offline-file';
+import {
+  VIDEO_PART_BYTES,
+  type WorkoutVideo,
+} from '@/contracts/workout-videos';
+import type { WorkoutSession } from '@/contracts/workouts';
+import { apiFetch } from '@/lib/api-client';
+import { subscribeSessionReset } from '@/lib/offline-device';
+import { videoDraft, type VideoDraft } from '@/lib/workout-video-draft';
 import {
   Alert,
   Button,
@@ -9,18 +17,11 @@ import {
   Stack,
   Text,
 } from '@mantine/core';
-import type { WorkoutSession } from '@/contracts/workouts';
-import {
-  VIDEO_PART_BYTES,
-  type WorkoutVideo,
-} from '@/contracts/workout-videos';
-import { subscribeOfflineBlocked } from '@/lib/offline-device';
-import { OfflineFile } from '@/components/shared/offline-file';
-import { TeachingVideo } from './teaching-video';
+import { useEffect, useRef, useState } from 'react';
 import { compressWorkoutVideo } from './compress-video';
-import { sendVideoPart } from './video-upload';
-import { videoDraft, type VideoDraft } from '@/lib/workout-video-draft';
 import { workoutMessages as m } from './messages';
+import { TeachingVideo } from './teaching-video';
+import { sendVideoPart } from './video-upload';
 export function WorkoutVideos({
   ownerId,
   session,
@@ -77,7 +78,7 @@ function ExerciseVideos({
   const base = `/api/workouts/videos`;
   const query = `?ownerId=${encodeURIComponent(ownerId)}`;
   async function call(path: string, init?: RequestInit) {
-    const response = await fetch(`${base}${path}${query}`, {
+    const response = await apiFetch(`${base}${path}${query}`, {
       ...init,
       cache: 'no-store',
     });
@@ -98,7 +99,7 @@ function ExerciseVideos({
     return (await response.json()).data;
   }
   async function refresh(signal?: AbortSignal) {
-    const response = await fetch(`${base}${query}&sessionId=${sessionId}`, {
+    const response = await apiFetch(`${base}${query}&sessionId=${sessionId}`, {
       signal,
       cache: 'no-store',
     });
@@ -137,7 +138,7 @@ function ExerciseVideos({
       if (document.hidden) controller.current?.abort();
       else void refresh().catch(() => {});
     };
-    const unsubscribe = subscribeOfflineBlocked(() => {
+    const unsubscribe = subscribeSessionReset(() => {
       // Offline-cache disablement alone is not loss of workout permission.
       // Recheck server authority before concealing recordings.
       void refresh().catch(() => {});

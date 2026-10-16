@@ -1,6 +1,7 @@
+import { withApiErrors } from '@/server/auth/api-response';
+import { json, readBody, respond, sameOrigin } from '@/server/nutrition/http';
 import { saveExistingToken, yazioOwner } from '@/server/yazio/settings';
-import { json, respond, sameOrigin, readBody } from '@/server/nutrition/http';
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     await yazioOwner(request.headers);
@@ -12,3 +13,5 @@ export async function POST(request: Request) {
     );
   });
 }
+
+export const POST = withApiErrors(POSTHandler);

@@ -1,11 +1,12 @@
 import {
-  previewAnamnesisReport,
-  checkAnamnesisOrigin,
   anamnesisErrorResponse,
+  checkAnamnesisOrigin,
+  previewAnamnesisReport,
 } from '@/server/anamnesis';
+import { withApiErrors } from '@/server/auth/api-response';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   try {
     checkAnamnesisOrigin(request);
     const result = await previewAnamnesisReport(
@@ -25,3 +26,5 @@ export async function POST(request: Request) {
     return anamnesisErrorResponse(error);
   }
 }
+
+export const POST = withApiErrors(POSTHandler);

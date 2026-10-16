@@ -1,6 +1,7 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import { listWorkouts } from '@/server/workouts';
 import { workoutResponse } from '@/server/workouts/http';
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   return workoutResponse(() =>
     listWorkouts(
       request.headers,
@@ -8,3 +9,5 @@ export async function GET(request: Request) {
     ),
   );
 }
+
+export const GET = withApiErrors(GETHandler);

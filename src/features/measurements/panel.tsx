@@ -1,11 +1,27 @@
 'use client';
-import { readWorkspaceMessages } from '@/config/read-workspace';
 import { offlineMessages } from '@/config/offline';
-import { useReadResource } from '@/lib/use-read-resource';
-import { measurementSchema } from '@/contracts/measurements';
-import { z } from 'zod';
+import { writeMessages } from '@/config/offline-write-messages';
+import { readWorkspaceMessages } from '@/config/read-workspace';
+import type { WeightHistory } from '@/contracts/health';
+import {
+  measurementInputSchema,
+  measurementMetrics,
+  type Measurement,
+  type MeasurementMetric,
+} from '@/contracts/measurements';
+import { type MeasurementPrecisionIssue } from '@/contracts/yazio-body';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
+import { formatDecimal } from '@/lib/number-display';
+import {
+  saveDeviceWrite,
+  synchronizeDeviceWrite,
+} from '@/lib/offline-write-client';
+import { readResources } from '@/lib/read-descriptors';
 import { useReadRefresh } from '@/lib/use-read-refresh';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useReadResource } from '@/lib/use-read-resource';
+import { useViewState } from '@/lib/use-view-state';
+import { LineChart } from '@mantine/charts';
 import {
   Alert,
   Button,
@@ -20,27 +36,10 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { LineChart } from '@mantine/charts';
-import {
-  measurementMetrics,
-  measurementInputSchema,
-  type Measurement,
-  type MeasurementMetric,
-} from '@/contracts/measurements';
-import { measurementMessages as m } from './messages';
+import { useEffect, useState, type ReactNode } from 'react';
 import { measurementChange, weightTrendChart } from './history';
-import {
-  measurementPrecisionIssueSchema,
-  type MeasurementPrecisionIssue,
-} from '@/contracts/yazio-body';
+import { measurementMessages as m } from './messages';
 import { MeasurementPrecisionWarnings } from './precision-warnings';
-import type { WeightHistory } from '@/contracts/health';
-import { writeMessages } from '@/config/offline-write-messages';
-import {
-  saveDeviceWrite,
-  synchronizeDeviceWrite,
-} from '@/lib/offline-write-client';
-import { formatDecimal } from '@/lib/number-display';
 function responseError(status: number) {
   return status === 401
     ? m.sessionExpired
@@ -74,15 +73,26 @@ export function MeasurementsPanel({
   const [readDenied, setReadDenied] = useState(false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [editingOriginal, setEditingOriginal] = useState<Measurement>();
-  const [editing, setEditing] = useState<string>();
+  const [editingOriginal, setEditingOriginal] = useViewState<
+    Measurement | undefined
+  >(`measurements:original`, undefined);
+  const [editing, setEditing] = useViewState<string | undefined>(
+    `measurements:editing`,
+    undefined,
+  );
   const [deleting, setDeleting] = useState<string>();
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [note, setNote] = useState('');
-  const [values, setValues] = useState<
+  const [date, setDate] = useViewState(
+    `measurements:date`,
+    new Date().toISOString().slice(0, 10),
+  );
+  const [note, setNote] = useViewState(`measurements:note`, '');
+  const [values, setValues] = useViewState<
     Partial<Record<MeasurementMetric, string>>
-  >({});
-  const [metric, setMetric] = useState<MeasurementMetric>('weight');
+  >(`measurements:values`, {});
+  const [metric, setMetric] = useViewState<MeasurementMetric>(
+    `measurements:metric`,
+    'weight',
+  );
   const currentEdited =
     editingOriginal && items.find((item) => item.id === editingOriginal.id);
   const content = (item: Measurement) =>
@@ -95,10 +105,9 @@ export function MeasurementsPanel({
     !!editingOriginal &&
     (!currentEdited || content(currentEdited) !== content(editingOriginal));
   const url = `/api/measurements?ownerId=${encodeURIComponent(ownerId)}`;
-  const readResource1 = useReadResource({
-    href: saved ? undefined : url,
-    parse: (value) => z.array(measurementSchema).parse(value),
-  });
+  const readResource1 = useReadResource(
+    readResources.measurements(saved ? undefined : url),
+  );
   const [acceptedreadResource1, setAcceptedreadResource1] =
     useState<typeof readResource1.data>();
   if (
@@ -112,7 +121,7 @@ export function MeasurementsPanel({
   useEffect(() => {
     if (saved) return;
     let active = true;
-    fetch(url)
+    apiFetch(url)
       .then(async (r) => {
         if (!r.ok) {
           if (active && (r.status === 401 || r.status === 403)) {
@@ -143,7 +152,9 @@ export function MeasurementsPanel({
   useEffect(() => {
     if (saved) return;
     let active = true;
-    void fetch(`/api/measurements/sync?ownerId=${encodeURIComponent(ownerId)}`)
+    void apiFetch(
+      `/api/measurements/sync?ownerId=${encodeURIComponent(ownerId)}`,
+    )
       .then(async (response) => {
         if (response.status === 401 || response.status === 403) {
           if (active) {
@@ -154,9 +165,7 @@ export function MeasurementsPanel({
           return;
         }
         if (response.ok) {
-          const data = measurementPrecisionIssueSchema
-            .array()
-            .parse(await response.json());
+          const data = apiResults.measurementIssues(await response.json());
           if (active) setIssues(data);
         }
       })
@@ -173,7 +182,7 @@ export function MeasurementsPanel({
         active = false;
       };
     const timer = setInterval(() => {
-      void fetch(url, { cache: 'no-store' })
+      void apiFetch(url, { cache: 'no-store' })
         .then(async (response) => {
           if (response.status === 401 || response.status === 403) {
             if (active) {
@@ -199,7 +208,7 @@ export function MeasurementsPanel({
     setRetrying(id);
     setError(undefined);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/measurements/${id}/retry?ownerId=${encodeURIComponent(ownerId)}`,
         { method: 'POST' },
       );
@@ -272,7 +281,7 @@ export function MeasurementsPanel({
         reset();
         return;
       }
-      const r = await fetch(
+      const r = await apiFetch(
         editing
           ? `/api/measurements/${editing}?ownerId=${encodeURIComponent(ownerId)}`
           : url,
@@ -303,7 +312,7 @@ export function MeasurementsPanel({
     setBusy(true);
     setError(undefined);
     try {
-      const r = await fetch(
+      const r = await apiFetch(
         `/api/measurements/${id}?ownerId=${encodeURIComponent(ownerId)}`,
         { method: 'DELETE' },
       );

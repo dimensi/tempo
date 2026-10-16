@@ -1,18 +1,21 @@
 'use client';
-import { useReadResource } from '@/lib/use-read-resource';
-import { useReadRefresh } from '@/lib/use-read-refresh';
+import { DateNavigation } from '@/components/shared/date-navigation';
 import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+  type PlannedWorkout,
+  type WorkoutPlan,
+  type WorkoutSession,
+  type WorkoutsData,
+} from '@/contracts/workouts';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadRefresh } from '@/lib/use-read-refresh';
+import { useReadResource } from '@/lib/use-read-resource';
+import { workoutTitle } from '@/lib/workout-title';
 import {
   ActionIcon,
-  Badge,
-  Tooltip,
   Alert,
+  Badge,
   Button,
   Group,
   Loader,
@@ -22,42 +25,36 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from '@mantine/core';
 import {
-  workoutPlanSchema,
-  workoutSessionSchema,
-  type WorkoutPlan,
-  type WorkoutSession,
-  type WorkoutsData,
-  type PlannedWorkout,
-} from '@/contracts/workouts';
-import { today } from './forms';
+  IconArrowRight,
+  IconCalendar,
+  IconClipboardCheck,
+  IconCopy,
+  IconPencil,
+  IconTrash,
+} from '@tabler/icons-react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  useReadRouter as useRouter,
-  useReadSearchParams as useSearchParams,
-} from '@/lib/workspace-navigation';
-import { requestReadNavigation } from '@/components/shared/read-link';
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { z } from 'zod';
-import { workoutTitle } from '@/lib/workout-title';
-import { DateNavigation } from '@/components/shared/date-navigation';
+import { ExerciseTable } from './exercise-table';
+import { today } from './forms';
+import { workoutMessages as m } from './messages';
 import { NativeWorkout } from './native-workout';
 import { WorkoutReadContent } from './read-content';
-import { ExerciseTable } from './exercise-table';
-import {
-  IconArrowRight,
-  IconPencil,
-  IconCopy,
-  IconTrash,
-  IconClipboardCheck,
-  IconCalendar,
-} from '@tabler/icons-react';
-import { ReadLink as Link } from '@/components/shared/read-link';
 import {
   SyncSummary,
   WorkoutSync,
   useTransformMateSync,
 } from './transformmate-sync';
-import { workoutMessages as m } from './messages';
 import classes from './workout-ui.module.css';
 
 type Deletion = { kind: 'plans' | 'sessions'; id: string; revision: number };
@@ -165,9 +162,7 @@ function ScopedWorkoutsDashboard({
   const date = selectedDate.success ? selectedDate.data : today();
   const setDate = (value: string) => {
     const href = `/workouts?date=${value}`;
-    requestReadNavigation(href, { replace: true, scroll: false }, () =>
-      router.replace(href, { scroll: false }),
-    );
+    router.replace(href, { scroll: false });
   };
   const [copy, setCopy] = useState<{
     plan: WorkoutPlan;
@@ -188,7 +183,10 @@ function ScopedWorkoutsDashboard({
   );
   const read = useCallback(
     async (signal?: AbortSignal) => {
-      const response = await fetch(endpoint(), { cache: 'no-store', signal });
+      const response = await apiFetch(endpoint(), {
+        cache: 'no-store',
+        signal,
+      });
       if (!response.ok) {
         throw new Error(m.loadError);
       }
@@ -196,34 +194,15 @@ function ScopedWorkoutsDashboard({
       return {
         contractVersion: 1,
         source: 'user',
-        plans: incoming.plans.map((plan: unknown) =>
-          workoutPlanSchema.parse(plan),
-        ),
+        plans: incoming.plans.map((plan: unknown) => apiResults.plan(plan)),
         sessions: incoming.sessions.map((session: unknown) =>
-          workoutSessionSchema.parse(session),
+          apiResults.session(session),
         ),
       } satisfies WorkoutsData;
     },
     [endpoint],
   );
-  const resource = useReadResource({
-    href: endpoint(),
-    parse: (value) => {
-      const incoming = z
-        .object({
-          data: z.object({
-            plans: z.array(workoutPlanSchema),
-            sessions: z.array(workoutSessionSchema),
-          }),
-        })
-        .parse(value).data;
-      return {
-        contractVersion: 1 as const,
-        source: 'user' as const,
-        ...incoming,
-      };
-    },
-  });
+  const resource = useReadResource(readResources.workouts(endpoint()));
   const [acceptedRead, setAcceptedRead] = useState<typeof resource.data>();
   if (resource.data && resource.data !== acceptedRead) {
     setAcceptedRead(resource.data);
@@ -265,7 +244,7 @@ function ScopedWorkoutsDashboard({
     setBusy(true);
     setEditorError(null);
     try {
-      const response = await fetch(endpoint(path), {
+      const response = await apiFetch(endpoint(path), {
         method,
         headers: {
           'Content-Type': 'application/json',

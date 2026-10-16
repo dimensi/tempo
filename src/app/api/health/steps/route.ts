@@ -1,9 +1,10 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import {
   getStepsSummary,
-  healthRangeFromRequest,
   healthErrorResponse,
+  healthRangeFromRequest,
 } from '@/server/health';
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   try {
     return Response.json(
       await getStepsSummary(request.headers, healthRangeFromRequest(request)),
@@ -15,3 +16,5 @@ export async function GET(request: Request) {
     return healthErrorResponse(error);
   }
 }
+
+export const GET = withApiErrors(GETHandler);

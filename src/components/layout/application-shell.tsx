@@ -1,57 +1,63 @@
 'use client';
+import { writeMessages } from '@/config/offline-write-messages';
+import { requestLocalLogout } from '@/lib/local-logout';
+import { syncDeviceWrites } from '@/lib/offline-write-client';
+import { Button, Group, Modal, Text } from '@mantine/core';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { ReadLink } from '@/components/shared/read-link';
-import { useReadLocation } from '@/lib/workspace-navigation';
-import {
-  beginLocalLogout,
-  finishPendingLogout,
-  hasPendingLogout,
-} from '@/lib/local-logout';
-import { withOfflineDevicePurge } from '@/lib/offline-device';
-import { deleteDeviceWrites, withWriteLock } from '@/lib/offline-write-client';
 import { ApplicationShellFrame } from './application-shell-frame';
 export function ApplicationShell(props: {
   children: React.ReactNode;
   role: string;
   demo: boolean;
-  initialHref?: string;
-  brandSrc?: string;
 }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [pendingLogout, setPendingLogout] = useState(false);
   const [cleanupError, setCleanupError] = useState(false);
-  const pathname = new URL(
-    useReadLocation(props.initialHref) || '/',
-    'https://tempo.local',
-  ).pathname;
-  async function logout() {
+  async function logout(discard = false) {
     try {
-      beginLocalLogout();
-      await withOfflineDevicePurge(
-        async () => {
-          await withWriteLock(() => deleteDeviceWrites()).catch(() =>
-            setCleanupError(true),
-          );
-        },
-        () => setCleanupError(true),
-      );
-      await finishPendingLogout();
-      if (!hasPendingLogout()) location.replace('/login');
-      else {
-        history.replaceState({}, '', '/login');
-        window.dispatchEvent(new PopStateEvent('popstate'));
+      if ((await requestLocalLogout(discard)) === 'pending') {
+        setPendingLogout(true);
+        return;
       }
     } catch {
       setCleanupError(true);
     }
+    if (navigator.onLine) router.replace('/login');
   }
   return (
-    <ApplicationShellFrame
-      {...props}
-      pathname={pathname}
-      linkComponent={ReadLink}
-      cleanupError={cleanupError}
-      onLogout={logout}
-    >
-      {props.children}
-    </ApplicationShellFrame>
+    <>
+      <ApplicationShellFrame
+        {...props}
+        pathname={pathname}
+        linkComponent={Link}
+        cleanupError={cleanupError}
+        onLogout={() => logout()}
+      >
+        {props.children}
+      </ApplicationShellFrame>
+      <Modal
+        opened={pendingLogout}
+        onClose={() => setPendingLogout(false)}
+        title={writeMessages.review}
+      >
+        <Text>{writeMessages.logout}</Text>
+        <Group mt="md">
+          <Button
+            onClick={() => {
+              setPendingLogout(false);
+              void syncDeviceWrites().catch(() => {});
+            }}
+          >
+            {writeMessages.wait}
+          </Button>
+          <Button color="red" onClick={() => void logout(true)}>
+            {writeMessages.discardLogout}
+          </Button>
+        </Group>
+      </Modal>
+    </>
   );
 }

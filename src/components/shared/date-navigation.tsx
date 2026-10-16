@@ -172,7 +172,7 @@ export function DateNavigation({
   disabled?: boolean;
 }) {
   const [anchor, setAnchor] = useState(date);
-  // Activity preserves route state; on Back, bring its selected day back into view.
+  // Follow the URL date when Next restores a history entry.
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {

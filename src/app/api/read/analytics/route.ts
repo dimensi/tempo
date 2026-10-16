@@ -1,11 +1,15 @@
-import { readContext } from '@/server/read-context';
-import { getAnalytics, AnalyticsError } from '@/server/analytics';
 import { analyticsDataSchema } from '@/contracts/read-analytics';
-export async function GET(request: Request) {
+import { AnalyticsError, getAnalytics } from '@/server/analytics';
+import { withApiErrors } from '@/server/auth/api-response';
+import { readContext } from '@/server/read-context';
+async function GETHandler(request: Request) {
   try {
     const context = await readContext(request.headers);
-    if (!context)
-      return Response.json({ error: 'Access denied' }, { status: 403 });
+    if (!context?.ownerId)
+      return Response.json(
+        { error: 'Access denied' },
+        { status: context ? 403 : 401 },
+      );
     const query = new URL(request.url).searchParams;
     const data = await getAnalytics(
       request.headers,
@@ -26,3 +30,5 @@ export async function GET(request: Request) {
     );
   }
 }
+
+export const GET = withApiErrors(GETHandler);

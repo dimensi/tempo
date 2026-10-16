@@ -1,8 +1,9 @@
 import {
-  getAnamnesisDocumentFile,
   anamnesisErrorResponse,
   contentDisposition,
+  getAnamnesisDocumentFile,
 } from '@/server/anamnesis';
+import { withApiErrors } from '@/server/auth/api-response';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,7 +13,7 @@ const privateHeaders = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
 };
-export async function GET(request: Request, context: Context) {
+async function GETHandler(request: Request, context: Context) {
   try {
     const { bytes, filename } = await getAnamnesisDocumentFile(
       request.headers,
@@ -30,3 +31,5 @@ export async function GET(request: Request, context: Context) {
     return anamnesisErrorResponse(error);
   }
 }
+
+export const GET = withApiErrors(GETHandler);

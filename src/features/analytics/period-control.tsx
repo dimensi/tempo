@@ -1,15 +1,14 @@
 'use client';
-import { useEffect } from 'react';
-import { useReadRouter as useRouter } from '@/lib/workspace-navigation';
-import { requestReadNavigation } from '@/components/shared/read-link';
-import { Skeleton, Stack, Text, Title } from '@mantine/core';
 import { dateInTimezone } from '@/contracts/nutrition-sync-dates';
-import { presetRange } from './range';
+import { Skeleton, Stack, Text, Title } from '@mantine/core';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 import { analyticsMessages as m } from './messages';
 import {
   PeriodControlView,
   type PeriodControlProps,
 } from './period-control-view';
+import { presetRange } from './range';
 export function AnalyticsTimezone({
   from,
   to,
@@ -47,9 +46,7 @@ export function PeriodControl(props: PeriodControlProps) {
       {...props}
       onNavigate={(range) => {
         const href = `/analytics?${new URLSearchParams({ ...range, timezone: props.timezone })}`;
-        requestReadNavigation(href, { scroll: false }, () =>
-          router.push(href, { scroll: false }),
-        );
+        router.push(href, { scroll: false });
       }}
     />
   );

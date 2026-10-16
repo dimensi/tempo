@@ -1,18 +1,16 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useSavedMealPhotos } from '@/lib/use-saved-meal-photos';
-import {
-  useReadRouter as useRouter,
-  useReadSearchParams as useSearchParams,
-} from '@/lib/workspace-navigation';
-import { Stack } from '@mantine/core';
 import { browserToday } from '@/components/shared/date-navigation-dates';
-import { DayNavigation } from './day-navigation';
 import { diaryDateSchema, type SafeMealPhotoView } from '@/contracts/nutrition';
+import { revalidateVisibleReads } from '@/lib/client-read';
+import { useReadOnline } from '@/lib/use-read-online';
+import { Stack } from '@mantine/core';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
+import { DayNavigation } from './day-navigation';
+import { DayRefreshControl } from './day-refresh-control';
 import { DiaryView, type DiaryViewProps } from './diary-view';
 import { createPhotoActions, diaryPhotos } from './photo-actions';
-import { DayRefreshControl } from './day-refresh-control';
 
 export interface DiaryClientProps extends Omit<
   DiaryViewProps,
@@ -32,7 +30,7 @@ export function DiaryClient({
   ...props
 }: DiaryClientProps) {
   const router = useRouter();
-  const savedPhotos = useSavedMealPhotos(photos);
+  const online = useReadOnline();
   const params = useSearchParams();
   const hasDate =
     params.getAll('date').length === 1 &&
@@ -56,17 +54,15 @@ export function DiaryClient({
             <DayRefreshControl
               key={`refresh:${props.date}`}
               date={props.date}
-              onUpdated={() => router.refresh()}
+              onUpdated={() => revalidateVisibleReads()}
             />
           )}
         </Stack>
       }
-      photos={
-        savedPhotos.online ? diaryPhotos(ownerId, photos) : savedPhotos.photos
-      }
+      photos={diaryPhotos(ownerId, photos)}
       photoActions={
-        canWrite && savedPhotos.online
-          ? createPhotoActions(ownerId, () => router.refresh())
+        canWrite && online
+          ? createPhotoActions(ownerId, () => revalidateVisibleReads())
           : undefined
       }
     />

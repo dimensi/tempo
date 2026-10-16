@@ -1,22 +1,26 @@
-import 'server-only';
-import { getAccessibleOwnerId } from '@/server/access/owner';
-import { authorize } from '@/server/auth/guards';
-import { offlineIdentity } from '@/server/offline';
 import { readContextSchema } from '@/contracts/read-context';
+import { getAccessibleOwnerId } from '@/server/access/owner';
+import { getAuth } from '@/server/auth';
+import { readServerEnv } from '@/server/env';
+import { createHmac } from 'node:crypto';
+import 'server-only';
 export async function readContext(headers: Headers) {
-  const ownerId = await getAccessibleOwnerId(headers);
-  if (!ownerId) return null;
-  const access = await authorize(headers, 'nutrition:read', ownerId);
-  if (!access.ok) return null;
-  const identity = await offlineIdentity(
-    headers,
-    new URL('http://localhost/api/offline/identity'),
-  );
+  const session = await getAuth().api.getSession({ headers });
+  if (!session) return null;
+  const ownerId = (await getAccessibleOwnerId(headers)) ?? '';
+  const partition = createHmac('sha256', readServerEnv().BETTER_AUTH_SECRET!)
+    .update(
+      JSON.stringify(
+        session.user.role === 'OWNER'
+          ? ['offline-owner/v1', session.user.id]
+          : ['offline-reader/v2', session.user.id, session.user.role, ownerId],
+      ),
+    )
+    .digest('base64url');
   return readContextSchema.parse({
-    readerId: access.session.user.id,
+    readerId: session.user.id,
     ownerId,
-    role: identity.role,
-    partition: identity.partition,
-    connectionGeneration: identity.connectionGeneration,
+    role: session.user.role,
+    partition,
   });
 }

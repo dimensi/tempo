@@ -46,6 +46,10 @@ export class ReadResourceStore<T> {
       weight: number;
       size: (data: T) => number;
     },
+    private coverageFor: (
+      data: T,
+      key: string,
+    ) => 'complete' | 'partial' = () => 'complete',
   ) {}
   snapshot(key: string): ReadResource<T> {
     return this.entries.get(key) ?? empty;
@@ -68,7 +72,7 @@ export class ReadResourceStore<T> {
     data: T,
     savedAt = this.now(),
     source: 'storage' | 'network' = 'network',
-    coverage: 'complete' | 'partial' = 'complete',
+    coverage: 'complete' | 'partial' = this.coverageFor(data, key),
   ) {
     if (this.limits && this.limits.size(data) > this.limits.weight) {
       this.publish(key, {
@@ -171,7 +175,7 @@ export class ReadResourceStore<T> {
             data,
             savedAt,
             touchedAt: savedAt,
-            coverage: 'complete',
+            coverage: this.coverageFor(data, key),
           })
           .catch(() => {});
         if (!valid()) throw new ReadFailure('denied');

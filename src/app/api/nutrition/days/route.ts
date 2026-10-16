@@ -1,6 +1,7 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import { listNutritionDays } from '@/server/nutrition';
-import { respond, json } from '@/server/nutrition/http';
-export async function GET(request: Request) {
+import { json, respond } from '@/server/nutrition/http';
+async function GETHandler(request: Request) {
   return respond(async () => {
     const q = new URL(request.url).searchParams;
     return json(
@@ -11,3 +12,5 @@ export async function GET(request: Request) {
     );
   });
 }
+
+export const GET = withApiErrors(GETHandler);

@@ -1,9 +1,16 @@
 'use client';
 import { OfflineFile } from '@/components/shared/offline-file';
+import { apiFetch } from '@/lib/api-client';
 import { useReadOnline } from '@/lib/use-read-online';
 import { useReadRefresh } from '@/lib/use-read-refresh';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { anamnesisMessages as m } from '@/config/anamnesis-messages';
+import type {
+  AnamnesisMarkerSummary,
+  MedicalReportDateOption,
+  MedicalReportExport,
+  MedicalReportPreview,
+} from '@/contracts/anamnesis';
 import {
   Alert,
   Button,
@@ -14,13 +21,7 @@ import {
   Text,
   Title,
 } from '@mantine/core';
-import type {
-  AnamnesisMarkerSummary,
-  MedicalReportExport,
-  MedicalReportPreview,
-  MedicalReportDateOption,
-} from '@/contracts/anamnesis';
-import { anamnesisMessages as m } from '@/config/anamnesis-messages';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnamnesisFetchError, fetchAnamnesis, ownerIdQuery } from './api';
 import { useAnamnesisRevision } from './refresh';
 
@@ -265,7 +266,7 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
         },
       );
       if (key !== currentRef.current) return;
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/anamnesis/reports/${created.id}/file?${query}`,
         { cache: 'no-store' },
       );

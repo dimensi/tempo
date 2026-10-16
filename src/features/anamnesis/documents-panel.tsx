@@ -1,15 +1,12 @@
 'use client';
 import { invalidateMedicalDocument } from '@/lib/client-read';
-import { useReadResource } from '@/lib/use-read-resource';
-import { medicalDocumentSchema } from '@/contracts/anamnesis';
-import { z } from 'zod';
+import { readResources } from '@/lib/read-descriptors';
 import { useReadOnline } from '@/lib/use-read-online';
 import { useReadRefresh } from '@/lib/use-read-refresh';
+import { useReadResource } from '@/lib/use-read-resource';
 
-import { ReviewEditor } from './review-editor';
-import { notifyAnamnesisChanged, useAnamnesisRevision } from './refresh';
-import { useEffect, useRef, useState } from 'react';
-import { ReadLink as Link } from '@/components/shared/read-link';
+import { anamnesisMessages as m } from '@/config/anamnesis-messages';
+import type { MedicalDocument, MedicalImportJob } from '@/contracts/anamnesis';
 import {
   Alert,
   Button,
@@ -20,9 +17,11 @@ import {
   Text,
   Title,
 } from '@mantine/core';
-import type { MedicalDocument, MedicalImportJob } from '@/contracts/anamnesis';
-import { anamnesisMessages as m } from '@/config/anamnesis-messages';
+import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
+import { notifyAnamnesisChanged, useAnamnesisRevision } from './refresh';
+import { ReviewEditor } from './review-editor';
 
 export function DocumentsPanel({
   ownerId,
@@ -47,10 +46,9 @@ export function DocumentsPanel({
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<string>();
   const query = ownerIdQuery(ownerId);
-  const readResource1 = useReadResource({
-    href: `/api/anamnesis/documents?${query}`,
-    parse: (value) => z.array(medicalDocumentSchema).parse(value),
-  });
+  const readResource1 = useReadResource(
+    readResources.documents(`/api/anamnesis/documents?${query}`),
+  );
   const [acceptedreadResource1, setAcceptedreadResource1] =
     useState<typeof readResource1.data>();
   if (

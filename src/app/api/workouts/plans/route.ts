@@ -1,10 +1,11 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import { createWorkoutPlan } from '@/server/workouts';
 import {
   checkWorkoutOrigin,
-  workoutResponse,
   readWorkoutJson,
+  workoutResponse,
 } from '@/server/workouts/http';
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   return workoutResponse(async () => {
     checkWorkoutOrigin(request);
     const body = await readWorkoutJson(request);
@@ -16,3 +17,5 @@ export async function POST(request: Request) {
     );
   });
 }
+
+export const POST = withApiErrors(POSTHandler);

@@ -1,9 +1,10 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import { listMealPhotos } from '@/server/nutrition';
-import { uploadMealPhoto } from '@/server/nutrition/manual-photos';
 import { nutritionAccess } from '@/server/nutrition/access';
+import { json, readBody, respond, sameOrigin } from '@/server/nutrition/http';
 import { MAX_IMAGE_BYTES } from '@/server/nutrition/images';
-import { respond, json, sameOrigin, readBody } from '@/server/nutrition/http';
-export async function GET(request: Request) {
+import { uploadMealPhoto } from '@/server/nutrition/manual-photos';
+async function GETHandler(request: Request) {
   return respond(async () => {
     const q = new URL(request.url).searchParams;
     return json(
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
   });
 }
 // Raw binary avoids unbounded multipart parsing; metadata is in validated query parameters.
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const q = new URL(request.url).searchParams;
@@ -34,3 +35,7 @@ export async function POST(request: Request) {
     );
   });
 }
+
+export const GET = withApiErrors(GETHandler);
+
+export const POST = withApiErrors(POSTHandler);

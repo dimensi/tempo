@@ -1,8 +1,9 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import {
-  measurementSyncIssues,
   measurementErrorResponse,
+  measurementSyncIssues,
 } from '@/server/measurements';
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   try {
     return Response.json(
       await measurementSyncIssues(
@@ -15,3 +16,5 @@ export async function GET(request: Request) {
     return measurementErrorResponse(error);
   }
 }
+
+export const GET = withApiErrors(GETHandler);

@@ -1,12 +1,17 @@
 'use client';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ReadLink as Link } from '@/components/shared/read-link';
-import { useReadRouter as useRouter } from '@/lib/workspace-navigation';
+import type { TransformMateSyncItem } from '@/contracts/transformmate';
+import type { TransformMateNativeItem } from '@/contracts/transformmate-native';
+import {
+  type PlannedWorkout,
+  type WorkoutPlan,
+  type WorkoutSession,
+} from '@/contracts/workouts';
+import { apiFetch } from '@/lib/api-client';
+import { workoutTitle } from '@/lib/workout-title';
 import {
   ActionIcon,
-  Badge,
-  Tooltip,
   Alert,
+  Badge,
   Button,
   Group,
   Modal,
@@ -14,30 +19,26 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from '@mantine/core';
 import {
   IconArrowLeft,
-  IconPencil,
-  IconCopy,
-  IconTrash,
-  IconClipboardCheck,
   IconCalendar,
+  IconClipboardCheck,
+  IconCopy,
+  IconPencil,
+  IconTrash,
 } from '@tabler/icons-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { z } from 'zod';
-import {
-  type WorkoutPlan,
-  type PlannedWorkout,
-  type WorkoutSession,
-} from '@/contracts/workouts';
-import type { TransformMateSyncItem } from '@/contracts/transformmate';
-import type { TransformMateNativeItem } from '@/contracts/transformmate-native';
-import { workoutTitle } from '@/lib/workout-title';
-import { WorkoutVideos } from './workout-videos';
 import { ExerciseTable } from './exercise-table';
+import { workoutMessages as m } from './messages';
 import { WorkoutReadContent } from './read-content';
 import { WorkoutSync } from './transformmate-sync';
-import { workoutMessages as m } from './messages';
 import classes from './workout-ui.module.css';
+import { WorkoutVideos } from './workout-videos';
 
 export type WorkoutDetail =
   | {
@@ -97,7 +98,7 @@ export function WorkoutDetailView({
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/workouts${path}?ownerId=${encodeURIComponent(ownerId)}`,
         {
           method,

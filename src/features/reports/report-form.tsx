@@ -1,11 +1,11 @@
 'use client';
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import { DateNavigation } from '@/components/shared/date-navigation';
+import { browserToday } from '@/components/shared/date-navigation-dates';
+import { OfflineFile } from '@/components/shared/offline-file';
+import { offlineFileMessages } from '@/config/offline-files';
+import { reportMessages as m } from '@/config/reports';
+import { reportRequestSchema } from '@/contracts/reports';
+import { apiFetch } from '@/lib/api-client';
 import {
   Alert,
   Button,
@@ -16,37 +16,21 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { DateNavigation } from '@/components/shared/date-navigation';
-import { browserToday } from '@/components/shared/date-navigation-dates';
-import type { NutritionDay } from '@/contracts/nutrition';
-import { OfflineFile } from '@/components/shared/offline-file';
-import { offlineFileMessages } from '@/config/offline-files';
-import { reportRequestSchema } from '@/contracts/reports';
-import { reportMessages as m } from '@/config/reports';
-import { weeklyRange } from './weekly-range';
 import {
-  OfflineReportPreview,
-  type OfflineReportPhoto,
-} from './offline-preview';
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import { weeklyRange } from './weekly-range';
 
 const subscribe = () => () => {};
 const clientReady = () => true;
 const serverReady = () => false;
 const inputStyles = { input: { fontSize: 16 } };
 
-export function ReportForm({
-  ownerId,
-  offlineDays,
-  offlineSteps = [],
-  offlineStepsGoal = null,
-  offlinePhotos = [],
-}: {
-  ownerId: string | null;
-  offlineDays?: NutritionDay[];
-  offlineStepsGoal?: number | null;
-  offlineSteps?: { date: string; steps: number | null }[];
-  offlinePhotos?: OfflineReportPhoto[];
-}) {
+export function ReportForm({ ownerId }: { ownerId: string | null }) {
   const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
   const [period, setPeriod] = useState('daily');
   const [start, setStart] = useState<string | null>(null);
@@ -54,7 +38,7 @@ export function ReportForm({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [previewRange, setPreviewRange] = useState('');
+  const [, setPreviewRange] = useState('');
   const [preview, setPreview] = useState<{
     ownerId: string;
     html: string;
@@ -93,7 +77,6 @@ export function ReportForm({
         ? (week?.end ?? '')
         : (end ?? '');
   useEffect(() => {
-    if (offlineDays) return;
     const controller = new AbortController();
     pending.current = controller;
     // Coalesce date edits before entering the measured Chromium pipeline.
@@ -129,7 +112,7 @@ export function ReportForm({
       setError('');
       setBusy(true);
       try {
-        const response = await fetch(`/api/reports?${query}`, {
+        const response = await apiFetch(`/api/reports?${query}`, {
           signal: controller.signal,
           cache: 'no-store',
         });
@@ -171,7 +154,6 @@ export function ReportForm({
     finish,
     downloading,
     clearPrivatePreview,
-    offlineDays,
   ]);
   async function download() {
     const parsed = reportRequestSchema.safeParse({
@@ -199,7 +181,7 @@ export function ReportForm({
         end: parsed.data.end,
         format: 'pdf',
       });
-      const response = await fetch(`/api/reports?${query}`, {
+      const response = await apiFetch(`/api/reports?${query}`, {
         signal: controller.signal,
         cache: 'no-store',
       });
@@ -311,7 +293,7 @@ export function ReportForm({
           styles={{ root: { fontSize: 16 } }}
           mih={44}
           loading={downloading}
-          disabled={!!offlineDays || !ready || ownerId === null || busy}
+          disabled={!ready || ownerId === null || busy}
           onClick={() => void download()}
         >
           {m.download}
@@ -322,7 +304,7 @@ export function ReportForm({
           </Text>
         )}
       </Group>
-      {!offlineDays && ownerId && finish && selectedStart && (
+      {ownerId && finish && selectedStart && (
         <>
           <OfflineFile
             id={`report:${period}:${selectedStart}:${finish}`}
@@ -335,33 +317,7 @@ export function ReportForm({
           </Text>
         </>
       )}
-      {offlineDays &&
-        (() => {
-          const parsed = reportRequestSchema.safeParse({
-            ownerId: ownerId ?? '',
-            period,
-            start: selectedStart,
-            end: finish,
-            format: 'html',
-          });
-          return parsed.success ? (
-            <OfflineReportPreview
-              request={parsed.data}
-              dailyStepsGoal={offlineStepsGoal}
-              days={offlineDays}
-              steps={offlineSteps}
-              photos={offlinePhotos}
-            />
-          ) : (
-            <Alert>{m.invalid}</Alert>
-          );
-        })()}
-      {html && (
-        <Text size="sm" c="dimmed">
-          {m.preview}: {previewRange}
-        </Text>
-      )}
-      {!offlineDays && ownerId !== null && (
+      {ownerId !== null && (
         <iframe
           title={m.preview}
           aria-busy={busy}

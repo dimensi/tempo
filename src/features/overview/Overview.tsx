@@ -1,8 +1,10 @@
 'use client';
+import type { OverviewData } from '@/contracts/overview';
+import { formatDecimal, toChartNumber } from '@/lib/number-display';
+import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
-import { overviewReadSchema } from '@/contracts/read-resources';
-import { useReadRefresh } from '@/lib/use-read-refresh';
-import { useEffect, useState, createElement, type ElementType } from 'react';
+import { workoutTitle } from '@/lib/workout-title';
+import { LineChart } from '@mantine/charts';
 import {
   Alert,
   Anchor,
@@ -16,12 +18,10 @@ import {
   Text,
   Title,
 } from '@mantine/core';
-import { LineChart } from '@mantine/charts';
-import type { OverviewData } from '@/contracts/overview';
-import { formatDecimal, toChartNumber } from '@/lib/number-display';
-import { workoutTitle } from '@/lib/workout-title';
-import { overviewMessages as m } from './messages';
+import Link from 'next/link';
+import { createElement, useEffect, useState, type ElementType } from 'react';
 import { localCalendar, nextMidnightDelay } from './calendar';
+import { overviewMessages as m } from './messages';
 import classes from './overview.module.css';
 import { TodayNutrition } from './TodayNutrition';
 const number = (value: string | null) => formatDecimal(value) ?? m.empty;
@@ -32,22 +32,23 @@ const date = (value: string) =>
 export function Overview({
   saved,
   plannedUnknown = false,
-  linkComponent = 'a',
+  linkComponent = Link,
 }: {
   saved?: OverviewData;
   plannedUnknown?: boolean;
   linkComponent?: ElementType;
 } = {}) {
-  const readRefresh = useReadRefresh();
   const [calendar, setCalendar] = useState<ReturnType<
     typeof localCalendar
   > | null>(null);
-  const [resource, setResource] = useState<{
-    key: string;
-    data: OverviewData | null;
-    error: number | null;
-  } | null>(null);
-  const [revision, setRevision] = useState(0);
+  const localRead = useReadResource(
+    readResources.overview(
+      calendar
+        ? `/api/overview?timezone=${encodeURIComponent(calendar.timezone)}`
+        : undefined,
+    ),
+  );
+  const refreshResource = localRead.refresh;
   useEffect(() => {
     if (saved) return;
     let timer: ReturnType<typeof setTimeout>;
@@ -63,7 +64,7 @@ export function Overview({
     }
     function refresh() {
       update();
-      setRevision((value) => value + 1);
+      void refreshResource();
     }
     function visible() {
       if (document.visibilityState === 'visible') refresh();
@@ -76,51 +77,9 @@ export function Overview({
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [saved]);
-  useEffect(() => {
-    if (saved || !calendar) return;
-    const controller = new AbortController();
-    const key = `${calendar.timezone}:${calendar.today}`;
-    fetch(`/api/overview?timezone=${encodeURIComponent(calendar.timezone)}`, {
-      signal: controller.signal,
-      cache: 'no-store',
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(String(response.status));
-        return response.json() as Promise<OverviewData>;
-      })
-      .then((value) => {
-        if (!controller.signal.aborted)
-          setResource({ key, data: value, error: null });
-      })
-      .catch((reason) => {
-        if (!controller.signal.aborted)
-          setResource((previous) => ({
-            key,
-            data: [401, 403].includes(Number(reason.message))
-              ? null
-              : (previous?.data ?? null),
-            error:
-              previous?.data && ![401, 403].includes(Number(reason.message))
-                ? null
-                : Number(reason.message) || 500,
-          }));
-      });
-    return () => controller.abort();
-  }, [calendar, revision, saved, readRefresh]);
-  const localRead = useReadResource({
-    href: calendar
-      ? `/api/overview?timezone=${encodeURIComponent(calendar.timezone)}`
-      : undefined,
-    parse: (value) => overviewReadSchema.parse(value),
-  });
-  const key = calendar ? `${calendar.timezone}:${calendar.today}` : '';
-  const data = localRead.data ?? (resource?.key === key ? resource.data : null);
-  const error = localRead.data
-    ? null
-    : resource?.key === key
-      ? resource.error
-      : null;
+  }, [saved, refreshResource]);
+  const data = localRead.data;
+  const error = data ? null : localRead.error ? 500 : null;
   const current =
     saved ??
     (data &&
@@ -139,17 +98,17 @@ export function Overview({
         </Text>
       </Stack>
       {error ? (
-        <Alert color={error === 403 ? 'orange' : 'red'} role="alert">
-          {error === 403 ? m.forbidden : m.error}
-          {error !== 403 && (
+        <Alert color="red" role="alert">
+          {m.error}
+          {
             <Button
-              onClick={() => setRevision((value) => value + 1)}
+              onClick={() => void localRead.refresh()}
               variant="subtle"
               mih={44}
             >
               {m.retry}
             </Button>
-          )}
+          }
         </Alert>
       ) : !current ? (
         <Stack aria-label={m.loading}>

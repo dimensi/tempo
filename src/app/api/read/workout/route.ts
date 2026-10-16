@@ -1,35 +1,36 @@
-import { z } from 'zod';
+import { workoutDetailSchema } from '@/contracts/read-workout';
+import { withApiErrors } from '@/server/auth/api-response';
 import { readContext } from '@/server/read-context';
 import { readWorkoutDetails } from '@/server/workouts/details';
-import { workoutDetailSchema } from '@/contracts/read-workout';
-export async function GET(request: Request) {
+import { z } from 'zod';
+async function GETHandler(request: Request) {
   try {
     const context = await readContext(request.headers);
-    if (!context)
-      return Response.json({ error: 'Access denied' }, { status: 403 });
+    if (!context?.ownerId)
+      return Response.json(
+        { error: 'Access denied' },
+        { status: context ? 403 : 401 },
+      );
     const url = new URL(request.url);
-    const path = url.searchParams.get('path') ?? '';
-    const date = z.iso.date().parse(url.searchParams.get('date'));
-    const plan = path.match(/^\/workouts\/plans\/([^/]+)\/workouts\/([^/]+)$/);
-    const item = path.match(/^\/workouts\/(sessions|native|links)\/([^/]+)$/);
-    const resource = plan
-      ? {
-          kind: 'plan' as const,
-          planId: decodeURIComponent(plan[1]!),
-          workoutId: decodeURIComponent(plan[2]!),
-        }
-      : item?.[1] === 'sessions'
-        ? { kind: 'session' as const, id: decodeURIComponent(item[2]!) }
-        : item?.[1] === 'native'
+    const query = url.searchParams;
+    const date = z.iso.date().parse(query.get('date'));
+    const kind = z
+      .enum(['plan', 'session', 'native', 'link'])
+      .parse(query.get('kind'));
+    const id = z.string().min(1).max(200);
+    const resource =
+      kind === 'plan'
+        ? {
+            kind,
+            planId: id.parse(query.get('planId')),
+            workoutId: id.parse(query.get('workoutId')),
+          }
+        : kind === 'native'
           ? {
-              kind: 'native' as const,
-              id: z.coerce.number().int().positive().parse(item[2]),
+              kind,
+              id: z.coerce.number().int().positive().parse(query.get('id')),
             }
-          : item?.[1] === 'links'
-            ? { kind: 'link' as const, id: decodeURIComponent(item[2]!) }
-            : null;
-    if (!resource)
-      return Response.json({ error: 'Invalid route' }, { status: 400 });
+          : { kind, id: id.parse(query.get('id')) };
     const data = await readWorkoutDetails(
       request.headers,
       context.ownerId,
@@ -53,3 +54,5 @@ export async function GET(request: Request) {
     return Response.json({ error: 'Read unavailable' }, { status });
   }
 }
+
+export const GET = withApiErrors(GETHandler);

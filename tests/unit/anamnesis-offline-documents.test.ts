@@ -1,7 +1,9 @@
-import { afterEach, expect, it, vi } from 'vitest';
-import { isValidElement, type ReactNode } from 'react';
-import { Button, FileInput } from '@mantine/core';
 import type { MedicalDocument } from '@/contracts/anamnesis';
+import { DocumentViewer } from '@/features/anamnesis/document-viewer';
+import { DocumentsPanel } from '@/features/anamnesis/documents-panel';
+import { Button, FileInput } from '@mantine/core';
+import { isValidElement, type ReactNode } from 'react';
+import { afterEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   online: false,
   index: 0,
@@ -30,6 +32,9 @@ vi.mock('react', async (original) => ({
     if (state.runEffects) effect();
   },
   useRef: (current: unknown) => ({ current }),
+}));
+vi.mock('@/lib/api-client', () => ({
+  apiFetch: (...args: Parameters<typeof fetch>) => fetch(...args),
 }));
 vi.mock('@/lib/use-read-online', () => ({ useReadOnline: () => state.online }));
 vi.mock('@/lib/use-read-refresh', () => ({ useReadRefresh: () => 0 }));
@@ -69,8 +74,6 @@ vi.mock('@/features/anamnesis/review-editor', () => ({
 vi.mock('@/components/shared/offline-file', () => ({
   OfflineFile: () => null,
 }));
-import { DocumentViewer } from '@/features/anamnesis/document-viewer';
-import { DocumentsPanel } from '@/features/anamnesis/documents-panel';
 function nodes(
   node: ReactNode,
 ): Array<{ type: unknown; props: Record<string, unknown> }> {

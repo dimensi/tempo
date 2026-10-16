@@ -1,30 +1,30 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { ExercisePreview } from './exercise-preview';
+import {
+  type TransformMateCatalogItem,
+  type TransformMateCatalogMetadata,
+  type TransformMateMuscleDictionary,
+} from '@/contracts/transformmate';
+import type { WorkoutExercise } from '@/contracts/workouts';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
 import {
   Alert,
-  Combobox,
-  Loader,
   Badge,
   Button,
+  Combobox,
   Group,
-  Select,
+  Loader,
   MultiSelect,
-  Text,
+  Select,
   Stack,
+  Text,
   TextInput,
   useCombobox,
 } from '@mantine/core';
-import {
-  transformMateCatalogResultSchema,
-  transformMateMuscleDictionarySchema,
-  type TransformMateCatalogMetadata,
-  type TransformMateMuscleDictionary,
-  type TransformMateCatalogItem,
-} from '@/contracts/transformmate';
-import type { WorkoutExercise } from '@/contracts/workouts';
-import { workoutMessages as m } from './messages';
+import { useEffect, useState } from 'react';
 import { ExerciseDetails } from './exercise-details';
+import { ExercisePreview } from './exercise-preview';
+import { workoutMessages as m } from './messages';
 
 export function Catalog({
   ownerId,
@@ -65,15 +65,13 @@ export function Catalog({
   useEffect(() => {
     if (!searching || dictionary) return;
     const controller = new AbortController();
-    void fetch(
+    void apiFetch(
       `/api/workouts/transformmate/muscle-groups?ownerId=${encodeURIComponent(ownerId)}`,
       { signal: controller.signal, cache: 'no-store' },
     )
       .then(async (response) => {
         if (!response.ok) throw new Error();
-        return transformMateMuscleDictionarySchema.parse(
-          (await response.json()).data,
-        );
+        return apiResults.muscles((await response.json()).data);
       })
       .then((data) => {
         if (!controller.signal.aborted) {
@@ -99,11 +97,11 @@ export function Catalog({
       if (commonGroup) params.set('commonMuscleGroup', commonGroup);
       groups.forEach((group) => params.append('muscleGroup', group));
       const url = `/api/workouts/transformmate/exercises?${params}`;
-      void fetch(url, { signal: controller.signal, cache: 'no-store' })
+      void apiFetch(url, { signal: controller.signal, cache: 'no-store' })
         .then(async (response) => {
           if (!response.ok) throw new Error();
           const result = await response.json();
-          const data = transformMateCatalogResultSchema.parse(result);
+          const data = apiResults.catalog(result);
           if (!controller.signal.aborted) {
             setItems(data.data);
             setMetadata(data.catalog);
@@ -115,15 +113,13 @@ export function Catalog({
               visible.forEach((item) =>
                 params.append('visible', String(item.id)),
               );
-              void fetch(`/api/workouts/transformmate/exercises?${params}`, {
+              void apiFetch(`/api/workouts/transformmate/exercises?${params}`, {
                 signal: controller.signal,
                 cache: 'no-store',
               })
                 .then(async (response) => {
                   if (!response.ok) throw new Error();
-                  return transformMateCatalogResultSchema.parse(
-                    await response.json(),
-                  );
+                  return apiResults.catalog(await response.json());
                 })
                 .then((enriched) => {
                   if (!controller.signal.aborted) {

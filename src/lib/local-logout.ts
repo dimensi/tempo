@@ -1,4 +1,5 @@
-import { notifyOfflineBlocked } from './offline-device';
+import { OfflineStorage } from './offline-device';
+import { resetSession } from './session-state';
 const logoutKey = 'tempo:logout-pending';
 export function hasPendingLogout() {
   try {
@@ -8,11 +9,10 @@ export function hasPendingLogout() {
   }
 }
 export function beginLocalLogout() {
-  // Durable intent precedes any asynchronous cleanup or server request.
   try {
     localStorage.setItem(logoutKey, 'true');
   } finally {
-    notifyOfflineBlocked();
+    resetSession();
   }
 }
 let flight: Promise<boolean> | undefined;
@@ -37,4 +37,54 @@ export function finishPendingLogout() {
   })().finally(() => {
     flight = undefined;
   }));
+}
+export async function clearClientData() {
+  resetSession();
+  localStorage.setItem('tempo:session-reset', crypto.randomUUID());
+  await new OfflineStorage().purge();
+}
+export async function endClientSession(deleteWrites: boolean) {
+  beginLocalLogout();
+  try {
+    await clearClientData();
+    if (deleteWrites) {
+      const { withWriteLock, deleteDeviceWrites } =
+        await import('./offline-write-client');
+      await withWriteLock(deleteDeviceWrites);
+    }
+  } finally {
+    await finishPendingLogout();
+  }
+}
+
+/** Coordinate the pending-write choice with both local saves and cross-tab sending. */
+export async function requestLocalLogout(
+  discard = false,
+): Promise<'pending' | 'done'> {
+  const {
+    withWriteLock,
+    hasPendingDeviceWrites,
+    deleteDeviceWrites,
+    cancelDeviceSync,
+  } = await import('./offline-write-client');
+  cancelDeviceSync();
+  const finish = () =>
+    withWriteLock(async () => {
+      if (!discard && (await hasPendingDeviceWrites()))
+        return 'pending' as const;
+      beginLocalLogout();
+      try {
+        await deleteDeviceWrites();
+      } finally {
+        await endClientSession(false);
+      }
+      return 'done' as const;
+    });
+  return navigator.locks
+    ? navigator.locks.request(
+        'yazio-offline-mutation',
+        { mode: 'exclusive' },
+        finish,
+      )
+    : finish();
 }

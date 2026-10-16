@@ -1,8 +1,9 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import {
   catalogResponse,
   muscleDictionary,
 } from '@/server/transformmate/catalog';
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   return catalogResponse(() =>
     muscleDictionary(
       request.headers,
@@ -10,3 +11,5 @@ export async function GET(request: Request) {
     ),
   );
 }
+
+export const GET = withApiErrors(GETHandler);

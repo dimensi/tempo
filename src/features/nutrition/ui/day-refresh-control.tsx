@@ -1,10 +1,12 @@
 'use client';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
 
-import { useReadOnline } from '@/lib/use-read-online';
 import { readWorkspaceMessages } from '@/config/read-workspace';
-import { useEffect, useRef, useState } from 'react';
+import { syncResultKind } from '@/contracts/nutrition-sync';
+import { useReadOnline } from '@/lib/use-read-online';
 import { Alert, Button, Group, Stack, Text } from '@mantine/core';
-import { syncResultKind, syncStatusSchema } from '@/contracts/nutrition-sync';
+import { useEffect, useRef, useState } from 'react';
 import { diaryMessages as m } from './messages';
 
 export function DayRefreshControl({
@@ -32,7 +34,7 @@ export function DayRefreshControl({
     setPending(true);
     setOutcome(null);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/nutrition/days/${encodeURIComponent(date)}/refresh`,
         {
           method: 'POST',
@@ -49,7 +51,7 @@ export function DayRefreshControl({
         return;
       }
       if (!response.ok) throw new Error('Day refresh failed');
-      const result = syncStatusSchema.parse(await response.json());
+      const result = apiResults.dayRefresh(await response.json());
       if (controller.signal.aborted || !selected()) return;
       setOutcome(syncResultKind(result));
       // Refresh only this still-selected route after its completed mutation.

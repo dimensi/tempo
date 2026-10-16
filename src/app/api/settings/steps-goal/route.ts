@@ -1,11 +1,12 @@
-import { ZodError } from 'zod';
+import { stepsGoalMessages as m } from '@/contracts/steps-goal';
+import { withApiErrors } from '@/server/auth/api-response';
 import { hasTrustedOrigin } from '@/server/auth/origin';
 import {
   getStepsGoal,
   saveStepsGoal,
   StepsGoalError,
 } from '@/server/settings/steps-goal';
-import { stepsGoalMessages as m } from '@/contracts/steps-goal';
+import { ZodError } from 'zod';
 
 const headers = { 'Cache-Control': 'private, no-store' };
 function failure(error: unknown) {
@@ -27,7 +28,7 @@ function failure(error: unknown) {
     { status, headers },
   );
 }
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   try {
     if (new URL(request.url).search) throw new StepsGoalError(400);
     return Response.json(await getStepsGoal(request.headers), { headers });
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
     return failure(error);
   }
 }
-export async function PUT(request: Request) {
+async function PUTHandler(request: Request) {
   try {
     if (!hasTrustedOrigin(request)) throw new StepsGoalError(403);
     if (new URL(request.url).search) throw new StepsGoalError(400);
@@ -49,3 +50,7 @@ export async function PUT(request: Request) {
     return failure(error);
   }
 }
+
+export const GET = withApiErrors(GETHandler);
+
+export const PUT = withApiErrors(PUTHandler);

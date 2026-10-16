@@ -1,9 +1,10 @@
-import { getAnamnesisAccess, anamnesisErrorResponse } from '@/server/anamnesis';
+import { anamnesisErrorResponse, getAnamnesisAccess } from '@/server/anamnesis';
+import { withApiErrors } from '@/server/auth/api-response';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   try {
     return Response.json(
       await getAnamnesisAccess(
@@ -15,3 +16,5 @@ export async function GET(request: Request) {
     return anamnesisErrorResponse(error);
   }
 }
+
+export const GET = withApiErrors(GETHandler);

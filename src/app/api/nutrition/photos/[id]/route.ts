@@ -1,7 +1,8 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import { readMealPhoto } from '@/server/nutrition';
+import { json, respond, sameOrigin } from '@/server/nutrition/http';
 import { deleteMealPhoto } from '@/server/nutrition/manual-photos';
-import { respond, json, sameOrigin } from '@/server/nutrition/http';
-export async function GET(
+async function GETHandler(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
@@ -23,7 +24,7 @@ export async function GET(
     });
   });
 }
-export async function DELETE(
+async function DELETEHandler(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
@@ -38,3 +39,7 @@ export async function DELETE(
     return json({ deleted: true });
   });
 }
+
+export const GET = withApiErrors(GETHandler);
+
+export const DELETE = withApiErrors(DELETEHandler);

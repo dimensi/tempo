@@ -1,9 +1,10 @@
-import { getAnamnesisMarker, anamnesisErrorResponse } from '@/server/anamnesis';
+import { anamnesisErrorResponse, getAnamnesisMarker } from '@/server/anamnesis';
+import { withApiErrors } from '@/server/auth/api-response';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 type Context = { params: Promise<{ markerId: string }> };
-export async function GET(request: Request, context: Context) {
+async function GETHandler(request: Request, context: Context) {
   try {
     return Response.json(
       await getAnamnesisMarker(
@@ -16,3 +17,5 @@ export async function GET(request: Request, context: Context) {
     return anamnesisErrorResponse(error);
   }
 }
+
+export const GET = withApiErrors(GETHandler);

@@ -6,6 +6,8 @@ Self-hosted личное пространство для питания, физ�
 
 Одно приложение Next.js App Router: страницы → серверные permissions → Drizzle/SQLite или серверный адаптер YAZIO. Общие нормализованные контракты отделяют UI от внешнего API. Feature-модули независимы.
 
+Принятая модель [клиентского кеша](docs/architecture/client-read-cache.md) сохраняет Next.js как единственный маршрутизатор, кеширует только загруженные данные и допускает старую копию тренера до обнаружения серверного отказа. Cold offline boot и отдельный shell больше не требуются. Runtime использует обычные страницы Next.js, общий read store и retirement worker для удаления прежнего shell. Решение и границы — [ADR 002](docs/decisions/002-resilient-client-reads.md).
+
 Next.js 16.4, React 19.3, Mantine 9.7.2, Recharts 3.10, Drizzle 0.45, Better Auth 1.7, Zod 4. Vitest 5, Playwright Test 1.64, TypeScript strict. Полные версии — `package.json` и `pnpm-lock.yaml`; причины выбора — [ADR](docs/decisions/001-foundation.md).
 
 ## Локальный запуск
@@ -118,6 +120,6 @@ Runtime работает от пользователя node, применяет 
 
 Читайте [AGENTS.md](AGENTS.md), [parallel development](docs/agents/parallel-development.md), [feature boundaries](docs/agents/feature-boundaries.md), [task template](docs/agents/task-template.md).
 
-[Architecture](docs/architecture/overview.md) · [Local-first UI](docs/architecture/local-first-ui.md) · [Data flow](docs/architecture/data-flow.md) · [Permissions](docs/architecture/permissions.md) · [Database/migrations](docs/architecture/database.md) · [YAZIO](docs/architecture/yazio.md) · [Decisions](docs/decisions/001-foundation.md).
+[Architecture](docs/architecture/overview.md) · [Client read cache](docs/architecture/client-read-cache.md) · [Data flow](docs/architecture/data-flow.md) · [Permissions](docs/architecture/permissions.md) · [Database/migrations](docs/architecture/database.md) · [YAZIO](docs/architecture/yazio.md) · [ADR 001](docs/decisions/001-foundation.md) · [ADR 002](docs/decisions/002-resilient-client-reads.md).
 
 Секреты, базы и фотографии не коммитить. Контракты согласовываются до зависимых реализаций. Shared/core меняются отдельным согласованным шагом. Никаких прямых зависимостей между features.

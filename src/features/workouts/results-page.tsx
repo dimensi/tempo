@@ -1,6 +1,18 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { writeMessages } from '@/config/offline-write-messages';
+import type {
+  PlannedWorkout,
+  WorkoutSession,
+  WorkoutSessionInput,
+} from '@/contracts/workouts';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
+import { subscribeSessionReset } from '@/lib/offline-device';
+import {
+  saveDeviceWrite,
+  synchronizeDeviceWrite,
+} from '@/lib/offline-write-client';
+import { workoutTitle } from '@/lib/workout-title';
 import {
   Alert,
   Button,
@@ -12,33 +24,22 @@ import {
   Title,
 } from '@mantine/core';
 import { IconArrowLeft } from '@tabler/icons-react';
-import type {
-  PlannedWorkout,
-  WorkoutSession,
-  WorkoutSessionInput,
-} from '@/contracts/workouts';
-import { workoutSessionSchema } from '@/contracts/workouts';
-import { subscribeOfflineBlocked } from '@/lib/offline-device';
-import { writeMessages } from '@/config/offline-write-messages';
-import {
-  saveDeviceWrite,
-  synchronizeDeviceWrite,
-} from '@/lib/offline-write-client';
-import { workoutTitle } from '@/lib/workout-title';
+import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
+import { WorkoutCreateChoice } from './create-choice';
 import {
   clearWorkoutDraft,
   clearWorkoutDrafts,
   readWorkoutDraft,
   storeWorkoutDraft,
 } from './draft-storage';
+import { workoutMessages as m } from './messages';
 import {
   emptyResultDraft,
   resultDraftSchema,
   type ResultDraft,
 } from './result-draft';
 import { ResultForm } from './result-form';
-import { WorkoutCreateChoice } from './create-choice';
-import { workoutMessages as m } from './messages';
 import classes from './workout-ui.module.css';
 
 export type ResultReturn =
@@ -108,7 +109,7 @@ export function WorkoutResultsPage({
     mounted.current = true;
     generation.current += 1;
     const controller = new AbortController();
-    void fetch(`/api/workouts?ownerId=${encodeURIComponent(ownerId)}`, {
+    void apiFetch(`/api/workouts?ownerId=${encodeURIComponent(ownerId)}`, {
       signal: controller.signal,
       cache: 'no-store',
     })
@@ -143,7 +144,7 @@ export function WorkoutResultsPage({
               : m.loadError,
           );
       });
-    const unsubscribe = subscribeOfflineBlocked(() => {
+    const unsubscribe = subscribeSessionReset(() => {
       clearWorkoutDrafts();
       setStored(false);
       persisted.current = false;
@@ -214,7 +215,7 @@ export function WorkoutResultsPage({
           );
         return;
       }
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/workouts/sessions${existing ? `/${existing.id}` : ''}?ownerId=${encodeURIComponent(ownerId)}`,
         {
           method: existing ? 'PUT' : 'POST',
@@ -244,7 +245,7 @@ export function WorkoutResultsPage({
       }
       if (!response.ok)
         throw new Error(response.status === 409 ? m.conflict : m.error);
-      const saved = workoutSessionSchema.parse((await response.json()).data);
+      const saved = apiResults.session((await response.json()).data);
       if (!mounted.current || current !== generation.current) return;
       clearWorkoutDraft(key);
       dirty.current = false;

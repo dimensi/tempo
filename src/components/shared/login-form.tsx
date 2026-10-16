@@ -1,14 +1,11 @@
 'use client';
-import { useState } from 'react';
-import { finishPendingLogout } from '@/lib/local-logout';
+import { ru } from '@/config/messages';
+import { authClient } from '@/lib/auth-client';
+import { clearClientData, finishPendingLogout } from '@/lib/local-logout';
+import { offlineDeviceMessages } from '@/lib/offline-device';
 import { Alert, Button, PasswordInput, Stack, TextInput } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { authClient } from '@/lib/auth-client';
-import { ru } from '@/config/messages';
-import {
-  withOfflineDevicePurge,
-  offlineDeviceMessages,
-} from '@/lib/offline-device';
+import { useState } from 'react';
 export function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -29,10 +26,8 @@ export function LoginForm() {
         setError(true);
         return;
       }
-      const result = await withOfflineDevicePurge(
-        () => authClient.signIn.email(values),
-        () => setCleanupError(true),
-      );
+      await clearClientData().catch(() => setCleanupError(true));
+      const result = await authClient.signIn.email(values);
       if (result.error) {
         setError(true);
         return;

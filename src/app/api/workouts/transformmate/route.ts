@@ -1,9 +1,10 @@
+import { transformMateNativeQuerySchema } from '@/contracts/transformmate-native';
+import { withApiErrors } from '@/server/auth/api-response';
+import { checkWorkoutOrigin, workoutResponse } from '@/server/workouts/http';
 import {
   listTransformMateSync,
   refreshTransformMateSync,
 } from '@/server/workouts/transformmate/service';
-import { checkWorkoutOrigin, workoutResponse } from '@/server/workouts/http';
-import { transformMateNativeQuerySchema } from '@/contracts/transformmate-native';
 
 function query(request: Request) {
   const values = new URL(request.url).searchParams;
@@ -15,7 +16,7 @@ function query(request: Request) {
   });
 }
 
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   return workoutResponse(() =>
     listTransformMateSync(
       request.headers,
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
   );
 }
 
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   return workoutResponse(async () => {
     checkWorkoutOrigin(request);
     return refreshTransformMateSync(
@@ -35,3 +36,7 @@ export async function POST(request: Request) {
     );
   });
 }
+
+export const GET = withApiErrors(GETHandler);
+
+export const POST = withApiErrors(POSTHandler);

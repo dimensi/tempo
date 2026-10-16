@@ -1,12 +1,10 @@
 'use client';
-import { useReadResource } from '@/lib/use-read-resource';
-import { anamnesisMarkerSummarySchema } from '@/contracts/anamnesis';
-import { z } from 'zod';
+import { readResources } from '@/lib/read-descriptors';
 import { useReadRefresh } from '@/lib/use-read-refresh';
+import { useReadResource } from '@/lib/use-read-resource';
 
-import { useAnamnesisRevision } from './refresh';
-import { useEffect, useMemo, useState } from 'react';
-import { ReadLink as Link } from '@/components/shared/read-link';
+import { anamnesisMessages as m } from '@/config/anamnesis-messages';
+import type { AnamnesisMarkerSummary } from '@/contracts/anamnesis';
 import {
   Alert,
   Badge,
@@ -18,9 +16,10 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import type { AnamnesisMarkerSummary } from '@/contracts/anamnesis';
-import { anamnesisMessages as m } from '@/config/anamnesis-messages';
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
+import { useAnamnesisRevision } from './refresh';
 
 export function MarkerTable({ ownerId }: { ownerId: string }) {
   const readRefresh = useReadRefresh();
@@ -31,10 +30,7 @@ export function MarkerTable({ ownerId }: { ownerId: string }) {
   const [denied, setDenied] = useState(false);
   const [search, setSearch] = useState('');
   const url = `/api/anamnesis/markers?${ownerIdQuery(ownerId)}`;
-  const readResource1 = useReadResource({
-    href: url,
-    parse: (value) => z.array(anamnesisMarkerSummarySchema).parse(value),
-  });
+  const readResource1 = useReadResource(readResources.markers(url));
   const [acceptedreadResource1, setAcceptedreadResource1] =
     useState<typeof readResource1.data>();
   if (

@@ -1,13 +1,14 @@
 import {
-  reprocessAnamnesisDocument,
-  checkAnamnesisOrigin,
   anamnesisErrorResponse,
+  checkAnamnesisOrigin,
+  reprocessAnamnesisDocument,
 } from '@/server/anamnesis';
+import { withApiErrors } from '@/server/auth/api-response';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 type Context = { params: Promise<{ id: string }> };
-export async function POST(request: Request, context: Context) {
+async function POSTHandler(request: Request, context: Context) {
   try {
     checkAnamnesisOrigin(request);
     return Response.json(
@@ -22,3 +23,5 @@ export async function POST(request: Request, context: Context) {
     return anamnesisErrorResponse(error);
   }
 }
+
+export const POST = withApiErrors(POSTHandler);

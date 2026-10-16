@@ -1,11 +1,12 @@
+import { jsonBody, respond } from '@/server/access/http';
+import { withApiErrors } from '@/server/auth/api-response';
 import { changeComment } from '@/server/comments/service';
-import { respond, jsonBody } from '@/server/access/http';
 import {
   configureCommentTargets,
   resolveCommentTarget,
 } from '@/server/comments/targets';
 type Context = { params: Promise<{ id: string }> };
-export async function PATCH(request: Request, context: Context) {
+async function PATCHHandler(request: Request, context: Context) {
   configureCommentTargets(resolveCommentTarget);
   return respond(async () =>
     changeComment(
@@ -16,7 +17,7 @@ export async function PATCH(request: Request, context: Context) {
     ),
   );
 }
-export async function DELETE(request: Request, context: Context) {
+async function DELETEHandler(request: Request, context: Context) {
   configureCommentTargets(resolveCommentTarget);
   return respond(async () =>
     changeComment(
@@ -27,3 +28,7 @@ export async function DELETE(request: Request, context: Context) {
     ),
   );
 }
+
+export const PATCH = withApiErrors(PATCHHandler);
+
+export const DELETE = withApiErrors(DELETEHandler);

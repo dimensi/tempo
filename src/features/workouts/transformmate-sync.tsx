@@ -1,23 +1,20 @@
 'use client';
-import { useReadResource } from '@/lib/use-read-resource';
-import { useReadOnline } from '@/lib/use-read-online';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Badge, Button, Group, Stack, Text } from '@mantine/core';
-import { z } from 'zod';
+import { type TransformMateSyncItem } from '@/contracts/transformmate';
 import {
-  transformMateSyncItemSchema,
-  type TransformMateSyncItem,
-} from '@/contracts/transformmate';
-import {
-  transformMateNativePageSchema,
-  transformMateNativeRefreshSchema,
   type TransformMateNativePage,
   type TransformMateNativeRefresh,
 } from '@/contracts/transformmate-native';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadOnline } from '@/lib/use-read-online';
+import { useReadResource } from '@/lib/use-read-resource';
+import { Alert, Badge, Button, Group, Stack, Text } from '@mantine/core';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   workoutMessages as m,
-  transformMateStatuses as statuses,
   transformMateReasons as reasons,
+  transformMateStatuses as statuses,
 } from './messages';
 export function useTransformMateSync(
   ownerId: string,
@@ -42,20 +39,11 @@ export function useTransformMateSync(
   const [busy, setBusy] = useState(false);
   const inflight = useRef<AbortController | null>(null);
   const generation = useRef(0);
-  const resource = useReadResource({
-    href: `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20' })}`,
-    parse: (value) =>
-      z
-        .object({
-          data: z.object({
-            configured: z.boolean(),
-            items: z.array(transformMateSyncItemSchema),
-            nativePage: transformMateNativePageSchema,
-            nativeRefresh: transformMateNativeRefreshSchema,
-          }),
-        })
-        .parse(value).data,
-  });
+  const resource = useReadResource(
+    readResources.transformMate(
+      `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20' })}`,
+    ),
+  );
   const [acceptedRead, setAcceptedRead] = useState<typeof resource.data>();
   if (resource.data && resource.data !== acceptedRead) {
     setAcceptedRead(resource.data);
@@ -79,7 +67,7 @@ export function useTransformMateSync(
       const current = generation.current;
       setBusy(true);
       try {
-        const response = await fetch(
+        const response = await apiFetch(
           `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20', ...(cursor ? { cursor } : {}) })}`,
           { method, cache: 'no-store', signal: controller.signal },
         );
@@ -97,14 +85,7 @@ export function useTransformMateSync(
           throw new Error();
         }
         const result = await response.json();
-        const parsed = z
-          .object({
-            configured: z.boolean(),
-            items: z.array(transformMateSyncItemSchema),
-            nativePage: transformMateNativePageSchema,
-            nativeRefresh: transformMateNativeRefreshSchema,
-          })
-          .parse(result.data);
+        const parsed = apiResults.transformMate(result.data);
         if (!controller.signal.aborted && current === generation.current) {
           setItems(parsed.items);
           setNativePage((previous) =>

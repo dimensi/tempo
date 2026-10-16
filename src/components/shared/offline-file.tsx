@@ -1,8 +1,8 @@
 'use client';
-import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Alert, Button, Group, Stack, Text } from '@mantine/core';
-import { getOfflineController } from '@/lib/offline-controller';
 import { offlineFileMessages as m } from '@/config/offline-files';
+import { savedFiles } from '@/lib/saved-files';
+import { Alert, Button, Group, Stack, Text } from '@mantine/core';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 export function OfflineFile({
   id,
   label,
@@ -18,12 +18,15 @@ export function OfflineFile({
   size?: number;
   offline?: boolean;
 }) {
-  const controller = getOfflineController();
+  const controller = savedFiles;
   const state = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
     controller.getServerSnapshot,
   );
+  useEffect(() => {
+    void controller.load().catch(() => {});
+  }, [controller]);
   const file = state.files.find((file) => file.id === id);
   const [resource, setResource] = useState<{ bytes: Blob; url: string } | null>(
     null,
@@ -116,7 +119,7 @@ export function OfflineFile({
           <Button
             mih={44}
             loading={busy}
-            disabled={offline || !href || !state.bundle}
+            disabled={offline || !href || !state.ready}
             onClick={() => void change(false)}
           >
             {size === undefined && !prepared ? m.size : m.save}

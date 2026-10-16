@@ -1,14 +1,13 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { Alert, Badge, Group, Skeleton, Stack, Text } from '@mantine/core';
-import {
-  transformMateExerciseInfoSchema,
-  type TransformMateExerciseInfo,
-} from '@/contracts/transformmate';
 import { OfflineFile } from '@/components/shared/offline-file';
-import { TeachingVideo } from './teaching-video';
+import { type TransformMateExerciseInfo } from '@/contracts/transformmate';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
+import { Alert, Badge, Group, Skeleton, Stack, Text } from '@mantine/core';
+import { useEffect, useState } from 'react';
 import { useExercisePreview } from './exercise-preview';
 import { workoutMessages as m } from './messages';
+import { TeachingVideo } from './teaching-video';
 
 function LoadedExerciseDetails({
   ownerId,
@@ -23,14 +22,14 @@ function LoadedExerciseDetails({
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    void fetch(
+    void apiFetch(
       `/api/workouts/transformmate/exercises/${exerciseId}?ownerId=${encodeURIComponent(ownerId)}`,
       { signal: controller.signal, cache: 'no-store' },
     )
       .then(async (response) => {
         if (!response.ok) throw new Error();
         const result = await response.json();
-        const detail = transformMateExerciseInfoSchema.parse(result.data);
+        const detail = apiResults.exercise(result.data);
         if (detail.id !== exerciseId) throw new Error();
         if (!controller.signal.aborted) setInfo(detail);
       })

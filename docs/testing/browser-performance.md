@@ -1,5 +1,7 @@
 # Local browser performance
 
+Historical measurements below describe the suites/code of their recorded revisions, not current product acceptance requirements. The family name Offline does not require cold boot, a shell or synchronous conceal. New client-read behavior follows [ADR 002](../decisions/002-resilient-client-reads.md); adapting runtime tests is still pending. Retain genuine server authorization, write integrity and runner-isolation checks.
+
 Owned scope: browser orchestration, disposable test fixtures, process cleanup,
 profiling and four scenario login helpers. No production modules, contracts,
 database schema, dependencies, workflows or deployment policies change.

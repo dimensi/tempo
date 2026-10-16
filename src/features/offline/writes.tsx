@@ -1,5 +1,20 @@
 'use client';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { writeMessages as m } from '@/config/offline-write-messages';
+import {
+  measurementInputSchema,
+  measurementMetrics,
+} from '@/contracts/measurements';
+import type { WritePayload } from '@/contracts/offline-write';
+import { workoutSessionInputSchema } from '@/contracts/workouts';
+import { subscribeSessionReset } from '@/lib/offline-device';
+import {
+  readDeviceWrites,
+  resolveDeviceWrite,
+  saveDeviceWrite,
+  syncDeviceWrites,
+} from '@/lib/offline-write-client';
+import { emptyWriteState, type WriteState } from '@/lib/offline-write-queue';
+import { useViewState } from '@/lib/use-view-state';
 import {
   Alert,
   Button,
@@ -11,22 +26,7 @@ import {
   Textarea,
   Title,
 } from '@mantine/core';
-import {
-  measurementMetrics,
-  measurementInputSchema,
-} from '@/contracts/measurements';
-import { workoutSessionInputSchema } from '@/contracts/workouts';
-import type { WritePayload } from '@/contracts/offline-write';
-import {
-  readDeviceWrites,
-  revealDeviceWrites,
-  saveDeviceWrite,
-  syncDeviceWrites,
-  resolveDeviceWrite,
-} from '@/lib/offline-write-client';
-import { subscribeOfflineBlocked } from '@/lib/offline-device';
-import { emptyWriteState, type WriteState } from '@/lib/offline-write-queue';
-import { writeMessages as m } from '@/config/offline-write-messages';
+import { useEffect, useState } from 'react';
 const exercise = () => ({
   id: crypto.randomUUID(),
   name: '',
@@ -38,11 +38,17 @@ export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
   const [editing, setEditing] = useState<{ id?: string; base?: string } | null>(
     null,
   );
-  const [date, setDate] = useState('');
-  const [title, setTitle] = useState('');
-  const [note, setNote] = useState('');
-  const [exercises, setExercises] = useState<ReturnType<typeof exercise>[]>([]);
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [date, setDate] = useViewState(`queue:${kind}:date`, '');
+  const [title, setTitle] = useViewState(`queue:${kind}:title`, '');
+  const [note, setNote] = useViewState(`queue:${kind}:note`, '');
+  const [exercises, setExercises] = useViewState<ReturnType<typeof exercise>[]>(
+    `queue:${kind}:exercises`,
+    [],
+  );
+  const [values, setValues] = useViewState<Record<string, string>>(
+    `queue:${kind}:values`,
+    {},
+  );
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -56,7 +62,7 @@ export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
           if (active) setState(emptyWriteState());
         });
     };
-    const blocked = subscribeOfflineBlocked(() => {
+    const blocked = subscribeSessionReset(() => {
       setState(emptyWriteState());
       setEditing(null);
       setExercises([]);
@@ -79,11 +85,7 @@ export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
       clearInterval(timer);
       window.removeEventListener('offline-writes-changed', refresh);
     };
-  }, []);
-  useLayoutEffect(() => {
-    if (state.partition)
-      void revealDeviceWrites(state.partition).catch(() => {});
-  }, [state]);
+  }, [setExercises, setNote, setTitle, setValues]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (editing) event.preventDefault();
@@ -196,7 +198,7 @@ export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
   )
     return null;
   return (
-    <Paper data-offline-write-private hidden withBorder p="md">
+    <Paper withBorder p="md">
       <Stack>
         <Title order={2} size="h3">
           {m.title}

@@ -1,11 +1,12 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import {
-  saveMeasurement,
+  checkMeasurementOrigin,
   deleteMeasurement,
   measurementErrorResponse,
-  checkMeasurementOrigin,
+  saveMeasurement,
 } from '@/server/measurements';
 type Context = { params: Promise<{ id: string }> };
-export async function PUT(request: Request, context: Context) {
+async function PUTHandler(request: Request, context: Context) {
   try {
     checkMeasurementOrigin(request);
     return Response.json(
@@ -20,7 +21,7 @@ export async function PUT(request: Request, context: Context) {
     return measurementErrorResponse(error);
   }
 }
-export async function DELETE(request: Request, context: Context) {
+async function DELETEHandler(request: Request, context: Context) {
   try {
     checkMeasurementOrigin(request);
     await deleteMeasurement(
@@ -33,3 +34,7 @@ export async function DELETE(request: Request, context: Context) {
     return measurementErrorResponse(error);
   }
 }
+
+export const PUT = withApiErrors(PUTHandler);
+
+export const DELETE = withApiErrors(DELETEHandler);

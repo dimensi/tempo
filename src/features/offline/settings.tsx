@@ -1,33 +1,30 @@
 'use client';
-import { useSyncExternalStore } from 'react';
-import { Button, Alert, Stack, Text, Title } from '@mantine/core';
-import { getOfflineController } from '@/lib/offline-controller';
 import { offlineMessages as m } from '@/config/offline';
+import { clearReadStorage } from '@/lib/browser-storage';
+import { clientReads } from '@/lib/client-read';
+import { Button, Stack, Text, Title } from '@mantine/core';
+import { useState } from 'react';
 export function OfflineSettings() {
-  const controller = getOfflineController();
-  const state = useSyncExternalStore(
-    controller.subscribe,
-    controller.getSnapshot,
-    controller.getServerSnapshot,
-  );
+  const [failed, setFailed] = useState(false);
   return (
     <section id="offline" tabIndex={-1} aria-label={m.title}>
       <Stack>
         <Title order={2}>{m.title}</Title>
         <Text>{m.description}</Text>
-        <Text>{m.background}</Text>
-        <Text>{m.disclosure}</Text>
         <Button
           variant="subtle"
-          mih={44}
-          onClick={() => void controller.disable()}
+          onClick={() => {
+            void clearReadStorage()
+              .then(() => {
+                clientReads.clear();
+                setFailed(false);
+              })
+              .catch(() => setFailed(true));
+          }}
         >
           {m.disable}
         </Button>
-        {state.error && <Alert role="alert">{m[state.error]}</Alert>}
-        {state.bundle?.missingPhotos.length ? (
-          <Text>{m.partialPhotos}</Text>
-        ) : null}
+        {failed && <Text role="alert">{m.unavailable}</Text>}
       </Stack>
     </section>
   );

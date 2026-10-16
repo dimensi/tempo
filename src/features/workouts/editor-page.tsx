@@ -1,23 +1,21 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { type WorkoutPlan, type WorkoutPlanInput } from '@/contracts/workouts';
+import { apiFetch } from '@/lib/api-client';
+import { apiResults } from '@/lib/api-results';
+import { subscribeSessionReset } from '@/lib/offline-device';
 import { Alert, Button, Group, Modal, Stack, Text, Title } from '@mantine/core';
+import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
-import { subscribeOfflineBlocked } from '@/lib/offline-device';
-import {
-  type WorkoutPlan,
-  type WorkoutPlanInput,
-  workoutPlanSchema,
-} from '@/contracts/workouts';
-import { PlanForm, emptyPlan } from './forms';
+import { copyPlanToDate } from './copy-plan';
+import { WorkoutCreateChoice } from './create-choice';
 import {
   clearWorkoutDraft,
   clearWorkoutDrafts,
   readWorkoutDraft,
   storeWorkoutDraft,
 } from './draft-storage';
-import { WorkoutCreateChoice } from './create-choice';
-import { copyPlanToDate } from './copy-plan';
+import { PlanForm, emptyPlan } from './forms';
 import { workoutMessages as m } from './messages';
 import classes from './workout-ui.module.css';
 
@@ -131,7 +129,7 @@ export function WorkoutEditorPage({
     mounted.current = true;
     generation.current += 1;
     let alive = true;
-    void fetch(`/api/workouts?ownerId=${encodeURIComponent(ownerId)}`, {
+    void apiFetch(`/api/workouts?ownerId=${encodeURIComponent(ownerId)}`, {
       cache: 'no-store',
     })
       .then((response) => {
@@ -165,7 +163,7 @@ export function WorkoutEditorPage({
             : m.loadError,
         );
       });
-    const unsubscribe = subscribeOfflineBlocked(() => {
+    const unsubscribe = subscribeSessionReset(() => {
       clearWorkoutDrafts();
       setStored(false);
       persisted.current = false;
@@ -211,7 +209,7 @@ export function WorkoutEditorPage({
     setError(null);
     try {
       const editing = plan && !copying;
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/workouts/plans${editing ? `/${plan.id}` : ''}?ownerId=${encodeURIComponent(ownerId)}`,
         {
           method: editing ? 'PUT' : 'POST',
@@ -243,7 +241,7 @@ export function WorkoutEditorPage({
         );
       }
       const result = await response.json();
-      const saved = workoutPlanSchema.parse(result.data);
+      const saved = apiResults.plan(result.data);
       const savedWorkout =
         saved.workouts.find((item) => item.id === workoutId) ??
         saved.workouts[0]!;

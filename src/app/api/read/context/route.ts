@@ -1,11 +1,15 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import { readContext } from '@/server/read-context';
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   try {
     const context = await readContext(request.headers);
-    return Response.json(context ?? { error: 'Access denied' }, {
-      status: context ? 200 : 403,
-      headers: { 'Cache-Control': 'private, no-store' },
-    });
+    return Response.json(
+      context?.ownerId ? context : { error: 'Access denied' },
+      {
+        status: !context ? 401 : context.ownerId ? 200 : 403,
+        headers: { 'Cache-Control': 'private, no-store' },
+      },
+    );
   } catch (error) {
     const status =
       error && typeof error === 'object' && 'status' in error
@@ -17,3 +21,5 @@ export async function GET(request: Request) {
     );
   }
 }
+
+export const GET = withApiErrors(GETHandler);

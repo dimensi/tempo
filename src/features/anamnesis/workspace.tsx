@@ -1,17 +1,17 @@
 'use client';
-import { useReadResource } from '@/lib/use-read-resource';
-import { anamnesisOverviewSchema } from '@/contracts/anamnesis';
-import { useReadRefresh } from '@/lib/use-read-refresh';
-import { useEffect, useState } from 'react';
-import { Alert, Group, Stack, Text, Title } from '@mantine/core';
 import { SectionNavigation } from '@/components/shared/section-navigation';
-import type { AnamnesisOverview } from '@/contracts/anamnesis';
-import { MarkerTable } from './marker-table';
-import { DocumentsPanel } from './documents-panel';
-import { ReportsPanel } from './reports-panel';
 import { anamnesisMessages as m } from '@/config/anamnesis-messages';
+import type { AnamnesisOverview } from '@/contracts/anamnesis';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadRefresh } from '@/lib/use-read-refresh';
+import { useReadResource } from '@/lib/use-read-resource';
+import { Alert, Group, Stack, Text, Title } from '@mantine/core';
+import { useEffect, useState } from 'react';
 import { fetchAnamnesis, ownerIdQuery } from './api';
+import { DocumentsPanel } from './documents-panel';
+import { MarkerTable } from './marker-table';
 import { useAnamnesisRevision } from './refresh';
+import { ReportsPanel } from './reports-panel';
 const sections = [
   { id: 'markers', label: m.workspace.markers },
   { id: 'documents', label: m.workspace.documents },
@@ -30,10 +30,9 @@ export function AnamnesisWorkspace({
   const [error, setError] = useState(false);
   const readRefresh = useReadRefresh();
   const revision = useAnamnesisRevision();
-  const readResource1 = useReadResource({
-    href: `/api/anamnesis/overview?${ownerIdQuery(ownerId)}`,
-    parse: (value) => anamnesisOverviewSchema.parse(value),
-  });
+  const readResource1 = useReadResource(
+    readResources.anamnesis(`/api/anamnesis/overview?${ownerIdQuery(ownerId)}`),
+  );
   const [acceptedreadResource1, setAcceptedreadResource1] =
     useState<typeof readResource1.data>();
   if (

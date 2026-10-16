@@ -1,16 +1,16 @@
-import { afterEach, expect, it, vi } from 'vitest';
-const conceal = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/offline-device', () => ({ notifyOfflineBlocked: conceal }));
 import {
   beginLocalLogout,
-  hasPendingLogout,
   finishPendingLogout,
+  hasPendingLogout,
 } from '@/lib/local-logout';
+import { afterEach, expect, it, vi } from 'vitest';
+const reset = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/session-state', () => ({ resetSession: reset }));
 afterEach(() => {
   vi.unstubAllGlobals();
-  conceal.mockClear();
+  reset.mockClear();
 });
-it('conceals synchronously and keeps durable intent while server logout cannot complete', async () => {
+it('keeps durable logout intent until server sign-out succeeds', async () => {
   const rows = new Map<string, string>();
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => rows.get(key),
@@ -20,8 +20,7 @@ it('conceals synchronously and keeps durable intent while server logout cannot c
   vi.stubGlobal('navigator', { onLine: false });
   vi.stubGlobal('fetch', vi.fn());
   beginLocalLogout();
-  expect(conceal).toHaveBeenCalledOnce();
-  expect(hasPendingLogout()).toBe(true);
+  expect(reset).toHaveBeenCalledOnce();
   expect(await finishPendingLogout()).toBe(false);
   expect(fetch).not.toHaveBeenCalled();
   expect(hasPendingLogout()).toBe(true);
@@ -33,12 +32,12 @@ it('conceals synchronously and keeps durable intent while server logout cannot c
   expect(await finishPendingLogout()).toBe(true);
   expect(hasPendingLogout()).toBe(false);
 });
-it('still conceals if durable storage fails', () => {
+it('resets the in-memory session even when durable storage refuses a marker', () => {
   vi.stubGlobal('localStorage', {
     setItem: () => {
       throw Error('closed');
     },
   });
   expect(() => beginLocalLogout()).toThrow();
-  expect(conceal).toHaveBeenCalledOnce();
+  expect(reset).toHaveBeenCalledOnce();
 });

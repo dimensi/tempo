@@ -1,4 +1,5 @@
+import { DiaryPage } from '../read-pages';
 export const metadata = { title: 'Дневник питания' };
 export default function Page() {
-  return null;
+  return <DiaryPage />;
 }

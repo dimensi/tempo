@@ -1,5 +1,26 @@
-import { readSettingsSchema } from './read-settings';
+import { z } from 'zod';
+import {
+  anamnesisMarkerSummarySchema,
+  anamnesisOverviewSchema,
+  medicalDocumentSchema,
+  medicalMarkerSchema,
+  medicalObservationSchema,
+  medicalObservationSourceSchema,
+  medicalReportExportSchema,
+} from './anamnesis';
+import { stepsSummarySchema, weightHistorySchema } from './health';
+import { measurementSchema } from './measurements';
+import {
+  nutritionDaySchema,
+  nutritionTotalsSchema,
+  safeMealPhotoViewSchema,
+} from './nutrition';
+import type { OverviewData } from './overview';
 import { analyticsDataSchema } from './read-analytics';
+import { readContextSchema } from './read-context';
+import { readSettingsSchema } from './read-settings';
+import { workoutDetailSchema } from './read-workout';
+import { stepsGoalSchema } from './steps-goal';
 import {
   transformMateCatalogResultSchema,
   transformMateSyncItemSchema,
@@ -8,36 +29,13 @@ import {
   transformMateNativePageSchema,
   transformMateNativeRefreshSchema,
 } from './transformmate-native';
-import { readContextSchema } from './read-context';
-import { workoutDetailSchema } from './read-workout';
-import { offlineLocalWindow } from './offline-retention';
-import { offlineAnamnesisSchema } from './offline-anamnesis';
-import { z } from 'zod';
-import type { OverviewData } from './overview';
-import {
-  nutritionDaySchema,
-  nutritionTotalsSchema,
-  safeMealPhotoViewSchema,
-} from './nutrition';
-import { measurementSchema } from './measurements';
-import { weightHistorySchema, stepsSummarySchema } from './health';
-import { stepsGoalSchema } from './steps-goal';
 import { workoutPlanSchema, workoutSessionSchema } from './workouts';
-import {
-  anamnesisOverviewSchema,
-  anamnesisMarkerSummarySchema,
-  medicalMarkerSchema,
-  medicalDocumentSchema,
-  medicalObservationSchema,
-  medicalObservationSourceSchema,
-  medicalReportExportSchema,
-} from './anamnesis';
 const weightPoint = z.object({
   date: z.string(),
   value: z.string().nullable(),
 });
 const workout = z.object({ title: z.string(), date: z.string() }).nullable();
-const workouts = z.object({
+export const workoutsReadSchema = z.object({
   data: z.object({
     plans: z.array(workoutPlanSchema),
     sessions: z.array(workoutSessionSchema),
@@ -66,38 +64,37 @@ export const overviewReadSchema: z.ZodType<OverviewData> = z.object({
     })
     .optional(),
 });
+export const transformMateReadSchema = z.object({
+  data: z.object({
+    configured: z.boolean(),
+    items: z.array(transformMateSyncItemSchema),
+    nativePage: transformMateNativePageSchema,
+    nativeRefresh: transformMateNativeRefreshSchema,
+  }),
+});
+export const commentsReadSchema = z.array(
+  z.object({
+    id: z.string(),
+    authorId: z.string().nullable(),
+    authorName: z.string(),
+    body: z.string().max(4000),
+    parentId: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    canEdit: z.boolean(),
+  }),
+);
 /** Only these explicit view contracts may reach disk. Never settings credentials, jobs or upstream payloads. */
 export function readResponseSchema(path: string): z.ZodType | undefined {
   if (path === '/api/read/settings') return readSettingsSchema;
   if (path === '/api/read/analytics') return analyticsDataSchema;
   if (path === '/api/workouts/transformmate/exercises')
     return transformMateCatalogResultSchema;
-  if (path === '/api/workouts/transformmate')
-    return z.object({
-      data: z.object({
-        configured: z.boolean(),
-        items: z.array(transformMateSyncItemSchema),
-        nativePage: transformMateNativePageSchema,
-        nativeRefresh: transformMateNativeRefreshSchema,
-      }),
-    });
+  if (path === '/api/workouts/transformmate') return transformMateReadSchema;
   if (path === '/api/read/context') return readContextSchema;
   if (path === '/api/read/workout') return workoutDetailSchema;
   if (path === '/api/nutrition/photos') return z.array(safeMealPhotoViewSchema);
-  if (path === '/api/offline/anamnesis-local') return offlineAnamnesisSchema;
-  if (path === '/api/comments')
-    return z.array(
-      z.object({
-        id: z.string(),
-        authorId: z.string().nullable(),
-        authorName: z.string(),
-        body: z.string().max(4000),
-        parentId: z.string().nullable(),
-        createdAt: z.string(),
-        updatedAt: z.string(),
-        canEdit: z.boolean(),
-      }),
-    );
+  if (path === '/api/comments') return commentsReadSchema;
   if (path === '/api/overview') return overviewReadSchema;
   if (path === '/api/measurements') return z.array(measurementSchema);
   if (path === '/api/health/weight') return weightHistorySchema;
@@ -106,7 +103,7 @@ export function readResponseSchema(path: string): z.ZodType | undefined {
   if (path === '/api/nutrition/days') return z.array(nutritionDaySchema);
   if (/^\/api\/nutrition\/days\/\d{4}-\d{2}-\d{2}$/.test(path))
     return nutritionDaySchema;
-  if (path === '/api/workouts') return workouts;
+  if (path === '/api/workouts') return workoutsReadSchema;
   if (path === '/api/anamnesis/overview') return anamnesisOverviewSchema;
   if (path === '/api/anamnesis/markers')
     return z.array(anamnesisMarkerSummarySchema);
@@ -170,76 +167,12 @@ export function pruneReadRecords(records: ReadRecord[], now: number) {
   });
 }
 
-/** Detailed ordinary records obey their calendar window, medical history its separate visit policy. */
-export function offlineReadBody(
-  key: string,
-  body: string,
-  now = Date.now(),
-  timezone = Intl.DateTimeFormat().resolvedOptions().timeZone,
-): string | undefined {
-  const path = new URL(key, 'https://tempo.local').pathname;
-  const { from, to } = offlineLocalWindow(now, timezone);
-  const inside = (date: string) => date >= from && date <= to;
-  const value: unknown = JSON.parse(body);
-  if (path === '/api/read/settings') {
-    const settings = readSettingsSchema.parse(value);
-    if (settings.yazio.account) settings.yazio.account.avatar = null;
-    return JSON.stringify(settings);
-  }
-  if (path === '/api/read/workout') {
-    const detail = workoutDetailSchema.parse(value);
-    const date =
-      detail.kind === 'plan'
-        ? detail.workout.date
-        : detail.kind === 'session'
-          ? detail.session.date
-          : detail.kind === 'native'
-            ? detail.item.date
-            : (detail.item.actual?.date ??
-              detail.item.planSnapshot.workout.date);
-    return inside(date) ? body : undefined;
-  }
-  if (path === '/api/nutrition/photos')
-    return JSON.stringify(
-      z
-        .array(safeMealPhotoViewSchema)
-        .parse(value)
-        .filter((row) => inside(row.date)),
-    );
-  if (path === '/api/workouts/transformmate') {
-    const url = new URL(key, 'https://tempo.local');
-    if (
-      !inside(url.searchParams.get('from') ?? '') ||
-      !inside(url.searchParams.get('to') ?? '')
-    )
-      return undefined;
-  }
-  if (path === '/api/nutrition/days')
-    return JSON.stringify(
-      z
-        .array(nutritionDaySchema)
-        .parse(value)
-        .filter((row) => inside(row.date)),
-    );
-  if (/^\/api\/nutrition\/days\/\d{4}-\d{2}-\d{2}$/.test(path))
-    return inside(path.slice(-10)) ? body : undefined;
-  if (path === '/api/measurements')
-    return JSON.stringify(
-      z
-        .array(measurementSchema)
-        .parse(value)
-        .filter((row) => inside(row.measuredAt)),
-    );
-  if (path === '/api/workouts') {
-    const result = workouts.parse(value);
-    result.data.sessions = result.data.sessions.filter((row) =>
-      inside(row.date),
-    );
-    result.data.plans = result.data.plans.flatMap((plan) => {
-      const selected = plan.workouts.filter((workout) => inside(workout.date));
-      return selected.length ? [{ ...plan, workouts: selected }] : [];
-    });
-    return JSON.stringify(result);
+/** Redact safe settings projection; cache only the resource actually returned. */
+export function offlineReadBody(key: string, body: string): string | undefined {
+  if (new URL(key, 'https://tempo.local').pathname === '/api/read/settings') {
+    const data = readSettingsSchema.parse(JSON.parse(body));
+    if (data.yazio.account) data.yazio.account.avatar = null;
+    return JSON.stringify(data);
   }
   return body;
 }
@@ -253,7 +186,10 @@ export function isCacheableReadUrl(url: URL) {
     'timezone',
     'type',
     'targetId',
-    'path',
+    'kind',
+    'id',
+    'planId',
+    'workoutId',
     'date',
     'limit',
     'offset',

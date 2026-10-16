@@ -1,6 +1,7 @@
+import { withApiErrors } from '@/server/auth/api-response';
 import { createWorkoutSession } from '@/server/workouts';
 import { checkWorkoutOrigin, workoutResponse } from '@/server/workouts/http';
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   return workoutResponse(async () => {
     checkWorkoutOrigin(request);
     return createWorkoutSession(
@@ -10,3 +11,5 @@ export async function POST(request: Request) {
     );
   });
 }
+
+export const POST = withApiErrors(POSTHandler);
