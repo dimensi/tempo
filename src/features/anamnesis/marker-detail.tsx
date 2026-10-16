@@ -61,20 +61,33 @@ export function MarkerDetail({
   const [date, setDate] = useState('');
   const [unit, setUnit] = useState('');
   const [busy, setBusy] = useState(false);
-  useReadResource(
-    `/api/anamnesis/markers/${markerId}?${ownerIdQuery(ownerId)}`,
-    (value) => medicalMarkerSchema.parse(value),
-    setMarker,
-  );
-  useReadResource(
-    `/api/anamnesis/markers/${markerId}/observations?${ownerIdQuery(ownerId)}`,
-    (value) => z.array(medicalObservationSchema).parse(value),
-    (value) => {
-      setItems(value);
-      setLoading(false);
-    },
-  );
-
+  const readResource1 = useReadResource({
+    href: `/api/anamnesis/markers/${markerId}?${ownerIdQuery(ownerId)}`,
+    parse: (value) => medicalMarkerSchema.parse(value),
+  });
+  const [acceptedreadResource1, setAcceptedreadResource1] =
+    useState<typeof readResource1.data>();
+  if (
+    readResource1.data !== undefined &&
+    acceptedreadResource1 !== readResource1.data
+  ) {
+    setAcceptedreadResource1(readResource1.data);
+    setMarker(readResource1.data);
+  }
+  const readResource2 = useReadResource({
+    href: `/api/anamnesis/markers/${markerId}/observations?${ownerIdQuery(ownerId)}`,
+    parse: (value) => z.array(medicalObservationSchema).parse(value),
+  });
+  const [acceptedreadResource2, setAcceptedreadResource2] =
+    useState<typeof readResource2.data>();
+  if (
+    readResource2.data !== undefined &&
+    acceptedreadResource2 !== readResource2.data
+  ) {
+    setAcceptedreadResource2(readResource2.data);
+    setItems(readResource2.data);
+    setLoading(false);
+  }
   useEffect(() => {
     let active = true;
     void (async () => {

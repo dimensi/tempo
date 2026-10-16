@@ -66,7 +66,11 @@ test('closed browser restarts from its persisted shell while navigation and iden
     await page.evaluate('window.offlineTest.prepareShell()');
     await context.close();
     await request.post('/__offline-test/control', {
-      data: { stalledNavigation: true, stalledIdentity: true },
+      data: {
+        stalledNavigation: true,
+        stalledIdentity: true,
+        stalledApi: true,
+      },
     });
     context = await playwright[browserName].launchPersistentContext(
       profile,
@@ -170,9 +174,7 @@ test('fresh pages cold-launch the application shell only for supported navigatio
       const cold = await context.newPage();
       await cold.goto(path);
       await expect(
-        cold.getByRole('status').filter({
-          hasText: 'Сеть или сервер недоступны · сохранённые данные',
-        }),
+        cold.locator('[data-offline-private]').first(),
       ).toBeVisible();
 
       await cold.close();
@@ -314,9 +316,7 @@ test('same-endpoint update retains IDB and replaces old static cache after insta
   await context.setOffline(true);
   await fresh.goto('/workouts');
   await expect(
-    fresh.getByText('Сеть или сервер недоступны · сохранённые данные', {
-      exact: true,
-    }),
+    fresh.getByText('Synthetic breakfast', { exact: true }),
   ).toBeVisible();
   await context.setOffline(false);
 });
@@ -349,9 +349,7 @@ test('failed worker update leaves the old active worker and stored data usable',
   await page.context().setOffline(true);
   await page.goto('/diary');
   await expect(
-    page.getByText('Сеть или сервер недоступны · сохранённые данные', {
-      exact: true,
-    }),
+    page.getByText('Synthetic breakfast', { exact: true }),
   ).toBeVisible();
   await page.context().setOffline(false);
 });

@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import Link from 'next/link';
+import { ReadLink as Link } from '@/components/shared/read-link';
 import {
   Alert,
   Anchor,

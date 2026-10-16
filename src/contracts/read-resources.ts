@@ -1,7 +1,24 @@
+import { readSettingsSchema } from './read-settings';
+import { analyticsDataSchema } from './read-analytics';
+import {
+  transformMateCatalogResultSchema,
+  transformMateSyncItemSchema,
+} from './transformmate';
+import {
+  transformMateNativePageSchema,
+  transformMateNativeRefreshSchema,
+} from './transformmate-native';
+import { readContextSchema } from './read-context';
+import { workoutDetailSchema } from './read-workout';
 import { offlineLocalWindow } from './offline-retention';
 import { offlineAnamnesisSchema } from './offline-anamnesis';
 import { z } from 'zod';
-import { nutritionDaySchema, nutritionTotalsSchema } from './nutrition';
+import type { OverviewData } from './overview';
+import {
+  nutritionDaySchema,
+  nutritionTotalsSchema,
+  safeMealPhotoViewSchema,
+} from './nutrition';
 import { measurementSchema } from './measurements';
 import { weightHistorySchema, stepsSummarySchema } from './health';
 import { stepsGoalSchema } from './steps-goal';
@@ -26,7 +43,7 @@ const workouts = z.object({
     sessions: z.array(workoutSessionSchema),
   }),
 });
-const overview = z.object({
+export const overviewReadSchema: z.ZodType<OverviewData> = z.object({
   today: z.string(),
   timezone: z.string(),
   nutrition: z.object({
@@ -37,7 +54,7 @@ const overview = z.object({
     partialDays: z.number(),
   }),
   weight: z.object({
-    latest: weightPoint.nullable(),
+    latest: z.object({ date: z.string(), value: z.string() }).nullable(),
     points: z.array(weightPoint),
   }),
   workouts: z.object({ planned: workout, completed: workout }),
@@ -51,12 +68,28 @@ const overview = z.object({
 });
 /** Only these explicit view contracts may reach disk. Never settings credentials, jobs or upstream payloads. */
 export function readResponseSchema(path: string): z.ZodType | undefined {
+  if (path === '/api/read/settings') return readSettingsSchema;
+  if (path === '/api/read/analytics') return analyticsDataSchema;
+  if (path === '/api/workouts/transformmate/exercises')
+    return transformMateCatalogResultSchema;
+  if (path === '/api/workouts/transformmate')
+    return z.object({
+      data: z.object({
+        configured: z.boolean(),
+        items: z.array(transformMateSyncItemSchema),
+        nativePage: transformMateNativePageSchema,
+        nativeRefresh: transformMateNativeRefreshSchema,
+      }),
+    });
+  if (path === '/api/read/context') return readContextSchema;
+  if (path === '/api/read/workout') return workoutDetailSchema;
+  if (path === '/api/nutrition/photos') return z.array(safeMealPhotoViewSchema);
   if (path === '/api/offline/anamnesis-local') return offlineAnamnesisSchema;
   if (path === '/api/comments')
     return z.array(
       z.object({
         id: z.string(),
-        authorId: z.string(),
+        authorId: z.string().nullable(),
         authorName: z.string(),
         body: z.string().max(4000),
         parentId: z.string().nullable(),
@@ -65,7 +98,7 @@ export function readResponseSchema(path: string): z.ZodType | undefined {
         canEdit: z.boolean(),
       }),
     );
-  if (path === '/api/overview') return overview;
+  if (path === '/api/overview') return overviewReadSchema;
   if (path === '/api/measurements') return z.array(measurementSchema);
   if (path === '/api/health/weight') return weightHistorySchema;
   if (path === '/api/health/steps') return stepsSummarySchema;
@@ -97,7 +130,8 @@ export function readResponseSchema(path: string): z.ZodType | undefined {
 }
 export const readRecordSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
+    coverage: z.enum(['complete', 'partial']),
     key: z.string().max(2000),
     savedAt: z.number().finite(),
     touchedAt: z.number().finite(),
@@ -114,7 +148,7 @@ export function pruneReadRecords(records: ReadRecord[], now: number) {
   const rows = records
     .filter(
       (row) =>
-        row.version === 1 && now >= row.savedAt && now - row.touchedAt < ttl,
+        row.version === 2 && now >= row.savedAt && now - row.touchedAt < ttl,
     )
     .sort((a, b) => b.touchedAt - a.touchedAt);
   let details = 0,
@@ -143,6 +177,39 @@ export function offlineReadBody(
   const { from, to } = offlineLocalWindow(now, timezone);
   const inside = (date: string) => date >= from && date <= to;
   const value: unknown = JSON.parse(body);
+  if (path === '/api/read/settings') {
+    const settings = readSettingsSchema.parse(value);
+    if (settings.yazio.account) settings.yazio.account.avatar = null;
+    return JSON.stringify(settings);
+  }
+  if (path === '/api/read/workout') {
+    const detail = workoutDetailSchema.parse(value);
+    const date =
+      detail.kind === 'plan'
+        ? detail.workout.date
+        : detail.kind === 'session'
+          ? detail.session.date
+          : detail.kind === 'native'
+            ? detail.item.date
+            : (detail.item.actual?.date ??
+              detail.item.planSnapshot.workout.date);
+    return inside(date) ? body : undefined;
+  }
+  if (path === '/api/nutrition/photos')
+    return JSON.stringify(
+      z
+        .array(safeMealPhotoViewSchema)
+        .parse(value)
+        .filter((row) => inside(row.date)),
+    );
+  if (path === '/api/workouts/transformmate') {
+    const url = new URL(key, 'https://tempo.local');
+    if (
+      !inside(url.searchParams.get('from') ?? '') ||
+      !inside(url.searchParams.get('to') ?? '')
+    )
+      return undefined;
+  }
   if (path === '/api/nutrition/days')
     return JSON.stringify(
       z
@@ -175,7 +242,19 @@ export function offlineReadBody(
 
 export function isCacheableReadUrl(url: URL) {
   if (!readResponseSchema(url.pathname)) return false;
-  const allowed = ['ownerId', 'from', 'to', 'timezone', 'type', 'targetId'];
+  const allowed = [
+    'ownerId',
+    'from',
+    'to',
+    'timezone',
+    'type',
+    'targetId',
+    'path',
+    'date',
+    'limit',
+    'offset',
+    'cursor',
+  ];
   for (const [name, value] of url.searchParams) {
     if (
       !allowed.includes(name) ||

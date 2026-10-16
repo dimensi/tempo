@@ -1,4 +1,5 @@
 'use client';
+import { readWorkspaceMessages } from '@/config/read-workspace';
 import { offlineMessages } from '@/config/offline';
 import { useReadResource } from '@/lib/use-read-resource';
 import { measurementSchema } from '@/contracts/measurements';
@@ -94,14 +95,20 @@ export function MeasurementsPanel({
     !!editingOriginal &&
     (!currentEdited || content(currentEdited) !== content(editingOriginal));
   const url = `/api/measurements?ownerId=${encodeURIComponent(ownerId)}`;
-  useReadResource(
-    saved ? undefined : url,
-    (value) => z.array(measurementSchema).parse(value),
-    (value) => {
-      setItems(value);
-      setLoading(false);
-    },
-  );
+  const readResource1 = useReadResource({
+    href: saved ? undefined : url,
+    parse: (value) => z.array(measurementSchema).parse(value),
+  });
+  const [acceptedreadResource1, setAcceptedreadResource1] =
+    useState<typeof readResource1.data>();
+  if (
+    readResource1.data !== undefined &&
+    acceptedreadResource1 !== readResource1.data
+  ) {
+    setAcceptedreadResource1(readResource1.data);
+    setItems(readResource1.data);
+    setLoading(false);
+  }
   useEffect(() => {
     if (saved) return;
     let active = true;
@@ -525,7 +532,12 @@ export function MeasurementsPanel({
                       <Button
                         variant="default"
                         mih={44}
-                        disabled={busy}
+                        disabled={busy || readResource1.coverage !== 'complete'}
+                        title={
+                          readResource1.coverage !== 'complete'
+                            ? readWorkspaceMessages.recordUnconfirmed
+                            : undefined
+                        }
                         onClick={() => {
                           setEditing(item.id);
                           setEditingOriginal(item);
@@ -543,7 +555,12 @@ export function MeasurementsPanel({
                       <Button
                         color="red"
                         mih={44}
-                        disabled={busy}
+                        disabled={busy || readResource1.coverage !== 'complete'}
+                        title={
+                          readResource1.coverage !== 'complete'
+                            ? readWorkspaceMessages.recordUnconfirmed
+                            : undefined
+                        }
                         onClick={() =>
                           deleting === item.id
                             ? void remove(item.id)

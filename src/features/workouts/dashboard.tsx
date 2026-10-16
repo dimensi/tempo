@@ -1,4 +1,5 @@
 'use client';
+import { useReadResource } from '@/lib/use-read-resource';
 import { useReadRefresh } from '@/lib/use-read-refresh';
 import {
   useCallback,
@@ -31,7 +32,10 @@ import {
   type PlannedWorkout,
 } from '@/contracts/workouts';
 import { today } from './forms';
-import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  useReadRouter as useRouter,
+  useReadSearchParams as useSearchParams,
+} from '@/lib/workspace-navigation';
 import { requestReadNavigation } from '@/components/shared/read-link';
 import { z } from 'zod';
 import { workoutTitle } from '@/lib/workout-title';
@@ -47,7 +51,7 @@ import {
   IconClipboardCheck,
   IconCalendar,
 } from '@tabler/icons-react';
-import Link from 'next/link';
+import { ReadLink as Link } from '@/components/shared/read-link';
 import {
   SyncSummary,
   WorkoutSync,
@@ -202,6 +206,30 @@ function ScopedWorkoutsDashboard({
     },
     [endpoint],
   );
+  const resource = useReadResource({
+    href: endpoint(),
+    parse: (value) => {
+      const incoming = z
+        .object({
+          data: z.object({
+            plans: z.array(workoutPlanSchema),
+            sessions: z.array(workoutSessionSchema),
+          }),
+        })
+        .parse(value).data;
+      return {
+        contractVersion: 1 as const,
+        source: 'user' as const,
+        ...incoming,
+      };
+    },
+  });
+  const [acceptedRead, setAcceptedRead] = useState<typeof resource.data>();
+  if (resource.data && resource.data !== acceptedRead) {
+    setAcceptedRead(resource.data);
+    setData(resource.data);
+    setError(null);
+  }
   useEffect(() => {
     const controller = new AbortController();
     void read(controller.signal)
@@ -223,7 +251,6 @@ function ScopedWorkoutsDashboard({
       setData(await read());
       setError(null);
     } catch (error) {
-      setData(null);
       setError(error instanceof Error ? error.message : m.loadError);
     }
   }
@@ -309,7 +336,7 @@ function ScopedWorkoutsDashboard({
         </Button>
       </Group>
       {!canLog && <Alert>{m.trainerHint}</Alert>}
-      {error && (
+      {error && !data && (
         <Alert color="red" role="alert">
           {error}
           <Button variant="subtle" mih={44} onClick={() => void load()}>

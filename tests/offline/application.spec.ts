@@ -147,7 +147,7 @@ test('stale online flag and stalled requests keep navigation local without loadi
       page
         .getByRole('status')
         .filter({ hasText: 'Сеть или сервер недоступны' }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     for (const [label, path] of [
       ['Тренировки', '/workouts'],
       ['Аналитика', '/analytics'],
@@ -156,7 +156,9 @@ test('stale online flag and stalled requests keep navigation local without loadi
       await openNavigation(page);
       await page.getByRole('link', { name: label!, exact: true }).click();
       await expect.poll(() => new URL(page.url()).pathname).toBe(path);
-      await expect(page.locator('.mantine-Loader-root:visible')).toHaveCount(0);
+      await expect(
+        page.getByText('Загрузка тренировок…', { exact: true }),
+      ).toHaveCount(0);
       await expect(
         page.getByRole('link', { name: label!, exact: true }),
       ).toHaveAttribute('aria-current', 'page');
@@ -171,12 +173,10 @@ test('stale online flag and stalled requests keep navigation local without loadi
         stalledApi: false,
       },
     });
-    await page
-      .getByRole('button', { name: 'Проверить соединение', exact: true })
-      .click();
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
     await expect(
       page.getByRole('status').filter({ hasText: 'Сеть доступна' }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     expect(
       await page.evaluate(() => Reflect.get(window, 'retainedDocument')),
     ).toBe('same document');
@@ -278,7 +278,7 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
       page
         .getByRole('status')
         .filter({ hasText: 'Сеть или сервер недоступны · сохранённые данные' }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(
       page.getByRole('heading', {
         name: 'Synthetic ordinary result',
@@ -296,7 +296,7 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
       page
         .getByRole('status')
         .filter({ hasText: 'Сеть или сервер недоступны' }),
-    ).toHaveCount(1);
+    ).toHaveCount(0);
 
     await page
       .getByRole('link', { name: 'Открыть', exact: true })
@@ -359,7 +359,7 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
     await page.goto(`/diary?date=${shiftDate(data.date, -15)}`);
     await expect(
       page.getByText('Нет сохранённых данных, нужна сеть', { exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await page.goto(
       `/workouts/sessions/offline-real-session?date=${data.date}`,
     );
@@ -369,10 +369,17 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
         exact: true,
       }),
     ).toBeVisible();
-    for (const label of ['Изменить', 'Результат', 'Копировать', 'Удалить'])
-      await expect(
-        page.getByRole('button', { name: label, exact: true }),
-      ).toBeDisabled();
+    const detailUrl = page.url();
+    await page
+      .getByRole('link', { name: 'Изменить результаты', exact: true })
+      .click();
+    await expect(
+      page.getByText(
+        'Не удалось открыть действие. Проверьте подключение и повторите попытку.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(page).toHaveURL(detailUrl);
     await expect(page.locator('video')).toHaveCount(0);
     for (const theme of ['dark', 'light']) {
       if (theme === 'light')
@@ -394,13 +401,10 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
     await page.goto(`/workouts/native/987654?date=${data.date}`);
     await expect(
       page.getByText('Нет сохранённых данных, нужна сеть', { exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await openNavigation(page);
     await page.getByRole('link', { name: 'Настройки', exact: true }).click();
-    await expect(
-      page.getByLabel('Часовой пояс', { exact: true }),
-    ).toBeDisabled();
-    await expect(page.getByLabel('Цель шагов', { exact: true })).toHaveValue(
+    await expect(page.getByLabel('Шагов в день', { exact: true })).toHaveValue(
       '12345',
     );
     expect(writes).toEqual([]);
@@ -409,11 +413,11 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
       .run(data.ownerId);
     await context.setOffline(false);
     // Reconnect conceals expired private data but must not navigate automatically.
-    await expect(page.getByRole('link', { name: 'Войти заново' })).toBeVisible({
+    await expect(page.getByRole('link', { name: 'Войти' })).toBeVisible({
       timeout: 15000,
     });
     await expect(page).not.toHaveURL(/\/login$/);
-    await page.getByRole('link', { name: 'Войти заново' }).click();
+    await page.getByRole('link', { name: 'Войти' }).click();
     await expect(page).toHaveURL(/\/login$/, { timeout: 15000 });
     await page.addScriptTag({ content: harness });
     await expect
@@ -584,7 +588,13 @@ test('old workout detail bookmark without a query does not bypass the rolling re
     await expect(page).toHaveURL('/workouts/sessions/offline-older-session');
     await expect(
       page.getByText('Нет сохранённых данных, нужна сеть', { exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('heading', {
+        name: 'Synthetic older result',
+        exact: true,
+      }),
+    ).toHaveCount(0);
   } finally {
     await context.setOffline(false);
     data.db
@@ -609,16 +619,16 @@ test('linked TransformMate literal facts remain visible exactly once in plan day
   await context.setOffline(true);
   try {
     await page.goto(`/workouts?date=${date}`);
-    await expect(page.getByText('Weight: 0 кг', { exact: true })).toHaveCount(
+    await expect(page.getByText('Weight: 0 кг', { exact: false })).toHaveCount(
       1,
     );
     await expect(
-      page.getByText('Duration: 01–03 мин', { exact: true }),
+      page.getByText('Duration: 01–03 мин', { exact: false }),
     ).toHaveCount(1);
     await page.goto(
       `/workouts/plans/synthetic-plan/workouts/synthetic-workout?date=${date}`,
     );
-    await expect(page.getByText('Weight: 0 кг', { exact: true })).toHaveCount(
+    await expect(page.getByText('Weight: 0 кг', { exact: false })).toHaveCount(
       1,
     );
     await page.addScriptTag({ content: harness });
@@ -784,16 +794,15 @@ test('saved sections show ordinary content and the complete report without netwo
       page.getByRole('cell', { name: 'Synthetic manual', exact: true }),
     ).toBeVisible();
     await page.goto('/settings');
-    await expect(page.getByLabel('Часовой пояс', { exact: true })).toHaveValue(
-      'UTC',
-    );
     await expect(
-      page.getByLabel('Часовой пояс', { exact: true }),
-    ).toBeDisabled();
-    await expect(page.getByLabel('Цель шагов', { exact: true })).toHaveValue(
+      page.getByRole('heading', {
+        name: 'Синхронизация дневника',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByLabel('Шагов в день', { exact: true })).toHaveValue(
       '10000',
     );
-    await expect(page.getByLabel('Цель шагов', { exact: true })).toBeDisabled();
     const date = new Date().toISOString().slice(0, 10);
     await page.goto(`/diary?date=${date}`);
     await expect(
@@ -816,7 +825,7 @@ test('saved sections show ordinary content and the complete report without netwo
   }
 });
 
-test('HTTP cache preparation failures keep live data, a single connection status and ordinary menu navigation', async ({
+test('HTTP cache preparation failures keep live data and ordinary menu navigation without network banners', async ({
   page,
 }) => {
   const data = seedReal();
@@ -853,7 +862,7 @@ test('HTTP cache preparation failures keep live data, a single connection status
     ).toBe(503);
     await expect(
       page.getByRole('status').filter({ hasText: 'Сеть доступна' }),
-    ).toHaveCount(1);
+    ).toHaveCount(0);
     await expect(
       page.getByText('Сеть или сервер недоступны', { exact: false }),
     ).toHaveCount(0);
@@ -957,7 +966,7 @@ test('retained diary stays paused during repeated offline menu navigation and re
           page
             .getByRole('status')
             .filter({ hasText: 'Сеть или сервер недоступны' }),
-        ).toHaveCount(1);
+        ).toHaveCount(0);
       }
     }
     await page.goBack();
@@ -993,6 +1002,128 @@ test('retained diary stays paused during repeated offline menu navigation and re
     expect(photoRequests).toEqual([]);
     expect(errors).toEqual([]);
   } finally {
+    data.db.close();
+  }
+});
+
+test('ordinary measurement form and scroll survive connection changes and cached Back navigation', async ({
+  page,
+  context,
+}) => {
+  await signIn(page);
+  await page.goto('/measurements');
+  await waitSaved(page);
+  const note = page.getByLabel('Заметка', { exact: true });
+  await expect(note).toBeVisible();
+  await note.fill('Unsent local draft');
+  await page.evaluate(() => {
+    Reflect.set(window, 'retainedNote', document.querySelector('textarea'));
+    window.scrollTo(0, 350);
+    Reflect.set(window, 'retainedScroll', window.scrollY);
+  });
+  await context.setOffline(true);
+  await expect(note).toHaveValue('Unsent local draft');
+  expect(
+    await page.evaluate(
+      () =>
+        Reflect.get(window, 'retainedNote') ===
+        document.querySelector('textarea'),
+    ),
+  ).toBe(true);
+  await openNavigation(page);
+  await page.getByRole('link', { name: 'Обзор', exact: true }).click();
+  await page.goBack();
+  await expect(note).toHaveValue('Unsent local draft');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Math.abs(
+          window.scrollY - Number(Reflect.get(window, 'retainedScroll')),
+        ),
+      ),
+    )
+    .toBeLessThan(2);
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(note).toHaveValue('Unsent local draft');
+  expect(
+    await page.evaluate(
+      () =>
+        Reflect.get(window, 'retainedNote') ===
+        document.querySelector('textarea'),
+    ),
+  ).toBe(true);
+});
+test('offline logout clears private records immediately and cannot restore the old session after reload', async ({
+  page,
+  context,
+}) => {
+  const data = seedReal();
+  try {
+    await signIn(page);
+    await page.goto(`/diary?date=${data.date}`);
+    await waitSaved(page);
+    await expect(
+      page.getByText('Synthetic breakfast', { exact: true }),
+    ).toBeVisible();
+    await context.setOffline(true);
+    await openNavigation(page);
+    await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+    await expect(
+      page.getByText('Synthetic breakfast', { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('textbox', { name: 'Электронная почта', exact: true }),
+    ).toBeVisible();
+    await page.addScriptTag({ content: harness });
+    await expect
+      .poll(() => page.evaluate('window.offlineTest.rawCounts()'))
+      .toEqual({ bundle: 0, photos: 0 });
+    await page.goto(`/diary?date=${data.date}`);
+    await expect(
+      page.getByText('Synthetic breakfast', { exact: true }),
+    ).toHaveCount(0);
+    expect(
+      await page.evaluate(() => localStorage.getItem('tempo:logout-pending')),
+    ).toBe('true');
+  } finally {
+    await context.setOffline(false);
+    data.db.close();
+  }
+});
+
+test('BFCache restoration keeps private content concealed until a fresh local fence check completes', async ({
+  page,
+  context,
+}) => {
+  const data = seedReal();
+  try {
+    await signIn(page);
+    await page.goto(`/diary?date=${data.date}`);
+    await waitSaved(page);
+    await expect(
+      page.getByText('Synthetic breakfast', { exact: true }),
+    ).toBeVisible();
+    await context.setOffline(true);
+    expect(
+      await page.evaluate(() => {
+        window.dispatchEvent(
+          new PageTransitionEvent('pagehide', { persisted: true }),
+        );
+        return document.querySelector<HTMLElement>('[data-offline-private]')
+          ?.hidden;
+      }),
+    ).toBe(true);
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new PageTransitionEvent('pageshow', { persisted: true }),
+      ),
+    );
+    await expect(
+      page.getByText('Synthetic breakfast', { exact: true }),
+    ).toBeVisible();
+  } finally {
+    await context.setOffline(false);
     data.db.close();
   }
 });

@@ -31,15 +31,20 @@ export function MarkerTable({ ownerId }: { ownerId: string }) {
   const [denied, setDenied] = useState(false);
   const [search, setSearch] = useState('');
   const url = `/api/anamnesis/markers?${ownerIdQuery(ownerId)}`;
-  useReadResource(
-    url,
-    (value) => z.array(anamnesisMarkerSummarySchema).parse(value),
-    (value) => {
-      setItems(value);
-      setLoading(false);
-    },
-  );
-
+  const readResource1 = useReadResource({
+    href: url,
+    parse: (value) => z.array(anamnesisMarkerSummarySchema).parse(value),
+  });
+  const [acceptedreadResource1, setAcceptedreadResource1] =
+    useState<typeof readResource1.data>();
+  if (
+    readResource1.data !== undefined &&
+    acceptedreadResource1 !== readResource1.data
+  ) {
+    setAcceptedreadResource1(readResource1.data);
+    setItems(readResource1.data);
+    setLoading(false);
+  }
   useEffect(() => {
     let active = true;
     fetchAnamnesis<AnamnesisMarkerSummary[]>(url)

@@ -1,37 +1,93 @@
 'use client';
-import { useEffect, useRef } from 'react';
-import { canonicalReadKey, clientReads } from './client-read';
-/** Hydration and fresh responses update the existing view; its editor state is never involved. */
-export function useReadResource<T>(
-  href: string | undefined,
-  parse: (value: unknown) => T,
-  accept: (data: T) => void,
-) {
-  const handlers = useRef({ parse, accept });
-  useEffect(() => {
-    handlers.current = { parse, accept };
-  }, [parse, accept]);
-  useEffect(() => {
-    if (!href) return;
-    const key = canonicalReadKey(new URL(href, location.origin));
-    let previous: string | undefined;
-    let active = true;
-    const changed = () => {
-      const body = clientReads.snapshot(key).data;
-      if (!active || body === undefined || body === previous) return;
-      try {
-        const value = handlers.current.parse(JSON.parse(body));
-        previous = body;
-        handlers.current.accept(value);
-      } catch {
-        /* An incompatible copy never reaches the screen. */
-      }
-    };
-    const stop = clientReads.subscribe(key, changed);
-    void clientReads.restore(key).then(changed);
-    return () => {
-      active = false;
-      stop();
-    };
-  }, [href]);
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { reconcileRead } from './reconcile-read';
+import {
+  canonicalReadKey,
+  clientReads,
+  bindReadScope,
+  readRevalidateEvent,
+  refreshClientRead,
+  seedClientRead,
+} from './client-read';
+import { getOfflineController } from './offline-controller';
+import { type ReadResource } from './read-resource';
+
+export interface ReadDescriptor<T> {
+  href: string | undefined;
+  parse: (value: unknown) => T;
 }
+/** One subscription for memory, fenced disk restoration and fresh responses. */
+export function useReadResource<T>(
+  descriptor: ReadDescriptor<T>,
+  initialSeed?: T,
+) {
+  const { href } = descriptor;
+  const [parse] = useState(() => {
+    let previous: T | undefined;
+    return (body: string) => {
+      previous = reconcileRead(previous, descriptor.parse(JSON.parse(body)));
+      return previous;
+    };
+  });
+  const key = href
+    ? canonicalReadKey(new URL(href, 'https://tempo.local'))
+    : '';
+  const subscribe = useMemo(
+    () => (listener: () => void) => clientReads.subscribe(key, listener),
+    [key],
+  );
+  const snapshot = useMemo(() => () => clientReads.snapshot(key), [key]);
+  const state = useSyncExternalStore(subscribe, snapshot, emptySnapshot);
+  const parsed = useMemo(() => {
+    if (state.data === undefined) return undefined;
+    try {
+      return parse(state.data);
+    } catch {
+      return undefined;
+    }
+  }, [state.data, parse]);
+  const refresh = useMemo(
+    () => async () => {
+      if (!key) return;
+      bindReadScope();
+      await clientReads.restore(key);
+      await refreshClientRead(key).catch(() => {});
+    },
+    [key],
+  );
+  useEffect(() => {
+    if (!key) return;
+    const restore = () => {
+      bindReadScope();
+      if (
+        initialSeed !== undefined &&
+        clientReads.snapshot(key).data === undefined
+      )
+        void seedClientRead(key, initialSeed);
+      void clientReads.restore(key);
+    };
+    restore();
+    const stop = getOfflineController().subscribe(() => {
+      restore();
+      void refresh();
+    });
+    void refresh();
+    window.addEventListener(readRevalidateEvent, refresh);
+    return () => {
+      stop();
+      window.removeEventListener(readRevalidateEvent, refresh);
+    };
+  }, [key, initialSeed, refresh]);
+  return {
+    data: parsed ?? initialSeed,
+    coverage: state.coverage,
+    refreshing: state.refreshing,
+    error: state.error,
+    refresh,
+  };
+}
+const empty: ReadResource<string> = Object.freeze({
+  coverage: 'missing',
+  refreshing: false,
+});
+const emptySnapshot = () => empty;

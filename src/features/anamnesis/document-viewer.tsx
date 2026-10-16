@@ -22,12 +22,10 @@ export function DocumentViewer({
   ownerId,
   documentId,
   writable,
-  preferSaved = false,
 }: {
   ownerId: string;
   documentId: string;
   writable: boolean;
-  preferSaved?: boolean;
 }) {
   const online = useReadOnline();
   const readRefresh = useReadRefresh();
@@ -42,12 +40,11 @@ export function DocumentViewer({
   useEffect(() => {
     let active = true;
     let liveAuthoritative = false;
-    if (preferSaved)
-      void savedMedicalDocument(documentId, ownerId)
-        .then((saved) => {
-          if (active && !liveAuthoritative) setDocument(saved);
-        })
-        .catch(() => {});
+    void savedMedicalDocument(documentId, ownerId)
+      .then((saved) => {
+        if (active && !liveAuthoritative) setDocument(saved);
+      })
+      .catch(() => {});
     void (async () => {
       try {
         const loaded = await fetchAnamnesis<MedicalDocument>(
@@ -91,7 +88,7 @@ export function DocumentViewer({
     return () => {
       active = false;
     };
-  }, [documentId, ownerId, preferSaved, query, readRefresh]);
+  }, [documentId, ownerId, query, readRefresh]);
 
   async function reprocess() {
     setBusy(true);

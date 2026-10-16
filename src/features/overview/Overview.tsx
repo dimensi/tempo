@@ -1,4 +1,6 @@
 'use client';
+import { useReadResource } from '@/lib/use-read-resource';
+import { overviewReadSchema } from '@/contracts/read-resources';
 import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useEffect, useState, createElement, type ElementType } from 'react';
 import {
@@ -106,9 +108,19 @@ export function Overview({
       });
     return () => controller.abort();
   }, [calendar, revision, saved, readRefresh]);
+  const localRead = useReadResource({
+    href: calendar
+      ? `/api/overview?timezone=${encodeURIComponent(calendar.timezone)}`
+      : undefined,
+    parse: (value) => overviewReadSchema.parse(value),
+  });
   const key = calendar ? `${calendar.timezone}:${calendar.today}` : '';
-  const data = resource?.key === key ? resource.data : null;
-  const error = resource?.key === key ? resource.error : null;
+  const data = localRead.data ?? (resource?.key === key ? resource.data : null);
+  const error = localRead.data
+    ? null
+    : resource?.key === key
+      ? resource.error
+      : null;
   const current =
     saved ??
     (data &&

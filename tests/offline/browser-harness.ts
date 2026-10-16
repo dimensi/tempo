@@ -1,3 +1,4 @@
+import { seedReadFixture } from './read-fixture';
 import { shiftDate } from '../../src/contracts/nutrition-sync-dates';
 import { ownerConfirmedYazioWeightPolicyVersion } from '../../src/contracts/yazio-weight-policy';
 import {
@@ -172,6 +173,11 @@ Object.assign(window, {
       const current = await storage.read(Date.now(), 'UTC');
       current.bundle!.snapshot.nativeTrainings = [];
       await storage.commit(current.bundle!, current.photos, Date.now(), 'UTC');
+      await seedReadFixture(
+        storage,
+        current.bundle!.fence,
+        current.bundle!.snapshot,
+      );
     },
     async shortenExpiry() {
       const fixture = offlineFixture(now);
@@ -384,6 +390,7 @@ Object.assign(window, {
         storedPhotos,
         now,
       );
+      await seedReadFixture(storage, lastFence, snapshot);
       return (await storage.read(now)).photos.length;
     },
     async commitOldPhoto() {

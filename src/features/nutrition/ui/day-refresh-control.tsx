@@ -1,5 +1,7 @@
 'use client';
 
+import { useReadOnline } from '@/lib/use-read-online';
+import { readWorkspaceMessages } from '@/config/read-workspace';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Group, Stack, Text } from '@mantine/core';
 import { syncResultKind, syncStatusSchema } from '@/contracts/nutrition-sync';
@@ -12,6 +14,7 @@ export function DayRefreshControl({
   date: string;
   onUpdated: () => void;
 }) {
+  const online = useReadOnline();
   const request = useRef<AbortController | null>(null);
   const [pending, setPending] = useState(false);
   const [outcome, setOutcome] = useState<
@@ -67,6 +70,8 @@ export function DayRefreshControl({
           variant="light"
           mih={44}
           loading={pending}
+          disabled={!online}
+          title={!online ? readWorkspaceMessages.refreshUnavailable : undefined}
           onClick={() => void refresh()}
         >
           {m.refreshDay}

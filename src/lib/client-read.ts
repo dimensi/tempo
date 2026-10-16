@@ -1,3 +1,5 @@
+import { readContextSchema } from '@/contracts/read-context';
+import { hasPendingLogout } from './local-logout';
 import { offlineAnamnesisSchema } from '@/contracts/offline-anamnesis';
 import {
   medicalDocumentSchema,
@@ -24,6 +26,7 @@ import { getOfflineController } from './offline-controller';
 import { reportNetworkResult } from './network-state';
 
 let scope = '';
+let readTransport: typeof fetch = (...args) => fetch(...args);
 let medicalRevision = 0;
 let fence: CacheFence | undefined;
 const persistence = {
@@ -45,7 +48,12 @@ const persistence = {
       await storage
         .writeResource(fence, { ...row, touchedAt: Date.now() })
         .catch(() => {});
-      return { data, savedAt: row.savedAt, touchedAt: Date.now() };
+      return {
+        data,
+        savedAt: row.savedAt,
+        touchedAt: Date.now(),
+        coverage: row.coverage,
+      };
     } finally {
       await storage.close();
     }
@@ -73,7 +81,8 @@ const persistence = {
       const currentFence = fence;
       await withOfflineCacheLock(() =>
         storage.writeResource(currentFence, {
-          version: 1,
+          version: 2,
+          coverage: value.coverage ?? 'complete',
           key,
           body,
           savedAt: value.savedAt,
@@ -98,7 +107,7 @@ export async function invalidateMedicalDocument(
   documentId: string,
   ownerId: string,
 ) {
-  bindScope();
+  bindReadScope();
   medicalRevision++;
   const query = `?${new URLSearchParams({ ownerId })}`;
   const base = `/api/anamnesis/documents/${encodeURIComponent(documentId)}`;
@@ -152,8 +161,10 @@ export function canonicalReadKey(url: URL) {
   search.sort();
   return url.pathname + (search.size ? `?${search}` : '');
 }
-function bindScope() {
-  const bundle = getOfflineController().getSnapshot().bundle;
+export function bindReadScope() {
+  const bundle = hasPendingLogout()
+    ? null
+    : getOfflineController().getSnapshot().bundle;
   const next = bundle
     ? `${bundle.fence.partition}:${bundle.fence.deviceEpoch}:${bundle.snapshot.connectionGeneration}`
     : '';
@@ -173,7 +184,7 @@ export async function seedClientRead(
   body: unknown,
   expected?: { partition: string; connectionGeneration: string },
 ) {
-  bindScope();
+  bindReadScope();
   const latest = getOfflineController().getSnapshot().bundle?.snapshot;
   if (
     expected &&
@@ -183,6 +194,14 @@ export async function seedClientRead(
     return;
   const schema = readResponseSchema(new URL(key, location.origin).pathname);
   if (!schema || !fence) return;
+  if (key === '/api/read/context') {
+    const context = readContextSchema.parse(body);
+    if (
+      latest?.partition !== context.partition ||
+      latest.connectionGeneration !== context.connectionGeneration
+    )
+      return;
+  }
   const data = JSON.stringify(schema.parse(body));
   const savedAt = Date.now();
   clientReads.seed(key, data, savedAt);
@@ -190,10 +209,63 @@ export async function seedClientRead(
     .write(key, { data, savedAt, touchedAt: savedAt })
     .catch(() => {});
 }
+export async function refreshClientRead(key: string) {
+  bindReadScope();
+  const schema = readResponseSchema(new URL(key, location.origin).pathname);
+  if (!schema) throw new ReadFailure('unavailable');
+  return clientReads.read(
+    key,
+    navigator.onLine
+      ? async () => {
+          const response = await readTransport(key, {
+            cache: 'no-store',
+            credentials: 'same-origin',
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+              window.dispatchEvent(new Event('tempo:read-access-denied'));
+              void import('./offline-device')
+                .then(({ purgeOfflineDevice }) => purgeOfflineDevice())
+                .catch(() => {});
+            }
+            throw new ReadFailure(
+              response.status === 401 || response.status === 403
+                ? 'denied'
+                : 'unavailable',
+              response.status,
+            );
+          }
+          const data = schema.parse(await response.json());
+          if (key === '/api/read/context') {
+            const previous = clientReads.snapshot(key).data;
+            const before =
+              previous && readContextSchema.safeParse(JSON.parse(previous));
+            const after = readContextSchema.parse(data);
+            if (
+              before &&
+              before.success &&
+              (before.data.partition !== after.partition ||
+                before.data.connectionGeneration !==
+                  after.connectionGeneration ||
+                before.data.role !== after.role)
+            ) {
+              window.dispatchEvent(new Event('tempo:read-access-denied'));
+              const { purgeOfflineDevice } = await import('./offline-device');
+              await purgeOfflineDevice().catch(() => {});
+              throw new ReadFailure('denied');
+            }
+          }
+          return JSON.stringify(data);
+        }
+      : undefined,
+  );
+}
 export function observeReadResources() {
   const original = window.fetch;
-  const stopScope = getOfflineController().subscribe(bindScope);
-  bindScope();
+  readTransport = original.bind(window);
+  const stopScope = getOfflineController().subscribe(bindReadScope);
+  bindReadScope();
   const stopBlocked = subscribeOfflineBlocked(() => {
     clientReads.clear();
     scope = '';
@@ -218,8 +290,15 @@ export function observeReadResources() {
       isCacheableReadUrl(url)
         ? readResponseSchema(url.pathname)
         : undefined;
+    if (
+      url.origin === location.origin &&
+      url.pathname.startsWith('/api/') &&
+      !navigator.onLine &&
+      !schema
+    )
+      throw new ReadFailure('network');
     if (!schema) return original.call(window, input, init);
-    bindScope();
+    bindReadScope();
     if (!fence) return original.call(window, input, init);
     const key = canonicalReadKey(url);
     let live: Response | undefined;
@@ -349,7 +428,7 @@ export function prepareMedicalReads(force = false) {
   return summaryFlight;
 }
 export async function savedMedicalSummary() {
-  bindScope();
+  bindReadScope();
   const body = await clientReads.read('/api/offline/anamnesis-local');
   return offlineAnamnesisSchema.parse(JSON.parse(body));
 }
@@ -358,7 +437,7 @@ export async function savedMedicalDocument(
   documentId: string,
   ownerId: string,
 ): Promise<MedicalDocument> {
-  bindScope();
+  bindReadScope();
   const key = canonicalReadKey(
     new URL(
       `/api/anamnesis/documents/${encodeURIComponent(documentId)}?ownerId=${encodeURIComponent(ownerId)}`,

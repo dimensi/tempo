@@ -363,7 +363,7 @@ it('ready same-calendar clock rollback bypasses fast path and clears the guarded
   expect((await persistence.metadata()).enabled).toBe(false);
   await reader.activate(true);
   expect(reader.getSnapshot().bundle).toBeNull();
-  expect(persistence.read).toHaveBeenCalledTimes(3);
+  expect(persistence.read).toHaveBeenCalledTimes(4);
 });
 it('online identity denial supersedes a deferred unverified offline read without any private publish', async () => {
   const persistence = storage();

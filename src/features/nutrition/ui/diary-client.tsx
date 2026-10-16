@@ -5,7 +5,10 @@ import { useSavedMealPhotos } from '@/lib/use-saved-meal-photos';
 import { useReadRefresh } from '@/lib/use-read-refresh';
 import { nutritionDaySchema } from '@/contracts/nutrition';
 import { z } from 'zod';
-import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  useReadRouter as useRouter,
+  useReadSearchParams as useSearchParams,
+} from '@/lib/workspace-navigation';
 import { Stack } from '@mantine/core';
 import { browserToday } from '@/components/shared/date-navigation-dates';
 import { DayNavigation } from './day-navigation';

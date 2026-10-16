@@ -6,7 +6,8 @@ import {
 } from '@/contracts/read-resources';
 const now = Date.parse('2026-10-15T12:00:00Z');
 const row = (key: string, touchedAt = now): ReadRecord => ({
-  version: 1,
+  version: 2,
+  coverage: 'complete',
   key,
   body: '{}',
   savedAt: now - 1000,

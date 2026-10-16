@@ -1,4 +1,5 @@
 'use client';
+import { useReadResource } from '@/lib/use-read-resource';
 import { useEffect, useState } from 'react';
 import { Alert, Button, Group, Stack } from '@mantine/core';
 import {
@@ -52,10 +53,15 @@ export function CatalogPage({ ownerId }: { ownerId: string }) {
       });
     return () => pending.abort();
   }, [ownerId, offset]);
-  const current = resource?.offset === offset ? resource.data : null;
+  const read = useReadResource({
+    href: `/api/workouts/transformmate/exercises?${new URLSearchParams({ ownerId, offset: String(offset), limit: '50' })}`,
+    parse: (value) => transformMateCatalogResultSchema.parse(value),
+  });
+  const current =
+    read.data ?? (resource?.offset === offset ? resource.data : null);
   return (
     <Stack>
-      {failed && <Alert color="orange">{m.catalogError}</Alert>}
+      {failed && !current && <Alert color="orange">{m.catalogError}</Alert>}
       {!current && !failed && <Alert role="status">{m.loading}</Alert>}
       {current && (
         <CatalogReadContent

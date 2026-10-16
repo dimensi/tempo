@@ -47,15 +47,20 @@ export function DocumentsPanel({
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<string>();
   const query = ownerIdQuery(ownerId);
-  useReadResource(
-    `/api/anamnesis/documents?${query}`,
-    (value) => z.array(medicalDocumentSchema).parse(value),
-    (value) => {
-      setItems(value);
-      setLoading(false);
-    },
-  );
-
+  const readResource1 = useReadResource({
+    href: `/api/anamnesis/documents?${query}`,
+    parse: (value) => z.array(medicalDocumentSchema).parse(value),
+  });
+  const [acceptedreadResource1, setAcceptedreadResource1] =
+    useState<typeof readResource1.data>();
+  if (
+    readResource1.data !== undefined &&
+    acceptedreadResource1 !== readResource1.data
+  ) {
+    setAcceptedreadResource1(readResource1.data);
+    setItems(readResource1.data);
+    setLoading(false);
+  }
   useEffect(() => {
     let active = true;
     fetchAnamnesis<MedicalDocument[]>(`/api/anamnesis/documents?${query}`)

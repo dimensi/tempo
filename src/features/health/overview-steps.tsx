@@ -1,4 +1,5 @@
 'use client';
+import { useReadResource } from '@/lib/use-read-resource';
 import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useEffect, useState } from 'react';
 import { Alert, Skeleton } from '@mantine/core';
@@ -65,14 +66,21 @@ export function HealthOverviewSteps() {
       document.removeEventListener('visibilitychange', visible);
     };
   }, [readRefresh]);
-  if (resource.error)
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const today = dateInTimezone(new Date(), timezone);
+  const localRead = useReadResource({
+    href: `/api/health/steps?from=${shiftDate(today, -6)}&to=${today}`,
+    parse: (value) => stepsSummarySchema.parse(value),
+  });
+  const current = localRead.data ?? resource.data;
+  if (resource.error && !current)
     return (
       <Alert color={resource.error === 403 ? 'orange' : 'red'} role="alert">
         {resource.error === 403 ? m.forbidden : m.unavailable}
       </Alert>
     );
-  return resource.data ? (
-    <StepsPanel summary={resource.data} compact />
+  return current ? (
+    <StepsPanel summary={current} compact />
   ) : (
     <Skeleton height={240} aria-label={m.loading} />
   );

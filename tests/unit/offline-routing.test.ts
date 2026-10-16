@@ -1,412 +1,107 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import {
-  interceptOfflineLinks,
-  isOfflineRoute,
-  liveResumeParam,
-  offlineNavigate,
-  releaseOfflineRoute,
-} from '@/lib/offline-routing';
+  navigateWorkspace,
+  interceptReadLinks,
+  installServerNavigation,
+  isWorkspaceRoute,
+} from '@/lib/workspace-navigation';
 import { reportNetworkResult } from '@/lib/network-state';
-import { purgeOfflineDevice } from '@/lib/offline-device';
-import { ownerConfirmedYazioWeightPolicyVersion } from '@/contracts/yazio-weight-policy';
-
-vi.mock('@/lib/offline-device', () => ({
-  purgeOfflineDevice: vi.fn(async () => {}),
-}));
-
+vi.mock('@/lib/client-read', () => ({ revalidateVisibleReads: vi.fn() }));
 afterEach(() => {
-  vi.useRealTimers();
   vi.unstubAllGlobals();
-  vi.mocked(purgeOfflineDevice).mockClear();
   reportNetworkResult(true);
 });
-
-it('preserves scroll when cached navigation requests it', () => {
+function environment() {
   const pushState = vi.fn();
+  const replaceState = vi.fn();
   const scrollTo = vi.fn();
-  vi.stubGlobal('location', new URL('https://tempo.test/diary'));
-  vi.stubGlobal('history', { pushState });
-  vi.stubGlobal('window', { scrollTo });
-  offlineNavigate('/diary?date=2026-10-16', false, false);
-  expect(pushState).toHaveBeenCalledOnce();
-  expect(scrollTo).not.toHaveBeenCalled();
-});
+  vi.stubGlobal(
+    'location',
+    new URL('https://tempo.test/diary?date=2026-10-16'),
+  );
+  vi.stubGlobal('history', { pushState, replaceState });
+  vi.stubGlobal('window', Object.assign(new EventTarget(), { scrollTo }));
+  vi.stubGlobal('navigator', { onLine: true });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise(() => {})),
+  );
+  return { pushState, replaceState, scrollTo };
+}
 it.each([
   '/',
   '/diary',
+  '/workouts',
+  '/measurements',
+  '/analytics',
+  '/settings',
+  '/reports',
   '/anamnesis',
-  '/workouts/plans/one/edit',
   '/workouts/sessions/one',
-  '/workouts/new',
-])('keeps %s local until both interface and server are reachable', (path) => {
-  let click!: (event: MouseEvent) => void;
-  const pushState = vi.fn();
-  vi.stubGlobal('document', {
-    addEventListener: (_: string, fn: typeof click) => {
-      click = fn;
-    },
-    removeEventListener: vi.fn(),
-  });
-  vi.stubGlobal(
-    'window',
-    Object.assign(new EventTarget(), { scrollTo: vi.fn() }),
-  );
-  vi.stubGlobal('location', new URL('https://tempo.test/workouts'));
-  vi.stubGlobal('history', { pushState });
-  vi.stubGlobal('navigator', { onLine: true });
-  const cleanup = interceptOfflineLinks();
-  const preventDefault = vi.fn();
-  const event = {
-    button: 0,
-    target: { closest: () => ({ href: `https://tempo.test${path}` }) },
-    preventDefault,
-  } as unknown as MouseEvent;
+])('opens %s immediately without waiting for identity or RSC', (path) => {
+  const env = environment();
+  navigateWorkspace(path);
+  expect(env.pushState).toHaveBeenCalledWith({}, '', path);
+  expect(fetch).not.toHaveBeenCalled();
+});
+it('preserves scroll for date and filter changes', () => {
+  const env = environment();
+  navigateWorkspace('/diary?date=2026-10-15', { scroll: false });
+  expect(env.scrollTo).not.toHaveBeenCalled();
+});
+it('uses the same route in both connection states', () => {
+  const env = environment();
   reportNetworkResult(false);
-  click(event);
-  expect(preventDefault).toHaveBeenCalledOnce();
-  expect(pushState).toHaveBeenCalledWith(
-    {
-      tempoOfflineRoute: path,
-      tempoOfflineRouteId: expect.any(String),
-    },
-    '',
-    path,
-  );
-
-  cleanup();
+  navigateWorkspace('/measurements');
+  expect(env.pushState).toHaveBeenCalledWith({}, '', '/measurements');
+  expect(fetch).not.toHaveBeenCalled();
 });
-
-it('matches a saved route to its exact URL so ordinary navigation cannot inherit it', () => {
-  vi.stubGlobal('history', {
-    state: { tempoOfflineRoute: '/diary?date=2026-10-15' },
-  });
-  expect(
-    isOfflineRoute(new URL('https://tempo.test/diary?date=2026-10-15')),
-  ).toBe(true);
-  expect(isOfflineRoute(new URL('https://tempo.test/'))).toBe(false);
-  expect(
-    isOfflineRoute(new URL('https://tempo.test/diary?date=2026-10-14')),
-  ).toBe(false);
-  expect(isOfflineRoute(null)).toBe(false);
-});
-it('releases only the current saved route while preserving Next history state', () => {
-  const replaceState = vi.fn();
-  vi.stubGlobal('history', {
-    state: {
-      __NA: true,
-      __PRIVATE_NEXTJS_INTERNALS_TREE: 'tree',
-      tempoOfflineRoute: '/diary?date=2026-10-15',
-      tempoOfflineRouteId: 'entry-1',
-    },
-    replaceState,
-  });
-  expect(
-    releaseOfflineRoute(
-      new URL(
-        `https://tempo.test/diary?date=2026-10-15&${liveResumeParam}=7#meal`,
-      ),
-    ),
-  ).toBe(true);
-  expect(replaceState).toHaveBeenCalledWith(
-    { __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: 'tree' },
-    '',
-    '/diary?date=2026-10-15#meal',
-  );
-
-  replaceState.mockClear();
-  expect(
-    releaseOfflineRoute(new URL('https://tempo.test/diary?date=2026-10-14')),
-  ).toBe(false);
-  expect(replaceState).not.toHaveBeenCalled();
-});
-it('finishes a verified resume after Next has already replaced the offline marker', () => {
-  const replaceState = vi.fn();
-  vi.stubGlobal('history', {
-    state: { __NA: true },
-    replaceState,
-  });
-  expect(
-    releaseOfflineRoute(
-      new URL(`https://tempo.test/workouts?${liveResumeParam}=resume-1`),
-    ),
-  ).toBe(true);
-  expect(replaceState).toHaveBeenCalledWith({ __NA: true }, '', '/workouts');
-});
-
-function navigationDouble(
-  hasSaved: (url: URL) => boolean | Promise<boolean> = () => false,
-  expectedIdentity?: () => {
-    partition: string;
-    connectionGeneration: string;
-    role: 'OWNER' | 'TRAINER';
-  },
-) {
-  let click!: (event: MouseEvent) => void;
-  const pushState = vi.fn();
-  const navigate = vi.fn();
-  vi.stubGlobal('document', {
-    addEventListener: (_: string, fn: typeof click) => {
-      click = fn;
-    },
-    removeEventListener: vi.fn(),
-  });
-  vi.stubGlobal(
-    'window',
-    Object.assign(new EventTarget(), { scrollTo: vi.fn() }),
-  );
-  vi.stubGlobal('location', new URL('https://tempo.test/diary'));
-  vi.stubGlobal('history', { pushState });
-  vi.stubGlobal('navigator', { onLine: true });
-  const stop = interceptOfflineLinks(hasSaved, undefined, expectedIdentity);
-  return {
-    pushState,
-    navigate,
-    stop,
-    click: (path: string, extras = {}) => {
-      const preventDefault = vi.fn();
-      click({
-        button: 0,
-        target: {
-          closest: () => ({
-            href: `https://tempo.test${path}`,
-            click: () => navigate(path),
-          }),
-        },
-        preventDefault,
-        ...extras,
-      } as unknown as MouseEvent);
-      return preventDefault;
-    },
-  };
-}
-it('shows a saved destination before identity and RSC settle', async () => {
-  let release!: (response: Response) => void;
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(
-      () =>
-        new Promise<Response>((resolve) => {
-          release = resolve;
-        }),
-    ),
-  );
-  const env = navigationDouble((url) => url.pathname === '/analytics');
-  env.click('/analytics');
-  expect(env.pushState).toHaveBeenCalledWith(
-    {
-      tempoOfflineRoute: '/analytics',
-      tempoOfflineRouteId: expect.any(String),
-    },
-    '',
-    '/analytics',
-  );
-  expect(env.navigate).not.toHaveBeenCalled();
-
-  release(new Response('{}'));
-  await vi.waitFor(() =>
-    expect(env.navigate).toHaveBeenCalledWith('/analytics'),
-  );
-  env.stop();
-});
-it('shows an asynchronously restored destination while identity remains stalled', async () => {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Promise<Response>(() => {})),
-  );
-  const restored = Promise.withResolvers<boolean>();
-  const env = navigationDouble(() => restored.promise);
-  env.click('/anamnesis');
+it('explicitly reports an unavailable network action without navigating', () => {
+  const env = environment();
+  reportNetworkResult(false);
+  const error = vi.fn();
+  window.addEventListener('tempo:action-unavailable', error);
+  navigateWorkspace('/workouts/new');
+  expect(error).toHaveBeenCalledOnce();
   expect(env.pushState).not.toHaveBeenCalled();
-  restored.resolve(true);
-  await vi.waitFor(() => expect(env.pushState).toHaveBeenCalledOnce());
-  expect(env.navigate).not.toHaveBeenCalled();
-  env.stop();
 });
-it.each([401, 403, 409])(
-  'does not resume live navigation after identity denial %s',
-  async (status) => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(null, { status })),
-    );
-    const env = navigationDouble(() => true);
-    env.click('/analytics');
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(env.pushState).toHaveBeenCalledOnce();
-    expect(env.navigate).not.toHaveBeenCalled();
-    if (status === 409)
-      await vi.waitFor(() => expect(purgeOfflineDevice).toHaveBeenCalledOnce());
-    else expect(purgeOfflineDevice).not.toHaveBeenCalled();
-    env.stop();
-  },
-);
-it('resumes a verified captured link without replaying its click', async () => {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Response('{}')),
-  );
-  const resumeVerified = vi.fn();
-  let click!: (event: MouseEvent) => void;
-  const replay = vi.fn();
-  vi.stubGlobal('document', {
-    addEventListener: (_: string, fn: typeof click) => {
-      click = fn;
-    },
-    removeEventListener: vi.fn(),
-  });
-  vi.stubGlobal(
-    'window',
-    Object.assign(new EventTarget(), { scrollTo: vi.fn() }),
-  );
-  vi.stubGlobal('location', new URL('https://tempo.test/diary'));
-  vi.stubGlobal('history', { pushState: vi.fn() });
-  vi.stubGlobal('navigator', { onLine: true });
-  const stop = interceptOfflineLinks(() => true, resumeVerified);
-  click({
-    button: 0,
-    target: {
-      closest: () => ({
-        href: 'https://tempo.test/anamnesis',
-        dataset: { tempoReadLink: 'true' },
-        click: replay,
-      }),
-    },
-    preventDefault: vi.fn(),
-  } as unknown as MouseEvent);
-  await vi.waitFor(() =>
-    expect(resumeVerified).toHaveBeenCalledWith(
-      new URL('https://tempo.test/anamnesis'),
-    ),
-  );
-  expect(fetch).toHaveBeenCalledOnce();
-  expect(replay).not.toHaveBeenCalled();
+it('delegates authorized network routes to the server router', () => {
+  environment();
+  const server = vi.fn();
+  const stop = installServerNavigation(server);
+  navigateWorkspace('/workouts/new', { scroll: false });
+  expect(server).toHaveBeenCalledWith('/workouts/new', { scroll: false });
   stop();
 });
-it('purges instead of resuming when a successful identity belongs to another fence', async () => {
-  const previous = {
-    partition: 'a'.repeat(43),
-    connectionGeneration: 'b'.repeat(43),
-    role: 'OWNER' as const,
-  };
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () =>
-      Response.json({
-        contractVersion: 2,
-        weightPolicyVersion: ownerConfirmedYazioWeightPolicyVersion,
-        partition: 'c'.repeat(43),
-        connectionGeneration: 'd'.repeat(43),
-        role: 'OWNER',
-        serverNow: '2026-10-16T12:00:00.000Z',
-        sessionExpiresAt: '2026-10-16T13:00:00.000Z',
-        expiresAt: '2026-10-16T13:00:00.000Z',
-      }),
-    ),
-  );
-  const env = navigationDouble(
-    () => true,
-    () => previous,
-  );
-  env.click('/analytics');
-  await vi.waitFor(() => expect(purgeOfflineDevice).toHaveBeenCalledOnce());
-  expect(env.navigate).not.toHaveBeenCalled();
-  env.stop();
-});
-it('leaves an ordinary online link alone when no copy is saved', () => {
-  const request = vi.fn(async () => new Response(null, { status: 503 }));
-  vi.stubGlobal('fetch', request);
-  const env = navigationDouble();
-  const preventDefault = env.click('/');
-  expect(preventDefault).not.toHaveBeenCalled();
-  expect(env.navigate).not.toHaveBeenCalled();
-  expect(request).not.toHaveBeenCalled();
-  expect(env.pushState).not.toHaveBeenCalled();
-  env.stop();
-});
-it('cancels an older saved-route probe before yielding a newer unsaved link', () => {
-  const requests: Array<{ signal?: AbortSignal }> = [];
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((_input, init) => {
-      requests.push(init ?? {});
-      return new Promise<Response>(() => {});
-    }),
-  );
-  let saved = true;
-  const env = navigationDouble(() => saved);
-  env.click('/analytics');
-  saved = false;
-  const preventDefault = env.click('/diary?date=2026-10-16');
-  expect(preventDefault).not.toHaveBeenCalled();
-  expect(requests[0]?.signal?.aborted).toBe(true);
-  env.stop();
-});
-it('opens saved data while onLine stays true and the identity probe never settles', () => {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Promise<Response>(() => {})),
-  );
-  const env = navigationDouble(() => true);
-  env.click('/');
-  expect(env.navigate).not.toHaveBeenCalled();
-  expect(env.pushState).toHaveBeenCalledWith(
-    {
-      tempoOfflineRoute: '/',
-      tempoOfflineRouteId: expect.any(String),
+it('leaves modified, hash, external and prevented links alone', () => {
+  environment();
+  let click!: (event: MouseEvent) => void;
+  vi.stubGlobal('document', {
+    addEventListener: (_: string, listener: typeof click) => {
+      click = listener;
     },
-    '',
-    '/',
-  );
-  env.stop();
+    removeEventListener: vi.fn(),
+  });
+  const stop = interceptReadLinks();
+  for (const options of [
+    { metaKey: true },
+    { defaultPrevented: true },
+    { href: 'https://example.com' },
+    { href: 'https://tempo.test/diary?date=2026-10-16#meal' },
+  ]) {
+    const preventDefault = vi.fn();
+    click({
+      button: 0,
+      target: { closest: () => ({ href: 'https://tempo.test/', ...options }) },
+      preventDefault,
+      ...options,
+    } as unknown as MouseEvent);
+    expect(preventDefault).not.toHaveBeenCalled();
+  }
+  stop();
 });
-it('only the latest navigation can commit after slow responses', async () => {
-  const releases: ((response: Response) => void)[] = [];
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(() => new Promise<Response>((resolve) => releases.push(resolve))),
-  );
-  const env = navigationDouble(() => true);
-  env.click('/');
-  env.click('/analytics');
-  releases[1]!(new Response('{}'));
-  await vi.waitFor(() =>
-    expect(env.navigate).toHaveBeenCalledWith('/analytics'),
-  );
-  releases[0]!(new Response('{}'));
-  await Promise.resolve();
-  expect(env.navigate).toHaveBeenCalledTimes(1);
-  expect(env.pushState).toHaveBeenCalledTimes(2);
-  env.stop();
-});
-it('leaves hash, modified clicks and prevented events alone', () => {
-  const request = vi.fn();
-  vi.stubGlobal('fetch', request);
-  const env = navigationDouble();
-  expect(env.click('/diary#details')).not.toHaveBeenCalled();
-  expect(env.click('/', { metaKey: true })).not.toHaveBeenCalled();
-  expect(env.click('/', { defaultPrevented: true })).not.toHaveBeenCalled();
-  expect(request).not.toHaveBeenCalled();
-  env.stop();
-});
-it('Back cancels a pending probe so its response cannot navigate forward again', async () => {
-  let release!: (response: Response) => void;
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(
-      () =>
-        new Promise<Response>((resolve) => {
-          release = resolve;
-        }),
-    ),
-  );
-  const env = navigationDouble(() => true);
-  env.click('/');
-  window.dispatchEvent(new Event('popstate'));
-  release(new Response('{}'));
-  await Promise.resolve();
-  await Promise.resolve();
-  expect(env.navigate).not.toHaveBeenCalled();
-  expect(env.pushState).toHaveBeenCalledOnce();
-  env.stop();
+it('does not treat editor routes as read routes', () => {
+  expect(isWorkspaceRoute('/workouts/new')).toBe(false);
+  expect(isWorkspaceRoute('/workouts/plans/p/edit')).toBe(false);
+  expect(isWorkspaceRoute('/workouts/plans/p/workouts/w/results')).toBe(false);
 });

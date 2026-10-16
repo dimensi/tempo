@@ -1,4 +1,6 @@
 'use client';
+import { useReadResource } from '@/lib/use-read-resource';
+import { z } from 'zod';
 import { useReadOnline } from '@/lib/use-read-online';
 import { useReadRefresh } from '@/lib/use-read-refresh';
 import { useEffect, useRef, useState } from 'react';
@@ -33,6 +35,31 @@ function TargetCommentsPanel({
   const [loading, setLoading] = useState(true);
   const targetType = target.type;
   const targetId = target.id;
+  const resource = useReadResource({
+    href: `/api/comments?${new URLSearchParams({ ownerId, type: targetType, targetId })}`,
+    parse: (value) =>
+      z
+        .array(
+          z.object({
+            id: z.string(),
+            authorId: z.string().nullable(),
+            authorName: z.string(),
+            body: z.string(),
+            parentId: z.string().nullable(),
+            createdAt: z.string(),
+            updatedAt: z.string(),
+            canEdit: z.boolean(),
+          }),
+        )
+        .parse(value),
+  });
+  const [acceptedRead, setAcceptedRead] = useState<typeof resource.data>();
+  if (resource.data && resource.data !== acceptedRead) {
+    setAcceptedRead(resource.data);
+    setRows(resource.data);
+    setLoading(false);
+    setError(false);
+  }
   useEffect(() => {
     const controller = new AbortController();
     const q = new URLSearchParams({ ownerId, type: targetType, targetId });

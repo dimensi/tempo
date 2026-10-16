@@ -1,141 +1,53 @@
 'use client';
-import { useEffect, useState, type ComponentProps } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useOfflineLocation, isOfflineRoute } from '@/lib/offline-routing';
-import { useReadOnline } from '@/lib/use-read-online';
-import { authClient } from '@/lib/auth-client';
+import { useState } from 'react';
+import { ReadLink } from '@/components/shared/read-link';
+import { useReadLocation } from '@/lib/workspace-navigation';
 import {
-  withOfflineDevicePurge,
-  notifyOfflineBlocked,
-} from '@/lib/offline-device';
-import { Modal, Button, Group, Text } from '@mantine/core';
-import { writeMessages } from '@/config/offline-write-messages';
-import {
-  deleteDeviceWrites,
-  hasPendingDeviceWrites,
-  syncDeviceWrites,
-  withWriteLock,
-} from '@/lib/offline-write-client';
+  beginLocalLogout,
+  finishPendingLogout,
+  hasPendingLogout,
+} from '@/lib/local-logout';
+import { withOfflineDevicePurge } from '@/lib/offline-device';
+import { deleteDeviceWrites, withWriteLock } from '@/lib/offline-write-client';
 import { ApplicationShellFrame } from './application-shell-frame';
-function MenuLink(props: ComponentProps<typeof Link>) {
-  const online = useReadOnline();
-  return <Link {...props} prefetch={online ? undefined : false} />;
-}
 export function ApplicationShell(props: {
   children: React.ReactNode;
   role: string;
   demo: boolean;
 }) {
-  const [online, setOnline] = useState(true);
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine);
-    update();
-    window.addEventListener('online', update);
-    window.addEventListener('offline', update);
-    return () => {
-      window.removeEventListener('online', update);
-      window.removeEventListener('offline', update);
-    };
-  }, []);
   const [cleanupError, setCleanupError] = useState(false);
-  const [pendingLogout, setPendingLogout] = useState(false);
-  const livePathname = usePathname();
-  const localUrl = useOfflineLocation();
-  const pathname = isOfflineRoute(localUrl) ? localUrl!.pathname : livePathname;
-  const router = useRouter();
-  async function logout(discard = false) {
-    // Conceal synchronously, before checking persistent storage or waiting on a lock.
-    notifyOfflineBlocked();
+  const pathname = new URL(useReadLocation() || '/', 'https://tempo.local')
+    .pathname;
+  async function logout() {
     try {
-      let pending = false;
-      try {
-        pending = await hasPendingDeviceWrites();
-      } catch {
-        setCleanupError(true);
-      }
-      if (!discard && pending) {
-        setPendingLogout(true);
-        return;
-      }
-      const result = await withOfflineDevicePurge(
+      beginLocalLogout();
+      await withOfflineDevicePurge(
         async () => {
-          const finish = async () => {
-            try {
-              if (!discard && (await hasPendingDeviceWrites()))
-                return { pending: true as const };
-              await deleteDeviceWrites();
-            } catch {
-              setCleanupError(true);
-            }
-            // Storage failure must not trap an authenticated user in the account.
-            // The durable auth blocker and server owner partition fence any retained records.
-            const response = await authClient.signOut();
-            if (response.error) throw new Error('Logout failed');
-            return { pending: false as const };
-          };
-          let entered = false;
-          try {
-            return await withWriteLock(() => {
-              entered = true;
-              return finish();
-            });
-          } catch (error) {
-            if (entered) throw error;
-            return finish();
-          }
+          await withWriteLock(() => deleteDeviceWrites()).catch(() =>
+            setCleanupError(true),
+          );
         },
         () => setCleanupError(true),
       );
-      if (result.pending) {
-        setPendingLogout(true);
-        return;
+      await finishPendingLogout();
+      if (!hasPendingLogout()) location.replace('/login');
+      else {
+        history.replaceState({}, '', '/login');
+        window.dispatchEvent(new PopStateEvent('popstate'));
       }
-      router.replace('/login');
-      router.refresh();
     } catch {
       setCleanupError(true);
     }
   }
   return (
-    <>
-      <ApplicationShellFrame
-        {...props}
-        pathname={pathname}
-        linkComponent={MenuLink}
-        cleanupError={cleanupError}
-        logoutDisabled={!online}
-        onLogout={() => logout()}
-      >
-        {props.children}
-      </ApplicationShellFrame>
-      <Modal
-        opened={pendingLogout}
-        onClose={() => setPendingLogout(false)}
-        title={writeMessages.review}
-      >
-        <Text>{writeMessages.logout}</Text>
-        <Group mt="md">
-          <Button
-            mih={44}
-            onClick={() => {
-              setPendingLogout(false);
-              void syncDeviceWrites().catch(() => {});
-            }}
-          >
-            {writeMessages.wait}
-          </Button>
-          <Button
-            mih={44}
-            color="red"
-            onClick={() => {
-              void logout(true);
-            }}
-          >
-            {writeMessages.discardLogout}
-          </Button>
-        </Group>
-      </Modal>
-    </>
+    <ApplicationShellFrame
+      {...props}
+      pathname={pathname}
+      linkComponent={ReadLink}
+      cleanupError={cleanupError}
+      onLogout={logout}
+    >
+      {props.children}
+    </ApplicationShellFrame>
   );
 }

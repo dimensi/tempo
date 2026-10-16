@@ -113,7 +113,7 @@ interface DeviceGate {
 let memoryBlocked = false;
 let pendingDeviceMutations = 0;
 let pageRestorePending = false;
-function hasMutationIntent(storage = browserGateStorage()) {
+export function hasMutationIntent(storage = browserGateStorage()) {
   if (pendingDeviceMutations) return true;
   if (!storage) throw new OfflineStorageError('unavailable');
   for (let index = 0; index < storage.length; index++)

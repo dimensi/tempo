@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { ReadLink as Link } from '@/components/shared/read-link';
+import { useReadRouter as useRouter } from '@/lib/workspace-navigation';
 import {
   ActionIcon,
   Badge,

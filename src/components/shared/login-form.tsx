@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { finishPendingLogout } from '@/lib/local-logout';
 import { Alert, Button, PasswordInput, Stack, TextInput } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { authClient } from '@/lib/auth-client';
@@ -10,7 +10,6 @@ import {
   offlineDeviceMessages,
 } from '@/lib/offline-device';
 export function LoginForm() {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const [cleanupError, setCleanupError] = useState(false);
@@ -26,6 +25,10 @@ export function LoginForm() {
     setBusy(true);
     setError(false);
     try {
+      if (!(await finishPendingLogout())) {
+        setError(true);
+        return;
+      }
       const result = await withOfflineDevicePurge(
         () => authClient.signIn.email(values),
         () => setCleanupError(true),
@@ -34,8 +37,7 @@ export function LoginForm() {
         setError(true);
         return;
       }
-      router.replace('/');
-      router.refresh();
+      location.replace('/');
     } catch {
       setError(true);
     } finally {

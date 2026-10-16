@@ -1,110 +1,31 @@
-# Local-first UI: практики и план внедрения
+# Local-first private workspace
 
-[ADR 002](../decisions/002-local-first-private-workspace.md) задаёт обязательные инварианты. Этот документ описывает реализацию поверх существующих offline controller, `ReadResourceStore`, IndexedDB fences, Service Worker и feature read-компонентов.
+[ADR 002](../decisions/002-local-first-private-workspace.md) defines the access and UI invariants.
 
-## Модули и интерфейсы
+## One interface
 
-### Private read workspace
+`PrivateReadWorkspace` owns the mounted route views and their session scroll state. The ordinary dashboard and the public, cached boot document import this same composition. Connection changes never select another renderer. Native History changes managed read routes immediately; network-only editor routes use the Next router. Modified clicks, downloads, external links and same-page anchors retain browser behavior.
 
-Workspace связывает access fence, URL, read resources и статусы, но не владеет feature-разметкой или mutations.
+The layout authenticates its initial request and may supply an authorized read context. Every data endpoint independently reauthorizes the owner scope. Route files provide metadata; the workspace renders diary, workouts/details/catalog, measurements, overview, analytics, reports, settings and medical views through their ordinary feature modules. Previously visited route instances remain in React Activity for Back/Forward; access denial and logout discard private route state. Provider mutations conceal the current view while retaining its form until the same reader is reauthorized.
 
-```ts
-type AccessState =
-  'unknown' | 'locally-allowed' | 'checking' | 'confirmed' | 'denied';
-type Coverage = 'missing' | 'partial' | 'complete';
+## Read interface
 
-interface ReadResource<T> {
-  data?: T;
-  source?: 'memory' | 'storage' | 'network';
-  savedAt?: number;
-  coverage: Coverage;
-  refreshing: boolean;
-  error?: 'network' | 'unavailable' | 'denied';
-}
-```
+`useReadResource({ href, parse }, initialSeed?)` returns `data`, `coverage`, `refreshing`, `error`, and `refresh()`. A mounted descriptor has one parser contract; changing its URL keeps the same DTO type. Features do not choose between disk and server.
 
-Feature-код получает resource state и вызывает refresh. Он не знает про IndexedDB, Web Locks, BroadcastChannel или Service Worker. Интерфейс модуля остаётся маленьким; transport и persistence являются внутренними адаптерами.
+The common read module handles canonical keys, memory, fenced IndexedDB persistence, validation, concurrent requests and background revalidation. App snapshot adapters seed normal DTOs without presenting bounded coverage as a complete collection. Network responses and initial seeds cannot cross a changed partition, device epoch or connection generation. Equal subtrees retain their identity; forms maintain their own drafts independently.
 
-### Route coordinator
+The private `/api/read/context`, `/api/read/workout`, `/api/read/analytics` and owner-only `/api/read/settings` endpoints expose existing authorized presentation data. Their explicit Zod whitelist is the only new persistence surface. Credentials and external avatar URLs never enter disk records. Workout detail records obey the existing rolling retention window; analytic summaries retain their separate coverage. Read records use version 2 with explicit complete/partial coverage; incompatible older response records are discarded and refilled through the ordinary authorized reads. No SQL schema or business calculation changes are involved.
 
-Координатор работает только с каноническими same-origin read URL:
+Ordinary workout and settings response records are prepared in a bounded background queue from covered snapshot routes. The existing ordered owner write queue remains independent. Reports retain their existing local HTML renderer, supplied by an app read adapter; this is feature-specific cleanup deferred from this change.
 
-1. проверяет, что текущий fenced snapshot покрывает destination;
-2. немедленно публикует saved URL через History и сохраняет текущий live tree в `Activity`;
-3. параллельно выполняет bounded identity probe;
-4. при успехе продолжает обычную Next navigation;
-5. при transport failure оставляет saved view;
-6. при denial полагается на общий synchronous conceal/purge path.
+## Access lifecycle
 
-Mutation routes (`new`, `edit`, `results`, upload, sync, settings submit) не считаются saved read-routes и требуют живого авторизованного transport.
+Local storage validation and bounded identity refresh start independently. A valid local copy can publish while identity is stalled; an already observed denial blocks publication before physical cleanup. Local reads are coalesced so a superseded operation cannot publish after a newer denial.
 
-### Resource keys и coverage
+All private content, including enlarged photo portals, participates in synchronous conceal. BFCache pagehide conceals before the document freezes; pageshow cannot reveal while the new local check is pending. Routine same-scope checking keeps the mounted UI visible.
 
-Ключ включает route, отсортированные query parameters и текущий read fence. OWNER/TRAINER identifiers и credentials не записываются в browser-visible URL только ради кеша.
+Logout records durable intent and conceals synchronously, purges read data and the device write queue, and then attempts server sign-out. Offline failure leaves the intent blocking local activation across reloads. Reconnect or the next login completes server sign-out before allowing another login. Real denial, account changes and trainer revocation use the same conceal/purge fences. Network timeouts and 5xx responses never masquerade as authorization failure.
 
-Полный query может удалить старую запись только в своей области. Частичная сводка аналитики, 15-дневный diary snapshot или усечённый medical summary не доказывают отсутствие данных за пределами coverage.
+## Verification
 
-| Экран      | Saved key / источник                                | Семантика отсутствия                                                 |
-| ---------- | --------------------------------------------------- | -------------------------------------------------------------------- |
-| Дневник    | дата + nutrition/photo/comment projections          | незагруженный день — `missing`; загруженный пустой день — `complete` |
-| Тренировки | дата или canonical detail href                      | дата входит в `workoutDates`; неизвестный detail не угадывается      |
-| Замеры     | measurement collection + weight range               | пустая подтверждённая коллекция отличается от ошибки чтения          |
-| Аналитика  | `from + to + timezone` или покрытая compact summary | сравнение вне coverage отсутствует, а не равно нулю                  |
-
-## Lifecycle
-
-### Обычная проверка
-
-`focus`, `pageshow`, `online` и периодическая проверка запускают `checking` без conceal. Текущие данные и view state остаются смонтированными. Успешный тот же scope обновляет generation/freshness и запускает refresh видимых ресурсов.
-
-`offline` отменяет ненужный online flight и читает текущую локальную копию. Он не вызывает document navigation, reload или очистку UI.
-
-### Security transition
-
-Auth/provider mutation создаёт durable intent и синхронно вызывает conceal до ожидания lock. Purge, mutation и final purge выполняются под существующим Web Lock. `401/403` от same-origin data API, BroadcastChannel denial и fence mismatch используют тот же путь.
-
-Transport timeout, `5xx`, storage quota и отсутствие Service Worker не являются denial. Они меняют только connection/resource error.
-
-### Reconnect
-
-После подтверждения identity OWNER сначала отправляет существующую ordered write queue, затем обновляет snapshot и видимые reads. TRAINER не отправляет owner writes. Неоткрытые query обновляются при следующем чтении. Ни один шаг не владеет навигацией, scroll или состоянием формы.
-
-## Правила для feature-кода
-
-- Инициализировать форму один раз; background data не сбрасывает локальный draft.
-- Не очищать `data` перед GET и не показывать section-wide loader при повторном чтении.
-- Показывать refresh/sync/error рядом с соответствующим ресурсом.
-- Дату и фильтры кодировать в URL; ephemeral раскрытия и scroll — в session view state.
-- Persist draft разрешать только через реестр безопасных полей. Очистка происходит после подтверждённой отправки, отмены или security purge.
-- Любой новый disk-cached DTO добавлять в строгий Zod whitelist и тестировать на отказ credentials, signed URLs и upstream payloads.
-- Использовать общие read-компоненты; не создавать отдельную offline-разметку.
-
-## Этапы дальнейшей миграции
-
-1. **Core lifecycle — выполнено:** проверки соединения не скрывают подтверждённый UI; saved core-route выбирается до identity/RSC.
-2. **Единые feature views:** убрать оставшиеся ветвления между live и saved renderers у дневника, тренировок, замеров и аналитики. RSC передаёт только initial seed и permissions.
-3. **Typed reconcile:** перенести feature merge-функции за интерфейс store; сохранить ссылочную идентичность неизменившихся records и явно передавать `complete/partial`.
-4. **View state:** общий session adapter для scroll/раскрытий; IndexedDB registry только для разрешённых drafts. Существующая offline-write queue остаётся отдельной.
-5. **Удаление старого пути:** после миграции всех поддержанных routes удалить дублирующий offline renderer и несовместимые browser records без shim.
-
-Core/contracts/schema/navigation меняются последовательно в отдельной согласованной ветке. Feature-работы начинаются только после фиксации интерфейса; features не импортируют друг друга.
-
-## Проверки
-
-### Unit и integration
-
-- saved route публикуется до завершения identity probe;
-- `checking/refreshing/network error` сохраняют data;
-- complete/partial reconcile и удаления ограничены coverage;
-- stale scope response отбрасывается;
-- denial conceal происходит до async cleanup;
-- OWNER/TRAINER sessions, grant generation и route readers используют реальные server guards;
-- несовместимый browser contract очищается, credentials не проходят whitelist.
-
-### Browser
-
-Для каждого основного экрана: выбрать дату/фильтр, раскрыть карточку, прокрутить, ввести разрешённый draft, потерять и вернуть сеть. URL, ввод, focus, scroll и mounted screen сохраняются; изменившийся record обновляется без полноэкранного loading.
-
-Отдельно проверяются stalled transport при `navigator.onLine=true`, cold installed-PWA launch, Back/Forward, BFCache, две вкладки, logout/account switch, OWNER и TRAINER revoke, quota/eviction и Service Worker A→B. Отзыв, обнаруженный онлайн, должен скрыть данные до refresh.
-
-Перед merge финальной реализации обязательны все три полных E2E-набора из `AGENTS.md` и полный production offline suite на том же SHA. Проверка Chromium mobile profile не объявляется физической проверкой iPhone/PWA.
+Verification tier: Full. Unit/integration tests cover stalled reads, partial coverage, structural sharing, stale-scope responses, durable logout, real-session endpoint authorization and storage fences. Production browser tests cover ordinary/cold entry, desktop/mobile navigation, retained drafts, local writes, cross-tab conceal, photo portals and worker updates. Before delivery, run `pnpm verify:merge` on a clean committed revision and the complete production offline suite on the same SHA. No merge or deploy is implied.

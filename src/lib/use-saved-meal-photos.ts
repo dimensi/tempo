@@ -34,10 +34,9 @@ export function useSavedMealPhotos(photos: SafeMealPhotoView[]) {
   return {
     online,
     photos: photos.map((photo) => {
-      const id = savedMealPhotoId(
-        photo,
-        state.bundle?.snapshot.photos.items ?? [],
-      );
+      const id = state.photos.some((row) => row.id === photo.id)
+        ? photo.id
+        : savedMealPhotoId(photo, state.bundle?.snapshot.photos.items ?? []);
       return {
         ...photo,
         href:

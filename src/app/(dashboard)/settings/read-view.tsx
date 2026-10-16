@@ -1,0 +1,56 @@
+'use client';
+import { useState } from 'react';
+import { Stack, Text, Title, Skeleton } from '@mantine/core';
+import { useReadResource } from '@/lib/use-read-resource';
+import { readSettingsSchema } from '@/contracts/read-settings';
+import { ru } from '@/config/messages';
+import { TrainerSettings } from '@/features/trainer';
+import { AccessPanel } from '@/features/anamnesis';
+import { OfflineSettings } from '@/features/offline';
+import { StepsGoalForm } from './steps-goal-form';
+import { YazioSettingsForm } from './yazio/settings-form';
+import { TransformMateSettingsForm } from './transformmate/settings-form';
+import { SettingsNavigation } from './settings-navigation';
+export function SettingsReadView({
+  ownerId,
+  owner,
+}: {
+  ownerId: string;
+  owner: boolean;
+}) {
+  const resource = useReadResource({
+    href: owner ? '/api/read/settings' : undefined,
+    parse: (value) => readSettingsSchema.parse(value),
+  });
+  const [retained, setRetained] = useState(resource.data);
+  if (resource.data && resource.data !== retained) setRetained(resource.data);
+  if (!owner) return <Text>{ru.settings.ownerOnly}</Text>;
+  const data = resource.data ?? retained;
+  if (!data) return <Skeleton height={180} />;
+  return (
+    <Stack gap="xl">
+      <Stack gap="xs">
+        <Title order={1}>
+          {ru.sections.find((section) => section.href === '/settings')!.title}
+        </Title>
+        <Text c="dimmed">{ru.settings.description}</Text>
+      </Stack>
+      <SettingsNavigation>
+        <Stack gap={48}>
+          <YazioSettingsForm initial={data.yazio} embedded />
+          <TransformMateSettingsForm initial={data.transformMate} embedded />
+          <section id="trainers" tabIndex={-1} aria-label={ru.trainerSettings}>
+            <TrainerSettings
+              ownerId={ownerId}
+              initialTrainers={data.trainers}
+              headingOrder={2}
+            />
+            <AccessPanel ownerId={ownerId} />
+          </section>
+          <StepsGoalForm initial={data.stepsGoal} />
+          <OfflineSettings />
+        </Stack>
+      </SettingsNavigation>
+    </Stack>
+  );
+}

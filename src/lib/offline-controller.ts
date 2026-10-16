@@ -1,3 +1,4 @@
+import { hasPendingLogout } from './local-logout';
 import {
   offlineIdentitySchema,
   offlineSnapshotSchema,
@@ -60,6 +61,18 @@ export class OfflineController {
   private flightRevision = -1;
   private flightOnline = false;
   private optedIn = false;
+  private localRead?: ReturnType<OfflineStorage['read']>;
+  private readLocal() {
+    if (this.localRead) return this.localRead;
+    const flight = this.storage.read(this.now(), this.timezone());
+    this.localRead = flight;
+    void flight
+      .finally(() => {
+        if (this.localRead === flight) this.localRead = undefined;
+      })
+      .catch(() => {});
+    return flight;
+  }
   private lastVerifiedAt = 0;
   private lastRefreshAttempt = Number.NEGATIVE_INFINITY;
   constructor(
@@ -138,6 +151,7 @@ export class OfflineController {
       response.status === 409
     ) {
       if (signal.aborted) throw new OfflineNetworkError();
+      this.set({ ...empty, status: 'error', error: 'denied' });
       await purgeOfflineDevice().catch(() => {});
       // Purge broadcasts invalidate this operation too. Preserve the reason after
       // that invalidation so a cold shell can offer an explicit sign-in action.
@@ -198,6 +212,10 @@ export class OfflineController {
     }
   }
   activate(online = navigator.onLine, force = false): Promise<void> {
+    if (hasPendingLogout()) {
+      this.invalidate();
+      return Promise.resolve();
+    }
     if (
       this.flight &&
       this.flightRevision === this.revision &&
@@ -277,7 +295,29 @@ export class OfflineController {
         this.set({ ...empty, status: 'disabled' });
         return;
       }
-      const identity = online ? await this.identity(operation.signal) : null;
+      // Start independent checks together: a stalled identity never holds local reads.
+      // A denial already observed by the transport blocks publication before cleanup.
+      const identityCheck = online
+        ? this.identity(operation.signal).then(
+            (identity) => ({ identity, error: undefined }),
+            (error: unknown) => ({ identity: undefined, error }),
+          )
+        : null;
+      const localRead = this.readLocal();
+      if (identityCheck) {
+        const first = await Promise.race([
+          localRead.then(() => null),
+          identityCheck,
+        ]);
+        if (first?.error) throw first.error;
+      }
+      const local = await localRead;
+      if (this.revision !== operation.revision || this.state.error === 'denied')
+        return;
+      if (local.bundle) this.publish(local, false);
+      const checked = await identityCheck;
+      if (checked?.error) throw checked.error;
+      const identity = checked?.identity ?? null;
       if (this.revision !== operation.revision) return;
       if (
         identity &&
@@ -500,6 +540,7 @@ export class OfflineController {
     verifiedCache?: OfflineState,
   ) {
     if (this.revision !== revision) return;
+
     if (error instanceof OfflineReadError && error.reason === 'denied') {
       this.optedIn = false;
       this.set({ ...empty, status: 'error', error: 'denied' });

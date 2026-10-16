@@ -25,12 +25,6 @@ export function OfflineSettings() {
           {m.disable}
         </Button>
         {state.error && <Alert role="alert">{m[state.error]}</Alert>}
-        {state.bundle && (
-          <Text>
-            {m.checked}:{' '}
-            {new Date(state.bundle.savedAt).toLocaleString('ru-RU')}
-          </Text>
-        )}
         {state.bundle?.missingPhotos.length ? (
           <Text>{m.partialPhotos}</Text>
         ) : null}

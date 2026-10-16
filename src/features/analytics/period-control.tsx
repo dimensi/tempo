@@ -1,6 +1,6 @@
 'use client';
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useReadRouter as useRouter } from '@/lib/workspace-navigation';
 import { requestReadNavigation } from '@/components/shared/read-link';
 import { Skeleton, Stack, Text, Title } from '@mantine/core';
 import { dateInTimezone } from '@/contracts/nutrition-sync-dates';

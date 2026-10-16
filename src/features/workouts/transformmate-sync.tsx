@@ -1,4 +1,6 @@
 'use client';
+import { useReadResource } from '@/lib/use-read-resource';
+import { useReadOnline } from '@/lib/use-read-online';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Button, Group, Stack, Text } from '@mantine/core';
 import { z } from 'zod';
@@ -40,9 +42,33 @@ export function useTransformMateSync(
   const [busy, setBusy] = useState(false);
   const inflight = useRef<AbortController | null>(null);
   const generation = useRef(0);
+  const resource = useReadResource({
+    href: `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20' })}`,
+    parse: (value) =>
+      z
+        .object({
+          data: z.object({
+            configured: z.boolean(),
+            items: z.array(transformMateSyncItemSchema),
+            nativePage: transformMateNativePageSchema,
+            nativeRefresh: transformMateNativeRefreshSchema,
+          }),
+        })
+        .parse(value).data,
+  });
+  const [acceptedRead, setAcceptedRead] = useState<typeof resource.data>();
+  if (resource.data && resource.data !== acceptedRead) {
+    setAcceptedRead(resource.data);
+    setItems(resource.data.items);
+    setNativePage(resource.data.nativePage);
+    setConfigured(resource.data.configured);
+    setNativeRefresh(resource.data.nativeRefresh);
+    setError(false);
+  }
   const refresh = useCallback(
     async (method = 'POST', cursor?: string, automatic = false) => {
       if (
+        !navigator.onLine ||
         inflight.current ||
         (automatic && Date.now() - lastAutomatic.current < 60_000)
       )
@@ -123,8 +149,6 @@ export function useTransformMateSync(
     lastAutomatic.current = 0;
     void Promise.resolve().then(async () => {
       if (generation.current !== effectGeneration) return;
-      setNativePage({ items: [], nextCursor: null });
-      setNativeRefresh({ status: 'idle', checkedAt: null, errorCode: null });
       await refresh('GET');
       if (generation.current === effectGeneration)
         await refresh('POST', undefined, true);
@@ -163,6 +187,7 @@ export function SyncSummary({
 }: {
   sync: ReturnType<typeof useTransformMateSync>;
 }) {
+  const online = useReadOnline();
   if (sync.configured === false)
     return (
       <Text size="sm" c="dimmed">
@@ -191,6 +216,8 @@ export function SyncSummary({
           size="compact-sm"
           mih={44}
           loading={sync.busy}
+          disabled={!online}
+          title={!online ? m.syncError : undefined}
           onClick={() => void sync.refresh()}
         >
           {m.syncRefresh}

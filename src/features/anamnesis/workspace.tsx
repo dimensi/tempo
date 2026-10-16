@@ -30,11 +30,19 @@ export function AnamnesisWorkspace({
   const [error, setError] = useState(false);
   const readRefresh = useReadRefresh();
   const revision = useAnamnesisRevision();
-  useReadResource(
-    `/api/anamnesis/overview?${ownerIdQuery(ownerId)}`,
-    (value) => anamnesisOverviewSchema.parse(value),
-    setOverview,
-  );
+  const readResource1 = useReadResource({
+    href: `/api/anamnesis/overview?${ownerIdQuery(ownerId)}`,
+    parse: (value) => anamnesisOverviewSchema.parse(value),
+  });
+  const [acceptedreadResource1, setAcceptedreadResource1] =
+    useState<typeof readResource1.data>();
+  if (
+    readResource1.data !== undefined &&
+    acceptedreadResource1 !== readResource1.data
+  ) {
+    setAcceptedreadResource1(readResource1.data);
+    setOverview(readResource1.data);
+  }
   useEffect(() => {
     const controller = new AbortController();
     void fetchAnamnesis<AnamnesisOverview>(

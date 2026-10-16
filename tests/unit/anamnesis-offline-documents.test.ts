@@ -33,7 +33,9 @@ vi.mock('react', async (original) => ({
 }));
 vi.mock('@/lib/use-read-online', () => ({ useReadOnline: () => state.online }));
 vi.mock('@/lib/use-read-refresh', () => ({ useReadRefresh: () => 0 }));
-vi.mock('@/lib/use-read-resource', () => ({ useReadResource: vi.fn() }));
+vi.mock('@/lib/use-read-resource', () => ({
+  useReadResource: vi.fn(() => ({ data: undefined })),
+}));
 vi.mock('@/lib/client-read', () => ({
   invalidateMedicalDocument: vi.fn(),
   savedMedicalDocument: async () => {
@@ -118,7 +120,6 @@ it('does not let a late saved document overwrite a fresher live response', async
     ownerId: 'owner',
     documentId: 'doc',
     writable: true,
-    preferSaved: true,
   });
   await vi.waitFor(() => expect(state.documentUpdates).toContainEqual(live));
   saved.resolve({ ...live, filename: 'stale.pdf', updatedAt: 1 });
@@ -133,7 +134,6 @@ it('loads a saved document before a stalled live refresh on an offline projectio
     ownerId: 'owner',
     documentId: 'doc',
     writable: true,
-    preferSaved: true,
   });
   await vi.waitFor(() => expect(state.savedDocumentCalls).toBe(1));
 });

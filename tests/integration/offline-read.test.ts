@@ -1,3 +1,7 @@
+import { GET as contextGET } from '@/app/api/read/context/route';
+import { GET as analyticsGET } from '@/app/api/read/analytics/route';
+import { GET as workoutGET } from '@/app/api/read/workout/route';
+import { GET as settingsGET } from '@/app/api/read/settings/route';
 import { createHmac } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -737,4 +741,45 @@ it('owner generation binds reader, role, subject and session and changes on disc
   } finally {
     database.sqlite.prepare('DELETE FROM workout_transformmate_native').run();
   }
+});
+
+it('workspace read endpoints reject anonymous and ungranted trainer reads with real sessions', async () => {
+  for (const [handler, path] of [
+    [contextGET, '/api/read/context'],
+    [analyticsGET, '/api/read/analytics'],
+    [workoutGET, '/api/read/workout'],
+    [settingsGET, '/api/read/settings'],
+  ] as const) {
+    database.sqlite.prepare('DELETE FROM trainer_access').run();
+    const anonymous = await handler(
+      new Request(`http://localhost:3000${path}`),
+    );
+    expect([401, 403]).toContain(anonymous.status);
+    const trainer = await handler(
+      new Request(`http://localhost:3000${path}`, { headers: trainerHeaders }),
+    );
+    expect(trainer.status).toBe(403);
+  }
+});
+it('workspace context binds the authorized owner to the same partition and generation', async () => {
+  const response = await contextGET(
+    new Request('http://localhost:3000/api/read/context', {
+      headers: ownerHeaders,
+    }),
+  );
+  expect(response.status).toBe(200);
+  const context = await response.json();
+  const identity = await (
+    await identityGET(
+      new Request('http://localhost:3000/api/offline/identity', {
+        headers: ownerHeaders,
+      }),
+    )
+  ).json();
+  expect(context).toEqual({
+    ownerId,
+    role: 'OWNER',
+    partition: identity.partition,
+    connectionGeneration: identity.connectionGeneration,
+  });
 });

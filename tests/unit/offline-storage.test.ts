@@ -245,7 +245,8 @@ it('read-resource data shares the read fence, is cleaned on account replacement 
   const { storage, data, bundle } = await prepared();
   const stamp = Date.now();
   const record = {
-    version: 1 as const,
+    version: 2 as const,
+    coverage: 'complete' as const,
     key: '/api/anamnesis/markers?ownerId=owner',
     body: '[]',
     savedAt: stamp,
@@ -267,7 +268,8 @@ it('resource eviction is bounded and cannot remove the diary or saved file bytes
   await storage.writeFile(file);
   const stamp = Date.now();
   await storage.writeResource(bundle.fence, {
-    version: 1,
+    version: 2,
+    coverage: 'complete',
     key: '/api/anamnesis/markers/x',
     body: '{}',
     savedAt: stamp - 16 * 86400000,
