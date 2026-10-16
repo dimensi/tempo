@@ -173,8 +173,27 @@ export function bindReadScope() {
     ? `${bundle.fence.partition}:${bundle.fence.deviceEpoch}:${bundle.snapshot.connectionGeneration}`
     : '';
   if (scope !== next) {
-    readRevision++;
-    clientReads.clear();
+    const entry = clientReads.snapshot('/api/read/context');
+    const current =
+      entry.data && readContextSchema.safeParse(JSON.parse(entry.data));
+    const initialBinding =
+      !scope &&
+      !!next &&
+      !readBlocked &&
+      entry.source === 'network' &&
+      current &&
+      current.success &&
+      bundle &&
+      current.data.partition === bundle.snapshot.partition &&
+      current.data.connectionGeneration ===
+        bundle.snapshot.connectionGeneration &&
+      current.data.role === bundle.snapshot.role;
+    // The first local fence adopts already-authorized live reads. It is not
+    // a security transition; clearing here would remount ordinary views.
+    if (!initialBinding) {
+      readRevision++;
+      clientReads.clear();
+    }
     scope = next;
   }
   fence = bundle?.fence;

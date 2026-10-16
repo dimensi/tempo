@@ -450,3 +450,28 @@ it('a late context from an old epoch cannot deny the newer current actor', async
     JSON.stringify(current),
   );
 });
+
+it('first local binding retains fresh live records from the same verified actor', async () => {
+  state.partition = 'P'.repeat(43);
+  state.generation = 'G'.repeat(43);
+  state.blockedScope = true;
+  const current = {
+    readerId: 'reader',
+    ownerId: 'reader',
+    role: 'OWNER',
+    partition: state.partition,
+    connectionGeneration: state.generation,
+  };
+  const reader = await install(
+    vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(current))
+      .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 10 })),
+  );
+  await reader.refreshClientRead('/api/read/context');
+  await reader.refreshClientRead(path);
+  const before = reader.clientReads.snapshot(path);
+  state.blockedScope = false;
+  for (const listener of state.listeners) listener();
+  expect(reader.clientReads.snapshot(path)).toBe(before);
+});
