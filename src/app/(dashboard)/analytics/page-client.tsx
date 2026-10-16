@@ -1,5 +1,8 @@
 'use client';
-import { browserToday } from '@/components/shared/date-navigation-dates';
+import {
+  dateInTimezone,
+  timezoneSchema,
+} from '@/contracts/nutrition-sync-dates';
 import { ResourcePending } from '@/components/shared/read-resource-pending';
 import { readWorkspaceMessages as m } from '@/config/read-workspace';
 import { analyticsRangeSchema } from '@/contracts/analytics';
@@ -15,17 +18,22 @@ import { Text } from '@mantine/core';
 import { useSearchParams } from 'next/navigation';
 export function AnalyticsPage() {
   const params = useSearchParams();
-  const today = browserToday();
   const timezone =
     params.get('timezone') ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const zone = timezoneSchema.safeParse(timezone);
+  const today = zone.success
+    ? dateInTimezone(new Date(), zone.data)
+    : undefined;
   const range = analyticsRangeSchema.safeParse(
     params.has('from') || params.has('to')
       ? { from: params.get('from'), to: params.get('to') }
-      : presetRange('week', today),
+      : today
+        ? presetRange('week', today)
+        : undefined,
   );
   const resource = useReadResource(
     readResources.analytics(
-      range.success
+      range.success && zone.success
         ? `/api/read/analytics?${new URLSearchParams({ ...range.data, timezone })}`
         : undefined,
     ),
@@ -37,7 +45,7 @@ export function AnalyticsPage() {
         to={params.get('to') ?? undefined}
       />
     );
-  if (!range.success) return <Text>{m.invalidRange}</Text>;
+  if (!range.success || !zone.success) return <Text>{m.invalidRange}</Text>;
   return resource.data ? (
     <AnalyticsDashboard
       data={resource.data}
@@ -45,7 +53,7 @@ export function AnalyticsPage() {
         <PeriodControl
           range={resource.data.range}
           previous={resource.data.previousRange}
-          today={today}
+          today={resource.data.today}
           timezone={timezone}
         />
       }

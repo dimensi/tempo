@@ -423,3 +423,37 @@ test('scoped analytics API, coverage, controls: hierarchy, comparisons, combined
     await context.close();
   }
 });
+
+test('bookmarked timezone determines the default range and server day selects the preset', async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date('2026-10-16T10:30:00Z'));
+  const selectedTimezone = 'Pacific/Kiritimati';
+  const selectedToday = '2026-10-17';
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await login(page);
+  await page.route('**/api/read/analytics?*', async (route) => {
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    const data = await response.json();
+    await route.fulfill({ response, json: { ...data, today: selectedToday } });
+  });
+  const requested = page.waitForRequest(
+    (request) => new URL(request.url()).pathname === '/api/read/analytics',
+  );
+  await page.goto(
+    `/analytics?timezone=${encodeURIComponent(selectedTimezone)}`,
+  );
+  const query = new URL((await requested).url()).searchParams;
+  expect(query.get('to')).toBe(selectedToday);
+  expect(query.get('from')).toBe(shiftDate(selectedToday, -6));
+  await expect(
+    page.getByRole('button', { name: '7 дней', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await page.goto('/analytics?timezone=not-a-timezone');
+  await expect(
+    page.getByText('Проверьте выбранный период.', { exact: true }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+});

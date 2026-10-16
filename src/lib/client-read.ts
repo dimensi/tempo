@@ -171,7 +171,10 @@ export async function refreshClientRead(key: string) {
           if (generation !== sessionGeneration())
             throw new ReadFailure('denied');
           if (!response.ok)
-            throw new ReadFailure('unavailable', response.status);
+            throw new ReadFailure(
+              response.status === 403 ? 'denied' : 'unavailable',
+              response.status,
+            );
           const schema = readResponseSchema(
             new URL(key, 'https://tempo.local').pathname,
           );

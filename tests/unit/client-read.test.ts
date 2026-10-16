@@ -5,7 +5,7 @@ import {
   refreshClientRead,
   seedClientRead,
 } from '@/lib/client-read';
-import { bindSession, resetSession } from '@/lib/session-state';
+import { bindSession, readSession, resetSession } from '@/lib/session-state';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { indexedDBDriver } from './helpers/browser-db';
 const session = (partition = 'owner') => ({
@@ -97,3 +97,30 @@ it('read cache clearing is independent of owner write queue', async () => {
   await clientReads.restore(key);
   expect(clientReads.snapshot(key).data).toBeUndefined();
 });
+
+it.each([403, 404])(
+  'evicts only the denied or deleted GET resource (%s) from memory and disk',
+  async (status) => {
+    const otherKey = '/api/measurements';
+    await seedClientRead(key, { dailyStepsGoal: 123 });
+    await seedClientRead(otherKey, []);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json(
+          { error: status === 403 ? 'FORBIDDEN' : 'NOT_FOUND' },
+          { status },
+        ),
+      ),
+    );
+    await expect(refreshClientRead(key)).rejects.toMatchObject({ status });
+    expect(clientReads.snapshot(key).data).toBeUndefined();
+    expect(readSession()?.partition).toBe('owner');
+    expect(clientReads.snapshot(otherKey).data).toBe('[]');
+    clientReads.clear();
+    await clientReads.restore(key);
+    await clientReads.restore(otherKey);
+    expect(clientReads.snapshot(key).data).toBeUndefined();
+    expect(clientReads.snapshot(otherKey).data).toBe('[]');
+  },
+);

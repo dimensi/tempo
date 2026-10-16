@@ -234,15 +234,31 @@ test('owner imports the reference PDF and trainer receives only granted access',
     `**/api/anamnesis/documents/${document.document.id}/observations?*`,
     (route) => route.fulfill({ status: 503, json: { error: 'Unavailable' } }),
   );
-  const failedRefresh = page.waitForResponse(
-    (response) =>
+  let failedRefresh = false;
+  const observeRefresh = (response: import('@playwright/test').Response) => {
+    if (
       response
         .url()
         .includes(`/documents/${document.document.id}/observations?`) &&
-      response.status() === 503,
-  );
-  await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await failedRefresh;
+      response.status() === 503
+    )
+      failedRefresh = true;
+  };
+  page.on('response', observeRefresh);
+  await page.bringToFront();
+  await expect
+    .poll(() => page.evaluate(() => globalThis.document.visibilityState))
+    .toBe('visible');
+  // Reconnect can coalesce with the initial access flight. Observe the actual
+  // failed resource read before asserting that its current citations survive.
+  await expect
+    .poll(async () => {
+      if (!failedRefresh)
+        await page.evaluate(() => window.dispatchEvent(new Event('online')));
+      return failedRefresh;
+    })
+    .toBe(true);
+  page.off('response', observeRefresh);
   await expect(viewer.getByText(quote, { exact: false }).first()).toBeVisible();
   await page.reload();
   await expect(
@@ -552,6 +568,89 @@ test('owner imports the reference PDF and trainer receives only granted access',
   );
   expect(trainerFile.status()).toBe(200);
   expect(trainerFile.headers()['content-type']).toBe('application/pdf');
+
+  // An object-level denial clears only that detail; the trainer session stays valid.
+  await trainerPage.goto(documentPath);
+  await expect(
+    trainerPage.getByRole('heading', {
+      name: document.document.filename,
+      exact: true,
+    }),
+  ).toBeVisible();
+  const documentApiPath = `/api/anamnesis/documents/${document.document.id}`;
+  const savedDocumentReads = () =>
+    trainerPage.evaluate(
+      (path) =>
+        new Promise<string[]>((resolve, reject) => {
+          const request = indexedDB.open('yazio-offline-read-v1', 3);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction('resources', 'readonly');
+            const keys = tx.objectStore('resources').getAllKeys();
+            keys.onsuccess = () =>
+              resolve(
+                keys.result.filter(
+                  (key): key is string =>
+                    typeof key === 'string' && key.includes(path),
+                ),
+              );
+            keys.onerror = () => reject(keys.error);
+            tx.oncomplete = () => db.close();
+          };
+        }),
+      documentApiPath,
+    );
+  await expect.poll(savedDocumentReads).not.toHaveLength(0);
+  expect(
+    (
+      await page.request.put(
+        `/api/anamnesis/access/documents/${document.document.id}?${ownerQuery}`,
+        {
+          headers: { origin },
+          data: { trainerId: trainer.id, enabled: false },
+        },
+      )
+    ).status(),
+  ).toBe(204);
+  const deniedDocument = trainerPage.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === documentApiPath &&
+      response.status() === 403,
+  );
+  await trainerPage.bringToFront();
+  await expect
+    .poll(async () => {
+      await trainerPage.evaluate(() =>
+        window.dispatchEvent(new Event('focus')),
+      );
+      return trainerPage
+        .getByRole('heading', { name: document.document.filename, exact: true })
+        .count();
+    })
+    .toBe(0);
+  const deniedDocumentResponse = await deniedDocument;
+  expect((await deniedDocumentResponse.json()).error).toBe('FORBIDDEN');
+  await expect(
+    trainerPage.getByRole('heading', {
+      name: document.document.filename,
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(trainerPage.locator('object')).toHaveCount(0);
+  await expect(
+    trainerPage.locator(`a[href^="${documentApiPath}/file"]`),
+  ).toHaveCount(0);
+  await expect.poll(savedDocumentReads).toHaveLength(0);
+  expect((await getSessionWith429Retry(trainerPage.request)).user.id).toBe(
+    trainer.id,
+  );
+  expect(
+    (
+      await trainerPage.request.get(`/api/anamnesis/overview?${trainerQuery}`)
+    ).status(),
+  ).toBe(200);
+  await expect(trainerPage).toHaveURL(new RegExp(documentPath));
 
   // Отзыв гранта на показатель немедленно закрывает отчёт.
   await page.request.put(
