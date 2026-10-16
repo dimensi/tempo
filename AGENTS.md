@@ -78,7 +78,7 @@ Tests are maintained only when their realistic regression-detection value justif
 - Treat existing tests as candidates for **removal, consolidation, or replacement**. Delete obsolete, overlapping, brittle, flaky, implementation-coupled, and low-signal tests; do not preserve them for historical coverage or green test counts.
 - Prefer extending or replacing one valuable scenario instead of accumulating several narrow tests. Aim for **zero or negative net test-case growth** during ordinary tasks.
 - Evaluate what regression protection remains after pruning, rather than preserving particular tests. Important invariants should still have appropriately focused protection.
-- The repository-wide cap is enforced by `pnpm test:budget`: **3 unit, 8 integration, 2 browser E2E, 14 total test cases**. It collects Vitest and Playwright cases rather than grepping source. Replacing a case is preferred; growing past any cap requires explicit user approval and a concrete regression gap.
+- The repository-wide cap is enforced by `pnpm test:budget`: **3 unit, 8 integration, 2 browser E2E, 14 total test cases**. It collects Vitest and Playwright cases rather than grepping source. `verify:merge` then requires JSON execution reports to match that manifest exactly, with no skipped or retried case. Replacing a case is preferred; growing past any cap requires explicit user approval and a concrete regression gap.
 - **Runtime is also a budget.** Prune expensive low-value tests and avoid adding slow suites. The fixed caps below are enforced by `verify:merge`; investigate a persistent regression rather than compensating with more parallel test infrastructure.
 
 **Before adding any test**, identify the specific plausible regression, check whether another test already catches it, and justify its cost. If there is no compelling gap, add **zero** tests.
@@ -87,7 +87,7 @@ Tests are maintained only when their realistic regression-detection value justif
 
 ### Fixed runtime budget
 
-`pnpm verify:merge` measures and enforces these wall-clock ceilings on the final committed revision:
+`pnpm verify:merge` measures and enforces these wall-clock ceilings on the final committed revision. Each command runs in its own process group and is terminated at its deadline, so a hung child cannot bypass the cap:
 
 - `pnpm test:unit`: **30 seconds**
 - `pnpm test:integration`: **60 seconds**
@@ -113,7 +113,7 @@ Do not escalate a lower tier merely because an unrelated test exists, and do not
 
 For Full verification, `pnpm verify:merge` runs format, lint, typecheck, the enforced test budget, compact unit and integration suites, one production build, then two desktop browser smoke journeys: authenticated diary/workout/offline/logout/trainer isolation and durable YAZIO sync. The canonical launcher is `scripts/verify-merge.mjs`, not a benchmark. It uses no worker farm or per-case Next process: `pnpm test:e2e` picks one free local HTTPS gateway/backend pair and each serial browser suite receives a fresh worktree-local `.data/e2e.sqlite`. A lock prevents concurrent E2E processes from sharing it. Real test authentication remains mandatory; mobile E2E is added only with explicit approval for an independent mobile risk.
 
-When the Full tier applies, every configured compact check must pass with no retries. Rerun after any subsequent runtime change or rebase. Record the final SHA, exact command, case counts and durations from `test-results/merge-verification.json` in the PR or merge report. The command never merges or deploys. CI does not run for PRs and main deployment does not run E2E, so neither replaces required Full verification. Merge still requires the task's authorization. For focused diagnosis use `pnpm test:e2e smoke`, `pnpm test:e2e nutrition`, `pnpm test:unit`, or `pnpm test:integration`; do not rebuild the removed orchestration around them.
+When the Full tier applies, every configured compact check must pass with no retries; discovered and executed test identities must match exactly. Rerun after any subsequent runtime change or rebase. Record the final SHA, exact command, case counts and durations from `test-results/merge-verification.json` in the PR or merge report. The command never merges or deploys. CI does not run for PRs and main deployment does not run E2E, so neither replaces required Full verification. Merge still requires the task's authorization. For focused diagnosis use `pnpm test:e2e smoke`, `pnpm test:e2e nutrition`, `pnpm test:unit`, or `pnpm test:integration`; do not rebuild the removed orchestration around them.
 
 One agent = one branch = one Git worktree. Never commit directly to main. Keep PRs narrow; describe changed behavior, contracts/migrations, checks actually run, risks and remaining limitations. Do not commit `.env`, databases, tokens, uploads, test artifacts or production data. Never merge/deploy without the task's authorization. Do not invent product schemas or normalization algorithms.
 

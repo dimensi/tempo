@@ -16,7 +16,17 @@ export function productionConfig(
     outputDir: fileURLToPath(
       new URL(`../../test-results/${family}`, import.meta.url),
     ),
-    reporter: 'list',
+    reporter: [
+      ['list'],
+      [
+        'json',
+        {
+          outputFile: fileURLToPath(
+            new URL(`../../test-results/${family}.json`, import.meta.url),
+          ),
+        },
+      ],
+    ],
     use: {
       baseURL: testOrigin,
       ignoreHTTPSErrors: true,

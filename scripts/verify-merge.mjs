@@ -1,5 +1,6 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { relative, sep } from 'node:path';
 
 if (process.argv.length !== 2) throw new Error('Usage: pnpm verify:merge');
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -47,6 +48,133 @@ const timeBudget = {
   total: 300,
 };
 
+function stopProcessTree(child, signal) {
+  if (!child.pid) return;
+  try {
+    if (process.platform === 'win32') child.kill(signal);
+    else process.kill(-child.pid, signal);
+  } catch {
+    /* The process group may already be gone. */
+  }
+}
+
+function run(command, timeoutSeconds) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('pnpm', [command], {
+      detached: process.platform !== 'win32',
+      stdio: 'inherit',
+    });
+    let timedOut = false;
+    let escalation;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      stopProcessTree(child, 'SIGTERM');
+      escalation = setTimeout(() => stopProcessTree(child, 'SIGKILL'), 2000);
+    }, timeoutSeconds * 1000);
+    const cleanup = () => {
+      clearTimeout(timeout);
+      clearTimeout(escalation);
+    };
+    child.once('error', (error) => {
+      cleanup();
+      reject(error);
+    });
+    child.once('close', (status, signal) => {
+      cleanup();
+      resolve({ status: status ?? 1, signal, timedOut });
+    });
+  });
+}
+
+function assertExactExecution(label, discovered, executed) {
+  const expected = [...discovered].sort();
+  const actual = [...executed].sort();
+  if (
+    expected.length === actual.length &&
+    expected.every((identity, index) => identity === actual[index])
+  )
+    return;
+  const expectedSet = new Set(expected);
+  const actualSet = new Set(actual);
+  const preview = (values) => values.slice(0, 3).join(', ') || 'none';
+  const missing = expected.filter((identity) => !actualSet.has(identity));
+  const unexpected = actual.filter((identity) => !expectedSet.has(identity));
+  throw new Error(
+    `${label} execution does not match discovery (missing: ${preview(missing)}; unexpected: ${preview(unexpected)})`,
+  );
+}
+
+function verifyVitestExecution(label, discovered, reportFile) {
+  const report = JSON.parse(readFileSync(reportFile, 'utf8'));
+  const tests = (report.testResults ?? []).flatMap((file) =>
+    (file.assertionResults ?? []).map((assertion) => ({
+      identity: `${relative(process.cwd(), file.name).split(sep).join('/')} > ${[...(assertion.ancestorTitles ?? []), assertion.title].filter(Boolean).join(' > ')}`,
+      status: assertion.status,
+    })),
+  );
+  assertExactExecution(
+    label,
+    discovered,
+    tests.map((test) => test.identity),
+  );
+  if (!report.success || tests.some((test) => test.status !== 'passed'))
+    throw new Error(`${label} contains a skipped, failed, or incomplete case`);
+  return { discovered: discovered.length, executed: tests.length };
+}
+
+function collectPlaywrightTests(suites) {
+  return (suites ?? []).flatMap((suite) => [
+    ...(suite.specs ?? []).flatMap((spec) =>
+      (spec.tests ?? []).map((test) => ({
+        id: spec.id,
+        project: test.projectName,
+        results: test.results ?? [],
+      })),
+    ),
+    ...collectPlaywrightTests(suite.suites),
+  ]);
+}
+
+function verifyPlaywrightExecution(label, discovered, reportFile) {
+  const report = JSON.parse(readFileSync(reportFile, 'utf8'));
+  const tests = collectPlaywrightTests(report.suites);
+  const identity = (test) => `${test.id}:${test.project}`;
+  assertExactExecution(label, discovered.map(identity), tests.map(identity));
+  if (
+    tests.some(
+      (test) =>
+        test.results.length !== 1 ||
+        test.results[0]?.status !== 'passed' ||
+        test.results[0]?.retry !== 0,
+    )
+  )
+    throw new Error(`${label} contains a skipped, retried, or incomplete case`);
+  return { discovered: discovered.length, executed: tests.length };
+}
+
+function verifyTestExecution(cases) {
+  return {
+    unit: verifyVitestExecution('unit', cases.unit, 'test-results/unit.json'),
+    integration: verifyVitestExecution(
+      'integration',
+      cases.integration,
+      'test-results/integration.json',
+    ),
+    e2e: {
+      smoke: verifyPlaywrightExecution(
+        'smoke E2E',
+        cases.e2e.smoke,
+        'test-results/smoke.json',
+      ),
+      nutrition: verifyPlaywrightExecution(
+        'nutrition E2E',
+        cases.e2e.nutrition,
+        'test-results/nutrition.json',
+      ),
+    },
+  };
+}
+
 try {
   save();
   for (const command of [
@@ -60,26 +188,35 @@ try {
     'test:e2e',
   ]) {
     unchanged();
+    const remaining = timeBudget.total - (performance.now() - started) / 1000;
+    const timeoutSeconds = Math.min(timeBudget[command] ?? Infinity, remaining);
+    if (timeoutSeconds <= 0)
+      throw new Error(
+        `pnpm verify:merge exceeded its ${timeBudget.total}s time budget`,
+      );
     const begin = performance.now();
-    const result = spawnSync('pnpm', [command], { stdio: 'inherit' });
+    const result = await run(command, timeoutSeconds);
     const check = {
       command: `pnpm ${command}`,
       seconds: Number(((performance.now() - begin) / 1000).toFixed(3)),
-      status: result.status ?? 1,
+      status: result.status,
+      timeoutSeconds: Number(timeoutSeconds.toFixed(3)),
+      timedOut: result.timedOut,
+      signal: result.signal,
     };
     evidence.checks.push(check);
     save();
-    if (result.error) throw result.error;
+    if (result.timedOut)
+      throw new Error(`${check.command} exceeded its time budget`);
     if (result.status !== 0)
       throw new Error(`${check.command} failed; merge is blocked`);
-    const limit = timeBudget[command];
-    if (limit && check.seconds > limit)
-      throw new Error(`${check.command} exceeded its ${limit}s time budget`);
   }
   evidence.buildId = readFileSync('.next/BUILD_ID', 'utf8').trim();
   evidence.testBudget = JSON.parse(
     readFileSync('test-results/test-budget.json', 'utf8'),
   );
+  evidence.execution = verifyTestExecution(evidence.testBudget.cases);
+  save();
   unchanged();
   if ((performance.now() - started) / 1000 > timeBudget.total)
     throw new Error(

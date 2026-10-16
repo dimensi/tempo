@@ -49,25 +49,25 @@ pnpm dev
 
 ## Команды и проверки
 
-| Команда                                     | Назначение                                              |
-| ------------------------------------------- | ------------------------------------------------------- |
-| `pnpm dev`                                  | Next.js development server                              |
-| `pnpm build` / `pnpm start`                 | Production build / local production server              |
-| `pnpm lint`                                 | ESLint и ограничения зависимостей features              |
-| `pnpm format` / `pnpm format:check`         | Prettier                                                |
-| `pnpm typecheck`                            | Генерация типов маршрутов и strict TypeScript           |
-| `pnpm test:unit`                            | Короткие проверки ключевых расчётов и offline-очереди   |
-| `pnpm test:integration`                     | Авторизация, SQLite/migrations, записи и синхронизации  |
-| `pnpm test:e2e`                             | Два desktop smoke-сценария: приложение и YAZIO          |
-| `pnpm test:budget`                          | Проверка глобального лимита тест-кейсов                 |
-| `pnpm verify:merge`                         | Полная компактная проверка перед merge                  |
-| `pnpm db:generate`                          | SQL-миграция из схемы                                   |
-| `pnpm db:migrate`                           | Версионированные миграции                               |
-| `pnpm db:seed`                              | Проверка готовности инфраструктурной базы без fake data |
-| `pnpm auth:create-user`                     | Локальное создание owner/trainer                        |
-| `pnpm db:backup /secure/path/backup.sqlite` | Online backup с учётом WAL                              |
+| Команда                                     | Назначение                                               |
+| ------------------------------------------- | -------------------------------------------------------- |
+| `pnpm dev`                                  | Next.js development server                               |
+| `pnpm build` / `pnpm start`                 | Production build / local production server               |
+| `pnpm lint`                                 | ESLint и ограничения зависимостей features               |
+| `pnpm format` / `pnpm format:check`         | Prettier                                                 |
+| `pnpm typecheck`                            | Генерация типов маршрутов и strict TypeScript            |
+| `pnpm test:unit`                            | Ключевые расчёты и offline session/cache safety          |
+| `pnpm test:integration`                     | Авторизация/PDF grants, SQLite/migrations, записи и sync |
+| `pnpm test:e2e`                             | Два desktop smoke-сценария: приложение и YAZIO           |
+| `pnpm test:budget`                          | Проверка глобального лимита тест-кейсов                  |
+| `pnpm verify:merge`                         | Полная компактная проверка перед merge                   |
+| `pnpm db:generate`                          | SQL-миграция из схемы                                    |
+| `pnpm db:migrate`                           | Версионированные миграции                                |
+| `pnpm db:seed`                              | Проверка готовности инфраструктурной базы без fake data  |
+| `pnpm auth:create-user`                     | Локальное создание owner/trainer                         |
+| `pnpm db:backup /secure/path/backup.sqlite` | Online backup с учётом WAL                               |
 
-Для E2E сначала `pnpm exec playwright install chromium`. Перед merge используйте `pnpm verify:merge` на чистом финальном коммите. Команда последовательно запускает format, lint, typecheck, `test:budget`, сокращённые unit/integration, один production build и два desktop smoke-сценария. Глобальный лимит — 3 unit, 8 integration, 2 browser E2E и 14 тест-кейсов всего; `test:budget` считает их через discovery Vitest/Playwright. Лимиты времени: 30 с unit, 60 с integration, 90 с E2E и 5 мин на полную проверку. E2E-лаунчер выбирает свободную пару локальных HTTPS/backend-портов, использует worktree-local `.data/e2e.sqlite` и блокирует параллельное использование этой базы; каждый из двух сценариев создаёт свежую синтетическую БД. Реальная тестовая аутентификация обязательна. Итог с SHA, build ID, лимитами и длительностями — `test-results/merge-verification.json`. Команда не делает merge или deploy. Для адресной диагностики используйте `pnpm test:e2e smoke`, `pnpm test:e2e nutrition`, `pnpm test:unit` или `pnpm test:integration`.
+Для E2E сначала `pnpm exec playwright install chromium`. Перед merge используйте `pnpm verify:merge` на чистом финальном коммите. Команда последовательно запускает format, lint, typecheck, `test:budget`, сокращённые unit/integration, один production build и два desktop smoke-сценария. Глобальный лимит — 3 unit, 8 integration, 2 browser E2E и 14 тест-кейсов всего; `test:budget` строит manifest через discovery Vitest/Playwright, а `verify:merge` сверяет его с JSON-отчётами фактического выполнения и блокирует skipped/retried/missing cases. Лимиты времени: 30 с unit, 60 с integration, 90 с E2E и 5 мин на полную проверку; каждая команда выполняется в отдельной process group и принудительно завершается по дедлайну. E2E-лаунчер выбирает свободную пару локальных HTTPS/backend-портов, использует worktree-local `.data/e2e.sqlite` и блокирует параллельное использование этой базы; каждый из двух сценариев создаёт свежую синтетическую БД. Реальная тестовая аутентификация обязательна. Итог с SHA, build ID, лимитами и длительностями — `test-results/merge-verification.json`. Команда не делает merge или deploy. Для адресной диагностики используйте `pnpm test:e2e smoke`, `pnpm test:e2e nutrition`, `pnpm test:unit` или `pnpm test:integration`.
 
 CI для PR отключён; на main единый workflow `release.yml` выполняет сборку Docker-образа и публикацию в GHCR в job `build`, затем развёртывание закреплённого образа в отдельной job `deploy`, которую можно перезапустить без пересборки. Его можно запустить вручную на main; деплой включается переменной `NUTRITION_CD_ENABLED`. После подтверждённого merge агент обязан удалить свои ветки и worktree вместе с временными данными, без архивирования; чужие и несохранённые пользовательские изменения не удаляются.
 

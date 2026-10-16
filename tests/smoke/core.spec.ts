@@ -1,7 +1,35 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { testOrigin } from './origin';
 
-test('real login reaches core sections, saves a workout, preserves a cached screen offline, purges logout data, and blocks a trainer', async ({
+async function cachedReadBody(page: Page, expectedTitle: string) {
+  return page.evaluate(async (title) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const open = indexedDB.open('yazio-offline-read-v1');
+      open.onsuccess = () => resolve(open.result);
+      open.onerror = () => reject(open.error);
+    });
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        const read = database
+          .transaction('resources')
+          .objectStore('resources')
+          .getAll();
+        read.onsuccess = () => {
+          const body = read.result.find((row) =>
+            String(row.record?.body).includes(title),
+          )?.record?.body;
+          if (typeof body === 'string') resolve(body);
+          else reject(new Error('Cached workout is missing'));
+        };
+        read.onerror = () => reject(read.error);
+      });
+    } finally {
+      database.close();
+    }
+  }, expectedTitle);
+}
+
+test('real login reaches core sections, recovers a cached workout offline, purges logout data, and blocks a trainer', async ({
   page,
   context,
   request,
@@ -59,32 +87,33 @@ test('real login reaches core sections, saves a workout, preserves a cached scre
   ).toBeVisible();
 
   await expect
-    .poll(() =>
-      page.evaluate(async (expectedTitle) => {
-        const database = await new Promise<IDBDatabase>((resolve, reject) => {
-          const open = indexedDB.open('yazio-offline-read-v1');
-          open.onsuccess = () => resolve(open.result);
-          open.onerror = () => reject(open.error);
-        });
-        try {
-          return await new Promise<boolean>((resolve) => {
-            const read = database
-              .transaction('resources')
-              .objectStore('resources')
-              .getAll();
-            read.onsuccess = () =>
-              resolve(
-                read.result.some((row) =>
-                  String(row.record?.body).includes(expectedTitle),
-                ),
-              );
-          });
-        } finally {
-          database.close();
-        }
-      }, title),
-    )
-    .toBe(true);
+    .poll(() => cachedReadBody(page, title).catch(() => ''))
+    .toContain(title);
+  const cachedWorkout = await cachedReadBody(page, title);
+  const stalledRead = Promise.withResolvers<void>();
+  const readStarted = Promise.withResolvers<void>();
+  const readFinished = Promise.withResolvers<void>();
+  await page.route('**/api/read/workout?*', async (route) => {
+    readStarted.resolve();
+    try {
+      await stalledRead.promise;
+      await route.fulfill({
+        contentType: 'application/json',
+        body: cachedWorkout,
+      });
+    } finally {
+      readFinished.resolve();
+    }
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await readStarted.promise;
+  await expect(
+    page.getByRole('heading', { name: title, exact: true }),
+  ).toBeVisible();
+  stalledRead.resolve();
+  await readFinished.promise;
+  await page.unroute('**/api/read/workout?*');
+
   await context.setOffline(true);
   await expect(
     page.getByRole('heading', { name: title, exact: true }),
