@@ -224,7 +224,21 @@ export function subscribeOfflineBlocked(listener: () => void) {
   window.addEventListener(offlineBlockedEvent, listener);
   window.addEventListener('storage', storage);
   const message = (event: MessageEvent) => {
-    if (event.data?.type === 'OFFLINE_BLOCKED') clear();
+    if (event.data?.type !== 'OFFLINE_BLOCKED') return;
+    try {
+      const gate = readGate(browserGateStorage());
+      // A completed purge from an older document cannot revoke a newer,
+      // explicitly verified device scope. Unscoped server denial still blocks.
+      if (
+        typeof event.data.previousEpoch === 'string' &&
+        !gate.disabled &&
+        gate.epoch !== event.data.previousEpoch
+      )
+        return;
+    } catch {
+      // Inaccessible local state fails closed.
+    }
+    clear();
   };
   navigator.serviceWorker?.addEventListener('message', message);
   return () => {

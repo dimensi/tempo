@@ -36,7 +36,7 @@ async function purge(previousEpoch?: string) {
     includeUncontrolled: true,
     type: 'window',
   }))
-    client.postMessage({ type: 'OFFLINE_BLOCKED' });
+    client.postMessage({ type: 'OFFLINE_BLOCKED', previousEpoch });
 }
 worker.addEventListener('install', (event) => {
   event.waitUntil(precache.handleInstall(event));

@@ -90,7 +90,7 @@ test('closed browser restarts from its persisted shell while navigation and iden
       page
         .getByRole('status')
         .filter({ hasText: 'Сеть или сервер недоступны' }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
     await context.close();
@@ -316,7 +316,10 @@ test('same-endpoint update retains IDB and replaces old static cache after insta
   await context.setOffline(true);
   await fresh.goto('/workouts');
   await expect(
-    fresh.getByText('Synthetic breakfast', { exact: true }),
+    fresh.getByRole('heading', {
+      name: 'Synthetic native history',
+      exact: true,
+    }),
   ).toBeVisible();
   await context.setOffline(false);
 });

@@ -24,7 +24,7 @@ Local storage validation and bounded identity refresh start independently. A val
 
 All private content, including enlarged photo portals, participates in synchronous conceal. BFCache pagehide conceals before the document freezes; pageshow cannot reveal while the new local check is pending. Routine same-scope checking keeps the mounted UI visible.
 
-Logout records durable intent and conceals synchronously, purges read data and the device write queue, and then attempts server sign-out. Offline failure leaves the intent blocking local activation across reloads. Reconnect or the next login completes server sign-out before allowing another login. Real denial, account changes and trainer revocation use the same conceal/purge fences. Network timeouts and 5xx responses never masquerade as authorization failure.
+Logout records durable intent and conceals synchronously, purges read data and the device write queue, and then attempts server sign-out. Offline failure leaves the intent blocking local activation across reloads. Reconnect or the next login completes server sign-out before allowing another login. Real denial, account changes and trainer revocation use the same conceal/purge fences. Blocked scopes stop background reads until a verified bundle returns; progress within a scope does not restart transports. Worker purge notifications carry their originating device epoch, so a late cleanup cannot conceal a newer verified scope. Network timeouts and 5xx responses never masquerade as authorization failure.
 
 ## Verification
 

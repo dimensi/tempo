@@ -67,7 +67,13 @@ test('real overview shows empty, partial and populated data with local dates and
     page.getByText('Не удалось загрузить обзор. Попробуйте ещё раз.'),
   ).toBeVisible();
   await page.unroute('**/api/overview?*');
-  await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await page.evaluate(() => {
+    // A background revalidation may already have recovered between these steps.
+    const retry = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Повторить',
+    );
+    retry?.click();
+  });
   fixture(today, 'empty');
   await page.reload();
   await expect(

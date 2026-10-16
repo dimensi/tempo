@@ -26,6 +26,7 @@ import { getOfflineController } from './offline-controller';
 import { reportNetworkResult } from './network-state';
 
 let scope = '';
+let readBlocked = false;
 let readTransport: typeof fetch = (...args) => fetch(...args);
 let medicalRevision = 0;
 let fence: CacheFence | undefined;
@@ -175,6 +176,7 @@ export function bindReadScope() {
     scope = next;
   }
   fence = bundle?.fence;
+  if (fence) readBlocked = false;
 }
 export const readRevalidateEvent = 'tempo:read-revalidate';
 /** Called only after current identity and the existing write queue have been checked. */
@@ -213,6 +215,7 @@ export async function seedClientRead(
 }
 export async function refreshClientRead(key: string) {
   bindReadScope();
+  if (readBlocked) throw new ReadFailure('denied');
   const schema = readResponseSchema(new URL(key, location.origin).pathname);
   if (!schema) throw new ReadFailure('unavailable');
   return clientReads.read(
@@ -269,6 +272,7 @@ export function observeReadResources() {
   const stopScope = getOfflineController().subscribe(bindReadScope);
   bindReadScope();
   const stopBlocked = subscribeOfflineBlocked(() => {
+    readBlocked = true;
     clientReads.clear();
     scope = '';
     fence = undefined;
@@ -312,6 +316,7 @@ export function observeReadResources() {
       return response;
     }
     bindReadScope();
+    if (readBlocked) throw new ReadFailure('denied');
     if (!fence) return original.call(window, input, init);
     const key = canonicalReadKey(url);
     let live: Response | undefined;

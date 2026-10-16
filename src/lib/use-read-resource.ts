@@ -66,12 +66,24 @@ export function useReadResource<T>(
         void seedClientRead(key, initialSeed);
       void clientReads.restore(key);
     };
-    restore();
-    const stop = getOfflineController().subscribe(() => {
+    let readyScope = '';
+    const controller = getOfflineController();
+    const update = () => {
       restore();
-      void refresh();
-    });
-    void refresh();
+      const bundle = controller.getSnapshot().bundle;
+      const next = bundle
+        ? `${bundle.fence.partition}:${bundle.fence.deviceEpoch}:${bundle.snapshot.connectionGeneration}`
+        : '';
+      // Progress notifications within one scope do not start another network
+      // read or feed source-loaded -> snapshot-save -> read loops.
+      if (next && next !== readyScope) {
+        readyScope = next;
+        void refresh();
+      }
+    };
+    update();
+    const stop = controller.subscribe(update);
+    if (!readyScope) void refresh();
     window.addEventListener(readRevalidateEvent, refresh);
     return () => {
       stop();

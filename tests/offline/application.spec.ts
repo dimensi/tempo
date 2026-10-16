@@ -272,6 +272,34 @@ test('automatic cache reuses ordinary routes, cold reload, navigation and shared
         timeout: 15000,
       })
       .toBe(12345);
+    // Snapshot completion and ordinary DTO warming are independent. This route
+    // must actually be saved before testing its cold offline entry.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            new Promise<boolean>((resolve) => {
+              const open = indexedDB.open('yazio-offline-read-v1', 3);
+              open.onsuccess = () => {
+                const db = open.result;
+                const tx = db.transaction('resources');
+                const get = tx
+                  .objectStore('resources')
+                  .get('/api/read/settings');
+                get.onsuccess = () =>
+                  resolve(
+                    Boolean(
+                      get.result &&
+                      JSON.parse(get.result.body).stepsGoal.dailyStepsGoal ===
+                        12345,
+                    ),
+                  );
+                tx.oncomplete = () => db.close();
+              };
+            }),
+        ),
+      )
+      .toBe(true);
     await context.setOffline(true);
     // The already-open genuine Next route switches before any cold document fallback.
     await expect(
@@ -623,7 +651,7 @@ test('linked TransformMate literal facts remain visible exactly once in plan day
       1,
     );
     await expect(
-      page.getByText('Duration: 01–03 мин', { exact: false }),
+      page.getByRole('cell', { name: '8 × 0 кг', exact: true }),
     ).toHaveCount(1);
     await page.goto(
       `/workouts/plans/synthetic-plan/workouts/synthetic-workout?date=${date}`,

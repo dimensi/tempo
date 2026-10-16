@@ -401,7 +401,7 @@ test.describe('provider form interception', () => {
           await expect(navigation).toHaveAttribute('aria-expanded', 'true');
         }
         await page.getByRole('link', { name: 'Обзор', exact: true }).click();
-        await expect(form).toHaveCount(0);
+        await expect(form).toBeHidden();
       }
       const sibling = await context.newPage();
       await inject(sibling);

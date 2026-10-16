@@ -309,7 +309,7 @@ test('real sessions enforce anonymous, trainer grant/revocation, owner scope and
     await trainer.goto(`/workouts/plans/${plan.id}/edit?date=2026-10-11`);
     await expect(
       trainer
-        .getByText('Нет разрешения на доступ к тренировкам владельца.')
+        .getByText('Доступ изменился. Войдите заново.')
         .filter({ visible: true }),
     ).toBeVisible();
     await expect(trainer.getByLabel('Название (необязательно)')).toHaveCount(0);

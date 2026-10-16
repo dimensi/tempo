@@ -233,9 +233,11 @@ export function SyncSummary({
 }
 export function WorkoutSync({
   item,
+  representedExercises = [],
   showActual = true,
 }: {
   item?: TransformMateSyncItem;
+  representedExercises?: import('@/contracts/workouts').WorkoutExercise[];
   showActual?: boolean;
 }) {
   if (!item || (!showActual && item.reason === 'not_configured')) return null;
@@ -313,23 +315,34 @@ export function WorkoutSync({
               {m.remoteFinishedAt}: {item.actual.finished}
             </Text>
           )}
-          {item.actual.exercises.map((exercise, index) => (
-            <Stack gap={4} key={`${exercise.occurrenceKey}-${index}`}>
-              <Text>{exercise.name}</Text>
-              {exercise.comment && <Text size="sm">{exercise.comment}</Text>}
-              {exercise.sets.map((set) => (
-                <Text key={set.order} size="sm">
-                  {m.set} {set.order}: {set.done ? m.done : m.notDone} ·{' '}
-                  {set.metrics
-                    .map(
-                      (metric) =>
-                        `${metric.name}: ${metric.values.length ? metric.values.join(' / ') : '—'} ${metric.unit}`,
-                    )
-                    .join('; ')}
-                </Text>
-              ))}
-            </Stack>
-          ))}
+          {item.actual.exercises
+            .filter(
+              (exercise) =>
+                !representedExercises.some(
+                  (planned) =>
+                    planned.transformMate &&
+                    planned.transformMate.occurrenceKey ===
+                      exercise.occurrenceKey &&
+                    planned.transformMate.exerciseId === exercise.exerciseId,
+                ),
+            )
+            .map((exercise, index) => (
+              <Stack gap={4} key={`${exercise.occurrenceKey}-${index}`}>
+                <Text>{exercise.name}</Text>
+                {exercise.comment && <Text size="sm">{exercise.comment}</Text>}
+                {exercise.sets.map((set) => (
+                  <Text key={set.order} size="sm">
+                    {m.set} {set.order}: {set.done ? m.done : m.notDone} ·{' '}
+                    {set.metrics
+                      .map(
+                        (metric) =>
+                          `${metric.name}: ${metric.values.length ? metric.values.join(' / ') : '—'} ${metric.unit}`,
+                      )
+                      .join('; ')}
+                  </Text>
+                ))}
+              </Stack>
+            ))}
         </>
       )}
     </Stack>

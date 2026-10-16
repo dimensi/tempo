@@ -3,6 +3,7 @@ const state = vi.hoisted(() => ({
   partition: 'owner',
   generation: 'scope',
   online: true,
+  blockedScope: false,
   disk: new Map<string, unknown>(),
   listeners: new Set<() => void>(),
   blocked: () => {},
@@ -12,19 +13,21 @@ vi.mock('@/lib/offline-controller', () => ({
     removeFile: vi.fn(async () => {}),
     getSnapshot: () => ({
       status: 'ready',
-      bundle: {
-        fence: {
-          partition: state.partition,
-          generation: 1,
-          deviceEpoch: state.generation,
-        },
-        savedAt: 100,
-        snapshot: {
-          partition: state.partition,
-          connectionGeneration: state.generation,
-          role: 'OWNER',
-        },
-      },
+      bundle: state.blockedScope
+        ? null
+        : {
+            fence: {
+              partition: state.partition,
+              generation: 1,
+              deviceEpoch: state.generation,
+            },
+            savedAt: 100,
+            snapshot: {
+              partition: state.partition,
+              connectionGeneration: state.generation,
+              role: 'OWNER',
+            },
+          },
     }),
     subscribe: (callback: () => void) => {
       state.listeners.add(callback);
@@ -75,6 +78,7 @@ beforeEach(() => {
   state.partition = 'owner';
   state.generation = 'scope';
   state.online = true;
+  state.blockedScope = false;
   vi.stubGlobal('location', {
     origin: 'https://tempo.test',
     href: 'https://tempo.test/',
@@ -369,4 +373,24 @@ it('private report bytes deny the common gate before the caller can consume the 
   expect(window.dispatchEvent).toHaveBeenCalledWith(
     expect.objectContaining({ type: 'tempo:read-access-denied' }),
   );
+});
+
+it('blocked scope never starts background transports until a verified bundle returns', async () => {
+  const raw = vi.fn<typeof fetch>(async () =>
+    Response.json({ dailyStepsGoal: 1 }),
+  );
+  const reader = await install(raw);
+  // Controller has synchronously invalidated its bundle before subscribers run.
+  state.blocked();
+  state.partition = '';
+  // bindReadScope needs a realistic absence of a bundle after conceal.
+  state.blockedScope = true;
+  await expect(reader.refreshClientRead(path)).rejects.toMatchObject({
+    reason: 'denied',
+  });
+  expect(raw).not.toHaveBeenCalled();
+  state.blockedScope = false;
+  state.partition = 'new-owner';
+  await reader.refreshClientRead(path);
+  expect(raw).toHaveBeenCalledOnce();
 });

@@ -1,3 +1,4 @@
+import type { WorkoutExercise } from '@/contracts/workouts';
 import type { OfflineSnapshot } from '@/contracts/offline';
 import { readResponseSchema } from '@/contracts/read-resources';
 import { canonicalReadKey } from '@/lib/client-read';
@@ -30,10 +31,12 @@ export async function seedReadFixture(
     partition: snapshot.partition,
     connectionGeneration: snapshot.connectionGeneration,
   });
+  const occurrence = (index: number) =>
+    `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
   const exercises = (
     rows: OfflineSnapshot['plannedWorkouts'][number]['exercises'],
   ) =>
-    rows.map(({ name, sets, comment }) => ({
+    rows.map(({ name, sets, comment }): WorkoutExercise => ({
       name,
       sets,
       ...(comment === undefined ? {} : { comment }),
@@ -82,6 +85,23 @@ export async function seedReadFixture(
     createdAt: snapshot.serverNow,
     updatedAt: snapshot.serverNow,
   }));
+  for (const plan of plans)
+    for (const workout of plan.workouts) {
+      const fact = snapshot.transformMateFacts.find(
+        (row) =>
+          row.plannedHref ===
+          `/workouts/plans/${plan.id}/workouts/${workout.id}`,
+      );
+      if (fact)
+        workout.exercises = workout.exercises.map((exercise, index) => ({
+          ...exercise,
+          name: fact.exercises[index]?.name ?? exercise.name,
+          transformMate: {
+            exerciseId: index + 1,
+            occurrenceKey: occurrence(index),
+          },
+        }));
+    }
   await put(`/api/workouts?ownerId=${ownerId}`, { data: { plans, sessions } });
   const native = snapshot.nativeTrainings.map(({ href, ...row }) => ({
     ...row,
@@ -126,18 +146,23 @@ export async function seedReadFixture(
         started: row.started,
         finished: row.finished,
         exercises: training
-          ? training.exercises.map((exercise) => ({
-              occurrenceKey: null,
+          ? training.exercises.map((exercise, index) => ({
+              occurrenceKey: occurrence(index),
               exerciseId: exercise.exerciseId,
               name: exercise.name,
               comment: exercise.comment,
-              sets: exercise.metrics.flatMap((group) =>
-                group.sets.map((set) => ({ ...set, done: set.done ?? false })),
-              ),
+              sets: exercise.metrics
+                .filter((group) => group.type === 'fact')
+                .flatMap((group) =>
+                  group.sets.map((set) => ({
+                    ...set,
+                    done: set.done ?? false,
+                  })),
+                ),
             }))
           : row.exercises.map((exercise, index) => ({
               ...exercise,
-              occurrenceKey: null,
+              occurrenceKey: occurrence(index),
               exerciseId: index + 1,
             })),
       },

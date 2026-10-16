@@ -243,7 +243,12 @@ export function WorkoutDetailView({
             }))}
             comments={renderComments}
           />
-          <WorkoutSync item={detail.sync ?? undefined} />
+          <WorkoutSync
+            item={detail.sync ?? undefined}
+            representedExercises={
+              detail.sessions.length ? [] : detail.workout.exercises
+            }
+          />
         </>
       )}
       {detail.kind === 'session' && (
@@ -285,7 +290,13 @@ export function WorkoutDetailView({
             }
             sync={detail.item}
           />
-          <WorkoutSync item={detail.item} />
+          <WorkoutSync
+            item={detail.item}
+            representedExercises={
+              (detail.item.publishedSnapshot ?? detail.item.planSnapshot)
+                .workout.exercises
+            }
+          />
         </>
       )}
       <Modal
