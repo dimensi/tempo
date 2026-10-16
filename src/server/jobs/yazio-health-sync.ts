@@ -41,9 +41,9 @@ export async function syncYazioHealthPeriod(
       if (selected.steps) dailySteps.push(summary.dailySteps);
       unitContext = summary.unitContext;
       if (selected.steps) result.completedStepsDates.push(date);
-    } catch {
+    } catch (error) {
       assertCurrent();
-      syncReadFailure('steps-summary', date, started);
+      syncReadFailure('steps-summary', date, started, error);
       if (selected.steps) result.failedStepsDates.push(date);
     }
     if (!selected.weight) continue;
@@ -52,9 +52,9 @@ export async function syncYazioHealthPeriod(
       assertCurrent();
       if (weight) weights.push(weight);
       result.completedWeightDates.push(date);
-    } catch {
+    } catch (error) {
       assertCurrent();
-      syncReadFailure('weight', date, started);
+      syncReadFailure('weight', date, started, error);
       result.failedWeightDates.push(date);
     }
   }

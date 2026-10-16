@@ -4,10 +4,21 @@ import { yazioHealthUpstream } from './health-adapter';
 import { normalizeHealthSummary } from './health-normalize';
 import { mealKindSchema, diaryDateTimeSchema } from '@/contracts/nutrition';
 import {
-  createYazioClient,
+  createYazioAuth,
   yazioRequest,
+  YazioIntegrationError,
   type YazioTokenStore,
 } from './client';
+import {
+  getUserConsumedItems,
+  getUserDailySummary,
+  getUserMealImages,
+  getProduct,
+  getRecipe,
+  getUserWeight,
+} from '@dimensi/yazio/api';
+import type { Token } from '@dimensi/yazio/auth';
+import { retryYazioRead } from '@/server/yazio/read-request';
 // Coordinated task explicitly permits this pure domain contract sub-entry.
 // eslint-disable-next-line no-restricted-imports
 import type {
@@ -88,24 +99,47 @@ export interface NutritionUpstream extends NutritionDayUpstream {
 export async function nutritionUpstream(
   store: YazioTokenStore,
 ): Promise<NutritionUpstream> {
-  const client = await createYazioClient(store);
-  // Capability check prevents an old SDK from silently deleting photo slots.
-  const user = client.user as typeof client.user & {
-    getMealImages?: (options: { date: string }) => Promise<unknown>;
+  const auth = await createYazioAuth(store);
+  const projectRead = async <T>(operation: () => Promise<T>) => {
+    try {
+      return await operation();
+    } catch (cause) {
+      throw new YazioIntegrationError('UPSTREAM_FAILURE', { cause });
+    }
   };
-  if (typeof user.getMealImages !== 'function')
+  if (typeof getUserMealImages !== 'function')
     throw new Error('YAZIO SDK meal-images support is required');
-  const health = yazioHealthUpstream(user);
+  const read = async <T>(
+    operation: Parameters<typeof retryYazioRead>[1]['operation'],
+    date: string | undefined,
+    fetch: (token: Token) => Promise<T>,
+  ) => {
+    await store.assertCurrent?.();
+    // A rejected OAuth refresh is never replayed by the GET retry loop.
+    const token = await yazioRequest(() => auth.authenticate());
+    return retryYazioRead(
+      () => fetch(token),
+      { operation, ...(date ? { date } : {}) },
+      () => store.assertCurrent?.(),
+    );
+  };
+  const health = yazioHealthUpstream({
+    getWeight: ({ date }) =>
+      read('weight', date, (token) => getUserWeight(token, { date })),
+    getDailySummary: ({ date }) => rawSummary(date),
+  });
   // One adapter is constructed for each leased run. Cache transport outcomes,
-  // including rejection, so each date has exactly one daily-summary request.
-  const summaries = new Map<string, Promise<unknown>>();
+  // including rejection: food and health share one bounded retry sequence per date.
+  const summaries = new Map<string, ReturnType<typeof getUserDailySummary>>();
   const rawSummary = (date: string) => {
     z.iso.date().parse(date);
     let pending = summaries.get(date);
     if (!pending) {
       if (summaries.size >= 366)
         throw new Error('Summary period limit exceeded');
-      pending = yazioRequest(() => user.getDailySummary({ date }));
+      pending = read('summary', date, (token) =>
+        getUserDailySummary(token, { date }),
+      );
       summaries.set(date, pending);
     }
     return pending;
@@ -115,27 +149,37 @@ export async function nutritionUpstream(
       normalizeHealthSummary(await rawSummary(date), date),
     weight: health.weight,
     items: (date) =>
-      yazioRequest(
+      projectRead(
         async () =>
           itemsSchema.parse(
-            await user.getConsumedItems({ date }),
+            await read('items', date, (token) =>
+              getUserConsumedItems(token, { date }),
+            ),
           ) as ConsumedItems,
       ),
     summary: (date) =>
-      yazioRequest(async () => summarySchema.parse(await rawSummary(date))),
+      projectRead(async () => summarySchema.parse(await rawSummary(date))),
     images: (date) =>
-      yazioRequest(async () =>
-        imagesSchema.parse(await user.getMealImages!({ date })),
+      projectRead(async () =>
+        imagesSchema.parse(
+          await read('photos', date, (token) =>
+            getUserMealImages(token, { date }),
+          ),
+        ),
       ),
     product: (id) =>
-      yazioRequest(
+      projectRead(
         async () =>
-          productSchema.parse(await client.products.get(id)) as Product | null,
+          productSchema.parse(
+            await read('product', undefined, (token) => getProduct(token, id)),
+          ) as Product | null,
       ),
     recipe: (id) =>
-      yazioRequest(
+      projectRead(
         async () =>
-          recipeSchema.parse(await user.getRecipe(id)) as Recipe | null,
+          recipeSchema.parse(
+            await read('recipe', undefined, (token) => getRecipe(token, id)),
+          ) as Recipe | null,
       ),
   };
 }

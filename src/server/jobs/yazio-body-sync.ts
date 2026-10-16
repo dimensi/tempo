@@ -190,9 +190,9 @@ export async function pullBodyDates(
         })),
       );
       repo.importDay(ownerId, epoch, date, entries);
-    } catch {
+    } catch (error) {
       await assertCurrent();
-      syncReadFailure('body', date, started);
+      syncReadFailure('body', date, started, error);
     } // Existing local data survives an incomplete read.
   }
 }
