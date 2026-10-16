@@ -49,7 +49,39 @@ Connectivity changes must not unmount the existing feature interface or discard 
 
 Security takes priority over continuity. On real logout, account change, revoked trainer access or failed authorization, conceal private data synchronously and purge the matching local partition. An unchanged, previously confirmed access state must preserve the mounted interface without visual reloads. Logout must remain possible without the network and must clear local private data even when server sign-out cannot be confirmed immediately.
 
-Write meaningful unit tests for business rules, integration tests for persistence/authorization, E2E for real interactions. E2E resets only `.data/e2e.sqlite`. Never mock authentication in security smoke tests. Playwright supplies future PDF rendering capability, but browsers are not in the production image.
+E2E resets only `.data/e2e.sqlite`. Never mock authentication in security smoke tests. Playwright supplies future PDF rendering capability, but browsers are not in the production image.
+
+### Testing policy — lean suite and test budget
+
+Tests are maintained only when their realistic regression-detection value justifies their complexity and runtime. Optimize for a **small, high-signal suite**, not test count, coverage percentage, or exhaustive scenarios. Existing tests are not a baseline to preserve.
+
+**Budget for new test cases (per task, across unit, integration, and E2E):**
+
+- **Default: 0 new tests.** Do not automatically add tests for a code change. A task is complete without new tests when the implementation is correct and relevant verification passes.
+- Documentation, copy, styles, visual adjustments, and behavior-preserving refactors: **0**.
+- Small behavior change or bug fix: **at most 1**.
+- New feature: **at most 2**.
+- Limits are ceilings, never quotas. Each `test`/`it` case and each parameterized row counts as one, even when placed in an existing file.
+- Exceeding a limit requires **explicit user approval** with a concrete unprotected regression risk. Do not silently exceed the budget.
+
+**What to test:**
+
+- Only important observable behavior, nontrivial business invariants, or realistic significant regressions. In this project, prioritize owner/trainer authorization and data isolation, migrations and persisted data integrity, offline privacy/write safety, and synchronization correctness.
+- Prefer a representative scenario at the lowest **effective** test layer. Do not repeat the same guarantee at unit, integration, and E2E levels.
+- Do not test trivial getters, wrappers, mappings, component internals, every conditional branch, theoretical edge cases, or details of a particular implementation. Do not introduce fixtures, mocks, harnesses, or abstractions just to make low-value tests possible.
+- **New E2E tests require explicit user approval**, even within the numeric budget. Reserve E2E for essential real-user journeys, not individual components, UI permutations, or every visible behavior change.
+
+**Prune rather than accumulate:**
+
+- Treat existing tests as candidates for **removal, consolidation, or replacement**. Delete obsolete, overlapping, brittle, flaky, implementation-coupled, and low-signal tests; do not preserve them for historical coverage or green test counts.
+- Prefer extending or replacing one valuable scenario instead of accumulating several narrow tests. Aim for **zero or negative net test-case growth** during ordinary tasks.
+- Evaluate what regression protection remains after pruning, rather than preserving particular tests. Important invariants should still have appropriately focused protection.
+- A dedicated cleanup task will establish a **fixed repository-wide test-case budget** from the *reduced* suite, not the current total. Once agreed, growing beyond that cap requires approval; do not preemptively treat today's test count as acceptable.
+- **Runtime is also a budget.** Prune expensive low-value tests and avoid adding slow suites. Post-cleanup targets: unit suite within **60 seconds**, integration suite within **2 minutes**, and a small critical-journey E2E smoke suite. Measure and agree the actual CI/verification time cap during cleanup; these targets do not retroactively make the current suite a release gate.
+
+**Before adding any test**, identify the specific plausible regression, check whether another test already catches it, and justify its cost. If there is no compelling gap, add **zero** tests.
+
+**Reporting:** State added, removed, and consolidated test-case counts (including zero), meaningful remaining regression coverage, and the exact checks actually run. This policy limits **creation and retention** of tests, not execution of currently required verification; the verification tiers below remain in force until deliberately updated during the separate cleanup.
 
 ## Checks and PRs
 
@@ -61,7 +93,7 @@ Choose and record the verification tier before implementation. Base it on change
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Docs-only | Only Markdown, agent instructions, comments or other non-executable documentation changed.                                                                                                                                                    | `git diff --check` and Prettier on the changed documentation files. Do not run unit, build or E2E solely for this tier.                                                  |
 | Test-only | Only tests, fixtures or test documentation changed without altering runtime code or test infrastructure.                                                                                                                                      | Formatting/lint for changed files and the directly changed test suites.                                                                                                  |
-| Isolated  | A bounded UI, copy, style or business-rule change has a known local dependency surface.                                                                                                                                                       | Format, lint, typecheck and the relevant unit/integration tests; add the directly affected E2E scenario when user-visible behavior changes.                              |
+| Isolated  | A bounded UI, copy, style or business-rule change has a known local dependency surface.                                                                                                                                                       | Format, lint, typecheck and relevant unit/integration tests; run any affected existing E2E checks for user-visible changes, but do not auto-add cases.                              |
 | Full      | The change affects shared navigation/layout, authentication or authorization, offline lifecycle/storage/routing, shared contracts, schema/migrations, dependencies, build/CI/deployment, multiple features, or has an uncertain blast radius. | `pnpm verify:merge` on the final committed revision with a clean working tree. For infrastructure changes also build the image and run the disposable Docker smoke test. |
 
 Do not escalate a lower tier merely because an unrelated test exists, and do not downgrade a tier because the diff is small. A one-line authorization, schema, routing or shared-contract change is still Full. A documentation-only change remains Docs-only even when it describes critical runtime behavior.
