@@ -1,4 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react';
+import type { OfflineSnapshot } from '@/contracts/offline';
 import { useReadOnline } from '@/lib/use-read-online';
 import { getOfflineController } from '@/lib/offline-controller';
 import {
@@ -157,7 +158,10 @@ export function installSnapshotReads() {
     }
     if (controller.getSnapshot().status !== 'ready' || !navigator.onLine)
       return;
-    const scope = `${snapshot.partition}:${snapshot.connectionGeneration}:${bundle.savedAt}`;
+    // A new save timestamp alone must not make warming read its own outputs
+    // forever through source-loaded -> save -> warm. Only changed view inputs
+    // or a new authorized scope need another pass.
+    const scope = snapshotWarmKey(snapshot);
     if (warming === scope) return;
     warming = scope;
     // Persist the same safe DTOs used by ordinary views, including unopened detail routes.
@@ -244,4 +248,19 @@ export function useReportReadModel() {
       })),
     };
   }, [online, state.bundle, state.photos]);
+}
+
+export function snapshotWarmKey(snapshot: OfflineSnapshot) {
+  return JSON.stringify([
+    snapshot.partition,
+    snapshot.connectionGeneration,
+    snapshot.to,
+    snapshot.plannedWorkouts,
+    snapshot.workoutSessions,
+    snapshot.nativeTrainings,
+    snapshot.transformMateFacts,
+    snapshot.views.settings,
+    snapshot.views.summary?.dailyStepsGoal,
+    snapshot.views.catalog,
+  ]);
 }

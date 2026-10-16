@@ -38,9 +38,24 @@ it('synchronous conceal includes real portal roots outside the private workspace
   const query = vi.fn((selector: string) =>
     selector.includes('[data-portal]') ? [workspace, portal] : [workspace],
   );
-  vi.stubGlobal('document', { querySelectorAll: query });
+  vi.stubGlobal('document', {
+    querySelector: () => ({}),
+    querySelectorAll: query,
+  });
   const { concealOfflineContent } = await import('@/lib/offline-device');
   concealOfflineContent();
   expect(workspace.hidden).toBe(true);
   expect(portal.hidden).toBe(true);
+});
+
+it('feature dialogs outside a private workspace remain available after local cleanup', async () => {
+  const portal = { hidden: false };
+  vi.stubGlobal('document', {
+    querySelector: () => null,
+    querySelectorAll: (selector: string) =>
+      selector.includes('[data-portal]') ? [portal] : [],
+  });
+  const { concealOfflineContent } = await import('@/lib/offline-device');
+  concealOfflineContent();
+  expect(portal.hidden).toBe(false);
 });

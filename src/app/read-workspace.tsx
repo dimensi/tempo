@@ -289,7 +289,12 @@ export function PrivateReadWorkspace({
           </Button>
         </Group>
       )}
-      <div ref={privateRoot} data-offline-private hidden={!initialContext}>
+      <div
+        ref={privateRoot}
+        data-read-workspace
+        data-offline-private
+        hidden={!initialContext}
+      >
         {reader &&
           routes.map((route) => (
             <Activity

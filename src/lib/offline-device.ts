@@ -163,7 +163,9 @@ export function notifyOfflineBlocked() {
 export function concealOfflineContent() {
   if (typeof document !== 'undefined')
     for (const node of document.querySelectorAll<HTMLElement>(
-      '[data-offline-private], [data-offline-write-private], [data-portal]',
+      document.querySelector('[data-read-workspace]')
+        ? '[data-offline-private], [data-offline-write-private], [data-portal]'
+        : '[data-offline-private], [data-offline-write-private]',
     ))
       node.hidden = true;
 }
