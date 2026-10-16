@@ -177,3 +177,126 @@ test('background settings refresh preserves an already focused anchor for keyboa
   await expect(page.locator('#connection')).toBeFocused();
   await expect(connection).toHaveAttribute('aria-current', 'location');
 });
+
+test('trainer grants follow refreshed settings after navigation without resetting invitation input', async ({
+  page,
+}) => {
+  const ownerId = await login(page);
+  const trainers = await page.request.get(`/api/trainers?ownerId=${ownerId}`);
+  expect(trainers.ok()).toBe(true);
+  const trainer = (await trainers.json()).find(
+    (row: { email: string }) => row.email === 'trainer@example.test',
+  );
+  expect(trainer).toBeDefined();
+  const grant = { ownerId, trainerId: trainer.id };
+  expect((await page.request.post('/api/trainers', { data: grant })).ok()).toBe(
+    true,
+  );
+  await page.goto('/settings#trainers');
+  const section = page.locator('#trainers');
+  await section
+    .getByRole('button', { name: 'Отозвать доступ', exact: true })
+    .click();
+  await expect(
+    section.getByRole('button', { name: 'Разрешить доступ', exact: true }),
+  ).toBeEnabled();
+
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/read/settings', async (route) => {
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response });
+  });
+  async function navigate(name: string) {
+    const toggle = page.getByRole('button', { name: 'Навигация', exact: true });
+    if (await toggle.isVisible()) await toggle.click();
+    await page
+      .getByRole('navigation', { name: 'Навигация', exact: true })
+      .getByRole('link', { name, exact: true })
+      .click();
+  }
+  await navigate('Обзор');
+  await expect(page).toHaveURL('/');
+  await navigate('Настройки');
+  await expect(page).toHaveURL('/settings#trainers');
+  // The cached aggregate still has the old grant; the real server read is held.
+  await expect(
+    section.getByRole('button', { name: 'Отозвать доступ', exact: true }),
+  ).toBeVisible();
+  const email = section.getByRole('textbox', {
+    name: 'Email тренера',
+    exact: true,
+  });
+  await email.fill('invitation-draft@example.test');
+  await section
+    .getByRole('button', { name: 'Создать приглашение', exact: true })
+    .click();
+  const invitation = section.getByRole('textbox', {
+    name: 'Скопируйте ссылку приглашения',
+    exact: true,
+  });
+  await expect(invitation).not.toHaveValue('');
+  const invitationUrl = await invitation.inputValue();
+  await email.fill('unsent-draft@example.test');
+  const refreshed = page.waitForResponse('**/api/read/settings');
+  release();
+  expect((await refreshed).ok()).toBe(true);
+  await expect(
+    section.getByRole('button', { name: 'Разрешить доступ', exact: true }),
+  ).toBeEnabled();
+  await expect(email).toHaveValue('unsent-draft@example.test');
+  await expect(invitation).toHaveValue(invitationUrl);
+
+  // A change made elsewhere must also reach the mounted list on revalidation.
+  expect((await page.request.post('/api/trainers', { data: grant })).ok()).toBe(
+    true,
+  );
+  const externalRefresh = page.waitForResponse('**/api/read/settings');
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event('tempo:read-revalidate')),
+  );
+  expect((await externalRefresh).ok()).toBe(true);
+  await expect(
+    section.getByRole('button', { name: 'Отозвать доступ', exact: true }),
+  ).toBeEnabled();
+  await expect(email).toHaveValue('unsent-draft@example.test');
+  await expect(invitation).toHaveValue(invitationUrl);
+
+  // Revalidation may publish the mutation before its acknowledgement arrives.
+  let acknowledge!: () => void;
+  let committed!: () => void;
+  const acknowledgement = new Promise<void>((resolve) => {
+    acknowledge = resolve;
+  });
+  const mutationCommitted = new Promise<void>((resolve) => {
+    committed = resolve;
+  });
+  await page.route('**/api/trainers', async (route) => {
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    committed();
+    await acknowledgement;
+    await route.fulfill({ response });
+  });
+  await section
+    .getByRole('button', { name: 'Отозвать доступ', exact: true })
+    .click();
+  await mutationCommitted;
+  const mutationRefresh = page.waitForResponse('**/api/read/settings');
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event('tempo:read-revalidate')),
+  );
+  expect((await mutationRefresh).ok()).toBe(true);
+  const allow = section.getByRole('button', {
+    name: 'Разрешить доступ',
+    exact: true,
+  });
+  await expect(allow).toBeDisabled();
+  acknowledge();
+  await expect(allow).toBeEnabled();
+  await expect(email).toHaveValue('unsent-draft@example.test');
+  await expect(invitation).toHaveValue(invitationUrl);
+});

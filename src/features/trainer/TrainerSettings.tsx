@@ -22,6 +22,11 @@ export function TrainerSettings({
   headingOrder?: 1 | 2;
 }) {
   const [trainers, setTrainers] = useState(initialTrainers);
+  const [previousTrainers, setPreviousTrainers] = useState(initialTrainers);
+  if (initialTrainers !== previousTrainers) {
+    setPreviousTrainers(initialTrainers);
+    setTrainers(initialTrainers);
+  }
   const [email, setEmail] = useState('');
   const [url, setUrl] = useState('');
   const [error, setError] = useState(false);
@@ -57,7 +62,7 @@ export function TrainerSettings({
       if (!response.ok) throw new Error();
       setTrainers((rows) =>
         rows.map((row) =>
-          row.id === trainer.id ? { ...row, granted: !row.granted } : row,
+          row.id === trainer.id ? { ...row, granted: !trainer.granted } : row,
         ),
       );
     } catch {
