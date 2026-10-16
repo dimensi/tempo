@@ -215,10 +215,11 @@ export async function seedClientRead(
 }
 export async function refreshClientRead(key: string) {
   bindReadScope();
-  if (readBlocked) throw new ReadFailure('denied');
+  if (readBlocked && key !== '/api/read/context')
+    throw new ReadFailure('denied');
   const schema = readResponseSchema(new URL(key, location.origin).pathname);
   if (!schema) throw new ReadFailure('unavailable');
-  return clientReads.read(
+  const body = await clientReads.read(
     key,
     navigator.onLine
       ? async () => {
@@ -265,6 +266,17 @@ export async function refreshClientRead(key: string) {
         }
       : undefined,
   );
+  // Only the current, schema-validated network context can authorize fresh
+  // transports after a scope purge. Stale flights throw before reaching here.
+  if (
+    key === '/api/read/context' &&
+    clientReads.snapshot(key).source === 'network'
+  ) {
+    const resumed = readBlocked;
+    readBlocked = false;
+    if (resumed) queueMicrotask(revalidateVisibleReads);
+  }
+  return body;
 }
 export function observeReadResources() {
   const original = window.fetch;

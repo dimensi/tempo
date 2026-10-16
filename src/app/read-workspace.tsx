@@ -95,13 +95,27 @@ export function PrivateReadWorkspace({
     const blocked = () => {
       concealOfflineContent();
       setDenied(true);
-      if (!hasMutationIntent()) accessDenied.current = true;
+      if (controller.getSnapshot().error === 'denied')
+        accessDenied.current = true;
       setLoggedOut(hasPendingLogout());
       if (hasPendingLogout()) logoutSeen.current = true;
       if (!hasMutationIntent() || hasPendingLogout()) {
         setRoutes([]);
         positions.current.clear();
       }
+      if (
+        !accessDenied.current &&
+        !hasMutationIntent() &&
+        !hasPendingLogout() &&
+        navigator.onLine
+      )
+        queueMicrotask(() => {
+          void refreshContext();
+        });
+    };
+    const confirmedDenied = () => {
+      accessDenied.current = true;
+      blocked();
     };
     const stopBlocked = subscribeOfflineBlocked(blocked);
     const permit = () => {
@@ -132,6 +146,11 @@ export function PrivateReadWorkspace({
       ) {
         document.documentElement.removeAttribute('data-read-blocked');
         setDenied(false);
+        if (
+          !bundle &&
+          ['disabled', 'error'].includes(controller.getSnapshot().status)
+        )
+          void controller.activate(navigator.onLine, true);
       }
     };
     const stopPermit = clientReads.subscribe('/api/read/context', permit);
@@ -143,7 +162,7 @@ export function PrivateReadWorkspace({
     window.addEventListener('online', finishLogout);
     finishLogout();
     const error = () => setActionError(true);
-    window.addEventListener('tempo:read-access-denied', blocked);
+    window.addEventListener('tempo:read-access-denied', confirmedDenied);
     window.addEventListener('tempo:action-unavailable', error);
     return () => {
       stopLinks();
@@ -152,7 +171,7 @@ export function PrivateReadWorkspace({
       stopBlocked();
       stopPermit();
       window.removeEventListener('online', finishLogout);
-      window.removeEventListener('tempo:read-access-denied', blocked);
+      window.removeEventListener('tempo:read-access-denied', confirmedDenied);
       window.removeEventListener('tempo:action-unavailable', error);
     };
   }, [controller, refreshContext]);
@@ -190,8 +209,13 @@ export function PrivateReadWorkspace({
       return;
     }
     if (state.bundle) revealOfflineContent(state.bundle.fence);
-    else if (initialContext && !isOfflinePageRestorePending())
+    else if (initialContext && !isOfflinePageRestorePending()) {
       privateRoot.current.hidden = false;
+      for (const portal of document.querySelectorAll<HTMLElement>(
+        '[data-portal]',
+      ))
+        portal.hidden = false;
+    }
   }, [
     context.data,
     denied,

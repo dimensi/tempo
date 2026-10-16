@@ -31,3 +31,16 @@ it('late worker purge cannot conceal a newer verified scope, but current and uns
   expect(blocked).toHaveBeenCalledTimes(2);
   stop();
 });
+
+it('synchronous conceal includes real portal roots outside the private workspace', async () => {
+  const workspace = { hidden: false };
+  const portal = { hidden: false };
+  const query = vi.fn((selector: string) =>
+    selector.includes('[data-portal]') ? [workspace, portal] : [workspace],
+  );
+  vi.stubGlobal('document', { querySelectorAll: query });
+  const { concealOfflineContent } = await import('@/lib/offline-device');
+  concealOfflineContent();
+  expect(workspace.hidden).toBe(true);
+  expect(portal.hidden).toBe(true);
+});

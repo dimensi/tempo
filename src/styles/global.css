@@ -33,6 +33,7 @@ main {
 }
 
 /* The synchronous server-entry gate runs before any private HTML is parsed. */
-html[data-read-blocked] [data-offline-private] {
+html[data-read-blocked] [data-offline-private],
+html[data-read-blocked] [data-portal] {
   display: none !important;
 }

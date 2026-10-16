@@ -163,7 +163,7 @@ export function notifyOfflineBlocked() {
 export function concealOfflineContent() {
   if (typeof document !== 'undefined')
     for (const node of document.querySelectorAll<HTMLElement>(
-      '[data-offline-private], [data-offline-write-private]',
+      '[data-offline-private], [data-offline-write-private], [data-portal]',
     ))
       node.hidden = true;
 }
@@ -176,7 +176,7 @@ export function isOfflinePageRestorePending() {
 }
 export function revealOfflineContent(
   fence: CacheFence,
-  selector = '[data-offline-private]',
+  selector = '[data-offline-private], [data-portal]',
 ) {
   try {
     const gate = readGate(browserGateStorage());
@@ -189,7 +189,8 @@ export function revealOfflineContent(
       return;
     for (const node of document.querySelectorAll<HTMLElement>(selector))
       node.hidden = false;
-    if (selector === '[data-offline-private]') pageRestorePending = false;
+    if (selector === '[data-offline-private], [data-portal]')
+      pageRestorePending = false;
   } catch {
     concealOfflineContent();
   }

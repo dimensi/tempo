@@ -394,3 +394,30 @@ it('blocked scope never starts background transports until a verified bundle ret
   await reader.refreshClientRead(path);
   expect(raw).toHaveBeenCalledOnce();
 });
+
+it('a freshly verified current network context permits new reads after the old partition is purged', async () => {
+  const raw = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json({
+        readerId: 'new-reader',
+        ownerId: 'new-reader',
+        role: 'OWNER',
+        partition: 'N'.repeat(43),
+        connectionGeneration: 'G'.repeat(43),
+      }),
+    )
+    .mockResolvedValueOnce(Response.json({ dailyStepsGoal: 2 }));
+  const reader = await install(raw);
+  state.blockedScope = true;
+  state.blocked();
+  await reader.refreshClientRead('/api/read/context');
+  await reader.refreshClientRead(path);
+  expect(raw).toHaveBeenCalledTimes(2);
+  expect(window.dispatchEvent).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'tempo:read-revalidate' }),
+  );
+  expect(reader.clientReads.snapshot(path).data).toBe(
+    JSON.stringify({ dailyStepsGoal: 2 }),
+  );
+});
