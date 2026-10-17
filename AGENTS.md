@@ -115,7 +115,9 @@ For Full verification, `pnpm verify:merge` runs format, lint, typecheck, the enf
 
 When the Full tier applies, every configured compact check must pass with no retries; discovered and executed test identities must match exactly. Rerun after any subsequent runtime change or rebase. Record the final SHA, exact command, case counts and durations from `test-results/merge-verification.json` in the PR or merge report. The command never merges or deploys. CI does not run for PRs and main deployment does not run E2E, so neither replaces required Full verification. Merge still requires the task's authorization. For focused diagnosis use `pnpm test:e2e smoke`, `pnpm test:e2e nutrition`, `pnpm test:unit`, or `pnpm test:integration`; do not rebuild the removed orchestration around them.
 
-One agent = one branch = one Git worktree. Never commit directly to main. Keep PRs narrow; describe changed behavior, contracts/migrations, checks actually run, risks and remaining limitations. Do not commit `.env`, databases, tokens, uploads, test artifacts or production data. Never merge/deploy without the task's authorization. Do not invent product schemas or normalization algorithms.
+One agent = one branch = one Git worktree. Do not commit directly to main
+unless the user explicitly requests a direct commit to main in the current
+conversation. Keep PRs narrow; describe changed behavior, contracts/migrations, checks actually run, risks and remaining limitations. Do not commit `.env`, databases, tokens, uploads, test artifacts or production data. Never merge/deploy without the task's authorization. Do not invent product schemas or normalization algorithms.
 
 ## Mandatory cleanup after merge
 

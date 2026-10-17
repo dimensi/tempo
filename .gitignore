@@ -1,5 +1,7 @@
 node_modules/
 .next/
+.agents/
+skills-lock.json
 .env*
 runtime.env*
 release.env*
