@@ -95,7 +95,7 @@ export function ApplicationShellFrame({
             Перейти к содержимому
           </a>
           <AppShell
-            header={{ height: 68 }}
+            header={{ height: 'var(--tempo-header-height)' }}
             navbar={{
               width: 250,
               breakpoint: 'sm',
@@ -103,7 +103,7 @@ export function ApplicationShellFrame({
             }}
             padding={{ base: 'md', sm: 'xl' }}
           >
-            <AppShell.Header>
+            <AppShell.Header className={classes.header}>
               <Group
                 h="100%"
                 px="md"
@@ -129,7 +129,11 @@ export function ApplicationShellFrame({
                 <Group ref={setActionsTarget} gap={4} wrap="nowrap" />
               </Group>
             </AppShell.Header>
-            <AppShell.Navbar p="md" className={classes.sidebar}>
+            <AppShell.Navbar
+              p="md"
+              pl="calc(var(--mantine-spacing-md) + var(--tempo-safe-left))"
+              className={classes.sidebar}
+            >
               <Stack h="100%" gap="md">
                 <Group gap="sm">
                   <UnstyledButton

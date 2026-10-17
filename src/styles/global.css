@@ -1,8 +1,21 @@
+:root {
+  --tempo-safe-top: env(safe-area-inset-top, 0px);
+  --tempo-safe-right: env(safe-area-inset-right, 0px);
+  --tempo-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tempo-safe-left: env(safe-area-inset-left, 0px);
+  --tempo-header-height: calc(68px + var(--tempo-safe-top));
+}
+
 body {
   margin: 0;
 }
 * {
   box-sizing: border-box;
+}
+/* Standalone auth/error pages do not have the shell's safe-area offsets. */
+body:not(:has(.mantine-AppShell-root)) {
+  padding: var(--tempo-safe-top) var(--tempo-safe-right)
+    var(--tempo-safe-bottom) var(--tempo-safe-left);
 }
 main {
   min-width: 0;
@@ -33,3 +46,19 @@ main {
 }
 
 /* The synchronous server-entry gate runs before any private HTML is parsed. */
+
+/* Full-screen dialogs share the edge-to-edge viewport with the application. */
+.mantine-Modal-content[data-full-screen] {
+  padding-left: var(--tempo-safe-left);
+  padding-right: var(--tempo-safe-right);
+}
+.mantine-Modal-content[data-full-screen] .mantine-Modal-header {
+  padding-top: calc(
+    var(--mb-padding, var(--mantine-spacing-md)) + var(--tempo-safe-top)
+  );
+}
+.mantine-Modal-content[data-full-screen] .mantine-Modal-body {
+  padding-bottom: calc(
+    var(--mb-padding, var(--mantine-spacing-md)) + var(--tempo-safe-bottom)
+  );
+}
