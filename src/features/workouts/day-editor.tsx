@@ -499,6 +499,7 @@ export function DayEditor({
             (exercise) =>
               statusOnly ||
               exercise.sets.length > 0 ||
+              Boolean(exercise.comment) ||
               prior?.exercises.some((item) => item.id === exercise.id),
           ),
       });

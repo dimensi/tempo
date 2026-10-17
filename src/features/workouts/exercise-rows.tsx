@@ -24,7 +24,11 @@ import { useMediaQuery } from '@mantine/hooks';
 import { BottomSheet } from '@/components/shared/bottom-sheet';
 import { ExerciseOrder } from './exercise-order';
 import { matchExerciseGuides } from './exercise-guides';
-import type { PlannedWorkout, WorkoutSession } from '@/contracts/workouts';
+import type {
+  PlannedWorkout,
+  WorkoutExercise,
+  WorkoutSession,
+} from '@/contracts/workouts';
 import type { ResultExercise } from './result-draft';
 import { ExerciseMedia } from './exercise-media';
 import { workoutMessages as m } from './messages';
@@ -53,11 +57,22 @@ export function ExerciseRows({
   disabled?: boolean;
   reordering?: boolean;
 }) {
-  const [media, setMedia] = useState<ResultExercise | null>(null);
+  const [media, setMedia] = useState<{
+    exercise: ResultExercise;
+    actual?: WorkoutExercise;
+  } | null>(null);
   const mobile = useMediaQuery('(max-width: 47.99em)');
   const [actions, setActions] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const guides = matchExerciseGuides(exercises, planned?.exercises ?? []);
+  const recorded =
+    mode === 'plan'
+      ? matchExerciseGuides(exercises, session?.exercises ?? [])
+      : exercises.map((exercise) =>
+          session?.exercises.find(
+            (item) => Boolean(exercise.id) && item.id === exercise.id,
+          ),
+        );
   const update = (index: number, next: ResultExercise) =>
     onChange?.(exercises.map((exercise, i) => (i === index ? next : exercise)));
   if (reordering && onChange)
@@ -74,12 +89,13 @@ export function ExerciseRows({
         const key =
           exercise.id ?? exercise.transformMate?.occurrenceKey ?? `${index}`;
         const guide = guides[index];
+        const openMedia = () => setMedia({ exercise, actual: recorded[index] });
         const titleParts = /^(.*?)\s*(\([^)]*\))$/.exec(exercise.name);
         const options = [
           {
             label: m.techniqueAndVideo,
             icon: <IconPlayerPlay size={20} />,
-            run: () => setMedia(exercise),
+            run: openMedia,
           },
           {
             label: m.exerciseComment,
@@ -101,7 +117,7 @@ export function ExerciseRows({
             <Group gap="xs" wrap="nowrap" align="start" mb="xs">
               <UnstyledButton
                 className={styles.exerciseName}
-                onClick={() => setMedia(exercise)}
+                onClick={openMedia}
                 aria-label={`${m.technique}: ${exercise.name}`}
               >
                 <span>{titleParts?.[1] || exercise.name}</span>
@@ -432,9 +448,13 @@ export function ExerciseRows({
         <ExerciseMedia
           ownerId={ownerId}
           exercise={{
-            ...media,
-            sets: media.sets.map((set) => ({ ...set, reps: set.reps ?? 1 })),
+            ...media.exercise,
+            sets: media.exercise.sets.map((set) => ({
+              ...set,
+              reps: set.reps ?? 1,
+            })),
           }}
+          actual={media.actual}
           session={session}
           canLog={canLog}
           onClose={() => setMedia(null)}

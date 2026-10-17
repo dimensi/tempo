@@ -479,6 +479,60 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect(
     repeatedRows.nth(1).getByLabel('Repeated manual, Подход 2, Повторения'),
   ).toHaveAttribute('placeholder', '12');
+  // A comment is a result even before any sets are recorded for that occurrence.
+  await repeatedRows
+    .nth(1)
+    .getByRole('button', { name: 'Действия с упражнением: Repeated manual' })
+    .click();
+  await page
+    .getByRole('menuitem', { name: 'Комментарий к упражнению' })
+    .click();
+  await repeatedRows
+    .nth(1)
+    .getByLabel('Комментарий к упражнению')
+    .fill('Skipped because of discomfort');
+  await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Завершить тренировку', exact: true }),
+  ).toBeEnabled();
+  const commented = (
+    await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json()
+  ).data.sessions.find((item: { date: string }) => item.date === gymDate);
+  expect(commented.exercises).toHaveLength(2);
+  expect(commented.exercises[0].id).toBe(recordedId);
+  expect(commented.exercises[1]).toMatchObject({
+    comment: 'Skipped because of discomfort',
+    sets: [],
+  });
+  // Each repeated plan row must open the recordings of its own occurrence.
+  const recordings = commented.exercises.map((item: { id: string }) => ({
+    id: crypto.randomUUID(),
+    sessionId: commented.id,
+    exerciseId: item.id,
+    size: 100,
+    duration: 1,
+    state: 'ready',
+    parts: [0],
+  }));
+  await page.route('**/api/workouts/videos?*', (route) =>
+    route.fulfill({ json: { data: recordings } }),
+  );
+  await modes.getByText('План', { exact: true }).click();
+  await repeatedRows
+    .nth(1)
+    .getByRole('button', { name: 'Техника: Repeated manual', exact: true })
+    .click();
+  await page
+    .getByRole('dialog')
+    .getByText('Мои видео', { exact: true })
+    .click();
+  await expect(page.getByRole('dialog').locator('video')).toHaveAttribute(
+    'src',
+    new RegExp(`/${recordings[1].id}/playback`),
+  );
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page.unroute('**/api/workouts/videos?*');
+  await modes.getByText('Выполнение', { exact: true }).click();
   // Deleting results must leave the plan available and discard the deleted draft.
   await page.getByRole('button', { name: 'Действия с тренировкой' }).click();
   await page.getByRole('menuitem', { name: 'Удалить результаты' }).click();

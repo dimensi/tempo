@@ -10,12 +10,14 @@ import { workoutMessages as m } from './messages';
 export function ExerciseMedia({
   ownerId,
   exercise,
+  actual,
   session,
   canLog,
   onClose,
 }: {
   ownerId: string;
   exercise: WorkoutExercise;
+  actual?: WorkoutExercise;
   session?: WorkoutSession;
   canLog: boolean;
   onClose: () => void;
@@ -23,12 +25,6 @@ export function ExerciseMedia({
   const [tab, setTab] = useState('technique');
   const mobile = useMediaQuery('(max-width: 48em)');
   const reduceMotion = useReducedMotion();
-  const actual = session?.exercises.find((item) =>
-    exercise.transformMate
-      ? item.transformMate?.occurrenceKey ===
-        exercise.transformMate.occurrenceKey
-      : item.id === exercise.id || item.name === exercise.name,
-  );
   return (
     <Modal
       opened
