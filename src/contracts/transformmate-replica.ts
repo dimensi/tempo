@@ -30,7 +30,24 @@ export type TransformMateReplicaStatus = z.infer<
   typeof transformMateReplicaStatusSchema
 >;
 export const replicaMessages = {
-  title: 'Серверная копия упражнений',
+  title: 'База упражнений',
+  filling: 'Наполняется',
+  automatic: 'Автообновление',
+  emptyConnected:
+    'База начнёт наполняться автоматически. Здесь появятся описания, видео и превью.',
+  saved: 'Сохранена',
+  paused: 'Ожидает подключения',
+  retrying: 'Повторим автоматически',
+  catalog: 'в каталоге',
+  catalogShare: 'каталога',
+  details: 'Как хранится база',
+  failures: 'Ошибки обработки',
+  queue: 'В очереди',
+  storageSize: 'Занято файлами',
+  updated: 'Последнее сохранение',
+  scheduled: 'Следующая обработка',
+  reconnect: 'Подключение аккаунта',
+  units: ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'],
   description:
     'Каталог, видео и превью хранятся на вашем сервере без срока удаления. Обновления выполняются постепенно, примерно раз в месяц.',
   loading: 'Получаем состояние серверной копии…',

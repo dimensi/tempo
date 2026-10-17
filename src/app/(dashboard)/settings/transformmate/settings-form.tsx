@@ -1,5 +1,6 @@
 'use client';
 import { ReplicaStatus } from './replica-status';
+import { replicaMessages } from '@/contracts/transformmate-replica';
 import {
   transformMateConnectionMessages as m,
   transformMateCredentialsSchema,
@@ -11,6 +12,7 @@ import { networkReachable } from '@/lib/network-state';
 import { refreshAfterMutation } from '@/lib/provider-mutation';
 import { useReadOnline } from '@/lib/use-read-online';
 import {
+  Accordion,
   Alert,
   Badge,
   Button,
@@ -170,11 +172,12 @@ export function TransformMateSettingsForm({
       maw={600}
       style={{ minWidth: 0, overflowWrap: 'anywhere' }}
     >
-      <Title order={2}>{m.title}</Title>
-      <Text c="var(--mantine-color-text)">{m.description}</Text>
-      <Badge color={status.configured ? 'teal' : 'gray'}>
-        {status.configured ? m.connected : m.disconnected}
-      </Badge>
+      <Group justify="space-between" gap="sm">
+        <Title order={2}>{m.title}</Title>
+        <Badge variant="light" color={status.configured ? 'teal' : 'gray'}>
+          {status.configured ? m.connected : m.disconnected}
+        </Badge>
+      </Group>
       {(error || status.errorCode) && (
         <Alert color="red" role="alert">
           {error ?? (status.errorCode ? m[status.errorCode] : '')}
@@ -185,41 +188,51 @@ export function TransformMateSettingsForm({
           {notice}
         </Alert>
       )}
+      {!denied && <ReplicaStatus configured={status.configured} />}
       {!denied && status.configured && (
-        <Stack gap="xs">
-          <Text fw={600}>{status.account?.name ?? m.unknownAccount}</Text>
-          {status.account?.email && <Text>{status.account.email}</Text>}
-          {status.account && (
-            <Text size="sm">
-              {m.account}: {status.account.id}
-            </Text>
-          )}
-          <Text size="sm">
-            {m.checked}:{' '}
-            {status.checkedAt
-              ? new Date(status.checkedAt).toLocaleString('ru-RU')
-              : '—'}
-          </Text>
-          <SimpleGrid cols={{ base: 1, sm: 2 }}>
-            <Button
-              mih={44}
-              variant="light"
-              loading={busy}
-              disabled={!online}
-              onClick={() => void request('check')}
-            >
-              {m.check}
-            </Button>
-            <Button
-              mih={44}
-              variant="default"
-              disabled={!online || busy}
-              onClick={() => setDisconnectOpen(true)}
-            >
-              {m.disconnect}
-            </Button>
-          </SimpleGrid>
-        </Stack>
+        <Accordion variant="default">
+          <Accordion.Item value="connection">
+            <Accordion.Control mih={44}>
+              {replicaMessages.reconnect}
+            </Accordion.Control>
+            <Accordion.Panel>
+              <Stack gap="xs">
+                <Text fw={600}>{status.account?.name ?? m.unknownAccount}</Text>
+                {status.account?.email && <Text>{status.account.email}</Text>}
+                {status.account && (
+                  <Text size="sm">
+                    {m.account}: {status.account.id}
+                  </Text>
+                )}
+                <Text size="sm">
+                  {m.checked}:{' '}
+                  {status.checkedAt
+                    ? new Date(status.checkedAt).toLocaleString('ru-RU')
+                    : '—'}
+                </Text>
+                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                  <Button
+                    mih={44}
+                    variant="light"
+                    loading={busy}
+                    disabled={!online}
+                    onClick={() => void request('check')}
+                  >
+                    {m.check}
+                  </Button>
+                  <Button
+                    mih={44}
+                    variant="default"
+                    disabled={!online || busy}
+                    onClick={() => setDisconnectOpen(true)}
+                  >
+                    {m.disconnect}
+                  </Button>
+                </SimpleGrid>
+              </Stack>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
       )}
       {!denied &&
         (!status.configured || status.errorCode === 'reauth_required') && (
@@ -285,7 +298,6 @@ export function TransformMateSettingsForm({
             </Stack>
           </form>
         )}
-      {!denied && <ReplicaStatus configured={status.configured} />}
       <Modal
         opened={disconnectOpen}
         onClose={() => {

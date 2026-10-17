@@ -1,6 +1,19 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Alert, Group, Stack, Text, Title } from '@mantine/core';
+import {
+  Accordion,
+  Alert,
+  Badge,
+  Box,
+  Group,
+  Progress,
+  SimpleGrid,
+  Skeleton,
+  Stack,
+  Text,
+  Title,
+} from '@mantine/core';
+import classes from './replica-status.module.css';
 import { apiFetch } from '@/lib/api-client';
 import { apiResults } from '@/lib/api-results';
 import { useReadOnline } from '@/lib/use-read-online';
@@ -9,7 +22,21 @@ import {
   type TransformMateReplicaStatus,
 } from '@/contracts/transformmate-replica';
 const date = (value: string | null) =>
-  value ? new Date(value).toLocaleString('ru-RU') : '—';
+  value
+    ? new Intl.DateTimeFormat('ru-RU', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(value))
+    : '—';
+const number = (value: number) => new Intl.NumberFormat('ru-RU').format(value);
+function fileSize(bytes: number) {
+  const unit = bytes
+    ? Math.min(4, Math.floor(Math.log(bytes) / Math.log(1024)))
+    : 0;
+  return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(bytes / 1024 ** unit)} ${m.units[unit]}`;
+}
 export function ReplicaStatus({ configured }: { configured: boolean }) {
   const online = useReadOnline();
   const [status, setStatus] = useState<TransformMateReplicaStatus | null>(null);
@@ -45,66 +72,176 @@ export function ReplicaStatus({ configured }: { configured: boolean }) {
       controller.abort();
     };
   }, [online, configured]);
-  const rows = status
-    ? [
-        [m.descriptions, `${status.descriptions} / ${status.total}`],
-        [m.videos, `${status.videos} / ${status.total}`],
-        [m.previews, `${status.previews} / ${status.total}`],
-        [
-          m.bytes,
-          `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(status.bytes / 1024 ** 2)} МБ`,
-        ],
-        [m.pending, String(status.pending)],
-        [m.errors, String(status.errors)],
-        [m.lastSuccess, date(status.lastSuccessAt)],
-        [m.nextAttempt, date(status.nextAttemptAt)],
-      ]
-    : [];
+  const paused = status?.reason === 'disconnected' || status?.reason === 'auth';
+  const badge = status?.reason
+    ? paused
+      ? status.total
+        ? m.saved
+        : m.paused
+      : m.retrying
+    : status?.pending
+      ? m.filling
+      : m.automatic;
   return (
-    <Stack gap="sm" mt="md">
-      <Title order={3}>{m.title}</Title>
-      <Text size="sm">{m.description}</Text>
-      {failed && <Alert color="yellow">{m.unavailable}</Alert>}
-      {!status && !failed && <Text size="sm">{m.loading}</Text>}
+    <Box className={classes.panel} aria-busy={!status && !failed}>
+      <Group justify="space-between" align="start" gap="sm" wrap="wrap">
+        <Stack gap={4}>
+          <Title order={3} size="h3">
+            {m.title}
+          </Title>
+          <Text size="sm" c="dimmed">
+            {status ? `${number(status.total)} ${m.catalog}` : m.loading}
+          </Text>
+        </Stack>
+        {status && (
+          <Badge
+            variant="light"
+            color={paused ? 'gray' : status.reason ? 'yellow' : 'teal'}
+          >
+            {badge}
+          </Badge>
+        )}
+      </Group>
+      {failed && (
+        <Alert mt="md" color="yellow">
+          {m.unavailable}
+        </Alert>
+      )}
+      {!status && !failed && (
+        <SimpleGrid cols={3} mt="lg" aria-label={m.loading}>
+          {[0, 1, 2].map((key) => (
+            <Skeleton key={key} height={92} />
+          ))}
+        </SimpleGrid>
+      )}
       {status && (
         <>
-          <Text size="sm">{status.reason ? m[status.reason] : m.ready}</Text>
-          {status.total === 0 ? (
-            <Text size="sm">{m.empty}</Text>
-          ) : (
-            <Stack gap="xs" component="dl" m={0}>
-              {rows.map(([label, value]) => (
-                <Group
-                  key={label}
-                  justify="space-between"
-                  align="baseline"
-                  gap="xs"
-                  wrap="wrap"
-                >
-                  <Text component="dt" size="sm">
-                    {label}
-                  </Text>
-                  <Text
-                    component="dd"
-                    size="sm"
-                    m={0}
-                    style={{ fontVariantNumeric: 'tabular-nums' }}
-                  >
-                    {value}
-                  </Text>
-                </Group>
-              ))}
-            </Stack>
-          )}
-          {status.failedExercises.map((failure) => (
-            <Text key={failure.id} size="sm">
-              {m.failedExercise} #{failure.id}:{' '}
-              {m.failureReasons[failure.reason]}. {m.nextAttempt}:{' '}
-              {date(failure.nextAttemptAt)}
+          {status.reason && (
+            <Text size="sm" mt="md" c={paused ? 'dimmed' : undefined}>
+              {m[status.reason]}
             </Text>
-          ))}
+          )}
+          {status.total === 0 ? (
+            <Text mt="lg" size="sm">
+              {m.empty}
+            </Text>
+          ) : (
+            <div className={classes.coverage}>
+              {(
+                [
+                  [m.descriptions, status.descriptions],
+                  [m.videos, status.videos],
+                  [m.previews, status.previews],
+                ] as const
+              ).map(([label, count]) => {
+                const percent = Math.min(100, (count / status.total) * 100);
+                return (
+                  <Stack gap={6} key={label}>
+                    <Text size="sm" fw={500}>
+                      {label}
+                    </Text>
+                    <Text className={classes.count}>{number(count)}</Text>
+                    <Progress
+                      value={percent}
+                      size={6}
+                      radius="xl"
+                      color="teal"
+                      aria-label={label}
+                      aria-valuetext={`${number(count)} / ${number(status.total)}`}
+                    />
+                    <Text size="sm" c="dimmed">
+                      {Math.round(percent)}% {m.catalogShare}
+                    </Text>
+                  </Stack>
+                );
+              })}
+            </div>
+          )}
+          <dl className={classes.metrics}>
+            {[
+              [m.storageSize, fileSize(status.bytes)],
+              [m.queue, number(status.pending)],
+              [m.errors, number(status.errors)],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <Text component="dt" size="sm" c="dimmed">
+                  {label}
+                </Text>
+                <Text
+                  component="dd"
+                  m={0}
+                  fw={600}
+                  className={classes.metricValue}
+                >
+                  {value}
+                </Text>
+              </div>
+            ))}
+          </dl>
+          <dl className={classes.schedule}>
+            {[
+              [m.updated, status.lastSuccessAt],
+              [m.scheduled, status.nextAttemptAt],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <Text component="dt" size="sm" c="dimmed">
+                  {label}
+                </Text>
+                <Text component="dd" size="sm" m={0}>
+                  {value ? <time dateTime={value}>{date(value)}</time> : '—'}
+                </Text>
+              </div>
+            ))}
+          </dl>
+          <Accordion
+            variant="default"
+            mt="md"
+            classNames={{ control: classes.disclosure }}
+          >
+            {status.errors > 0 && (
+              <Accordion.Item value="failures">
+                <Accordion.Control>
+                  <Group gap="xs">
+                    <Text size="sm">{m.failures}</Text>
+                    <Badge size="sm" color="yellow" variant="light">
+                      {number(status.errors)}
+                    </Badge>
+                  </Group>
+                </Accordion.Control>
+                <Accordion.Panel>
+                  <Stack gap="md">
+                    {status.failedExercises.map((failure) => (
+                      <div key={failure.id}>
+                        <Group justify="space-between" gap="xs">
+                          <Text size="sm" fw={600}>
+                            {m.failedExercise} #{failure.id}
+                          </Text>
+                          <Text size="sm" c="dimmed">
+                            {date(failure.nextAttemptAt)}
+                          </Text>
+                        </Group>
+                        <Text size="sm">
+                          {m.failureReasons[failure.reason]}
+                        </Text>
+                      </div>
+                    ))}
+                  </Stack>
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+            <Accordion.Item value="storage">
+              <Accordion.Control>
+                <Text size="sm">{m.details}</Text>
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Text size="sm" c="dimmed">
+                  {m.description}
+                </Text>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
         </>
       )}
-    </Stack>
+    </Box>
   );
 }

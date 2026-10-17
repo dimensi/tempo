@@ -15,3 +15,11 @@
 - Tests: zero added/removed/consolidated cases. Extend the existing migration,
   TransformMate recovery and authorization cases. Keep genuine browser authentication.
 - No production data or credentials, no merge/deploy authorization. Prepare a PR.
+
+## Settings presentation refinement
+
+The owner requested readable database progress and media metrics. Keep the existing
+status API and worker behavior, show independent catalog coverage, bytes, queue and
+errors; collapse connection controls and diagnostics. Verify desktop and 390px
+synthetic states. Zero new test cases. The PR retains Full verification because
+its schema/contracts/lifecycle changes remain part of the final revision.
