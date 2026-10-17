@@ -7,7 +7,7 @@
 
 .navigation {
   position: sticky;
-  top: 96px;
+  top: calc(var(--tempo-header-height) + 28px);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -45,7 +45,7 @@
 }
 
 .content [id] {
-  scroll-margin-top: 120px;
+  scroll-margin-top: calc(120px + var(--tempo-safe-top));
 }
 
 @media (max-width: 47.999em) {
@@ -55,7 +55,7 @@
   }
 
   .navigation {
-    top: 68px;
+    top: var(--tempo-header-height);
     z-index: 2;
     flex-direction: row;
     flex-wrap: nowrap;
@@ -86,6 +86,6 @@
   }
 
   .content [id] {
-    scroll-margin-top: 148px;
+    scroll-margin-top: calc(148px + var(--tempo-safe-top));
   }
 }

@@ -1,3 +1,18 @@
+.header {
+  padding-top: var(--tempo-safe-top);
+  padding-left: var(--tempo-safe-left);
+  padding-right: var(--tempo-safe-right);
+}
+.main {
+  padding-inline-start: calc(
+    var(--app-shell-navbar-offset, 0px) + var(--app-shell-padding) +
+      var(--tempo-safe-left)
+  );
+  padding-inline-end: calc(
+    var(--app-shell-aside-offset, 0px) + var(--app-shell-padding) +
+      var(--tempo-safe-right)
+  );
+}
 .mobileBrand {
   display: none;
   align-items: center;
@@ -23,13 +38,17 @@
     display: none;
   }
   .main {
-    padding-bottom: calc(100px + env(safe-area-inset-bottom));
+    padding-bottom: calc(100px + var(--tempo-safe-bottom));
   }
   .mobileNav {
     position: fixed;
-    bottom: calc(12px + env(safe-area-inset-bottom));
-    inset-inline: 0;
-    width: min(400px, calc(100% - 24px));
+    bottom: calc(12px + var(--tempo-safe-bottom));
+    inset-inline-start: var(--tempo-safe-left);
+    inset-inline-end: var(--tempo-safe-right);
+    width: min(
+      400px,
+      calc(100% - 24px - var(--tempo-safe-left) - var(--tempo-safe-right))
+    );
     margin-inline: auto;
     height: 64px;
     z-index: 101;

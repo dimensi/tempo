@@ -37,12 +37,14 @@ export function BottomSheet({
       styles={{
         content: {
           height: 'auto',
+          paddingLeft: 'var(--tempo-safe-left)',
+          paddingRight: 'var(--tempo-safe-right)',
           maxHeight: '85dvh',
           overflowY: 'auto',
           borderRadius: '20px 20px 0 0',
         },
         title: { fontSize: 18, fontWeight: 600, lineHeight: 1.4 },
-        body: { paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' },
+        body: { paddingBottom: 'calc(20px + var(--tempo-safe-bottom))' },
       }}
     >
       {children}

@@ -4,9 +4,15 @@ import '@mantine/charts/styles.css';
 import '@mantine/notifications/styles.css';
 import '@/styles/global.css';
 import { ColorSchemeScript, mantineHtmlProps } from '@mantine/core';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Providers } from '@/components/shared/providers';
 import { ru } from '@/config/messages';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
 
 const startupImages = [
   ['440x956', 3, '/branding/splash/iphone-1320x2868.jpg'],

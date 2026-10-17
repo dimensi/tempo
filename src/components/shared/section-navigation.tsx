@@ -37,12 +37,16 @@ export function SectionNavigation({
           window.scrollY > 0 &&
           Math.ceil(window.scrollY + window.innerHeight) >=
             document.documentElement.scrollHeight - 2;
+        const headerBottom =
+          document
+            .querySelector('.mantine-AppShell-header')
+            ?.getBoundingClientRect().bottom ?? 68;
         const current = sections.filter((section) => {
           const element = document.getElementById(section.id);
           return (
             element &&
             element.getBoundingClientRect().top <=
-              (atBottom ? window.innerHeight : 170)
+              (atBottom ? window.innerHeight : headerBottom + 102)
           );
         });
         setActive(current.at(-1)?.id ?? sections[0]!.id);

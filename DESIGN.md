@@ -171,3 +171,7 @@ One workout download action shows data preparation, video progress and a complet
 - **Don't** duplicate the page heading in the content area.
 - **Don't** apply workout-specific composition rules to every feature.
 - **Don't** use color alone to communicate a status or selection.
+
+## Edge-to-edge viewport
+
+Root viewport metadata uses `viewport-fit=cover` and preserves pinch zoom. Shared safe-area variables account for all four edges. The header's total height includes the top inset; main content offsets and sticky section navigation use the same height. Floating navigation reserves bottom and side safe areas. Full-screen dialog headers/bodies and bottom sheets keep their controls within safe bounds. Zero insets retain the existing desktop geometry.
