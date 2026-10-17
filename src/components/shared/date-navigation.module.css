@@ -24,24 +24,9 @@
     min-height: 72px;
     background: transparent;
     color: var(--mantine-color-dimmed);
-    border: 1px solid var(--mantine-color-default-border);
+    border: 1px solid transparent;
     border-radius: 12px;
     font-weight: 400;
-  }
-  .days > :global(.mantine-Button-root)[aria-current='date'] {
-    border-color: var(--mantine-primary-color-filled);
-  }
-  .days
-    > :global(.mantine-Button-root)[data-variant]:hover:not(
-      :disabled,
-      [data-disabled]
-    ),
-  .days
-    > :global(.mantine-Button-root)[data-variant]:active:not(
-      :disabled,
-      [data-disabled]
-    ) {
-    background: var(--mantine-color-default-hover);
   }
   .days
     > :global(.mantine-Button-root)
@@ -69,6 +54,22 @@
     :global(.mantine-Text-root):last-child {
     color: var(--mantine-primary-color-contrast);
     background: var(--mantine-primary-color-filled);
+  }
+  @media (hover: hover) {
+    .days
+      > :global(.mantine-Button-root)[data-variant]:hover:not(
+        :disabled,
+        [data-disabled]
+      ) {
+      background: var(--mantine-color-default-hover);
+    }
+  }
+  .days
+    > :global(.mantine-Button-root)[data-variant]:active:not(
+      :disabled,
+      [data-disabled]
+    ) {
+    background: var(--mantine-color-default-hover);
   }
   .selectedDate {
     font-size: 18px;
