@@ -15,3 +15,4 @@ dist-cli/
 .tmp/
 public/offline/
 public/offline-sw.js
+next-env.d.ts
