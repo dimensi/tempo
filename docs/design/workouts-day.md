@@ -38,6 +38,8 @@ The shared header pattern applies across top-level pages. The exercise catalogue
 
 Drafts are scoped by actor, owner, resource and day, with acknowledged plan and result revisions tracked separately. Saving a plan preserves incomplete result input. Edits made during a pending result write are coalesced into a later save. Automatic saves never silently remove recorded exercise occurrences or their private-video references; an explicit removal confirmation precedes the existing destructive online operation.
 
+The owner opens pending workout writes from the day menu's «Записи на устройстве» item. The existing queue and conflict-resolution controls appear in a modal instead of above the exercise workspace. The app page supplies this block through `renderPendingWrites`; queue storage, synchronization and resolution behavior remain unchanged.
+
 ## Boundaries and verification
 
 Own workout UI/routes, the shared header/navigation integration, Russian messages, design documentation and affected existing smoke assertions. Preserve schemas, permissions, migration history and provider write rules. No automatic production writes while testing the locally imported account.

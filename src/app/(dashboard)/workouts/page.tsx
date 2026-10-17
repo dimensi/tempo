@@ -8,11 +8,15 @@ export default function Page() {
   const context = useReadContext();
   return (
     <Stack>
-      {context.role === 'OWNER' && <OfflineWrites kind="workout" />}
       <WorkoutsDashboard
         userId={context.readerId}
         ownerId={context.ownerId}
         canLog={context.role === 'OWNER'}
+        renderPendingWrites={
+          context.role === 'OWNER'
+            ? () => <OfflineWrites kind="workout" />
+            : undefined
+        }
         renderComments={(id) => (
           <CommentsPanel
             ownerId={context.ownerId}

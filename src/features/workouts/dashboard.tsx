@@ -46,11 +46,13 @@ export function WorkoutsDashboard({
   userId,
   canLog,
   renderComments,
+  renderPendingWrites,
 }: {
   ownerId: string;
   userId: string;
   canLog: boolean;
   renderComments?: (sessionId: string) => ReactNode;
+  renderPendingWrites?: () => ReactNode;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -72,6 +74,7 @@ export function WorkoutsDashboard({
   } | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [writesOpen, setWritesOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyDate, setCopyDate] = useState(date);
   const [deletion, setDeletion] = useState(false);
@@ -247,6 +250,11 @@ export function WorkoutsDashboard({
                 <Menu.Item onClick={() => setSyncOpen(true)}>
                   {m.syncDetails}
                 </Menu.Item>
+                {renderPendingWrites && (
+                  <Menu.Item onClick={() => setWritesOpen(true)}>
+                    {m.deviceWrites}
+                  </Menu.Item>
+                )}
                 {(entry?.plan || entry?.session) && (
                   <Menu.Item color="red" onClick={() => setDeletion(true)}>
                     {m.removeDayWorkout}
@@ -374,6 +382,13 @@ export function WorkoutsDashboard({
         {entry?.remote && (
           <WorkoutSync item={entry.remote} showActual={false} />
         )}
+      </Modal>
+      <Modal
+        opened={writesOpen}
+        onClose={() => setWritesOpen(false)}
+        title={m.deviceWrites}
+      >
+        {writesOpen && renderPendingWrites?.()}
       </Modal>
       <Modal
         opened={copyOpen}

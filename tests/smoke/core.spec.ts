@@ -110,13 +110,13 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await page
     .getByLabel('Smoke squat, Подход 2, Вес, кг', { exact: true })
     .fill('25');
-  await page.getByRole('radio', { name: 'План', exact: true }).check();
+  await page.getByText('План', { exact: true }).click();
   await page
     .getByRole('button', { name: 'Сохранить план', exact: true })
     .click();
-  await expect(page.getByRole('status')).toHaveText(
-    'Есть несохранённые изменения',
-  );
+  await expect(
+    page.getByText('Есть несохранённые изменения', { exact: true }),
+  ).toBeVisible();
   const dayUrl = page.url();
   await page.goto('/diary');
   await page.goto(dayUrl);
