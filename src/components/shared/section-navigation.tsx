@@ -1,18 +1,32 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import classes from './section-navigation.module.css';
 
 export function SectionNavigation({
   children,
   sections,
   label,
+  contentReady = true,
 }: {
   children: ReactNode;
   sections: ReadonlyArray<{ id: string; label: string }>;
   label: string;
+  contentReady?: boolean;
 }) {
+  const navigation = useRef<HTMLElement>(null);
   const [active, setActive] = useState(sections[0]!.id);
+
+  useEffect(() => {
+    const nav = navigation.current;
+    const link = nav?.querySelector<HTMLElement>('[aria-current]');
+    if (!nav || !link || nav.scrollWidth <= nav.clientWidth) return;
+    const left = link.offsetLeft - 2;
+    const right = link.offsetLeft + link.offsetWidth + 2;
+    if (left < nav.scrollLeft) nav.scrollLeft = left;
+    else if (right > nav.scrollLeft + nav.clientWidth)
+      nav.scrollLeft = right - nav.clientWidth;
+  }, [active]);
 
   useEffect(() => {
     let frame = 0;
@@ -35,6 +49,7 @@ export function SectionNavigation({
       });
     }
     function followHash() {
+      if (!contentReady) return;
       const id = window.location.hash.slice(1);
       if (!sections.some((section) => section.id === id)) return;
       const element = document.getElementById(id);
@@ -47,7 +62,8 @@ export function SectionNavigation({
     if (
       !focused ||
       focused === document.body ||
-      focused === document.documentElement
+      focused === document.documentElement ||
+      navigation.current?.contains(focused)
     ) {
       followHash();
     }
@@ -61,11 +77,11 @@ export function SectionNavigation({
       window.removeEventListener('resize', update);
       window.removeEventListener('hashchange', followHash);
     };
-  }, [sections]);
+  }, [sections, contentReady]);
 
   return (
     <div className={classes.layout}>
-      <nav className={classes.navigation} aria-label={label}>
+      <nav ref={navigation} className={classes.navigation} aria-label={label}>
         {sections.map(({ id, label }) => (
           <a
             key={id}

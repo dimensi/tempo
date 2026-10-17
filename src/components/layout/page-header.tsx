@@ -1,8 +1,9 @@
 'use client';
 import { createContext, useContext, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Group, Title } from '@mantine/core';
-import Link from 'next/link';
+import { Title } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
+import classes from './page-header.module.css';
 
 export const PageHeaderTarget = createContext<HTMLElement | null>(null);
 export const PageActionsTarget = createContext<HTMLElement | null>(null);
@@ -20,29 +21,18 @@ export function PageHeader({
   children: ReactNode;
   actions?: ReactNode;
 }) {
-  const target = useContext(PageHeaderTarget);
-  const content = (
-    <Group justify="space-between" wrap="nowrap" w="100%" gap="xs">
-      <Title
-        order={1}
-        size="h3"
-        style={{
-          minWidth: 0,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
-        <Link href="/" style={{ color: 'inherit', textDecoration: 'none' }}>
-          {children}
-        </Link>
-      </Title>
-      {actions && (
-        <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
-          {actions}
-        </Group>
-      )}
-    </Group>
+  const desktopTarget = useContext(PageHeaderTarget);
+  const desktop = useMediaQuery('(min-width: 48em)');
+  const target = desktop ? desktopTarget : null;
+  const title = (
+    <Title order={1} size="h3" className={classes.title}>
+      {children}
+    </Title>
   );
-  return target ? createPortal(content, target) : content;
+  return (
+    <>
+      {target ? createPortal(title, target) : title}
+      {actions && <PageActions>{actions}</PageActions>}
+    </>
+  );
 }

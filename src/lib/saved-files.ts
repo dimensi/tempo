@@ -1,3 +1,4 @@
+import { browserStore } from './browser-storage';
 import { apiFetch } from './api-client';
 import {
   OfflineStorage,
@@ -6,15 +7,36 @@ import {
   type StoredOfflineFile,
 } from './offline-device';
 import { readSession, sessionGeneration } from './session-state';
+const filesRemovedEvent = 'tempo:saved-files-removed';
 const empty = { files: [] as StoredOfflineFile[], ready: false };
 class SavedFiles {
   private state = empty;
   private generation = 0;
   private listeners = new Set<() => void>();
+  private watchingRemovals = false;
+  private watchRemovals() {
+    if (this.watchingRemovals) return;
+    window.addEventListener('storage', this.onStorage);
+    this.watchingRemovals = true;
+  }
   getSnapshot = () => this.state;
   getServerSnapshot = () => empty;
+  private onStorage = (event: StorageEvent) => {
+    if (event.key !== filesRemovedEvent || !event.newValue) return;
+    try {
+      const change = JSON.parse(event.newValue);
+      if (
+        typeof change.partition === 'string' &&
+        change.partition === readSession()?.partition
+      )
+        this.clear();
+    } catch {
+      /* Ignore malformed cross-tab notifications. */
+    }
+  };
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
+    this.watchRemovals();
     const stop = subscribeSessionReset(() => this.set(empty));
     return () => {
       this.listeners.delete(listener);
@@ -30,6 +52,7 @@ class SavedFiles {
     this.set({ files: [], ready: true });
   }
   async load() {
+    this.watchRemovals();
     const partition = readSession()?.partition;
     const generation = sessionGeneration();
     const localGeneration = this.generation;
@@ -66,6 +89,7 @@ class SavedFiles {
     size?: number;
     signal?: AbortSignal;
   }) {
+    this.watchRemovals();
     const partition = readSession()?.partition;
     const generation = sessionGeneration();
     const localGeneration = this.generation;
@@ -106,7 +130,42 @@ class SavedFiles {
     );
     await this.load();
   }
+  async removeAll() {
+    this.watchRemovals();
+    const partition = readSession()?.partition;
+    const generation = sessionGeneration();
+    if (!partition) throw new Error('Session unavailable');
+    const localGeneration = ++this.generation;
+    const isCurrent = () =>
+      generation === sessionGeneration() && localGeneration === this.generation;
+    await browserStore<void>(['files'], 'readwrite', (tx) => {
+      const request = tx.objectStore('files').openCursor();
+      request.onsuccess = () => {
+        if (!isCurrent()) {
+          tx.abort();
+          return;
+        }
+        const cursor = request.result;
+        if (!cursor) return;
+        const file = cursor.value as StoredOfflineFile;
+        if (file.fence.partition === partition) cursor.delete();
+        cursor.continue();
+      };
+    });
+    if (isCurrent()) {
+      this.set({ files: [], ready: true });
+      try {
+        localStorage.setItem(
+          filesRemovedEvent,
+          JSON.stringify({ partition, nonce: crypto.randomUUID() }),
+        );
+      } catch {
+        /* Local removal succeeds when cross-tab storage is unavailable. */
+      }
+    }
+  }
   async removeFile(id: string) {
+    this.watchRemovals();
     const partition = readSession()?.partition;
     if (!partition) return;
     await new OfflineStorage().writeFile({

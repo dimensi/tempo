@@ -9,6 +9,7 @@ import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
 import { Skeleton, Stack, Text } from '@mantine/core';
 import { useState } from 'react';
+import { AppearanceSettings } from './appearance';
 import { SettingsNavigation } from './settings-navigation';
 import { StepsGoalForm } from './steps-goal-form';
 import { TransformMateSettingsForm } from './transformmate/settings-form';
@@ -24,15 +25,15 @@ export default function Page() {
   if (resource.data && resource.data !== retained) setRetained(resource.data);
   if (!owner || !ownerId)
     return (
-      <Stack>
+      <Stack gap="xl">
         <PageHeader>
           {ru.sections.find((section) => section.href === '/settings')!.title}
         </PageHeader>
-        <Text>{ru.settings.ownerOnly}</Text>
+        <AppearanceSettings />
       </Stack>
     );
   const data = resource.data ?? retained;
-  if (!data) return <Skeleton height={180} />;
+
   return (
     <Stack gap="xl">
       <Stack gap="xs">
@@ -41,20 +42,36 @@ export default function Page() {
         </PageHeader>
         <Text c="dimmed">{ru.settings.description}</Text>
       </Stack>
-      <SettingsNavigation>
+      <SettingsNavigation contentReady={!!data}>
         <Stack gap={48}>
-          <YazioSettingsForm initial={data.yazio} embedded />
-          <TransformMateSettingsForm initial={data.transformMate} embedded />
-          <section id="trainers" tabIndex={-1} aria-label={ru.trainerSettings}>
-            <TrainerSettings
-              ownerId={ownerId}
-              initialTrainers={data.trainers}
-              headingOrder={2}
-            />
-            <AccessPanel ownerId={ownerId} />
-          </section>
-          <StepsGoalForm initial={data.stepsGoal} />
-          <OfflineSettings />
+          <AppearanceSettings />
+          {!data ? (
+            <Skeleton height={180} />
+          ) : (
+            <>
+              <YazioSettingsForm initial={data.yazio} embedded />
+              <TransformMateSettingsForm
+                initial={data.transformMate}
+                embedded
+              />
+              <section
+                id="trainers"
+                tabIndex={-1}
+                aria-label={ru.trainerSettings}
+              >
+                <Stack gap="xl">
+                  <TrainerSettings
+                    ownerId={ownerId}
+                    initialTrainers={data.trainers}
+                    headingOrder={2}
+                  />
+                  <AccessPanel ownerId={ownerId} />
+                </Stack>
+              </section>
+              <StepsGoalForm initial={data.stepsGoal} />
+              <OfflineSettings />
+            </>
+          )}
         </Stack>
       </SettingsNavigation>
     </Stack>

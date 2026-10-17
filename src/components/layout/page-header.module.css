@@ -1,0 +1,11 @@
+.title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 48em) {
+  .title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
