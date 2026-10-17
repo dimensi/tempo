@@ -30,12 +30,22 @@
   text-underline-offset: 4px;
 }
 
+.exerciseSubtitle {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--mantine-color-dimmed);
+}
 .techniqueLink {
   color: var(--mantine-primary-color-light-color);
   font-size: 14px;
   font-weight: 400;
 }
-.exerciseName:hover .techniqueLink {
+.exerciseName:hover .exerciseSubtitle {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--mantine-color-dimmed);
+}
+.techniqueLink {
   text-decoration: underline;
 }
 .setHeading,

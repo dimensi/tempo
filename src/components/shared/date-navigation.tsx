@@ -46,6 +46,12 @@ function DateJump({
           if (value) onSelect(value);
         }}
         size="md"
+        fullWidth
+        style={{ width: 'min(308px, calc(100vw - 64px))' }}
+        styles={{
+          day: { minHeight: 44, fontSize: 16 },
+          calendarHeaderControl: { minWidth: 44, minHeight: 44 },
+        }}
         ariaLabels={calendarMessages.calendar}
         getDayAriaLabel={(value) => format(value, { dateStyle: 'full' })}
       />
@@ -153,11 +159,12 @@ export function DateNavigation({
       onKeyDown={(event) => {
         if (
           !disabled &&
-          event.altKey &&
-          (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+          event.target instanceof Element &&
+          event.target.closest(`.${classes.days}`) &&
+          (event.key === 'PageUp' || event.key === 'PageDown')
         ) {
           event.preventDefault();
-          setAnchor(shiftDate(anchor, event.key === 'ArrowLeft' ? -7 : 7));
+          setAnchor(shiftDate(anchor, event.key === 'PageUp' ? -7 : 7));
         }
       }}
     >
@@ -325,12 +332,14 @@ export function DateNavigation({
           }}
           onTouchCancel={() => setTouch(null)}
           onTouchStart={(event) =>
-            !disabled &&
-            event.touches.length === 1 &&
-            setTouch({
-              x: event.touches[0]!.clientX,
-              y: event.touches[0]!.clientY,
-            })
+            setTouch(
+              !disabled && event.touches.length === 1
+                ? {
+                    x: event.touches[0]!.clientX,
+                    y: event.touches[0]!.clientY,
+                  }
+                : null,
+            )
           }
           onTouchEnd={(event) => {
             if (!touch || disabled) return;

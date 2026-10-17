@@ -58,6 +58,7 @@ export function ExerciseRows({
                 exercise.transformMate?.occurrenceKey,
             )
           : planned?.exercises.find((item) => item.name === exercise.name);
+        const titleParts = /^(.*?)\s*(\([^)]*\))$/.exec(exercise.name);
         const options = [
           { label: m.techniqueAndVideo, run: () => setMedia(exercise) },
           {
@@ -100,7 +101,12 @@ export function ExerciseRows({
                 onClick={() => setMedia(exercise)}
                 aria-label={`${m.technique}: ${exercise.name}`}
               >
-                <span>{exercise.name}</span>
+                <span>{titleParts?.[1] || exercise.name}</span>
+                {titleParts && (
+                  <span className={styles.exerciseSubtitle}>
+                    {titleParts[2]}
+                  </span>
+                )}
                 <span className={styles.techniqueLink}>
                   {m.techniqueAndVideo} ›
                 </span>
