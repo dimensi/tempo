@@ -31,6 +31,7 @@ import styles from './day-workout.module.css';
 
 export function ExerciseRows({
   ownerId,
+  canLog,
   exercises,
   planned,
   session,
@@ -41,6 +42,7 @@ export function ExerciseRows({
   reordering = false,
 }: {
   ownerId: string;
+  canLog: boolean;
   exercises: ResultExercise[];
   planned?: PlannedWorkout;
   session?: WorkoutSession;
@@ -438,7 +440,7 @@ export function ExerciseRows({
             sets: media.sets.map((set) => ({ ...set, reps: set.reps ?? 1 })),
           }}
           session={session}
-          canLog={mode !== 'read'}
+          canLog={canLog}
           onClose={() => setMedia(null)}
         />
       )}

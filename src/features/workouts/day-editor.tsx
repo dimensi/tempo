@@ -299,6 +299,36 @@ export function DayEditor({
       if (autoTimer.current) clearTimeout(autoTimer.current);
     };
   }, [key, identity, persist]);
+  useEffect(() => {
+    if (
+      !ready ||
+      !existing ||
+      existing.id !== (sessionRef.current?.id ?? requestId.current) ||
+      existing.revision <= (sessionRef.current?.revision ?? 0)
+    )
+      return;
+    const acknowledged = {
+      date: existing.date,
+      title: existing.title,
+      exercises: existing.exercises,
+      note: existing.note,
+      status: existing.status,
+    };
+    // Only rebase on the payload we saved, preserving conflicts with unrelated edits.
+    if (JSON.stringify(acknowledged) !== lastSaved.current) return;
+    sessionRef.current = existing;
+    const generation = sessionGeneration();
+    queueMicrotask(() => {
+      if (
+        !mounted.current ||
+        generation !== sessionGeneration() ||
+        sessionRef.current !== existing
+      )
+        return;
+      setSavedSession(existing);
+      setStored(persist(valueRef.current));
+    });
+  }, [existing, persist, ready]);
   const change = (next: typeof value, kind: 'plan' | 'result') => {
     valueRef.current = next;
     setValue(next);
@@ -740,6 +770,7 @@ export function DayEditor({
           </Stack>
           <ExerciseRows
             ownerId={ownerId}
+            canLog={canLog}
             reordering={reordering}
             exercises={selected.exercises}
             mode="plan"
@@ -820,6 +851,7 @@ export function DayEditor({
           )}
           <ExerciseRows
             ownerId={ownerId}
+            canLog={canLog}
             reordering={reordering}
             exercises={value.result.exercises}
             planned={selected}

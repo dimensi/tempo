@@ -200,7 +200,7 @@ export function WorkoutsDashboard({
     if (create) setCreating(null);
   };
   async function remove() {
-    if (!entry) return;
+    if (!entry || (!entry.plan && !canLog)) return;
     setBusy(true);
     setError(null);
     try {
@@ -278,7 +278,7 @@ export function WorkoutsDashboard({
         void sync.refresh();
       },
     },
-    ...(entry?.plan || entry?.session
+    ...(entry?.plan || (canLog && entry?.session)
       ? [
           {
             label: m.removeDayWorkout,

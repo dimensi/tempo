@@ -165,6 +165,21 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     })
     .toBe('Saved while offline');
 
+  // A regular edit after background acknowledgement must use the accepted revision too.
+  await page
+    .getByLabel('Заметка к тренировке', { exact: true })
+    .fill('Saved after reconnect');
+  await expect
+    .poll(async () => {
+      const body = await (
+        await page.request.get(`/api/workouts?ownerId=${owner}`)
+      ).json();
+      return body.data.sessions.find(
+        (item: { title: string }) => item.title === title,
+      )?.note;
+    })
+    .toBe('Saved after reconnect');
+
   // Reopening changes only status even when the form would remove a saved exercise.
   const savedWorkout = (
     await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json()
