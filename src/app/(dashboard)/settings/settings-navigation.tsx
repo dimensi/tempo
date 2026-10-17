@@ -6,7 +6,7 @@ import { stepsGoalMessages } from '@/contracts/steps-goal';
 import { ru } from '@/config/messages';
 import { transformMateConnectionMessages } from '@/contracts/transformmate-connection';
 import classes from './settings.module.css';
-import { offlineDeviceMessages } from '@/lib/offline-device';
+import { offlineMessages } from '@/config/offline';
 
 const sections = [
   { id: 'appearance', label: ru.appearance.title },
@@ -15,7 +15,7 @@ const sections = [
   { id: 'transformmate', label: transformMateConnectionMessages.title },
   { id: 'trainers', label: ru.trainerSettings },
   { id: 'steps-goal', label: stepsGoalMessages.title },
-  { id: 'offline', label: offlineDeviceMessages.title },
+  { id: 'offline', label: offlineMessages.downloads.title },
 ];
 
 export function SettingsNavigation({ children }: { children: ReactNode }) {

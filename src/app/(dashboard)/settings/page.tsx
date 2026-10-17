@@ -59,12 +59,14 @@ export default function Page() {
                 tabIndex={-1}
                 aria-label={ru.trainerSettings}
               >
-                <TrainerSettings
-                  ownerId={ownerId}
-                  initialTrainers={data.trainers}
-                  headingOrder={2}
-                />
-                <AccessPanel ownerId={ownerId} />
+                <Stack gap="xl">
+                  <TrainerSettings
+                    ownerId={ownerId}
+                    initialTrainers={data.trainers}
+                    headingOrder={2}
+                  />
+                  <AccessPanel ownerId={ownerId} />
+                </Stack>
               </section>
               <StepsGoalForm initial={data.stepsGoal} />
               <OfflineSettings />

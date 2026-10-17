@@ -1,3 +1,4 @@
+import { browserStore } from './browser-storage';
 import { apiFetch } from './api-client';
 import {
   OfflineStorage,
@@ -105,6 +106,29 @@ class SavedFiles {
         localGeneration === this.generation,
     );
     await this.load();
+  }
+  async removeAll() {
+    const partition = readSession()?.partition;
+    const generation = sessionGeneration();
+    if (!partition) throw new Error('Session unavailable');
+    const localGeneration = ++this.generation;
+    const isCurrent = () =>
+      generation === sessionGeneration() && localGeneration === this.generation;
+    await browserStore<void>(['files'], 'readwrite', (tx) => {
+      const request = tx.objectStore('files').openCursor();
+      request.onsuccess = () => {
+        if (!isCurrent()) {
+          tx.abort();
+          return;
+        }
+        const cursor = request.result;
+        if (!cursor) return;
+        const file = cursor.value as StoredOfflineFile;
+        if (file.fence.partition === partition) cursor.delete();
+        cursor.continue();
+      };
+    });
+    if (isCurrent()) this.set({ files: [], ready: true });
   }
   async removeFile(id: string) {
     const partition = readSession()?.partition;

@@ -2,6 +2,7 @@
 
 - Objective: four mobile destinations, ordinary More page, brand/actions header and in-content mobile title; preserve desktop sidebar.
 - Branch: `codex/mobile-navigation`; worktree-local synthetic database only.
+- Follow-up: cap mobile bar at 400px, horizontal section navigation, header role badge, isolated sticky layers, trainer spacing and account-scoped downloaded-file usage/removal. Removal touches only saved files and preserves cached reads, video drafts and pending writes.
 - Owned paths: shared layout/navigation components, messages, dashboard More and Settings routes, DESIGN.md and this task record.
 - Shared/core changes: explicitly authorized by the approved mobile navigation plan. No API/contract/schema changes.
 - Permissions: existing authenticated dashboard layout and server owner/grant checks; trainers see local appearance settings only.
