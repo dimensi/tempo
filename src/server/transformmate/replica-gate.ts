@@ -54,7 +54,7 @@ export function recordReplicaFailure(
     state.blocked_until > now &&
     state.reason &&
     !auth &&
-    !(error instanceof ReplicaStorageError)
+    (state.reason !== 'storage' || error instanceof ReplicaStorageError)
   )
     return;
   const failures = Math.min(state.failures + 1, 20);

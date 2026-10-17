@@ -338,6 +338,20 @@ async function assertReplicaRecovery(
       async () => new Response('synthetic reserve'),
     );
     expect(await reserve.text()).toBe('synthetic reserve');
+    await expect(
+      replicaMediaRequest(
+        scope,
+        async () =>
+          new Response(null, {
+            status: 429,
+            headers: { 'Retry-After': '120' },
+          }),
+      ),
+    ).rejects.toMatchObject({ status: 429 });
+    expect(store().state(scope).reason).toBe('upstream');
+    expect(store().state(scope).blocked_until).toBeGreaterThanOrEqual(
+      Date.now() + 120000,
+    );
     const failedCalls = videoRequests;
     await worker().tick(connected);
     expect(videoRequests).toBe(failedCalls);
