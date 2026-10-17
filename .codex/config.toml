@@ -1,0 +1,6 @@
+# Enable Impeccable hooks only for this project. Global hooks remain disabled.
+[hooks.state."impeccable@openai-curated-remote:hooks/hooks.json:post_tool_use:0:0"]
+enabled = true
+
+[hooks.state."impeccable@openai-curated-remote:hooks/hooks.json:stop:0:0"]
+enabled = true

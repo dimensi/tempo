@@ -50,6 +50,7 @@ export const metadata: Metadata = {
       };
     }),
   },
+  other: { 'apple-mobile-web-app-capable': 'yes' },
 };
 export default function RootLayout({
   children,
