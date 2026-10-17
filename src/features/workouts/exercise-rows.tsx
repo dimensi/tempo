@@ -383,10 +383,10 @@ export function ExerciseRows({
             ))}
             {onChange && (
               <Button
+                className={styles.addSet}
                 variant="light"
                 fullWidth
                 size="sm"
-                mih={44}
                 mt={8}
                 leftSection={<IconPlus size={15} />}
                 disabled={disabled || exercise.sets.length >= 50}

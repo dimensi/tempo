@@ -109,10 +109,29 @@
   display: inline-flex;
 }
 .setRow input {
+  --input-fz: 18px;
   text-align: center;
   font-variant-numeric: tabular-nums;
-  min-height: 44px;
-  font-size: 18px;
+  height: 48px;
+  min-height: 48px;
+  padding-inline: 8px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 12px;
+  font-size: 18px !important;
+}
+.setRow input:focus {
+  border-color: var(--mantine-primary-color-filled);
+}
+.setRow button {
+  height: 48px;
+  min-height: 48px;
+  border-radius: 12px;
+}
+.addSet {
+  height: 48px;
+  min-height: 48px;
+  border-radius: 12px;
+  font-size: 14px;
 }
 .toolbar {
   display: flex;
