@@ -450,7 +450,12 @@ export function DayEditor({
             ...exercise,
             sets: exercise.sets.filter((set) => set.reps !== null),
           }))
-          .filter((exercise) => exercise.sets.length > 0),
+          .filter(
+            (exercise) =>
+              statusOnly ||
+              exercise.sets.length > 0 ||
+              prior?.exercises.some((item) => item.id === exercise.id),
+          ),
       });
       if (!input.success) {
         if (explicit) setError(m.resultValidation);

@@ -114,10 +114,31 @@ it('commits an offline receipt with its record and replays it without cross-owne
   expect(
     extended.payload.kind === 'workout' && extended.payload.data.exercises,
   ).toHaveLength(2);
-  const removal = offlineWriteSchema.parse({
+  if (next.payload.kind !== 'workout')
+    throw new Error('Expected workout fixture');
+  const withoutSets = offlineWriteSchema.parse({
     ...next,
     id: crypto.randomUUID(),
     base: extended.version,
+    payload: {
+      kind: 'workout',
+      data: {
+        ...next.payload.data,
+        exercises: [
+          { ...exercise, sets: [] },
+          ...next.payload.data.exercises.slice(1),
+        ],
+      },
+    },
+  });
+  const retained = repository.apply('owner', withoutSets);
+  expect(
+    retained.payload.kind === 'workout' && retained.payload.data.exercises[0],
+  ).toEqual({ ...exercise, sets: [] });
+  const removal = offlineWriteSchema.parse({
+    ...next,
+    id: crypto.randomUUID(),
+    base: retained.version,
     payload: { kind: 'workout', data: { ...next.payload.data, exercises: [] } },
   });
   expect(() => repository.apply('owner', removal)).toThrow();
@@ -125,5 +146,5 @@ it('commits an offline receipt with its record and replays it without cross-owne
     repository
       .catalog('owner')
       .find((record) => record.id === workout.recordId),
-  ).toEqual(extended);
+  ).toEqual(retained);
 });

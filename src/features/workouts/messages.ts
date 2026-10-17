@@ -44,9 +44,9 @@ export const workoutMessages = {
   refreshOfflineHint: 'Для обновления нужно подключение к интернету.',
   actualSets: 'Фактические подходы',
   autoSaveHint: 'Подходы сохраняются автоматически.',
-  setActions: 'Действия с подходом',
   fillFromPlan: 'Заполнить по плану',
-  clearSetValues: 'Очистить значения',
+  lastSetHint:
+    'Нужен хотя бы один подход. Чтобы убрать упражнение, удалите его через меню упражнения.',
   saveResults: 'Сохранить результаты',
   saved: 'Сохранено',
   saving: 'Сохранение…',

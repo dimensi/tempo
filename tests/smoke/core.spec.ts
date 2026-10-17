@@ -102,30 +102,36 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       exact: true,
     }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole('button', {
+      name: 'Удалить подход 1: Smoke squat',
+      exact: true,
+    }),
+  ).toBeDisabled();
   await page
     .getByRole('button', {
-      name: 'Действия с подходом 1: Smoke squat',
+      name: 'Заполнить по плану, Подход 1: Smoke squat',
       exact: true,
     })
-    .click();
-  await page
-    .getByRole('menuitem', { name: 'Заполнить по плану', exact: true })
     .click();
   await expect(
     page.getByLabel('Smoke squat, Подход 1, Повторения', { exact: true }),
   ).toHaveValue('10');
   await page
-    .getByRole('button', {
-      name: 'Действия с подходом 1: Smoke squat',
-      exact: true,
-    })
+    .getByRole('button', { name: 'Добавить подход', exact: true })
     .click();
   await page
-    .getByRole('menuitem', { name: 'Очистить значения', exact: true })
+    .getByLabel('Smoke squat, Подход 2, Повторения', { exact: true })
+    .fill('12');
+  await page
+    .getByRole('button', { name: 'Удалить подход 2: Smoke squat', exact: true })
     .click();
   await expect(
+    page.getByLabel('Smoke squat, Подход 2, Повторения', { exact: true }),
+  ).toHaveCount(0);
+  await expect(
     page.getByLabel('Smoke squat, Подход 1, Повторения', { exact: true }),
-  ).toHaveValue('');
+  ).toHaveValue('10');
   await page
     .getByLabel('Smoke squat, Подход 1, Повторения', { exact: true })
     .fill('8');
@@ -164,14 +170,11 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json()
   ).data.sessions.find((item: { title: string }) => item.title === title);
   await page
-    .getByRole('button', {
-      name: 'Действия с подходом 1: Smoke squat',
-      exact: true,
-    })
-    .click();
+    .getByLabel('Smoke squat, Подход 1, Вес, кг', { exact: true })
+    .fill('25');
   await page
-    .getByRole('menuitem', { name: 'Очистить значения', exact: true })
-    .click();
+    .getByLabel('Smoke squat, Подход 1, Повторения', { exact: true })
+    .fill('');
   await expect(
     page.getByText('Есть несохранённые изменения', { exact: true }),
   ).toBeVisible();
@@ -199,6 +202,12 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect(
     page.getByLabel('Smoke squat, Подход 1, Повторения', { exact: true }),
   ).toHaveValue('');
+  await expect(
+    page.getByLabel('Smoke squat, Подход 1, Вес, кг', { exact: true }),
+  ).toHaveValue('25');
+  await page
+    .getByLabel('Smoke squat, Подход 1, Вес, кг', { exact: true })
+    .fill('');
   await page
     .getByLabel('Smoke squat, Подход 1, Повторения', { exact: true })
     .fill('8');

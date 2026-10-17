@@ -9,9 +9,16 @@ import {
   Stack,
   Text,
   Textarea,
+  Tooltip,
   UnstyledButton,
 } from '@mantine/core';
-import { IconDots, IconPlayerPlay, IconPlus, IconX } from '@tabler/icons-react';
+import {
+  IconDots,
+  IconTrash,
+  IconPlayerPlay,
+  IconPlus,
+  IconX,
+} from '@tabler/icons-react';
 import type { PlannedWorkout, WorkoutSession } from '@/contracts/workouts';
 import type { ResultExercise } from './result-draft';
 import { ExerciseMedia } from './exercise-media';
@@ -144,16 +151,19 @@ export function ExerciseRows({
                 {m.actualSets}
               </Text>
             )}
-            <div className={styles.setHeading} aria-hidden>
+            <div
+              className={`${styles.setHeading} ${mode === 'result' && onChange ? styles.withSetActions : ''}`}
+              aria-hidden
+            >
               <span>{m.setNumber}</span>
               <span>{m.weight}</span>
               <span>{m.reps}</span>
-              <span />
+              {!(mode === 'result' && onChange) && <span />}
             </div>
             {exercise.sets.map((set, setIndex) => (
               <div
                 key={setIndex}
-                className={styles.setRow}
+                className={`${styles.setRow} ${mode === 'result' && onChange ? styles.withSetActions : ''}`}
                 onBlur={(event) => {
                   if (!event.currentTarget.contains(event.relatedTarget))
                     onCommit?.();
@@ -226,54 +236,61 @@ export function ExerciseRows({
                   </>
                 )}
                 {mode === 'result' && onChange ? (
-                  <Menu position="bottom-end">
-                    <Menu.Target>
-                      <ActionIcon
-                        size={44}
+                  <div className={styles.setActions}>
+                    {guide?.sets[setIndex] && (
+                      <Button
                         variant="subtle"
-                        color="gray"
-                        disabled={disabled}
-                        aria-label={`${m.setActions} ${setIndex + 1}: ${exercise.name}`}
-                      >
-                        <IconDots size={18} />
-                      </ActionIcon>
-                    </Menu.Target>
-                    <Menu.Dropdown>
-                      {guide?.sets[setIndex] && (
-                        <Menu.Item
-                          mih={44}
-                          onClick={() =>
-                            update(index, {
-                              ...exercise,
-                              sets: exercise.sets.map((row, i) =>
-                                i === setIndex
-                                  ? { ...guide.sets[setIndex]! }
-                                  : row,
-                              ),
-                            })
-                          }
-                        >
-                          {m.fillFromPlan}
-                        </Menu.Item>
-                      )}
-                      <Menu.Item
+                        size="compact-sm"
                         mih={44}
-                        disabled={set.reps === null && set.weightKg === null}
+                        disabled={disabled}
+                        aria-label={`${m.fillFromPlan}, ${m.set} ${setIndex + 1}: ${exercise.name}`}
                         onClick={() =>
                           update(index, {
                             ...exercise,
                             sets: exercise.sets.map((row, i) =>
                               i === setIndex
-                                ? { reps: null, weightKg: null }
+                                ? { ...guide.sets[setIndex]! }
                                 : row,
                             ),
                           })
                         }
                       >
-                        {m.clearSetValues}
-                      </Menu.Item>
-                    </Menu.Dropdown>
-                  </Menu>
+                        {m.planGuide}
+                      </Button>
+                    )}
+                    <Tooltip
+                      label={
+                        exercise.sets.length === 1
+                          ? m.lastSetHint
+                          : `${m.removeSet} ${setIndex + 1}`
+                      }
+                    >
+                      <span className={styles.removeSet}>
+                        <ActionIcon
+                          variant="subtle"
+                          color="gray"
+                          size={44}
+                          disabled={disabled || exercise.sets.length === 1}
+                          aria-label={`${m.removeSet} ${setIndex + 1}: ${exercise.name}`}
+                          aria-description={
+                            exercise.sets.length === 1
+                              ? m.lastSetHint
+                              : undefined
+                          }
+                          onClick={() =>
+                            update(index, {
+                              ...exercise,
+                              sets: exercise.sets.filter(
+                                (_, i) => i !== setIndex,
+                              ),
+                            })
+                          }
+                        >
+                          <IconTrash size={18} />
+                        </ActionIcon>
+                      </span>
+                    </Tooltip>
+                  </div>
                 ) : onChange ? (
                   <ActionIcon
                     size={44}
