@@ -34,7 +34,6 @@ export const transformMateReplicaJobs = sqliteTable(
     nextAt: integer('next_at').notNull().default(0),
     priority: integer('priority').notNull().default(0),
     attempts: integer('attempts').notNull().default(0),
-    error: text('error'),
     data: text('data').notNull(),
   },
   (t) => [

@@ -52,7 +52,7 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
   ) as {
     entries: { tag: string }[];
   };
-  const entries = journal.entries.slice(0, -1);
+  const entries = journal.entries.slice(0, -2);
   if (!entries.length) throw new Error('Expected a prior migration');
   mkdirSync(join(legacy, 'meta'), { recursive: true });
   writeFileSync(
@@ -126,6 +126,51 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
     );
     state.run('owner', 'account', 'old', 'ru', '2026-01-01T00:00:00Z', 1);
     state.run('owner', 'account', 'new', 'ru', '2026-02-01T00:00:00Z', 1);
+    // Upgrade the original catalog first, then preserve a deployed replica job through stage-error migration.
+    const replicaEntries = journal.entries.slice(0, -1);
+    writeFileSync(
+      join(legacy, 'meta/_journal.json'),
+      JSON.stringify({ ...journal, entries: replicaEntries }),
+    );
+    for (const { tag } of replicaEntries)
+      cpSync(`drizzle/${tag}.sql`, join(legacy, `${tag}.sql`));
+    migrate(database.db, { migrationsFolder: legacy });
+    const replicaData = {
+      detailAt: 0,
+      imageAt: 0,
+      videoAt: 1000,
+      posterAt: 1000,
+      video: {
+        key: 'synthetic/video.mp4',
+        size: 12,
+        type: 'video/mp4',
+        fingerprint: 'synthetic',
+        etag: null,
+        modified: null,
+      },
+      poster: {
+        key: 'synthetic/poster.jpg',
+        size: 5,
+        type: 'image/jpeg',
+        fingerprint: 'synthetic/video.mp4',
+        etag: null,
+        modified: null,
+      },
+    };
+    database.sqlite
+      .prepare(
+        'INSERT INTO transformmate_replica_jobs(owner_id,account_scope,locale,key,next_at,attempts,error,data) VALUES(?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        'owner',
+        'account',
+        'ru',
+        'exercise:501',
+        123456,
+        2,
+        'invalid_media',
+        JSON.stringify(replicaData),
+      );
     migrate(database.db, { migrationsFolder: './drizzle' });
     migrate(database.db, { migrationsFolder: './drizzle' });
     const copied = database.sqlite
@@ -139,6 +184,20 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
       description: oldDetail.description,
       kinescope_data: [{ id: null, resolution: null }],
     });
+    const replicaJob = database.sqlite
+      .prepare(
+        "SELECT data,next_at,attempts FROM transformmate_replica_jobs WHERE key='exercise:501'",
+      )
+      .get() as { data: string; next_at: number; attempts: number };
+    expect(JSON.parse(replicaJob.data)).toMatchObject({
+      failures: { image: { reason: 'invalid_media', httpStatus: null } },
+      video: replicaData.video,
+      poster: replicaData.poster,
+    });
+    expect(replicaJob).toMatchObject({ next_at: 123456, attempts: 2 });
+    expect(
+      database.sqlite.pragma('table_info(transformmate_replica_jobs)'),
+    ).not.toContainEqual(expect.objectContaining({ name: 'error' }));
     expect(database.db.select().from(user).all()).toHaveLength(2);
     expect(database.db.select().from(trainerAccess).get()?.ownerId).toBe(
       'owner',

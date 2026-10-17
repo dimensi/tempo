@@ -178,7 +178,11 @@ export async function listCatalog(
     Boolean(scope.client) &&
     enrichmentCandidates.some((record) => {
       const job = replicaStore().job(scope, `exercise:${record.id}`);
-      return job && !job.error && job.next_at <= Date.now();
+      return (
+        job &&
+        !Object.keys(job.data.failures).length &&
+        job.next_at <= Date.now()
+      );
     });
   await scope.assertCurrent();
   return {

@@ -2,6 +2,10 @@ import 'server-only';
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
 import { getDatabase } from '@/server/db';
+import {
+  replicaFailuresSchema,
+  replicaFailureStages,
+} from '@/contracts/transformmate-replica';
 import type { CatalogIdentity } from './catalog-store';
 
 const objectSchema = z.object({
@@ -14,6 +18,7 @@ const objectSchema = z.object({
 });
 export type ReplicaObject = z.infer<typeof objectSchema>;
 export const replicaDataSchema = z.object({
+  failures: replicaFailuresSchema.default({}),
   detailAt: z.number().default(0),
   imageAt: z.number().default(0),
   videoAt: z.number().default(0),
@@ -28,7 +33,6 @@ export type ReplicaJob = {
   next_at: number;
   priority: number;
   attempts: number;
-  error: string | null;
   data: ReplicaData;
 };
 export type ReplicaState = {
@@ -97,13 +101,12 @@ export function createReplicaStore(sqlite: Database.Database) {
   function save(s: CatalogIdentity, j: ReplicaJob) {
     sqlite
       .prepare(
-        `UPDATE transformmate_replica_jobs SET next_at=?,priority=?,attempts=?,error=?,data=? WHERE ${where} AND key=?`,
+        `UPDATE transformmate_replica_jobs SET next_at=?,priority=?,attempts=?,data=? WHERE ${where} AND key=?`,
       )
       .run(
         j.next_at,
         j.priority,
         j.attempts,
-        j.error,
         JSON.stringify(replicaDataSchema.parse(j.data)),
         ...values(s),
         j.key,
@@ -197,6 +200,7 @@ export function createReplicaStore(sqlite: Database.Database) {
         const previous = j.data[kind];
         j.data[kind] = object;
         save(s, j);
+        patch(s, { last_success_at: now });
         if (previous && previous.key !== object.key) garbage(previous.key, now);
       })();
     },
@@ -260,15 +264,22 @@ export function createReplicaStore(sqlite: Database.Database) {
           0,
         ),
         pending: jobs.filter((j) => j.next_at <= now).length,
-        errors: jobs.filter((j) => j.error).length,
-        failedExercises: jobs
-          .filter((j) => j.error)
-          .slice(0, 5)
-          .map((j) => ({
-            id: Number(j.key.slice('exercise:'.length)),
-            reason: j.error,
-            nextAttemptAt: new Date(j.next_at).toISOString(),
-          })),
+        failureGroups: replicaFailureStages.flatMap((stage) => {
+          const failed = jobs.filter((j) => j.data.failures[stage]);
+          return failed.length
+            ? [
+                {
+                  stage,
+                  count: failed.length,
+                  examples: failed.slice(0, 5).map((j) => ({
+                    id: Number(j.key.slice('exercise:'.length)),
+                    ...j.data.failures[stage]!,
+                    nextAttemptAt: new Date(j.next_at).toISOString(),
+                  })),
+                },
+              ]
+            : [];
+        }),
         nextAt: nextAt.at,
         state: state(s),
       };

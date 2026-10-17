@@ -1,4 +1,5 @@
 import 'server-only';
+import { TransformMateStaleConnectionError } from './token-store';
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
@@ -15,6 +16,8 @@ import { selectMediaUrl } from './catalog-schema';
 import { selectPreviewUrl, matchesSignature } from './preview-validation';
 import {
   ReplicaMediaError,
+  ReplicaStageError,
+  replicaFailureInfo,
   ReplicaStorageError,
   replicaMediaRequest,
   recordReplicaFailure,
@@ -245,7 +248,12 @@ export async function processReplicaMedia(
             if ([401, 403, 404, 410].includes(response.status)) {
               job.data.detailAt = 0;
               await save();
-              throw new ReplicaMediaError();
+              throw new ReplicaMediaError(
+                response.status === 404 || response.status === 410
+                  ? 'not_found'
+                  : 'forbidden',
+                response.status,
+              );
             }
             if (response.status !== 304 || !current) {
               const type =
@@ -261,7 +269,7 @@ export async function processReplicaMedia(
                 ].includes(type) ||
                 !response.body
               )
-                throw new ReplicaMediaError();
+                throw new ReplicaMediaError('invalid_media', response.status);
               const imagePath = join(directory, 'image');
               await writeBounded(response.body, imagePath, 5 * 1024 ** 2);
               if (!matchesSignature(await readFile(imagePath), type))
@@ -279,13 +287,18 @@ export async function processReplicaMedia(
             await response.body?.cancel().catch(() => {});
           }
         }
+        delete job.data.failures.image;
         job.data.imageAt = nextCheckAt;
         await save();
       }
     } catch (error) {
-      if (error instanceof ReplicaStorageError) throw error;
+      if (error instanceof TransformMateStaleConnectionError) throw error;
+      job.data.failures.image = replicaFailureInfo(error);
+      await save();
+      const stageError = new ReplicaStageError('image', error);
+      if (error instanceof ReplicaStorageError) throw stageError;
       recordReplicaFailure(scope, error);
-      failure = error;
+      failure = stageError;
     }
     const selected = selectedVideo(detail);
     try {
@@ -316,7 +329,12 @@ export async function processReplicaMedia(
               if ([401, 403, 404, 410].includes(response.status)) {
                 job.data.detailAt = 0;
                 await save();
-                throw new ReplicaMediaError();
+                throw new ReplicaMediaError(
+                  response.status === 404 || response.status === 410
+                    ? 'not_found'
+                    : 'forbidden',
+                  response.status,
+                );
               }
               if (response.status !== 304 || !current) {
                 const declared = response.headers.get('content-length');
@@ -333,7 +351,7 @@ export async function processReplicaMedia(
                     (!/^\d+$/.test(declared) ||
                       Number(declared) > MAX_VIDEO_BYTES))
                 )
-                  throw new ReplicaMediaError();
+                  throw new ReplicaMediaError('invalid_media', response.status);
                 await writeBounded(
                   response.body,
                   file,
@@ -357,13 +375,18 @@ export async function processReplicaMedia(
             }
           }
         }
+        delete job.data.failures.video;
         job.data.videoAt = nextCheckAt;
         await save();
       }
     } catch (error) {
-      if (error instanceof ReplicaStorageError) throw error;
+      if (error instanceof TransformMateStaleConnectionError) throw error;
+      job.data.failures.video = replicaFailureInfo(error);
+      await save();
+      const stageError = new ReplicaStageError('video', error);
+      if (error instanceof ReplicaStorageError) throw stageError;
       recordReplicaFailure(scope, error);
-      failure = error;
+      failure = stageError;
     }
     try {
       if (job.data.posterAt <= now) {
@@ -392,13 +415,18 @@ export async function processReplicaMedia(
           }
           await persist('poster', poster, 'image/jpeg', job.data.video.key);
         }
+        delete job.data.failures.poster;
         job.data.posterAt = nextCheckAt;
         await save();
       }
     } catch (error) {
-      if (error instanceof ReplicaStorageError) throw error;
+      if (error instanceof TransformMateStaleConnectionError) throw error;
+      job.data.failures.poster = replicaFailureInfo(error);
+      await save();
+      const stageError = new ReplicaStageError('poster', error);
+      if (error instanceof ReplicaStorageError) throw stageError;
       recordReplicaFailure(scope, error);
-      failure = error;
+      failure = stageError;
     }
     if (failure) throw failure;
   } finally {
