@@ -1,3 +1,35 @@
 .days > :global(.mantine-Button-root) {
   min-width: 0;
 }
+
+.nativeDate {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+}
+.selectedDate {
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.3;
+}
+@media (max-width: 47.99em) {
+  .weekControls {
+    display: none;
+  }
+  .days > :global(.mantine-Button-root) {
+    height: 56px;
+  }
+}
+
+.nativeTrigger {
+  position: relative;
+}
+.nativeTrigger:focus-within {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+  border-radius: var(--mantine-radius-default);
+}

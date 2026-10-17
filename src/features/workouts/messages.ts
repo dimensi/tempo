@@ -1,4 +1,5 @@
 export const workoutMessages = {
+  techniqueAndVideo: 'Техника и видео',
   downloadWorkout: 'Скачать тренировку',
   downloadSaveFirst:
     'Сохраните изменения, чтобы скачать актуальную тренировку.',

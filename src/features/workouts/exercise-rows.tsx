@@ -5,6 +5,7 @@ import {
   Button,
   Group,
   Menu,
+  Drawer,
   NumberInput,
   Stack,
   Text,
@@ -12,13 +13,8 @@ import {
   Tooltip,
   UnstyledButton,
 } from '@mantine/core';
-import {
-  IconDots,
-  IconTrash,
-  IconPlayerPlay,
-  IconPlus,
-  IconX,
-} from '@tabler/icons-react';
+import { IconDots, IconTrash, IconPlus, IconX } from '@tabler/icons-react';
+import { useMediaQuery } from '@mantine/hooks';
 import type { PlannedWorkout, WorkoutSession } from '@/contracts/workouts';
 import type { ResultExercise } from './result-draft';
 import { ExerciseMedia } from './exercise-media';
@@ -45,6 +41,8 @@ export function ExerciseRows({
   disabled?: boolean;
 }) {
   const [media, setMedia] = useState<ResultExercise | null>(null);
+  const mobile = useMediaQuery('(max-width: 47.99em)');
+  const [actions, setActions] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const update = (index: number, next: ResultExercise) =>
     onChange?.(exercises.map((exercise, i) => (i === index ? next : exercise)));
@@ -60,6 +58,36 @@ export function ExerciseRows({
                 exercise.transformMate?.occurrenceKey,
             )
           : planned?.exercises.find((item) => item.name === exercise.name);
+        const options = [
+          { label: m.techniqueAndVideo, run: () => setMedia(exercise) },
+          {
+            label: m.exerciseComment,
+            run: () => setNote(note === key ? null : key),
+          },
+          {
+            label: m.up,
+            disabled: index === 0,
+            run: () => {
+              const next = [...exercises];
+              [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
+              onChange?.(next);
+            },
+          },
+          {
+            label: m.down,
+            disabled: index === exercises.length - 1,
+            run: () => {
+              const next = [...exercises];
+              [next[index + 1], next[index]] = [next[index]!, next[index + 1]!];
+              onChange?.(next);
+            },
+          },
+          {
+            label: m.removeExercise,
+            color: 'red',
+            run: () => onChange?.(exercises.filter((_, i) => i !== index)),
+          },
+        ];
         return (
           <section
             key={key}
@@ -67,73 +95,91 @@ export function ExerciseRows({
             aria-label={`${m.exercise}: ${exercise.name}`}
           >
             <Group gap="xs" wrap="nowrap" align="start" mb="xs">
-              <Text className={styles.ordinal}>
-                {String(index + 1).padStart(2, '0')}
-              </Text>
               <UnstyledButton
                 className={styles.exerciseName}
                 onClick={() => setMedia(exercise)}
                 aria-label={`${m.technique}: ${exercise.name}`}
               >
                 <span>{exercise.name}</span>
-                <IconPlayerPlay size={18} aria-hidden />
+                <span className={styles.techniqueLink}>
+                  {m.techniqueAndVideo} ›
+                </span>
               </UnstyledButton>
-              {onChange && (
-                <Menu position="bottom-end">
-                  <Menu.Target>
+              {onChange &&
+                (mobile ? (
+                  <>
                     <ActionIcon
                       size={44}
                       variant="subtle"
                       color="gray"
                       disabled={disabled}
                       aria-label={`${m.exerciseOptions}: ${exercise.name}`}
+                      onClick={() => setActions(key)}
                     >
                       <IconDots size={18} />
                     </ActionIcon>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    <Menu.Item
-                      onClick={() => setNote(note === key ? null : key)}
-                    >
-                      {m.exerciseComment}
-                    </Menu.Item>
-                    <Menu.Item
-                      disabled={index === 0}
-                      onClick={() => {
-                        const next = [...exercises];
-                        [next[index - 1], next[index]] = [
-                          next[index]!,
-                          next[index - 1]!,
-                        ];
-                        onChange(next);
+                    <Drawer
+                      opened={actions === key}
+                      onClose={() => setActions(null)}
+                      position="bottom"
+                      size="auto"
+                      title={exercise.name}
+                      closeButtonProps={{ 'aria-label': m.close }}
+                      padding="md"
+                      styles={{
+                        body: {
+                          paddingBottom:
+                            'calc(16px + env(safe-area-inset-bottom))',
+                        },
                       }}
                     >
-                      {m.up}
-                    </Menu.Item>
-                    <Menu.Item
-                      disabled={index === exercises.length - 1}
-                      onClick={() => {
-                        const next = [...exercises];
-                        [next[index + 1], next[index]] = [
-                          next[index]!,
-                          next[index + 1]!,
-                        ];
-                        onChange(next);
-                      }}
-                    >
-                      {m.down}
-                    </Menu.Item>
-                    <Menu.Item
-                      color="red"
-                      onClick={() =>
-                        onChange(exercises.filter((_, i) => i !== index))
-                      }
-                    >
-                      {m.removeExercise}
-                    </Menu.Item>
-                  </Menu.Dropdown>
-                </Menu>
-              )}
+                      <Stack gap="xs">
+                        {options.map((option) => (
+                          <Button
+                            key={option.label}
+                            variant="subtle"
+                            color={option.color}
+                            justify="start"
+                            mih={52}
+                            disabled={disabled || option.disabled}
+                            onClick={() => {
+                              setActions(null);
+                              option.run();
+                            }}
+                          >
+                            {option.label}
+                          </Button>
+                        ))}
+                      </Stack>
+                    </Drawer>
+                  </>
+                ) : (
+                  <Menu position="bottom-end">
+                    <Menu.Target>
+                      <ActionIcon
+                        size={44}
+                        variant="subtle"
+                        color="gray"
+                        disabled={disabled}
+                        aria-label={`${m.exerciseOptions}: ${exercise.name}`}
+                      >
+                        <IconDots size={18} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      {options.map((option) => (
+                        <Menu.Item
+                          key={option.label}
+                          color={option.color}
+                          disabled={disabled || option.disabled}
+                          onClick={option.run}
+                        >
+                          {option.label}
+                        </Menu.Item>
+                      ))}
+                    </Menu.Dropdown>
+                  </Menu>
+                ))}
             </Group>
             {mode !== 'plan' && guide && (
               <Text size="sm" c="dimmed" mb="xs">

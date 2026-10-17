@@ -8,19 +8,20 @@
 
 .exercise {
   padding-block: 16px;
-  border-bottom: 1px solid var(--mantine-color-default-border);
+  border-bottom: 6px solid var(--mantine-color-default-hover);
   font-variant-numeric: tabular-nums;
 }
 
 .exerciseName {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
   flex: 1;
   min-width: 0;
   min-height: 44px;
-  font-size: 17px;
-  line-height: 1.4;
+  font-size: 18px;
+  line-height: 1.35;
   font-weight: 650;
   text-wrap: pretty;
   overflow-wrap: anywhere;
@@ -29,19 +30,13 @@
   text-underline-offset: 4px;
 }
 
-.exerciseName svg {
-  flex-shrink: 0;
-  color: var(--mantine-primary-color-filled);
+.techniqueLink {
+  color: var(--mantine-primary-color-light-color);
+  font-size: 14px;
+  font-weight: 400;
 }
-.exerciseName:hover {
-  color: var(--mantine-primary-color-filled);
+.exerciseName:hover .techniqueLink {
   text-decoration: underline;
-}
-.ordinal {
-  width: 24px;
-  padding-top: 12px;
-  color: var(--mantine-color-dimmed);
-  font-size: 12px;
 }
 .setHeading,
 .setRow {
@@ -114,5 +109,18 @@
   .workspace *::before,
   .workspace *::after {
     scroll-behavior: auto;
+  }
+}
+
+@media (max-width: 47.99em) {
+  .toolbar {
+    gap: 8px;
+  }
+  .toolbar > :first-child {
+    width: 100%;
+  }
+  .toolbar > :last-child {
+    width: 100%;
+    justify-content: space-between;
   }
 }

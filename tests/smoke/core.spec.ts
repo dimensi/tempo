@@ -372,11 +372,11 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .getByRole('button', { name: 'Скачать тренировку', exact: true })
     .click();
   await expect(
-    page.getByRole('button', { name: 'Скачана для зала', exact: true }),
+    page.getByRole('status').filter({ hasText: 'Скачана для зала' }),
   ).toBeVisible();
   await page.reload();
   await expect(
-    page.getByRole('button', { name: 'Скачана для зала', exact: true }),
+    page.getByRole('status').filter({ hasText: 'Скачана для зала' }),
   ).toBeVisible();
   await context.setOffline(true);
   await page

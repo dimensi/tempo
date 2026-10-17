@@ -83,29 +83,26 @@ export function DownloadWorkoutButton({
   }
   return (
     <Stack gap="xs">
-      <Group gap="xs">
-        <Button
-          variant={saved ? 'subtle' : 'light'}
-          mih={44}
-          leftSection={
-            saved ? <IconCheck size={18} /> : <IconDownload size={18} />
-          }
-          loading={busy}
-          disabled={!online || busy || !!saved || blocked}
-          onClick={() => void save()}
-        >
-          {busy
-            ? m.downloadingWorkout
-            : saved
-              ? m.workoutDownloaded
-              : m.downloadWorkout}
-        </Button>
-        {saved && (
+      {saved ? (
+        <Group gap="xs" role="status">
+          <IconCheck size={18} aria-hidden />
           <Text size="sm" c="dimmed">
-            {m.downloadedVideos}: {saved.files.length}
+            {m.workoutDownloaded} · {m.downloadedVideos}: {saved.files.length}
           </Text>
-        )}
-      </Group>
+        </Group>
+      ) : (
+        <Button
+          variant="light"
+          mih={44}
+          leftSection={<IconDownload size={18} />}
+          loading={busy}
+          disabled={!online || busy || blocked}
+          onClick={() => void save()}
+          style={{ alignSelf: 'flex-start' }}
+        >
+          {busy ? m.downloadingWorkout : m.downloadWorkout}
+        </Button>
+      )}
       {busy && (
         <div role="status" aria-live="polite">
           <Text size="sm">
