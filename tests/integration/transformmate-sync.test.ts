@@ -534,6 +534,18 @@ async function assertReplicaRecovery(
       },
     ]);
     expect(store().job(scope, ready.key)!.data.failures.video).toBeUndefined();
+    const recovered = store().job(scope, ready.key)!;
+    expect(recovered.attempts).toBe(0);
+    expect(recovered.data.imageAt).toBeGreaterThan(Date.now() + 24 * 3600000);
+    expect(recovered.next_at).toBeGreaterThan(Date.now());
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.every(
+          ([input]) =>
+            new URL(input as string).hostname !== 'transformmate.pht.space',
+        ),
+    ).toBe(true);
     revoked = true;
     await expect(
       serveReplicaMedia(

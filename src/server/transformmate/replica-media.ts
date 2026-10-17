@@ -246,8 +246,10 @@ export async function processReplicaMedia(
           });
           try {
             if ([401, 403, 404, 410].includes(response.status)) {
-              job.data.detailAt = 0;
-              await save();
+              if (response.status === 401 || response.status === 403) {
+                job.data.detailAt = 0;
+                await save();
+              }
               throw new ReplicaMediaError(
                 response.status === 404 || response.status === 410
                   ? 'not_found'
@@ -294,11 +296,18 @@ export async function processReplicaMedia(
     } catch (error) {
       if (error instanceof TransformMateStaleConnectionError) throw error;
       job.data.failures.image = replicaFailureInfo(error);
+      const missing =
+        error instanceof ReplicaMediaError && error.code === 'not_found';
+      // A confirmed missing source image must not compete with unfinished videos.
+      // Keep the diagnostic and any saved image; retry at the monthly check.
+      if (missing) job.data.imageAt = nextCheckAt;
       await save();
-      const stageError = new ReplicaStageError('image', error);
-      if (error instanceof ReplicaStorageError) throw stageError;
-      recordReplicaFailure(scope, error);
-      failure = stageError;
+      if (!missing) {
+        const stageError = new ReplicaStageError('image', error);
+        if (error instanceof ReplicaStorageError) throw stageError;
+        recordReplicaFailure(scope, error);
+        failure = stageError;
+      }
     }
     const selected = selectedVideo(detail);
     try {
