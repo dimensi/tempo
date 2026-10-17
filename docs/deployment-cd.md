@@ -26,7 +26,7 @@ only the current main SHA. Manual runs have no external run ID or revision input
 No Actions artifacts are uploaded or downloaded. Production concurrency remains
 `nutrition-production`, cancel-in-progress true: each new main push or manual main run cancels the
 previous running release in this group, including an in-progress build or deploy. SSH verifies the existing host key
-on port 2224. The pulled image revision label and final running image/revision must match.
+on the port configured in the production environment. The pulled image revision label and final running image/revision must match.
 
 The image repository follows `GITHUB_REPOSITORY`. Renaming the source repository
 to `dimensi/tempo` changes future publications to `ghcr.io/dimensi/tempo`; it does
@@ -58,16 +58,49 @@ volumes and other applications' images are not pruned.
 `runtime.env` and historical `release.env` are never overwritten or copied to CI.
 The current auth secret therefore remains server-local.
 
-`nutrition-production` supplies Secrets `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`,
-`OPENROUTER_API_KEY` and Variables `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
-`ANAMNESIS_LLM_BASE_URL`, `ANAMNESIS_LLM_MODEL`, `ANAMNESIS_LLM_TIMEOUT_MS`,
-`ENABLE_ANAMNESIS_WORKER`. They retain the approved values:
-S3 `http://192.168.1.90:8333`, region `us-east-1`, private bucket `apps`;
-OpenRouter `https://openrouter.ai/api/v1`, `google/gemini-3.8-flash`, timeout `120000`,
-worker `false`. There is no fallback to the subscription provider or thinking override.
+### Private deployment configuration
+
+All deployment infrastructure settings are individual Secrets in the
+`nutrition-production` environment. The workflow does not read their former
+repository/environment Variables. `NUTRITION_CD_ENABLED` remains a non-sensitive
+repository Variable controlling whether deployment is enabled.
+
+- SSH: `NUTRITION_DEPLOY_HOST`, `NUTRITION_DEPLOY_USER`,
+  `NUTRITION_DEPLOY_PORT`, `NUTRITION_DEPLOY_KNOWN_HOSTS`, `NUTRITION_DEPLOY_KEY`.
+- Existing stack: `NUTRITION_DEPLOY_PATH`, `NUTRITION_DEPLOY_PROJECT`,
+  `NUTRITION_DEPLOY_HEALTH_URL`. Keep the established path, project, volumes,
+  network and health endpoint when configuring these values.
+- Runtime: `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`,
+  `S3_SECRET_ACCESS_KEY`, `OPENROUTER_API_KEY`, `ANAMNESIS_LLM_BASE_URL`,
+  `ANAMNESIS_LLM_MODEL`, `ANAMNESIS_LLM_TIMEOUT_MS`, `ENABLE_ANAMNESIS_WORKER`.
+  The existing repository-level OpenRouter secret is also supported by GitHub's
+  normal secret resolution; the workflow has no variable or plaintext fallback.
+- Approval guard: `NUTRITION_DEPLOY_RUNTIME_SHA256` is the SHA-256 of compact,
+  sorted-key JSON for the seven noncredential runtime settings listed in
+  `scripts/cd/deploy.sh`. An intentional runtime configuration change must update
+  both the corresponding Secrets and this checksum. Credentials are excluded
+  from the checksum, so credential rotation does not change the runtime guard.
+
+The deployment body lives in `scripts/cd/deploy.sh`; the public Actions step
+contains only its invocation and output handling. GitHub masks Secret values in
+its step header. Raw SSH, SCP, Compose and validation output is captured in a
+mode-0600 runner-temporary file and removed on exit, never printed or uploaded.
+Public output reports success or a fixed, allowlisted failure phase. Debugging
+requires private operator inspection; do not print that temporary log or add it
+to artifacts. This also prevents error messages from exposing addresses, resolved
+hosts, paths, fingerprints or connection strings that differ from a Secret's
+exact value.
+
 Env serialization rejects controls, single quotes and backslashes rather than
 accepting ambiguous dotenv escapes; literal dollars/hash/double quotes are quoted.
-Secrets are never added to Git, images, artifacts or command arguments.
+The approved runtime checksum, exact main SHA, image digest, host-key verification,
+backup, storage-switch guard and health checks remain mandatory.
+
+Setting Secrets does not erase old logs, source history or existing Variables.
+After this workflow is merged, remove the superseded infrastructure Variables;
+removing them before merge would break the still-active old workflow. Old run
+logs must be deleted separately using the Actions logs API, preserving run
+metadata. This PR does not rewrite Git history or erase previously copied data.
 
 Registry authentication uses the short-lived job `GITHUB_TOKEN` via stdin and a
 private temporary `DOCKER_CONFIG`. It does not replace the server's existing
@@ -97,22 +130,15 @@ imports must not be processed as a test.
 
 ## Existing access and activation
 
-`NUTRITION_CD_ENABLED` stays false until coordinated activation is approved.
-The existing `nutrition-deploy` key accepts only a forced receiver command, so it
-cannot perform SCP or ordinary SSH deployment. The workflow explicitly refuses
-that account. The already available host account `dimensi` can read runtime.env,
-write the project directory and use Docker; the shared rollout lock is writable.
-Using its ordinary SSH credential from GitHub Actions requires a separate explicit
-credential/access decision. No key is read, uploaded or replaced by this PR.
+Deployment remains gated by `NUTRITION_CD_ENABLED` and the production environment.
+The workflow requires an SSH account that can read the existing runtime file,
+write the stack directory and use Docker. It refuses the obsolete receiver-only
+account because ordinary SCP/SSH deployment requires a different interface.
+This logging change does not grant new server privileges, rotate credentials,
+run a deployment or alter the server's existing registry login.
 
-The server already has a GHCR login, which is left untouched. The existing Tempo
-package/latest manifest was not readable during the original inspection; the release
-workflow publishes the repository-linked `latest` image with its job token. If package policy denies job-token
-pull, stop and resolve that specific access issue; do not create a PAT or permanent
-server login automatically.
-
-Already installed legacy helpers are retained and not called by the new workflow.
-Do not rerun the prior installer, merge the old transport design or invoke a legacy
-rollout concurrently. Before activation verify the exact PR head/checks and absence
-of active deployments, approve ordinary SSH credentials, then merge and wait for
-successful release build, publication, deployment and health/synthetic verification.
+Before activation, verify the final revision and required checks, configure the
+individual Secrets and approved runtime checksum, and confirm the current
+server path/project/volumes. If GHCR package policy denies job-token access,
+resolve that specific policy; do not automatically create a PAT or permanent
+server credential. Retain the existing rollout lock and recovery procedure.
