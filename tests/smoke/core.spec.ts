@@ -304,6 +304,48 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .toBe('Final note');
   await page.unroute('**/api/offline/writes');
 
+  // Reverting to the accepted value clears dirty state without another write.
+  await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
+  const resultNote = page.getByLabel('Заметка к тренировке', { exact: true });
+  await resultNote.fill('Temporary note');
+  await resultNote.fill('Final note');
+  await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Есть несохранённые изменения', { exact: true }),
+  ).toHaveCount(0);
+
+  // A result debounce that expires during a plan request must be retried.
+  const planSending = Promise.withResolvers<void>();
+  const releasePlan = Promise.withResolvers<void>();
+  await page.route('**/api/workouts/plans/*?*', async (route) => {
+    if (route.request().method() === 'PUT') {
+      planSending.resolve();
+      await releasePlan.promise;
+    }
+    await route.continue();
+  });
+  const modes = page.getByRole('radiogroup', { name: 'Тренировка дня' });
+  await modes.getByText('План', { exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Сохранить план', exact: true })
+    .click();
+  await planSending.promise;
+  await modes.getByText('Выполнение', { exact: true }).click();
+  await resultNote.fill('Saved after plan request');
+  await page.waitForTimeout(900);
+  releasePlan.resolve();
+  await expect
+    .poll(async () => {
+      const body = await (
+        await page.request.get(`/api/workouts?ownerId=${owner}`)
+      ).json();
+      return body.data.sessions.find(
+        (item: { title: string }) => item.title === title,
+      )?.note;
+    })
+    .toBe('Saved after plan request');
+  await page.unroute('**/api/workouts/plans/*?*');
+
   await expect
     .poll(() => cachedReadBody(page, title).catch(() => ''))
     .toContain(title);

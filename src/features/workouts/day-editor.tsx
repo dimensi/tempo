@@ -414,7 +414,20 @@ export function DayEditor({
         setError(cause instanceof Error ? cause.message : m.error);
     } finally {
       pending.current = false;
-      if (mounted.current) setBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        if (
+          generation === sessionGeneration() &&
+          canLog &&
+          resultDirty.current
+        ) {
+          if (autoTimer.current) clearTimeout(autoTimer.current);
+          autoTimer.current = setTimeout(
+            () => void saveResult(undefined, false),
+            250,
+          );
+        }
+      }
     }
   }
   async function saveResult(
@@ -498,7 +511,16 @@ export function DayEditor({
         return;
       }
       const serialized = JSON.stringify(input.data);
-      if (serialized === lastSaved.current) return;
+      if (serialized === lastSaved.current) {
+        if (!statusOnly) {
+          resultDirty.current = false;
+          dirty.current = planDirty.current;
+          setStored(persist(valueRef.current));
+          setError(null);
+          setStatus(dirty.current ? m.unsaved : m.saved);
+        }
+        return;
+      }
       setError(null);
       setStatus(m.saving);
       const sameOccurrences =
