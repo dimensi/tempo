@@ -12,12 +12,12 @@ builds the image and publishes it to GHCR. The `deploy` job depends on `build` a
 checks out the same revision before SSH deployment. Deployment runs only
 when `NUTRITION_CD_ENABLED` is `true`; build and publication remain available otherwise.
 PR CI, formatting, lint, typecheck, unit/integration tests, browser gates and
-disposable Docker smoke do not run in this workflow. All three full E2E suites
-are mandatory before every merge into main, as specified in AGENTS.md.
+disposable Docker smoke do not run in this workflow. Required pre-merge checks follow the verification tiers in AGENTS.md. Full
+verification uses `pnpm verify:merge`, including two browser smoke journeys.
 A main push publishes that exact local image as
-`ghcr.io/dimensi/yazio-dashboard:latest` using the job's `GITHUB_TOKEN`.
+`ghcr.io/dimensi/tempo:latest` using the job's `GITHUB_TOKEN`.
 There is no second build. Publication updates `latest` and returns its immutable
-`ghcr.io/dimensi/yazio-dashboard@sha256:...` reference as a job output. Deployment
+`ghcr.io/dimensi/tempo@sha256:...` reference as a job output. Deployment
 pulls that exact digest, so a retry cannot accidentally pick a later `latest`.
 The immutable revision label must match the workflow SHA before startup and after deployment. There is no manual full-test CI branch.
 
@@ -27,6 +27,11 @@ No Actions artifacts are uploaded or downloaded. Production concurrency remains
 `nutrition-production`, cancel-in-progress true: each new main push or manual main run cancels the
 previous running release in this group, including an in-progress build or deploy. SSH verifies the existing host key
 on port 2224. The pulled image revision label and final running image/revision must match.
+
+The image repository follows `GITHUB_REPOSITORY`. Renaming the source repository
+to `dimensi/tempo` changes future publications to `ghcr.io/dimensi/tempo`; it does
+not migrate existing image tags. The server path `/opt/compose/yazio-dashboard`,
+Compose project `nutrition`, network alias and persistent volumes stay unchanged.
 
 ## Retrying a release
 

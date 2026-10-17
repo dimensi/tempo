@@ -1,7 +1,7 @@
 services:
   app:
     build: .
-    image: ghcr.io/dimensi/yazio-dashboard:latest
+    image: ghcr.io/dimensi/tempo:latest
     restart: unless-stopped
     init: true
     environment:

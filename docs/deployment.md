@@ -42,7 +42,7 @@ The coordinator confirmed that the user has already created the first OWNER. Boo
 
 ## Release validation
 
-Record the exact Git revision and image ID/digest, retain the previous release image, preserve server-local configuration and volumes, and create a verified backup before upgrading. Build the reviewed revision and recreate with the same Compose project/files/environment. A local `ghcr.io/dimensi/yazio-dashboard:latest` tag does not prove registry publication; a mutable tag is insufficient for rollback.
+Record the exact Git revision and image ID/digest, retain the previous release image, preserve server-local configuration and volumes, and create a verified backup before upgrading. Build the reviewed revision and recreate with the same Compose project/files/environment. A local `ghcr.io/dimensi/tempo:latest` tag does not prove registry publication; a mutable tag is insufficient for rollback.
 
 Verify migrations, health, login/logout and owner/trainer feature access through the real HTTPS hostname. Live YAZIO sync requires a separate user acceptance check after approved store setup and the user's own account submission; synthetic tests do not establish live connectivity.
 
@@ -50,18 +50,15 @@ For disposable image validation, build `docker build -t nutrition-foundation .`,
 
 ## Reuse the CI-built image
 
-CI does not run on pull requests or feature-branch pushes. Main-push CI only
-builds the Docker image and publishes it to GHCR with its full commit SHA tag.
-The application build remains inside Docker. Formatting, lint, type checks,
-unit/integration tests, browser gates and disposable Docker smoke do not run in
-the deployment workflow. All three full E2E suites must pass on the final
-revision before every merge into main; see AGENTS.md.
+The release workflow runs on main pushes or manually on main. Its `build` job
+publishes `ghcr.io/dimensi/tempo:latest` and passes the immutable digest to a
+separate `deploy` job. Deployment requires `NUTRITION_CD_ENABLED=true` and the
+current main SHA; it pulls that exact digest without rebuilding.
 
-CD requires the completed successful main-push run and its successful `docker`
-job on the current main SHA. It pulls that exact GHCR image without rebuilding,
-verifies image/revision and health, and retains the existing backup and failure
-handling. No `checks` job is required. See [deployment details](deployment-cd.md)
-for the current SSH cutover and recovery limitations.
+PR checks and the full verification suite do not run in the release workflow.
+Run the appropriate pre-merge tier from [AGENTS.md](../AGENTS.md); Full verification
+uses `pnpm verify:merge`, including two browser smoke journeys. See
+[deployment details](deployment-cd.md) for SSH cutover and recovery limitations.
 
 ## Consistent backup and rollback
 

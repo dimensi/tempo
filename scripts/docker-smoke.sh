@@ -10,7 +10,7 @@ cleanup() { docker compose down -v; rm -rf "$pdf_smoke_dir"; }
 trap cleanup EXIT
 for pdf_tool in pdfinfo pdffonts pdftotext; do command -v "$pdf_tool" > /dev/null; done
 # Disposable test volumes only; never run down -v on an operator's stack.
-docker tag nutrition-foundation ghcr.io/dimensi/yazio-dashboard:latest
+docker tag nutrition-foundation ghcr.io/dimensi/tempo:latest
 docker compose up -d --no-build
 for attempt in $(seq 1 60); do
   if curl -fsS http://127.0.0.1:3311/api/health > /dev/null; then break; fi
