@@ -369,6 +369,29 @@ async function assertReplicaRecovery(
     expect(videoRequests).toBe(failedCalls);
     expect(store().state(scope).blocked_until).toBe(persisted);
     vi.setSystemTime(persisted + 10000);
+    let finishRange!: (response: Response) => void;
+    const earlierRange = replicaMediaRequest(
+      scope,
+      () =>
+        new Promise<Response>((resolve) => {
+          finishRange = resolve;
+        }),
+    );
+    await expect(
+      replicaMediaRequest(
+        scope,
+        async () =>
+          new Response(null, {
+            status: 429,
+            headers: { 'Retry-After': '180' },
+          }),
+      ),
+    ).rejects.toMatchObject({ status: 429 });
+    const concurrentCooldown = store().state(scope).blocked_until;
+    finishRange(new Response('earlier range'));
+    await earlierRange;
+    expect(store().state(scope).blocked_until).toBe(concurrentCooldown);
+    vi.setSystemTime(concurrentCooldown + 10000);
     await replicaMediaRequest(scope, async () => new Response('recovered'));
     expect(store().state(scope)).toMatchObject({
       reason: null,

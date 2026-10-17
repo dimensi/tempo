@@ -127,7 +127,14 @@ export async function replicaMediaRequest(
         retryAfterMs,
       });
     }
-    if (response.ok && replicaStore().state(scope).reason === 'upstream') {
+    const current = replicaStore().state(scope);
+    if (
+      response.ok &&
+      current.reason === 'upstream' &&
+      current.reason === state.reason &&
+      current.failures === state.failures &&
+      current.blocked_until === state.blocked_until
+    ) {
       replicaStore().patch(scope, {
         failures: 0,
         reason: null,
