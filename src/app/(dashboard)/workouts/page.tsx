@@ -14,7 +14,7 @@ export default function Page() {
         canLog={context.role === 'OWNER'}
         renderPendingWrites={
           context.role === 'OWNER'
-            ? () => <OfflineWrites kind="workout" />
+            ? () => <OfflineWrites kind="workout" pendingOnly />
             : undefined
         }
         renderComments={(id) => (

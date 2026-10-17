@@ -69,7 +69,9 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .getByRole('button', { name: 'Добавить тренировку', exact: true })
     .click();
   const title = 'Production smoke workout';
-  await page.getByText('Название и заметка', { exact: true }).click();
+  await expect(
+    page.getByRole('textbox', { name: 'Описание', exact: true }),
+  ).toBeVisible();
   await page
     .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(title);
@@ -94,6 +96,36 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect(
     page.getByRole('button', { name: 'Техника: Smoke squat', exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole('textbox', {
+      name: 'Название (необязательно)',
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await page
+    .getByRole('button', {
+      name: 'Действия с подходом 1: Smoke squat',
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole('menuitem', { name: 'Заполнить по плану', exact: true })
+    .click();
+  await expect(
+    page.getByLabel('Smoke squat, Подход 1, Повторения', { exact: true }),
+  ).toHaveValue('10');
+  await page
+    .getByRole('button', {
+      name: 'Действия с подходом 1: Smoke squat',
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole('menuitem', { name: 'Очистить значения', exact: true })
+    .click();
+  await expect(
+    page.getByLabel('Smoke squat, Подход 1, Повторения', { exact: true }),
+  ).toHaveValue('');
   await page
     .getByLabel('Smoke squat, Подход 1, Повторения', { exact: true })
     .fill('8');
@@ -101,7 +133,80 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .getByRole('button', { name: 'Завершить тренировку', exact: true })
     .click();
   await expect(
-    page.getByRole('button', { name: 'Продолжить тренировку', exact: true }),
+    page.getByRole('button', { name: 'Отменить завершение', exact: true }),
+  ).toBeVisible();
+
+  // A background-acknowledged offline edit becomes the status action's new base.
+  await context.setOffline(true);
+  await page
+    .getByLabel('Заметка к тренировке', { exact: true })
+    .fill('Saved while offline');
+  await expect(
+    page.getByText(
+      'Результаты сохранены на устройстве и отправятся при подключении.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await context.setOffline(false);
+  await expect
+    .poll(async () => {
+      const body = await (
+        await page.request.get(`/api/workouts?ownerId=${owner}`)
+      ).json();
+      return body.data.sessions.find(
+        (item: { title: string }) => item.title === title,
+      )?.note;
+    })
+    .toBe('Saved while offline');
+
+  // Reopening changes only status even when the form would remove a saved exercise.
+  const savedWorkout = (
+    await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json()
+  ).data.sessions.find((item: { title: string }) => item.title === title);
+  await page
+    .getByRole('button', {
+      name: 'Действия с подходом 1: Smoke squat',
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole('menuitem', { name: 'Очистить значения', exact: true })
+    .click();
+  await expect(
+    page.getByText('Есть несохранённые изменения', { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Отменить завершение', exact: true })
+    .click();
+  await expect
+    .poll(async () => {
+      const body = await (
+        await page.request.get(`/api/workouts?ownerId=${owner}`)
+      ).json();
+      return body.data.sessions.find(
+        (item: { id: string }) => item.id === savedWorkout.id,
+      )?.status;
+    })
+    .toBe('in_progress');
+  const reopenedWorkout = (
+    await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json()
+  ).data.sessions.find((item: { id: string }) => item.id === savedWorkout.id);
+  expect(reopenedWorkout.exercises).toEqual(savedWorkout.exercises);
+  expect(reopenedWorkout.note).toBe(savedWorkout.note);
+  expect(reopenedWorkout.planSnapshot).toEqual(savedWorkout.planSnapshot);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
+  await expect(
+    page.getByLabel('Smoke squat, Подход 1, Повторения', { exact: true }),
+  ).toHaveValue('');
+  await page
+    .getByLabel('Smoke squat, Подход 1, Повторения', { exact: true })
+    .fill('8');
+  await page
+    .getByRole('button', { name: 'Завершить тренировку', exact: true })
+    .click();
+  await expect(
+    page.getByRole('button', { name: 'Отменить завершение', exact: true }),
   ).toBeVisible();
 
   // An incomplete actual set must survive acknowledging an unrelated plan edit.

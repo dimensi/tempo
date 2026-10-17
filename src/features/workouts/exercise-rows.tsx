@@ -11,13 +11,7 @@ import {
   Textarea,
   UnstyledButton,
 } from '@mantine/core';
-import {
-  IconCheck,
-  IconDots,
-  IconPlayerPlay,
-  IconPlus,
-  IconX,
-} from '@tabler/icons-react';
+import { IconDots, IconPlayerPlay, IconPlus, IconX } from '@tabler/icons-react';
 import type { PlannedWorkout, WorkoutSession } from '@/contracts/workouts';
 import type { ResultExercise } from './result-draft';
 import { ExerciseMedia } from './exercise-media';
@@ -140,9 +134,14 @@ export function ExerciseRows({
                 {guide.sets
                   .map(
                     (set) =>
-                      `${set.reps} × ${set.weightKg === null ? m.noWeight : `${set.weightKg} ${m.resultWeight}`}`,
+                      `${set.reps} ${m.resultReps} · ${set.weightKg === null ? m.noWeight : `${set.weightKg} ${m.resultWeight}`}`,
                   )
                   .join(' · ')}
+              </Text>
+            )}
+            {mode === 'result' && (
+              <Text size="sm" fw={600} mb={4}>
+                {m.actualSets}
               </Text>
             )}
             <div className={styles.setHeading} aria-hidden>
@@ -227,27 +226,54 @@ export function ExerciseRows({
                   </>
                 )}
                 {mode === 'result' && onChange ? (
-                  <ActionIcon
-                    size={44}
-                    variant={set.reps ? 'light' : 'subtle'}
-                    color={set.reps ? 'teal' : 'gray'}
-                    disabled={disabled || (!set.reps && !guide?.sets[setIndex])}
-                    aria-label={`${set.reps ? m.clearSet : m.checkSet} ${setIndex + 1}: ${exercise.name}`}
-                    onClick={() => {
-                      update(index, {
-                        ...exercise,
-                        sets: exercise.sets.map((row, i) =>
-                          i === setIndex
-                            ? set.reps
-                              ? { reps: null, weightKg: null }
-                              : { ...guide!.sets[setIndex]! }
-                            : row,
-                        ),
-                      });
-                    }}
-                  >
-                    <IconCheck size={18} />
-                  </ActionIcon>
+                  <Menu position="bottom-end">
+                    <Menu.Target>
+                      <ActionIcon
+                        size={44}
+                        variant="subtle"
+                        color="gray"
+                        disabled={disabled}
+                        aria-label={`${m.setActions} ${setIndex + 1}: ${exercise.name}`}
+                      >
+                        <IconDots size={18} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      {guide?.sets[setIndex] && (
+                        <Menu.Item
+                          mih={44}
+                          onClick={() =>
+                            update(index, {
+                              ...exercise,
+                              sets: exercise.sets.map((row, i) =>
+                                i === setIndex
+                                  ? { ...guide.sets[setIndex]! }
+                                  : row,
+                              ),
+                            })
+                          }
+                        >
+                          {m.fillFromPlan}
+                        </Menu.Item>
+                      )}
+                      <Menu.Item
+                        mih={44}
+                        disabled={set.reps === null && set.weightKg === null}
+                        onClick={() =>
+                          update(index, {
+                            ...exercise,
+                            sets: exercise.sets.map((row, i) =>
+                              i === setIndex
+                                ? { reps: null, weightKg: null }
+                                : row,
+                            ),
+                          })
+                        }
+                      >
+                        {m.clearSetValues}
+                      </Menu.Item>
+                    </Menu.Dropdown>
+                  </Menu>
                 ) : onChange ? (
                   <ActionIcon
                     size={44}

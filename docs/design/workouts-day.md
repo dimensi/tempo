@@ -32,7 +32,7 @@ Tap an exercise name to open its technique video in a focused dialog without lea
 
 An empty day offers creation and an explicit provider refresh. Creation starts with multi-selection in a searchable exercise picker, with secondary muscle filters and an explicit manual option. Plan editing and result entry use the same exercise/set visual grammar. Results preserve missingness, revision conflicts, account separation and the durable owner write queue. One session owns one comment thread. Multiple real records on a date remain accessible through a compact selector.
 
-Provider refresh is explicit; its status and details live in a dialog rather than permanent provider panels above exercises. Successful background exchange remains quiet. The exercise picker opens as a full-screen task on phones and a wide dialog on desktop. Video-led cards expose playback in place, with visible body categories, a muscle filter and multi-selection. Selected exercises are added together. Technique and «Мои видео» share a focused dialog; the description stays openly visible below the technique video. One «Скачать тренировку» action saves the loaded data, exercise details and all available technique videos for the gym, with progress and an explicit partial-failure state. Saved videos play from the device even while online.
+Provider refresh is an explicit menu action. Its requested progress or result appears as a short inline message; it opens no status dialog. Successful background exchange remains quiet. The exercise picker opens as a full-screen task on phones and a wide dialog on desktop. Video-led cards expose playback in place, with visible body categories, a muscle filter and multi-selection. Selected exercises are added together. Technique and «Мои видео» share a focused dialog; the description stays openly visible below the technique video. One «Скачать тренировку» action saves the loaded data, exercise details and all available technique videos for the gym, with progress and an explicit partial-failure state. Saved videos play from the device even while online.
 
 The new play overlays, selected category and exercise buttons, and add-selected action use Mantine teal 9 with white text in both themes; hover mixes black at 15%. This scoped contrast adjustment keeps the incumbent palette and primary theme settings. Selection remains explicit through pressed states, labels and the exercise check icon.
 
@@ -42,10 +42,18 @@ The shared header pattern applies across top-level pages. Exercise discovery is 
 
 Drafts are scoped by actor, owner, resource and day, with acknowledged plan and result revisions tracked separately. Saving a plan preserves incomplete result input. Edits made during a pending result write are coalesced into a later save. Automatic saves never silently remove recorded exercise occurrences or their private-video references; an explicit removal confirmation precedes the existing destructive online operation.
 
-The owner opens pending workout writes from the day menu's «Записи на устройстве» item. The existing queue and conflict-resolution controls appear in a modal instead of above the exercise workspace. The app page supplies this block through `renderPendingWrites`; queue storage, synchronization and resolution behavior remain unchanged.
+Pending workout writes have no menu entry or modal. The app page composes `OfflineWrites pendingOnly` inline through `renderPendingWrites`; it renders only for a genuine offline wait, retry or review requirement, with plain explanatory copy and existing resolution controls. A normal first sending attempt stays quiet. Queue storage, sending, authorization and resolution behavior remain unchanged.
 
 ## Boundaries and verification
 
 Own workout UI/routes, the shared header/navigation integration, Russian messages, design documentation and affected existing smoke assertions. Preserve schemas, permissions, migration history and provider write rules. No automatic production writes while testing the locally imported account.
 
 Verification tier: Full, because shared navigation and workout write interaction change. Run `pnpm verify:merge` on the final clean committed revision. New tests: default zero; adapt existing cases. Inspect desktop, mobile and the user's 1015px width in one batch, fix together, then confirm once. Finish reviewer and documenter receive the same direction and evidence.
+
+## Explicit actions and open fields
+
+Keep plan and execution as separate views. Plan title and description are always visible in plan mode; no native details/summary disclosure is used in workout UI. The primary header action has a visible verb (Save or Finish). Completed status sits beside an explicit Cancel completion action; no play/pause metaphor is used for workout status. Set actions live in a labeled menu: Fill from plan and Clear values, each with a minimum height of 44px. A filled set has no interactive success check mark. Actual set entry states that saving is automatic and planned sets name repetitions and weight explicitly.
+
+Cancel completion changes only status against the latest durable queued or acknowledged session, using its matching revision as the write base. It never submits unsaved exercise edits or clears their dirty state. Entered fields stay in place, and the removal safeguard remains exclusive to result editing. The existing smoke covers reopening with a cleared exercise draft while asserting preserved exercises, note and plan snapshot on the server.
+
+This refinement is Full tier because it touches workout interaction, route composition and the offline feature presentation. Add/remove/consolidate cases: 0/0/0; extend the existing smoke to cover open plan fields and explicit set menu actions.

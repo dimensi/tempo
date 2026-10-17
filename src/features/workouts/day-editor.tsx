@@ -9,20 +9,14 @@ import {
 import {
   Alert,
   Button,
+  Group,
   SegmentedControl,
   Stack,
   Text,
   Textarea,
   TextInput,
-  ActionIcon,
-  Tooltip,
   Modal,
 } from '@mantine/core';
-import {
-  IconCheck,
-  IconDeviceFloppy,
-  IconPlayerPlay,
-} from '@tabler/icons-react';
 import { PageActions } from '@/components/layout/page-header';
 import { useMediaQuery } from '@mantine/hooks';
 import { z } from 'zod';
@@ -39,6 +33,7 @@ import { apiFetch } from '@/lib/api-client';
 import { readResources } from '@/lib/read-descriptors';
 import { apiResults } from '@/lib/api-results';
 import {
+  readDeviceWrites,
   saveDeviceWrite,
   synchronizeDeviceWrite,
 } from '@/lib/offline-write-client';
@@ -390,49 +385,81 @@ export function DayEditor({
     nextStatus?: ResultDraft['status'],
     explicit = true,
     allowRemoval = false,
+    statusOnly = false,
   ) {
     if (!canLog || pending.current || staleDraft.current) return;
-    const draft = valueRef.current.result;
-    const started = draft.exercises.some((exercise) =>
-      exercise.sets.some((set) => set.reps !== null || set.weightKg !== null),
-    );
-    if (!started && !nextStatus && !sessionRef.current) return;
-    if (
-      draft.exercises.some((exercise) =>
-        exercise.sets.some(
-          (set) =>
-            (set.weightKg !== null || set.reps !== null) &&
-            (!set.reps || !Number.isInteger(set.reps)),
-        ),
-      )
-    ) {
-      if (explicit) setError(m.resultValidation);
-      return;
-    }
-    const input = workoutSessionInputSchema.safeParse({
-      ...draft,
-      status: nextStatus ?? draft.status,
-      exercises: draft.exercises
-        .map((exercise) => ({
-          ...exercise,
-          sets: exercise.sets.filter((set) => set.reps !== null),
-        }))
-        .filter((exercise) => exercise.sets.length > 0),
-    });
-    if (!input.success) {
-      if (explicit) setError(m.resultValidation);
-      return;
-    }
-    const serialized = JSON.stringify(input.data);
-    if (serialized === lastSaved.current) return;
     pending.current = true;
-    setBusy(true);
-    setError(null);
-    setStatus(m.saving);
     const generation = sessionGeneration();
     const snapshot = valueRef.current;
+    if (statusOnly && autoTimer.current) clearTimeout(autoTimer.current);
+    setBusy(true);
     try {
       const prior = sessionRef.current;
+      let expectedBase = prior ? String(prior.revision) : undefined;
+      let draft: ResultDraft = snapshot.result;
+      if (statusOnly) {
+        // Change status against acknowledged data, never against unsaved form fields.
+        // A durable local save may be newer than the last server response.
+        const writes =
+          userId === ownerId ? await readDeviceWrites() : undefined;
+        if (!mounted.current || generation !== sessionGeneration()) return;
+        const recordId = prior?.id ?? requestId.current;
+        const hasPending = writes?.operations.some(
+          (item) =>
+            item.operation.recordId === recordId && item.status !== 'synced',
+        );
+        const local = writes?.records.find((item) => item.id === recordId);
+        const latest =
+          local?.payload.kind === 'workout' &&
+          (hasPending || Number(local.version) >= (prior?.revision ?? 0))
+            ? local
+            : undefined;
+        const saved =
+          latest?.payload.kind === 'workout' ? latest.payload.data : prior;
+        if (!saved) return;
+        if (latest) expectedBase = latest.version || undefined;
+        draft = {
+          title: saved.title,
+          date: saved.date,
+          note: saved.note,
+          status: saved.status,
+          exercises: saved.exercises,
+        };
+      }
+      const started = draft.exercises.some((exercise) =>
+        exercise.sets.some((set) => set.reps !== null || set.weightKg !== null),
+      );
+      if (!started && !nextStatus && !sessionRef.current) return;
+      if (
+        draft.exercises.some((exercise) =>
+          exercise.sets.some(
+            (set) =>
+              (set.weightKg !== null || set.reps !== null) &&
+              (!set.reps || !Number.isInteger(set.reps)),
+          ),
+        )
+      ) {
+        if (explicit) setError(m.resultValidation);
+        return;
+      }
+      const input = workoutSessionInputSchema.safeParse({
+        ...draft,
+        status: nextStatus ?? draft.status,
+        exercises: draft.exercises
+          .map((exercise) => ({
+            ...exercise,
+            sets: exercise.sets.filter((set) => set.reps !== null),
+          }))
+          .filter((exercise) => exercise.sets.length > 0),
+      });
+      if (!input.success) {
+        if (explicit) setError(m.resultValidation);
+        return;
+      }
+      const serialized = JSON.stringify(input.data);
+      if (serialized === lastSaved.current) return;
+      setError(null);
+      setStatus(m.saving);
       const sameOccurrences =
         !prior ||
         prior.exercises.every((item) =>
@@ -466,7 +493,7 @@ export function DayEditor({
             ...(currentPlan ? { planRevision: currentPlan.revision } : {}),
           },
           prior?.id ?? requestId.current,
-          prior ? String(prior.revision) : undefined,
+          expectedBase,
         );
         const result = await synchronizeDeviceWrite(operation);
         if (result?.payload.kind === 'workout') {
@@ -507,18 +534,18 @@ export function DayEditor({
       }
       lastSaved.current = serialized;
       const acknowledged = valueRef.current.result === snapshot.result;
-      if (acknowledged) {
+      if (acknowledged || statusOnly) {
         const next = {
           ...valueRef.current,
           result: { ...valueRef.current.result, status: input.data.status },
         };
         valueRef.current = next;
         setValue(next);
-        resultDirty.current = false;
+        if (!statusOnly) resultDirty.current = false;
       }
       dirty.current = planDirty.current || resultDirty.current;
       setStored(persist(valueRef.current));
-      setStatus(!acknowledged ? m.unsaved : queued ? m.queued : m.saved);
+      setStatus(resultDirty.current ? m.unsaved : queued ? m.queued : m.saved);
       await onSaved();
     } catch (cause) {
       if (mounted.current && generation === sessionGeneration()) {
@@ -531,6 +558,7 @@ export function DayEditor({
         setBusy(false);
         if (
           generation === sessionGeneration() &&
+          !statusOnly &&
           valueRef.current.result !== snapshot.result &&
           resultDirty.current
         ) {
@@ -547,50 +575,20 @@ export function DayEditor({
   return (
     <Stack gap="md">
       <PageActions>
-        <Tooltip
-          label={
-            mode === 'plan'
-              ? m.savePlan
-              : value.result.status === 'completed'
-                ? m.reopenWorkout
-                : m.finishWorkout
-          }
-        >
-          <ActionIcon
-            size={44}
-            variant={
-              value.result.status === 'completed' && mode !== 'plan'
-                ? 'subtle'
-                : 'filled'
-            }
-            aria-label={
-              mode === 'plan'
-                ? m.savePlan
-                : value.result.status === 'completed'
-                  ? m.reopenWorkout
-                  : m.finishWorkout
-            }
+        {(mode === 'plan' || value.result.status !== 'completed') && (
+          <Button
+            mih={44}
+            variant="light"
+            aria-label={mode === 'plan' ? m.savePlan : m.finishWorkout}
             loading={busy}
             disabled={mode === 'plan' ? !selected.exercises.length : !canLog}
             onClick={() =>
-              mode === 'plan'
-                ? void savePlan()
-                : void saveResult(
-                    value.result.status === 'completed'
-                      ? 'in_progress'
-                      : 'completed',
-                  )
+              mode === 'plan' ? void savePlan() : void saveResult('completed')
             }
           >
-            {mode === 'plan' ? (
-              <IconDeviceFloppy size={20} />
-            ) : value.result.status === 'completed' ? (
-              <IconPlayerPlay size={20} />
-            ) : (
-              <IconCheck size={20} />
-            )}
-          </ActionIcon>
-        </Tooltip>
+            {mode === 'plan' ? m.save : m.finishShort}
+          </Button>
+        )}
       </PageActions>
       <div className={styles.toolbar}>
         {hasPlan ? (
@@ -609,9 +607,22 @@ export function DayEditor({
         ) : (
           <Text fw={600}>{existing ? m.execution : m.startPlan}</Text>
         )}
-        <Text size="sm" c="dimmed">
-          {savedSession ? m[savedSession.status] : m.plannedStatus}
-        </Text>
+        <Group gap="xs">
+          <Text size="sm" c="dimmed">
+            {savedSession ? m[value.result.status] : m.plannedStatus}
+          </Text>
+          {mode !== 'plan' && value.result.status === 'completed' && canLog && (
+            <Button
+              variant="subtle"
+              size="compact-sm"
+              mih={44}
+              loading={busy}
+              onClick={() => void saveResult('in_progress', true, false, true)}
+            >
+              {m.reopenWorkout}
+            </Button>
+          )}
+        </Group>
       </div>
       {error && (
         <Alert color="red" role="alert">
@@ -630,6 +641,11 @@ export function DayEditor({
         </Alert>
       )}
       {!stored && <Alert color="orange">{m.draftUnavailable}</Alert>}
+      {mode === 'result' && canLog && (
+        <Text size="sm" c="dimmed">
+          {m.autoSaveHint}
+        </Text>
+      )}
       {status && (
         <Text className={styles.status} role="status">
           {status}
@@ -640,51 +656,48 @@ export function DayEditor({
           {!selected.exercises.length && (
             <Text c="dimmed">{m.prepareHint}</Text>
           )}
-          <details>
-            <summary>{m.planOptions}</summary>
-            <Stack mt="sm">
-              <TextInput
-                disabled={busy}
-                label={m.optionalTitle}
-                value={selected.title}
-                maxLength={160}
-                onChange={(e) =>
-                  change(
-                    {
-                      ...value,
-                      plan: {
-                        ...value.plan,
-                        workouts: value.plan.workouts.map((item) =>
-                          item.id === selected.id
-                            ? { ...item, title: e.currentTarget.value }
-                            : item,
-                        ),
-                      },
+          <Stack gap="sm">
+            <TextInput
+              disabled={busy}
+              label={m.optionalTitle}
+              value={selected.title}
+              maxLength={160}
+              onChange={(e) =>
+                change(
+                  {
+                    ...value,
+                    plan: {
+                      ...value.plan,
+                      workouts: value.plan.workouts.map((item) =>
+                        item.id === selected.id
+                          ? { ...item, title: e.currentTarget.value }
+                          : item,
+                      ),
                     },
-                    'plan',
-                  )
-                }
-              />
-              <Textarea
-                disabled={busy}
-                label={m.descriptionLabel}
-                value={value.plan.description}
-                maxLength={4000}
-                onChange={(e) =>
-                  change(
-                    {
-                      ...value,
-                      plan: {
-                        ...value.plan,
-                        description: e.currentTarget.value,
-                      },
+                  },
+                  'plan',
+                )
+              }
+            />
+            <Textarea
+              disabled={busy}
+              label={m.descriptionLabel}
+              value={value.plan.description}
+              maxLength={4000}
+              onChange={(e) =>
+                change(
+                  {
+                    ...value,
+                    plan: {
+                      ...value.plan,
+                      description: e.currentTarget.value,
                     },
-                    'plan',
-                  )
-                }
-              />
-            </Stack>
-          </details>
+                  },
+                  'plan',
+                )
+              }
+            />
+          </Stack>
           <ExerciseRows
             ownerId={ownerId}
             exercises={selected.exercises}

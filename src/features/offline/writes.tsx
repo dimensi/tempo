@@ -32,7 +32,13 @@ const exercise = () => ({
   name: '',
   sets: [{ reps: '', weightKg: '' }],
 });
-export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
+export function OfflineWrites({
+  kind,
+  pendingOnly = false,
+}: {
+  kind: WritePayload['kind'];
+  pendingOnly?: boolean;
+}) {
   const [online, setOnline] = useState(true);
   const [state, setState] = useState<WriteState>(emptyWriteState);
   const [editing, setEditing] = useViewState<{
@@ -192,8 +198,19 @@ export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
       setBusy(false);
     }
   }
+  const needsAttention = (item: WriteState['operations'][number]) =>
+    item.status !== 'synced' &&
+    (!online ||
+      item.status === 'review' ||
+      (item.status === 'local' && item.attempts > 0) ||
+      (item.status === 'sending' && item.attempts > 1));
   if (
     !state.partition ||
+    (pendingOnly &&
+      !editing &&
+      !state.operations.some(
+        (item) => item.operation.payload.kind === kind && needsAttention(item),
+      )) ||
     (online &&
       !editing &&
       !state.operations.some((item) => item.operation.payload.kind === kind))
@@ -203,10 +220,10 @@ export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
     <Paper withBorder p="md" data-testid="device-write-queue">
       <Stack>
         <Title order={2} size="h3">
-          {m.title}
+          {pendingOnly ? m.pendingTitle : m.title}
         </Title>
-        <Text size="sm">{m.hint}</Text>
-        {!online && (
+        <Text size="sm">{pendingOnly ? m.pendingHint : m.hint}</Text>
+        {!online && !pendingOnly && (
           <Button mih={44} onClick={() => start()} disabled={busy || !!editing}>
             {kind === 'workout' ? m.newWorkout : m.newMeasurement}
           </Button>
@@ -361,10 +378,16 @@ export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
           .filter(
             (record) =>
               record.payload.kind === kind &&
-              (!online ||
-                state.operations.some(
-                  (item) => item.operation.recordId === record.id,
-                )),
+              (pendingOnly
+                ? state.operations.some(
+                    (item) =>
+                      item.operation.recordId === record.id &&
+                      needsAttention(item),
+                  )
+                : !online ||
+                  state.operations.some(
+                    (item) => item.operation.recordId === record.id,
+                  )),
           )
           .map((record) => {
             const operations = state.operations.filter(
@@ -439,9 +462,11 @@ export function OfflineWrites({ kind }: { kind: WritePayload['kind'] }) {
               </Paper>
             );
           })}
-        <Text size="xs" c="dimmed">
-          {m.retention}
-        </Text>
+        {!pendingOnly && (
+          <Text size="xs" c="dimmed">
+            {m.retention}
+          </Text>
+        )}
       </Stack>
     </Paper>
   );

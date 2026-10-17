@@ -5,9 +5,8 @@ import { apiResults } from '@/lib/api-results';
 import { seedClientRead } from '@/lib/client-read';
 import { readResources } from '@/lib/read-descriptors';
 import { sessionGeneration } from '@/lib/session-state';
-import { useReadOnline } from '@/lib/use-read-online';
 import { useReadResource } from '@/lib/use-read-resource';
-import { Alert, Badge, Button, Group, Stack, Text } from '@mantine/core';
+import { Badge, Group, Stack, Text } from '@mantine/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   workoutMessages as m,
@@ -118,55 +117,6 @@ export function useTransformMateSync(ownerId: string, date: string) {
     denied: resource.error === 'denied',
     loadMore: () => nativePage.nextCursor && refresh(nativePage.nextCursor),
   };
-}
-export function SyncSummary({
-  sync,
-}: {
-  sync: ReturnType<typeof useTransformMateSync>;
-}) {
-  const online = useReadOnline();
-  if (sync.configured === false)
-    return (
-      <Text size="sm" c="dimmed">
-        {m.notConfigured}
-      </Text>
-    );
-  return (
-    <Stack gap="xs">
-      {(sync.nativeRefresh.status === 'error' ||
-        sync.nativeRefresh.status === 'unavailable') && (
-        <Alert color="orange" role="alert">
-          {sync.nativeRefresh.errorCode === 'reauth_required'
-            ? m.nativeReconnect
-            : m.nativeError}
-        </Alert>
-      )}
-      <Group justify="space-between" gap="xs">
-        {sync.nativeRefresh.checkedAt && (
-          <Text size="sm" c="dimmed">
-            {m.checked}:{' '}
-            {new Date(sync.nativeRefresh.checkedAt).toLocaleString('ru-RU')}
-          </Text>
-        )}
-        <Button
-          variant="subtle"
-          size="compact-sm"
-          mih={44}
-          loading={sync.busy}
-          disabled={!online}
-          title={!online ? m.syncError : undefined}
-          onClick={() => void sync.refresh()}
-        >
-          {m.syncRefresh}
-        </Button>
-      </Group>
-      {sync.error && (
-        <Alert color="red" role="alert">
-          {m.syncError}
-        </Alert>
-      )}
-    </Stack>
-  );
 }
 export function WorkoutSync({
   item,

@@ -14,7 +14,6 @@ import {
   Text,
   TextInput,
   Title,
-  Tooltip,
 } from '@mantine/core';
 import { IconDots, IconRefresh } from '@tabler/icons-react';
 import { z } from 'zod';
@@ -28,16 +27,13 @@ import type {
 import { apiFetch } from '@/lib/api-client';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
+import { useReadOnline } from '@/lib/use-read-online';
 import { workoutTitle } from '@/lib/workout-title';
 import { DayEditor } from './day-editor';
 import { DownloadWorkoutButton } from './download-workout-button';
 import { copyPlanToDate } from './copy-plan';
 import { NativeWorkout } from './native-workout';
-import {
-  SyncSummary,
-  WorkoutSync,
-  useTransformMateSync,
-} from './transformmate-sync';
+import { WorkoutSync, useTransformMateSync } from './transformmate-sync';
 import { workoutMessages as m } from './messages';
 import classes from './day-workout.module.css';
 import content from './workout-ui.module.css';
@@ -67,6 +63,7 @@ export function WorkoutsDashboard({
     ),
   );
   const data = resource.data;
+  const online = useReadOnline();
   const sync = useTransformMateSync(ownerId, date);
   const [creating, setCreating] = useState<string | null>(null);
   const [copied, setCopied] = useState<{
@@ -74,8 +71,7 @@ export function WorkoutsDashboard({
     workout: PlannedWorkout;
   } | null>(null);
   const [active, setActive] = useState<string | null>(null);
-  const [syncOpen, setSyncOpen] = useState(false);
-  const [writesOpen, setWritesOpen] = useState(false);
+  const [syncRequested, setSyncRequested] = useState<string | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyDate, setCopyDate] = useState(date);
   const [deletion, setDeletion] = useState(false);
@@ -238,20 +234,6 @@ export function WorkoutsDashboard({
       <PageHeader
         actions={
           <>
-            <Tooltip label={m.refreshShort}>
-              <ActionIcon
-                size={44}
-                variant="subtle"
-                aria-label={m.refreshShort}
-                disabled={sync.busy}
-                onClick={() => {
-                  setSyncOpen(true);
-                  void sync.refresh();
-                }}
-              >
-                <IconRefresh size={20} />
-              </ActionIcon>
-            </Tooltip>
             <Menu position="bottom-end">
               <Menu.Target>
                 <ActionIcon size={44} variant="subtle" aria-label={m.dayMenu}>
@@ -277,14 +259,17 @@ export function WorkoutsDashboard({
                     {m.copy}
                   </Menu.Item>
                 )}
-                <Menu.Item onClick={() => setSyncOpen(true)}>
-                  {m.syncDetails}
+                <Menu.Item
+                  leftSection={<IconRefresh size={16} />}
+                  disabled={sync.busy || !online}
+                  onClick={() => {
+                    setSyncRequested(date);
+                    void sync.refresh();
+                  }}
+                >
+                  {sync.busy ? m.syncRefreshing : m.refreshShort}
                 </Menu.Item>
-                {renderPendingWrites && (
-                  <Menu.Item onClick={() => setWritesOpen(true)}>
-                    {m.deviceWrites}
-                  </Menu.Item>
-                )}
+                {!online && <Menu.Label>{m.refreshOfflineHint}</Menu.Label>}
                 {(entry?.plan || entry?.session) && (
                   <Menu.Item color="red" onClick={() => setDeletion(true)}>
                     {m.removeDayWorkout}
@@ -305,6 +290,22 @@ export function WorkoutsDashboard({
         }}
         labels={m.dateNavigation}
       />
+      {syncRequested === date && (
+        <Text size="sm" c={sync.error ? 'orange' : 'dimmed'} role="status">
+          {sync.busy
+            ? m.syncRefreshing
+            : sync.configured === false
+              ? m.notConfigured
+              : sync.error ||
+                  sync.nativeRefresh.status === 'error' ||
+                  sync.nativeRefresh.status === 'unavailable'
+                ? sync.nativeRefresh.errorCode === 'reauth_required'
+                  ? m.nativeReconnect
+                  : m.syncError
+                : m.syncUpdated}
+        </Text>
+      )}
+      {renderPendingWrites?.()}
       {(resource.error || sync.denied) && (
         <Alert color="red" role="alert">
           {sync.denied ? m.noAccess : m.loadError}
@@ -343,7 +344,11 @@ export function WorkoutsDashboard({
               variant="subtle"
               mih={44}
               loading={sync.busy}
-              onClick={() => void sync.refresh()}
+              disabled={!online}
+              onClick={() => {
+                setSyncRequested(date);
+                void sync.refresh();
+              }}
             >
               {m.refreshFromProvider}
             </Button>
@@ -405,44 +410,30 @@ export function WorkoutsDashboard({
         />
       )}
       {!create && entry?.native && !entry.session && (
-        <details open={!entry.plan}>
-          <summary>{m.remoteActual}</summary>
+        <section aria-label={m.remoteActual}>
+          <Text fw={600} mb="sm">
+            {m.remoteActual}
+          </Text>
           <NativeWorkout item={entry.native} ownerId={ownerId} fullView />
-        </details>
+        </section>
       )}
       {!create && entry?.remote?.actual && !entry.native && !entry.session && (
-        <details open={!entry.plan}>
-          <summary>{m.remoteActual}</summary>
+        <section aria-label={m.remoteActual}>
+          <Text fw={600} mb="sm">
+            {m.remoteActual}
+          </Text>
           <WorkoutSync item={entry.remote} />
-        </details>
+        </section>
       )}
       {sync.nativePage.nextCursor && (
         <Button
           variant="subtle"
-          disabled={sync.busy}
+          disabled={sync.busy || !online}
           onClick={() => void sync.loadMore()}
         >
           {m.loadMore}
         </Button>
       )}
-      <Modal
-        opened={syncOpen}
-        onClose={() => setSyncOpen(false)}
-        title={m.syncQuiet}
-        closeButtonProps={{ 'aria-label': m.close, size: 44 }}
-      >
-        <SyncSummary sync={sync} />
-        {entry?.remote && (
-          <WorkoutSync item={entry.remote} showActual={false} />
-        )}
-      </Modal>
-      <Modal
-        opened={writesOpen}
-        onClose={() => setWritesOpen(false)}
-        title={m.deviceWrites}
-      >
-        {writesOpen && renderPendingWrites?.()}
-      </Modal>
       <Modal
         opened={copyOpen}
         onClose={() => setCopyOpen(false)}
