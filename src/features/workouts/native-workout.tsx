@@ -2,7 +2,8 @@
 
 import {
   Badge,
-  Button,
+  UnstyledButton,
+  Drawer,
   Group,
   Paper,
   ScrollArea,
@@ -13,7 +14,7 @@ import {
 } from '@mantine/core';
 import type { TransformMateNativeItem } from '@/contracts/transformmate-native';
 import { useState } from 'react';
-import { IconInfoCircle } from '@tabler/icons-react';
+import { IconPlayerPlay } from '@tabler/icons-react';
 import { ExerciseDetails } from './exercise-details';
 import { workoutMessages as m } from './messages';
 
@@ -122,27 +123,26 @@ export function NativeWorkout({
             ].sort((a, b) => a - b);
             return (
               <Stack gap="xs" key={exerciseIndex}>
-                <Group justify="space-between" gap="xs">
-                  <Title order={3}>{exercise.name || m.exercise}</Title>
-                  {ownerId &&
-                    inspecting !==
-                      `${exercise.protocolId}-${exercise.remoteExerciseId}` && (
-                      <Button
-                        variant="subtle"
-                        size="compact-sm"
-                        mih={44}
-                        leftSection={<IconInfoCircle size={16} />}
-                        aria-label={`${m.details}: ${exercise.name}`}
-                        onClick={() =>
-                          setInspecting(
-                            `${exercise.protocolId}-${exercise.remoteExerciseId}`,
-                          )
-                        }
-                      >
-                        {m.details}
-                      </Button>
-                    )}
-                </Group>
+                <UnstyledButton
+                  onClick={() =>
+                    setInspecting(
+                      `${exercise.protocolId}-${exercise.remoteExerciseId}`,
+                    )
+                  }
+                  disabled={!ownerId || !exercise.exerciseId}
+                  style={{
+                    minHeight: 44,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    fontSize: 17,
+                    fontWeight: 650,
+                  }}
+                  aria-label={`${m.technique}: ${exercise.name}`}
+                >
+                  {exercise.name || m.exercise}
+                  <IconPlayerPlay size={18} />
+                </UnstyledButton>
                 {exercise.comment && (
                   <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
                     {exercise.comment}
@@ -181,11 +181,18 @@ export function NativeWorkout({
                 {ownerId &&
                   inspecting ===
                     `${exercise.protocolId}-${exercise.remoteExerciseId}` && (
-                    <ExerciseDetails
-                      key={`${ownerId}-${exercise.exerciseId}`}
-                      ownerId={ownerId}
-                      exerciseId={exercise.exerciseId!}
-                    />
+                    <Drawer
+                      opened
+                      onClose={() => setInspecting(null)}
+                      title={exercise.name}
+                      position="right"
+                      size="min(480px, 100vw)"
+                    >
+                      <ExerciseDetails
+                        ownerId={ownerId}
+                        exerciseId={exercise.exerciseId!}
+                      />
+                    </Drawer>
                   )}
 
                 {!orders.length && <Text size="sm">{m.nativeEmptySets}</Text>}

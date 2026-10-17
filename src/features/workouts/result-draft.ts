@@ -1,9 +1,5 @@
 import { z } from 'zod';
-import {
-  workoutSessionInputSchema,
-  type WorkoutSessionInput,
-  type PlannedWorkout,
-} from '@/contracts/workouts';
+import { type PlannedWorkout } from '@/contracts/workouts';
 
 export const resultDraftSchema = z
   .object({
@@ -67,33 +63,4 @@ export function emptyResultDraft(
         sets: exercise.sets.map(() => ({ reps: null, weightKg: null })),
       })) ?? [],
   };
-}
-export function resultDraftInput(draft: ResultDraft): {
-  data: WorkoutSessionInput | null;
-  error: 'reps' | 'exercise' | 'validation' | null;
-} {
-  if (draft.status === 'completed' && !draft.exercises.length)
-    return { data: null, error: 'exercise' };
-  const untouched = draft.exercises.every(
-    (exercise) =>
-      !exercise.comment?.trim() &&
-      exercise.sets.every((set) => set.reps === null && set.weightKg === null),
-  );
-  const value =
-    untouched && draft.status !== 'completed'
-      ? { ...draft, exercises: [] }
-      : draft;
-  if (
-    value.exercises.some((exercise) =>
-      exercise.sets.some(
-        (set) =>
-          set.reps === null || !Number.isInteger(set.reps) || set.reps < 1,
-      ),
-    )
-  )
-    return { data: null, error: 'reps' };
-  const parsed = workoutSessionInputSchema.safeParse(value);
-  return parsed.success
-    ? { data: parsed.data, error: null }
-    : { data: null, error: 'validation' };
 }

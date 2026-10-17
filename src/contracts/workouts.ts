@@ -87,7 +87,13 @@ export const workoutSessionInputSchema = z
   .object({
     date: z.iso.date(),
     title,
-    exercises: z.array(workoutExerciseSchema).max(50),
+    exercises: z
+      .array(
+        workoutExerciseSchema.safeExtend({
+          sets: z.array(workoutSetSchema).max(50),
+        }),
+      )
+      .max(50),
     note: z.string().trim().max(4000),
     status: z.enum(['in_progress', 'completed', 'skipped']),
   })

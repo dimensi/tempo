@@ -1,4 +1,5 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 import { offlineMessages } from '@/config/offline';
 import { clientReads, seedClientRead } from '@/lib/client-read';
 import { readResources } from '@/lib/read-descriptors';
@@ -136,7 +137,7 @@ export function MarkerDetail({
       <a href="/anamnesis#markers">
         {m.title} · {m.workspace.markers}
       </a>
-      <Title order={1}>{marker?.name ?? markerId}</Title>
+      <PageHeader>{marker?.name ?? markerId}</PageHeader>
       {conflict && (
         <Alert color="orange">{offlineMessages.draftConflict}</Alert>
       )}

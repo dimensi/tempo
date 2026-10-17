@@ -16,3 +16,4 @@ dist-cli/
 public/offline/
 public/offline-sw.js
 next-env.d.ts
+.impeccable/review/

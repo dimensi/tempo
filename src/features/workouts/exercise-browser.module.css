@@ -1,0 +1,90 @@
+.browser {
+  min-width: 0;
+}
+.filters {
+  display: grid;
+  gap: 12px;
+}
+.categories {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-block: 4px;
+  scrollbar-width: thin;
+}
+.categories > * {
+  flex-shrink: 0;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.card {
+  overflow: hidden;
+  min-width: 0;
+}
+.card[data-selected] {
+  border-color: var(--mantine-primary-color-filled);
+}
+.preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
+  position: relative;
+  background: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-dark-6)
+  );
+}
+.preview:hover .play {
+  background: color-mix(in srgb, var(--mantine-color-teal-9), black 15%);
+}
+.poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.play {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--mantine-color-teal-9);
+  color: var(--mantine-color-white);
+  border-radius: var(--mantine-radius-md);
+  padding: 10px 16px;
+  min-height: 44px;
+  font-weight: 600;
+}
+.solid:not(:disabled) {
+  background: var(--mantine-color-teal-9);
+  color: var(--mantine-color-white);
+}
+.solid:not(:disabled):hover {
+  background: color-mix(in srgb, var(--mantine-color-teal-9), black 15%);
+}
+.name {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+.media {
+  padding: 12px 12px 0;
+}
+.footer {
+  position: sticky;
+  bottom: 0;
+  padding-block: 12px max(12px, env(safe-area-inset-bottom));
+  background: var(--mantine-color-body);
+  z-index: 2;
+}
+@media (max-width: 36em) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

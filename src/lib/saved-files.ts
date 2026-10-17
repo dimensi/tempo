@@ -58,21 +58,13 @@ class SavedFiles {
       throw new Error('File unavailable');
     return url;
   }
-  async fileSize(href: string) {
-    const response = await apiFetch(this.url(href), {
-      method: 'HEAD',
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!response.ok) throw new Error('File unavailable');
-    const size = Number(response.headers.get('content-length'));
-    return Number.isSafeInteger(size) && size > 0 ? size : null;
-  }
   async saveFile(input: {
     id: string;
     label: string;
     href: string;
     kind: 'pdf' | 'video';
     size?: number;
+    signal?: AbortSignal;
   }) {
     const partition = readSession()?.partition;
     const generation = sessionGeneration();
@@ -81,7 +73,9 @@ class SavedFiles {
     if (input.size && input.size > offlineFileLimits.singleBytes)
       throw new Error('File too large');
     const response = await apiFetch(this.url(input.href), {
-      signal: AbortSignal.timeout(120000),
+      signal: input.signal
+        ? AbortSignal.any([input.signal, AbortSignal.timeout(120000)])
+        : AbortSignal.timeout(120000),
     });
     if (!response.ok) throw new Error('File unavailable');
     const bytes = await response.blob();

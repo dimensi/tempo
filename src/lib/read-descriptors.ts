@@ -15,6 +15,8 @@ import { analyticsDataSchema } from '@/contracts/read-analytics';
 import { readContextSchema } from '@/contracts/read-context';
 import {
   commentsReadSchema,
+  exerciseReadSchema,
+  muscleDictionaryReadSchema,
   documentObservationsReadSchema,
   overviewReadSchema,
   transformMateReadSchema,
@@ -59,6 +61,11 @@ export const readResources = {
   })),
   transformMate: definition(transformMateReadSchema, (value) => value.data),
   catalog: definition(transformMateCatalogResultSchema),
+  exercise: definition(exerciseReadSchema, (value) => value.data),
+  muscleDictionary: definition(
+    muscleDictionaryReadSchema,
+    (value) => value.data,
+  ),
   comments: definition(commentsReadSchema),
   anamnesis: definition(anamnesisOverviewSchema),
   markers: definition(z.array(anamnesisMarkerSummarySchema)),

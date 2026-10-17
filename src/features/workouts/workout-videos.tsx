@@ -1,10 +1,8 @@
 'use client';
-import { OfflineFile } from '@/components/shared/offline-file';
 import {
   VIDEO_PART_BYTES,
   type WorkoutVideo,
 } from '@/contracts/workout-videos';
-import type { WorkoutSession } from '@/contracts/workouts';
 import { apiFetch } from '@/lib/api-client';
 import { subscribeSessionReset } from '@/lib/offline-device';
 import { subscribeLocalDataReset } from '@/lib/local-data';
@@ -23,35 +21,7 @@ import { compressWorkoutVideo } from './compress-video';
 import { workoutMessages as m } from './messages';
 import { TeachingVideo } from './teaching-video';
 import { sendVideoPart } from './video-upload';
-export function WorkoutVideos({
-  ownerId,
-  session,
-  canUpload,
-}: {
-  ownerId: string;
-  session: WorkoutSession;
-  canUpload: boolean;
-}) {
-  return (
-    <Stack>
-      <Text fw={600}>{m.ownVideos}</Text>
-      {session.exercises.map(
-        (exercise) =>
-          exercise.id && (
-            <ExerciseVideos
-              key={exercise.id}
-              ownerId={ownerId}
-              sessionId={session.id}
-              exerciseId={exercise.id}
-              name={exercise.name}
-              canUpload={canUpload && session.status === 'completed'}
-            />
-          ),
-      )}
-    </Stack>
-  );
-}
-function ExerciseVideos({
+export function ExerciseVideos({
   ownerId,
   sessionId,
   exerciseId,
@@ -314,7 +284,6 @@ function ExerciseVideos({
   if (denied) return <Alert color="red">{m.noAccess}</Alert>;
   return (
     <Stack gap="sm" component="section" aria-label={`${m.ownVideos}: ${name}`}>
-      <Text fw={500}>{name}</Text>
       {error && (
         <Alert color="red" role="alert">
           {error}
@@ -328,13 +297,6 @@ function ExerciseVideos({
               src={`${base}/${row.id}/playback${query}`}
               label={`${m.ownVideos}: ${name}`}
               compact
-            />
-            <OfflineFile
-              id={`video:${row.id}`}
-              label={name}
-              kind="video"
-              size={row.size}
-              href={`${base}/${row.id}/playback?ownerId=${encodeURIComponent(ownerId)}`}
             />
             {canUpload && (
               <Button
@@ -351,9 +313,6 @@ function ExerciseVideos({
         ))}
       {canUpload && ready && (
         <>
-          <Text size="sm" c="dimmed">
-            {m.videoHelp}
-          </Text>
           {!draft && (
             <FileButton
               onChange={(file) => void select(file)}

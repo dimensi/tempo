@@ -1,9 +1,7 @@
 'use client';
 import type { TransformMateCatalogItem } from '@/contracts/transformmate';
 import { subscribeSessionReset } from '@/lib/offline-device';
-import { Image, Text } from '@mantine/core';
 import { useEffect, useState } from 'react';
-import { workoutMessages as m } from './messages';
 import { clearPreviewRequests, requestPreview } from './preview-request';
 
 export function useExercisePreview(
@@ -46,20 +44,4 @@ export function useExercisePreview(
     };
   }, [ownerId, id, revision, enabled, key]);
   return result?.key === key ? result : null;
-}
-export function ExercisePreview({
-  ownerId,
-  item,
-}: {
-  ownerId: string;
-  item: TransformMateCatalogItem;
-}) {
-  const preview = useExercisePreview(ownerId, item);
-  if (preview?.denied)
-    return (
-      <Text size="xs" c="red" role="alert">
-        {m.catalogError}
-      </Text>
-    );
-  return <Image src={preview?.src} alt="" w={44} h={44} radius="sm" />;
 }

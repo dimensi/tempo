@@ -1,0 +1,188 @@
+.workspace {
+  min-width: 0;
+  max-width: 860px;
+  margin-inline: auto;
+  width: 100%;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+
+.exercise {
+  padding-block: 16px;
+  border-bottom: 6px solid var(--mantine-color-default-hover);
+  font-variant-numeric: tabular-nums;
+}
+
+.exerciseName {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  font-size: 18px;
+  line-height: 1.35;
+  font-weight: 650;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+  color: var(--mantine-color-text);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.exerciseSubtitle {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--mantine-color-dimmed);
+}
+.techniqueLink {
+  color: var(--mantine-primary-color-light-color);
+  font-size: 14px;
+  font-weight: 400;
+}
+.exerciseName:hover .techniqueLink {
+  text-decoration: underline;
+}
+.planSummary {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  margin-block: 12px;
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-default-hover);
+}
+.planSets {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.planSet {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+.planSetIndex {
+  grid-column: 1 / -1;
+}
+.orderRow {
+  padding: 12px;
+  background: var(--mantine-color-default-hover);
+  border-radius: var(--mantine-radius-md);
+}
+.orderRow[data-dragging] {
+  opacity: 0.6;
+}
+.dragHandle {
+  touch-action: none;
+  cursor: grab;
+}
+.dragHandle:active {
+  cursor: grabbing;
+}
+.setHeading,
+.setRow {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1fr) 44px;
+  gap: 6px;
+  align-items: center;
+}
+.setHeading {
+  font-size: 14px;
+  color: var(--mantine-color-dimmed);
+  margin-block: 4px 8px;
+}
+.setRow {
+  margin-block: 6px;
+}
+.withSetActions {
+  grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr) 88px;
+}
+.setActions {
+  grid-column: auto;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.removeSet {
+  display: inline-flex;
+}
+.setRow input {
+  --input-fz: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  height: 48px;
+  min-height: 48px;
+  padding-inline: 8px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 12px;
+  font-size: 18px !important;
+}
+.setRow input:focus {
+  border-color: var(--mantine-primary-color-filled);
+}
+.setRow button {
+  height: 48px;
+  min-height: 48px;
+  border-radius: 12px;
+}
+.addSet {
+  height: 48px;
+  min-height: 48px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.empty {
+  text-align: center;
+  padding: 48px 16px;
+}
+.status {
+  min-height: 20px;
+  font-size: 14px;
+  color: var(--mantine-color-dimmed);
+}
+@media (min-width: 48em) {
+  .setHeading,
+  .setRow {
+    grid-template-columns: 32px minmax(80px, 150px) minmax(80px, 150px) 44px;
+  }
+  .withSetActions {
+    grid-template-columns:
+      32px minmax(80px, 150px) minmax(80px, 150px)
+      88px;
+  }
+  .setActions {
+    grid-column: auto;
+  }
+  .exercise {
+    padding-block: 20px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace *,
+  .workspace *::before,
+  .workspace *::after {
+    scroll-behavior: auto;
+  }
+}
+
+@media (max-width: 47.99em) {
+  .toolbar {
+    gap: 8px;
+  }
+  .toolbar > :first-child {
+    width: 100%;
+  }
+  .toolbar > :last-child {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

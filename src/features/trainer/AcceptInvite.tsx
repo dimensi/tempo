@@ -1,4 +1,5 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 import { passwordLimits } from '@/contracts/password';
 import { acceptInviteInput } from '@/contracts/trainers';
 import { apiFetch } from '@/lib/api-client';
@@ -10,7 +11,6 @@ import {
   PasswordInput,
   Stack,
   TextInput,
-  Title,
 } from '@mantine/core';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -72,7 +72,7 @@ export function AcceptInvite() {
   }
   return (
     <Stack maw={480} mx="auto" p="md">
-      <Title order={1}>{m.inviteTitle}</Title>
+      <PageHeader>{m.inviteTitle}</PageHeader>
       {error && (
         <Alert color="red" role="alert">
           {error}

@@ -10,11 +10,13 @@ export function TeachingVideo({
   poster,
   compact = false,
   label = m.video,
+  autoPlay = false,
 }: {
   src: string;
   poster?: string;
   compact?: boolean;
   label?: string;
+  autoPlay?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
@@ -26,7 +28,7 @@ export function TeachingVideo({
     host.current.appendChild(element);
     const player = videojs(element, {
       controls: true,
-      autoplay: false,
+      autoplay: autoPlay,
       poster,
       preload: 'none',
       fluid: true,
@@ -79,7 +81,7 @@ export function TeachingVideo({
     return () => {
       if (!player.isDisposed()) player.dispose();
     };
-  }, [src, poster, label]);
+  }, [src, poster, label, autoPlay]);
   return (
     <div>
       {failed && (

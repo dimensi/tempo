@@ -8,6 +8,15 @@ const prefix = 'workout-draft:';
 const validTime = (savedAt: number) =>
   savedAt <= Date.now() && Date.now() - savedAt < lifetime;
 
+export function dayWorkoutDraftKey(
+  identity: string,
+  date: string,
+  recordId: string,
+  workoutId = '',
+) {
+  return `${prefix}${identity}:day:${recordId}:${workoutId}:${date}`;
+}
+
 export function clearWorkoutDraft(key: string) {
   try {
     sessionStorage.removeItem(key);

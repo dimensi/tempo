@@ -5,21 +5,15 @@ import { apiResults } from '@/lib/api-results';
 import { seedClientRead } from '@/lib/client-read';
 import { readResources } from '@/lib/read-descriptors';
 import { sessionGeneration } from '@/lib/session-state';
-import { useReadOnline } from '@/lib/use-read-online';
 import { useReadResource } from '@/lib/use-read-resource';
-import { Alert, Badge, Button, Group, Stack, Text } from '@mantine/core';
+import { Badge, Group, Stack, Text } from '@mantine/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   workoutMessages as m,
   transformMateReasons as reasons,
   transformMateStatuses as statuses,
 } from './messages';
-export function useTransformMateSync(
-  ownerId: string,
-  version: unknown,
-  date: string,
-) {
-  const lastAutomatic = useRef(0);
+export function useTransformMateSync(ownerId: string, date: string) {
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const inflight = useRef<AbortController | null>(null);
@@ -43,14 +37,8 @@ export function useTransformMateSync(
   };
   const configured = resource.data?.configured ?? null;
   const refresh = useCallback(
-    async (cursor?: string, automatic = false) => {
-      if (
-        !navigator.onLine ||
-        inflight.current ||
-        (automatic && Date.now() - lastAutomatic.current < 60_000)
-      )
-        return;
-      if (automatic) lastAutomatic.current = Date.now();
+    async (cursor?: string) => {
+      if (!navigator.onLine || inflight.current) return;
       const controller = new AbortController();
       inflight.current = controller;
       const current = generation.current;
@@ -112,26 +100,12 @@ export function useTransformMateSync(
     const effectGeneration = ++generation.current;
     inflight.current?.abort();
     inflight.current = null;
-    lastAutomatic.current = 0;
-    void Promise.resolve().then(async () => {
-      if (generation.current !== effectGeneration) return;
-      await refresh(undefined, true);
-    });
-    const visible = () => {
-      if (document.visibilityState === 'visible') void refresh(undefined, true);
-    };
-    window.addEventListener('focus', visible);
-    document.addEventListener('visibilitychange', visible);
-    const timer = setInterval(visible, 60_000);
     return () => {
       generation.current = effectGeneration + 1;
       inflight.current?.abort();
       inflight.current = null;
-      clearInterval(timer);
-      window.removeEventListener('focus', visible);
-      document.removeEventListener('visibilitychange', visible);
     };
-  }, [refresh, version]);
+  }, [refresh]);
   return {
     items,
     nativePage,
@@ -143,55 +117,6 @@ export function useTransformMateSync(
     denied: resource.error === 'denied',
     loadMore: () => nativePage.nextCursor && refresh(nativePage.nextCursor),
   };
-}
-export function SyncSummary({
-  sync,
-}: {
-  sync: ReturnType<typeof useTransformMateSync>;
-}) {
-  const online = useReadOnline();
-  if (sync.configured === false)
-    return (
-      <Text size="sm" c="dimmed">
-        {m.notConfigured}
-      </Text>
-    );
-  return (
-    <Stack gap="xs">
-      {(sync.nativeRefresh.status === 'error' ||
-        sync.nativeRefresh.status === 'unavailable') && (
-        <Alert color="orange" role="alert">
-          {sync.nativeRefresh.errorCode === 'reauth_required'
-            ? m.nativeReconnect
-            : m.nativeError}
-        </Alert>
-      )}
-      <Group justify="space-between" gap="xs">
-        {sync.nativeRefresh.checkedAt && (
-          <Text size="sm" c="dimmed">
-            {m.checked}:{' '}
-            {new Date(sync.nativeRefresh.checkedAt).toLocaleString('ru-RU')}
-          </Text>
-        )}
-        <Button
-          variant="subtle"
-          size="compact-sm"
-          mih={44}
-          loading={sync.busy}
-          disabled={!online}
-          title={!online ? m.syncError : undefined}
-          onClick={() => void sync.refresh()}
-        >
-          {m.syncRefresh}
-        </Button>
-      </Group>
-      {sync.error && (
-        <Alert color="red" role="alert">
-          {m.syncError}
-        </Alert>
-      )}
-    </Stack>
-  );
 }
 export function WorkoutSync({
   item,

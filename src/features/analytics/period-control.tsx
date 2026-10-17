@@ -1,6 +1,7 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 import { dateInTimezone } from '@/contracts/nutrition-sync-dates';
-import { Skeleton, Stack, Text, Title } from '@mantine/core';
+import { Skeleton, Stack, Text } from '@mantine/core';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { analyticsMessages as m } from './messages';
@@ -31,7 +32,7 @@ export function AnalyticsTimezone({
   }, [router, from, to]);
   return (
     <Stack aria-label={m.loading}>
-      <Title order={1}>{m.title}</Title>
+      <PageHeader>{m.title}</PageHeader>
       <Text c="dimmed">{m.description}</Text>
       <Skeleton h={44} />
       <Skeleton h={150} />

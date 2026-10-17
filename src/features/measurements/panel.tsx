@@ -1,4 +1,5 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 import { offlineMessages } from '@/config/offline';
 import { writeMessages } from '@/config/offline-write-messages';
 import { readWorkspaceMessages } from '@/config/read-workspace';
@@ -284,7 +285,7 @@ export function MeasurementsPanel({
         });
   return (
     <Stack data-testid="measurements-panel">
-      <Title order={1}>{m.title}</Title>
+      <PageHeader>{m.title}</PageHeader>
       {conflict && (
         <Alert color="orange">{offlineMessages.draftConflict}</Alert>
       )}

@@ -9,15 +9,19 @@ import {
   Popover,
   Stack,
   Text,
-  NumberInput,
-  NativeSelect,
   VisuallyHidden,
 } from '@mantine/core';
 import {
   IconChevronLeft,
   IconChevronRight,
   IconChevronDown,
+  IconCalendar,
 } from '@tabler/icons-react';
+import { BottomSheet } from '@/components/shared/bottom-sheet';
+import { DatePicker } from '@mantine/dates';
+import { useMediaQuery } from '@mantine/hooks';
+import 'dayjs/locale/ru';
+import { dateNavigationMessages as calendarMessages } from '@/config/date-navigation';
 import { shiftDate } from '@/contracts/nutrition-sync-dates';
 import { browserToday, weekDates } from './date-navigation-dates';
 import classes from '@/components/shared/date-navigation.module.css';
@@ -31,79 +35,35 @@ function DateJump({
   onSelect: (date: string) => void;
   labels: DateNavigationLabels;
 }) {
-  const [year, setYear] = useState<string | number>(Number(date.slice(0, 4)));
-  const [month, setMonth] = useState(date.slice(5, 7));
-  const [day, setDay] = useState(date.slice(8, 10));
-  const validYear =
-    typeof year === 'number' &&
-    Number.isInteger(year) &&
-    year >= 1 &&
-    year <= 9999;
-  const lastDay = new Date(
-    `${String(validYear ? year : 2000).padStart(4, '0')}-${month}-01T12:00:00Z`,
-  );
-  lastDay.setUTCMonth(lastDay.getUTCMonth() + 1, 0);
-  const days = lastDay.getUTCDate();
-  const selectedDay = String(Math.min(Number(day), days)).padStart(2, '0');
   return (
-    <Box
-      component="form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (validYear)
-          onSelect(`${String(year).padStart(4, '0')}-${month}-${selectedDay}`);
-      }}
-    >
-      <Stack gap="sm">
-        <NumberInput
-          label={m.year}
-          value={year}
-          onChange={setYear}
-          min={1}
-          max={9999}
-          allowDecimal={false}
-          allowNegative={false}
-          required
-          size="md"
-          styles={{ input: { fontSize: 16 } }}
-        />
-        <Group grow wrap="nowrap">
-          <NativeSelect
-            label={m.month}
-            value={month}
-            onChange={(event) => setMonth(event.currentTarget.value)}
-            size="md"
-            styles={{ input: { fontSize: 16 } }}
-            data={Array.from({ length: 12 }, (_, index) => {
-              const value = String(index + 1).padStart(2, '0');
-              return {
-                value,
-                label: format(`2000-${value}-01`, { month: 'long' }),
-              };
-            })}
-          />
-          <NativeSelect
-            label={m.day}
-            value={selectedDay}
-            onChange={(event) => setDay(event.currentTarget.value)}
-            size="md"
-            styles={{ input: { fontSize: 16 } }}
-            data={Array.from({ length: days }, (_, index) => ({
-              value: String(index + 1).padStart(2, '0'),
-              label: String(index + 1),
-            }))}
-          />
-        </Group>
-        <Button
-          styles={{ root: { fontSize: 16 } }}
-          type="submit"
-          disabled={!validYear}
-          mih={44}
-        >
-          {m.open}
-        </Button>
-      </Stack>
-    </Box>
+    <Stack gap="sm" align="center">
+      <DatePicker
+        locale="ru"
+        firstDayOfWeek={1}
+        value={date}
+        defaultDate={date}
+        onChange={(value) => {
+          if (value) onSelect(value);
+        }}
+        size="md"
+        fullWidth
+        style={{ width: 'min(308px, calc(100vw - 64px))' }}
+        styles={{
+          day: { minHeight: 44, fontSize: 16 },
+          calendarHeaderControl: { minWidth: 44, minHeight: 44 },
+        }}
+        ariaLabels={calendarMessages.calendar}
+        getDayAriaLabel={(value) => format(value, { dateStyle: 'full' })}
+      />
+      <Button
+        variant="subtle"
+        mih={44}
+        fullWidth
+        onClick={() => onSelect(browserToday())}
+      >
+        {m.today}
+      </Button>
+    </Stack>
   );
 }
 
@@ -140,10 +100,6 @@ const format = (date: string, options: Intl.DateTimeFormatOptions) =>
   );
 
 export type DateNavigationLabels = {
-  year: string;
-  month: string;
-  day: string;
-  open: string;
   loadingDay: string;
   dayNavigation: string;
   jumpDate: string;
@@ -172,6 +128,18 @@ export function DateNavigation({
   disabled?: boolean;
 }) {
   const [anchor, setAnchor] = useState(date);
+  const mobile = useMediaQuery('(max-width: 47.99em)');
+  const [opened, setOpened] = useState(false);
+  const ios =
+    mobile &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+  const selectDate = (value: string) => {
+    if (disabled) return;
+    setAnchor(value);
+    setOpened(false);
+    onSelect(value);
+  };
   // Follow the URL date when Next restores a history entry.
   useEffect(() => {
     let active = true;
@@ -185,40 +153,151 @@ export function DateNavigation({
   const [touch, setTouch] = useState<{ x: number; y: number } | null>(null);
   const dates = weekDates(anchor);
   return (
-    <Stack gap="xs" component="nav" aria-label={m.dayNavigation}>
-      <Group justify="space-between" wrap="nowrap">
-        <Popover position="bottom-start" withArrow>
-          <Popover.Target>
-            <Button
-              styles={{ root: { fontSize: 16 } }}
-              disabled={disabled}
-              variant="subtle"
-              rightSection={<IconChevronDown size={16} />}
-              mih={44}
-              aria-label={m.jumpDate}
-            >
-              {format(anchor, { month: 'long', year: 'numeric' })}
-            </Button>
-          </Popover.Target>
-          <Popover.Dropdown w={280} maw="calc(100vw - 32px)">
-            <DateJump key={date} date={date} labels={m} onSelect={onSelect} />
-          </Popover.Dropdown>
-        </Popover>
-        <Button
-          styles={{ root: { fontSize: 16 } }}
-          onClick={() => {
-            const today = browserToday();
-            setAnchor(today);
-            onSelect(today);
-          }}
-          disabled={disabled}
-          variant="light"
-          mih={44}
-        >
-          {m.today}
-        </Button>
-      </Group>
-      <Group justify="space-between" wrap="nowrap">
+    <Stack
+      gap="xs"
+      component="nav"
+      aria-label={m.dayNavigation}
+      onKeyDown={(event) => {
+        if (
+          !disabled &&
+          event.target instanceof Element &&
+          event.target.closest(`.${classes.days}`) &&
+          (event.key === 'PageUp' || event.key === 'PageDown')
+        ) {
+          event.preventDefault();
+          setAnchor(shiftDate(anchor, event.key === 'PageUp' ? -7 : 7));
+        }
+      }}
+    >
+      {mobile ? (
+        <Group justify="space-between" wrap="nowrap" gap="xs">
+          <Text fw={650} className={classes.selectedDate}>
+            {dates.includes(date) ? (
+              <>
+                {format(date, { day: 'numeric', month: 'long' })},{' '}
+                {format(date, { weekday: 'long' })}
+              </>
+            ) : (
+              <>
+                {format(dates[0]!, { day: 'numeric', month: 'short' })} —{' '}
+                {format(dates[6]!, {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              </>
+            )}
+          </Text>
+          <Group gap="xs" wrap="nowrap" className={classes.dateActions}>
+            {date !== browserToday() && (
+              <Button
+                variant="default"
+                mih={44}
+                px="sm"
+                onClick={() => selectDate(browserToday())}
+                disabled={disabled}
+              >
+                {m.today}
+              </Button>
+            )}
+            {ios ? (
+              <Box className={classes.nativeTrigger}>
+                <ActionIcon
+                  component="span"
+                  variant="default"
+                  size={44}
+                  aria-hidden
+                >
+                  <IconCalendar size={20} />
+                </ActionIcon>
+                <input
+                  type="date"
+                  min="0001-01-01"
+                  max="9999-12-31"
+                  value={date}
+                  disabled={disabled}
+                  aria-label={m.jumpDate}
+                  className={classes.nativeDate}
+                  onChange={(event) => {
+                    if (
+                      event.currentTarget.validity.valid &&
+                      event.currentTarget.value
+                    )
+                      selectDate(event.currentTarget.value);
+                  }}
+                />
+              </Box>
+            ) : (
+              <ActionIcon
+                variant="default"
+                size={44}
+                aria-label={m.jumpDate}
+                onClick={() => setOpened(true)}
+                disabled={disabled}
+              >
+                <IconCalendar size={20} />
+              </ActionIcon>
+            )}
+          </Group>
+          <BottomSheet
+            opened={opened}
+            onClose={() => setOpened(false)}
+            title={m.jumpDate}
+            closeLabel={calendarMessages.close}
+          >
+            <DateJump key={date} date={date} labels={m} onSelect={selectDate} />
+          </BottomSheet>
+        </Group>
+      ) : (
+        <Group justify="space-between" wrap="nowrap">
+          <Popover
+            position="bottom-start"
+            withArrow
+            opened={opened}
+            onChange={setOpened}
+          >
+            <Popover.Target>
+              <Button
+                styles={{ root: { fontSize: 16 } }}
+                disabled={disabled}
+                variant="subtle"
+                rightSection={<IconChevronDown size={16} />}
+                mih={44}
+                aria-label={m.jumpDate}
+                onClick={() => setOpened((value) => !value)}
+              >
+                {format(anchor, { month: 'long', year: 'numeric' })}
+              </Button>
+            </Popover.Target>
+            <Popover.Dropdown w="auto" maw="calc(100vw - 32px)">
+              <DateJump
+                key={date}
+                date={date}
+                labels={m}
+                onSelect={selectDate}
+              />
+            </Popover.Dropdown>
+          </Popover>
+          <Button
+            styles={{ root: { fontSize: 16 } }}
+            onClick={() => {
+              const today = browserToday();
+              setAnchor(today);
+              onSelect(today);
+            }}
+            disabled={disabled}
+            variant="light"
+            mih={44}
+          >
+            {m.today}
+          </Button>
+        </Group>
+      )}
+      <Group
+        justify="space-between"
+        wrap="nowrap"
+        className={classes.weekControls}
+      >
         <ActionIcon
           disabled={disabled}
           variant="subtle"
@@ -242,7 +321,13 @@ export function DateNavigation({
           <IconChevronRight size={20} />
         </ActionIcon>
       </Group>
-      <Group wrap="nowrap" gap={4}>
+      {mobile && (
+        <VisuallyHidden aria-live="polite">
+          {format(dates[0]!, { day: 'numeric', month: 'long' })} —{' '}
+          {format(dates[6]!, { day: 'numeric', month: 'long' })}
+        </VisuallyHidden>
+      )}
+      <Group wrap="nowrap" gap={0}>
         <Box
           className={classes.days}
           style={{
@@ -253,14 +338,19 @@ export function DateNavigation({
             minWidth: 0,
             touchAction: 'pan-y',
           }}
+          onTouchCancel={() => setTouch(null)}
           onTouchStart={(event) =>
-            setTouch({
-              x: event.touches[0]!.clientX,
-              y: event.touches[0]!.clientY,
-            })
+            setTouch(
+              !disabled && event.touches.length === 1
+                ? {
+                    x: event.touches[0]!.clientX,
+                    y: event.touches[0]!.clientY,
+                  }
+                : null,
+            )
           }
           onTouchEnd={(event) => {
-            if (!touch) return;
+            if (!touch || disabled) return;
             const dx = event.changedTouches[0]!.clientX - touch.x;
             const dy = event.changedTouches[0]!.clientY - touch.y;
             if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5)
@@ -299,7 +389,7 @@ export function DateNavigation({
           })}
         </Box>
       </Group>
-      {!dates.includes(date) && (
+      {!mobile && !dates.includes(date) && (
         <Text size="md" c="dimmed">
           {m.openedDay}:{' '}
           {format(date, { day: 'numeric', month: 'long', year: 'numeric' })}

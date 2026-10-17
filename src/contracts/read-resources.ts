@@ -23,6 +23,8 @@ import { workoutDetailSchema } from './read-workout';
 import { stepsGoalSchema } from './steps-goal';
 import {
   transformMateCatalogResultSchema,
+  transformMateExerciseInfoSchema,
+  transformMateMuscleDictionarySchema,
   transformMateSyncItemSchema,
 } from './transformmate';
 import {
@@ -90,12 +92,22 @@ export const commentsReadSchema = z.array(
     canEdit: z.boolean(),
   }),
 );
+export const exerciseReadSchema = z.object({
+  data: transformMateExerciseInfoSchema,
+});
+export const muscleDictionaryReadSchema = z.object({
+  data: transformMateMuscleDictionarySchema,
+});
 /** Only these explicit view contracts may reach disk. Never settings credentials, jobs or upstream payloads. */
 export function readResponseSchema(path: string): z.ZodType | undefined {
   if (path === '/api/read/settings') return readSettingsSchema;
   if (path === '/api/read/analytics') return analyticsDataSchema;
   if (path === '/api/workouts/transformmate/exercises')
     return transformMateCatalogResultSchema;
+  if (/^\/api\/workouts\/transformmate\/exercises\/[1-9][0-9]*$/.test(path))
+    return exerciseReadSchema;
+  if (path === '/api/workouts/transformmate/muscle-groups')
+    return muscleDictionaryReadSchema;
   if (path === '/api/workouts/transformmate') return transformMateReadSchema;
   if (path === '/api/read/context') return readContextSchema;
   if (path === '/api/read/workout') return workoutDetailSchema;
