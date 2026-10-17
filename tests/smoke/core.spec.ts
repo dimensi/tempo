@@ -225,7 +225,10 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await page
     .getByLabel('Smoke squat, Подход 2, Вес, кг', { exact: true })
     .fill('25');
-  await page.getByText('План', { exact: true }).click();
+  await page
+    .getByRole('radiogroup', { name: 'Тренировка дня' })
+    .getByText('План', { exact: true })
+    .click();
   await page
     .getByRole('button', { name: 'Сохранить план', exact: true })
     .click();
