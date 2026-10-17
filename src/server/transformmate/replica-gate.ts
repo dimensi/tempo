@@ -1,6 +1,6 @@
 import 'server-only';
 import type { CatalogIdentity } from './catalog-store';
-import { replicaStore } from './replica-store';
+import { replicaStore, type ReplicaState } from './replica-store';
 import { FirebaseRefreshError, TransformMateApiError } from './errors';
 export class ReplicaUnavailable extends Error {
   constructor() {
@@ -78,6 +78,16 @@ export function recordReplicaFailure(
     blocked_until: now + Math.max(delay, retry),
   });
 }
+export function unchangedReplicaFailure(
+  current: ReplicaState,
+  observed: ReplicaState,
+) {
+  return (
+    current.reason === observed.reason &&
+    current.failures === observed.failures &&
+    current.blocked_until === observed.blocked_until
+  );
+}
 export async function replicaRequest<T>(
   scope: CatalogIdentity,
   work: () => Promise<T>,
@@ -131,9 +141,7 @@ export async function replicaMediaRequest(
     if (
       response.ok &&
       current.reason === 'upstream' &&
-      current.reason === state.reason &&
-      current.failures === state.failures &&
-      current.blocked_until === state.blocked_until
+      unchangedReplicaFailure(current, state)
     ) {
       replicaStore().patch(scope, {
         failures: 0,

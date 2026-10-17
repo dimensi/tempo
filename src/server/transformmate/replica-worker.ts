@@ -21,6 +21,7 @@ import {
 import { processReplicaMedia, replicaTemporaryRoot } from './replica-media';
 import {
   recordReplicaFailure,
+  unchangedReplicaFailure,
   ReplicaStorageError,
   ReplicaMediaError,
   ReplicaUnavailable,
@@ -81,9 +82,9 @@ export function createReplicaWorker(deps: {
             : monthFrom(now(), random);
           await save();
           deps.store.patch(scope, {
-            failures: 0,
-            reason: null,
-            blocked_until: 0,
+            ...(unchangedReplicaFailure(deps.store.state(scope), state)
+              ? { failures: 0, reason: null, blocked_until: 0 }
+              : {}),
             last_success_at: now(),
           });
         } catch (error) {

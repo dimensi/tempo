@@ -410,6 +410,30 @@ async function assertReplicaRecovery(
       ),
     ).rejects.toBeDefined();
     expect(store().state(scope).reason).toBeNull();
+    const concurrentJob = store().job(scope, ready.key)!;
+    concurrentJob.next_at = Date.now();
+    store().save(scope, concurrentJob);
+    await createReplicaWorker({
+      store: store(),
+      refresh: async () => {
+        await expect(
+          replicaMediaRequest(
+            scope,
+            async () =>
+              new Response(null, {
+                status: 429,
+                headers: { 'Retry-After': '240' },
+              }),
+          ),
+        ).rejects.toMatchObject({ status: 429 });
+      },
+      assertOwner: () => {},
+    }).tick(connected);
+    expect(store().state(scope).reason).toBe('upstream');
+    expect(store().state(scope).blocked_until).toBeGreaterThanOrEqual(
+      Date.now() + 240000,
+    );
+    vi.setSystemTime(store().state(scope).blocked_until + 10000);
     const missingPoster = store().job(scope, ready.key)!;
     missingPoster.data.detailAt = 0;
     missingPoster.data.poster = null;
