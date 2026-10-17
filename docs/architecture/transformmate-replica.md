@@ -60,3 +60,14 @@ videos, previews, bytes, pending, errors, failedExercises, lastSuccessAt, nextAt
 
 Проверки используют синтетические файлы и БД. Реальное копирование всего каталога
 и оценка production-объёма выполняются только после отдельно разрешённого deploy.
+
+## Failure reporting
+
+Queue data persists independent metadata/image/video/poster failures, each with a
+reason and an observed HTTP status (nullable when unknown). Successful completion
+clears only that stage. The status endpoint returns per-stage counts and up to five
+exercise examples per stage; missing original images are separate from video and
+poster errors. Media publication updates the last-success timestamp immediately,
+including when another stage failed. Migration 0018 preserves object references,
+retry dates and old reasons; only an unambiguous unfinished media stage is inferred.
+Other pre-existing errors remain job-level until retried.

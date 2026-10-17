@@ -23,8 +23,8 @@ import {
   recordReplicaFailure,
   unchangedReplicaFailure,
   ReplicaStorageError,
-  ReplicaMediaError,
-  ReplicaUnavailable,
+  ReplicaStageError,
+  replicaFailureInfo,
 } from './replica-gate';
 import { TransformMateStaleConnectionError } from './token-store';
 
@@ -70,7 +70,7 @@ export function createReplicaWorker(deps: {
           await scope.assertUpstreamCurrent();
           deps.assertOwner(scope);
           job.attempts = 0;
-          job.error = null;
+          delete job.data.failures.job;
           job.priority = 0;
           job.next_at = job.key.startsWith('exercise:')
             ? Math.min(
@@ -93,14 +93,10 @@ export function createReplicaWorker(deps: {
             await scope.assertUpstreamCurrent();
             deps.assertOwner(scope);
             job.attempts = Math.min(job.attempts + 1, 20);
-            job.error =
-              error instanceof ReplicaStorageError
-                ? 'storage'
-                : error instanceof ReplicaUnavailable
-                  ? 'waiting'
-                  : error instanceof ReplicaMediaError
-                    ? error.code
-                    : 'media_or_upstream';
+            if (error instanceof ReplicaStageError) {
+              delete job.data.failures.job;
+              job.data.failures[error.stage] = replicaFailureInfo(error);
+            } else job.data.failures.job = replicaFailureInfo(error);
             job.next_at =
               now() +
               Math.min(
@@ -170,15 +166,16 @@ export async function refreshReplicaJob(
     try {
       await cachedDetail(scope, id, true);
       job.data.detailAt = monthFrom(now);
+      delete job.data.failures.metadata;
       await save();
     } catch (error) {
-      if (
-        error instanceof TransformMateStaleConnectionError ||
-        !catalogStore().record(scope, id)?.detail
-      )
-        throw error;
+      if (error instanceof TransformMateStaleConnectionError) throw error;
+      job.data.failures.metadata = replicaFailureInfo(error);
+      await save();
+      const stageError = new ReplicaStageError('metadata', error);
+      if (!catalogStore().record(scope, id)?.detail) throw stageError;
       // Existing media can still make progress when upstream metadata is gone.
-      metadataFailure = error;
+      metadataFailure = stageError;
     }
   }
   const record = catalogStore().record(scope, id);

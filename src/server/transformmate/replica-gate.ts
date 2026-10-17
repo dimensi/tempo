@@ -1,4 +1,8 @@
 import 'server-only';
+import type {
+  ReplicaFailure,
+  ReplicaFailureStage,
+} from '@/contracts/transformmate-replica';
 import type { CatalogIdentity } from './catalog-store';
 import { replicaStore, type ReplicaState } from './replica-store';
 import {
@@ -19,10 +23,46 @@ export class ReplicaStorageError extends Error {
 }
 export class ReplicaMediaError extends Error {
   constructor(
-    public readonly code: 'invalid_media' | 'limit' = 'invalid_media',
+    public readonly code:
+      'invalid_media' | 'limit' | 'not_found' | 'forbidden' = 'invalid_media',
+    public readonly httpStatus: number | null = null,
   ) {
     super('Invalid replica media');
   }
+}
+export class ReplicaStageError extends Error {
+  constructor(
+    public readonly stage: ReplicaFailureStage,
+    public readonly cause: unknown,
+  ) {
+    super('Replica stage failed');
+  }
+}
+export function replicaFailureInfo(error: unknown): ReplicaFailure {
+  if (error instanceof ReplicaStageError)
+    return replicaFailureInfo(error.cause);
+  const status =
+    error instanceof TransformMateApiError ||
+    error instanceof FirebaseRefreshError
+      ? (error.status ?? null)
+      : error instanceof ReplicaMediaError
+        ? error.httpStatus
+        : null;
+  return {
+    httpStatus: status,
+    reason:
+      error instanceof ReplicaStorageError
+        ? 'storage'
+        : error instanceof ReplicaUnavailable
+          ? 'waiting'
+          : status === 404 || status === 410
+            ? 'not_found'
+            : status === 401 || status === 403
+              ? 'forbidden'
+              : error instanceof ReplicaMediaError
+                ? error.code
+                : 'media_or_upstream',
+  };
 }
 export function allowReplicaUpstream(scope: CatalogIdentity, now = Date.now()) {
   const state = replicaStore().state(scope);
@@ -38,6 +78,7 @@ export function recordReplicaFailure(
   error: unknown,
   now = Date.now(),
 ) {
+  if (error instanceof ReplicaStageError) error = error.cause;
   if (
     error instanceof ReplicaUnavailable ||
     error instanceof TransformMateStaleConnectionError ||

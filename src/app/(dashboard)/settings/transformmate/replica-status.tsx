@@ -162,7 +162,6 @@ export function ReplicaStatus({ configured }: { configured: boolean }) {
             {[
               [m.storageSize, fileSize(status.bytes)],
               [m.queue, number(status.pending)],
-              [m.errors, number(status.errors)],
             ].map(([label, value]) => (
               <div key={label}>
                 <Text component="dt" size="sm" c="dimmed">
@@ -199,37 +198,50 @@ export function ReplicaStatus({ configured }: { configured: boolean }) {
             mt="md"
             classNames={{ control: classes.disclosure }}
           >
-            {status.errors > 0 && (
-              <Accordion.Item value="failures">
+            {status.failureGroups.map((group) => (
+              <Accordion.Item key={group.stage} value={group.stage}>
                 <Accordion.Control>
-                  <Group gap="xs">
-                    <Text size="sm">{m.failures}</Text>
-                    <Badge size="sm" color="yellow" variant="light">
-                      {number(status.errors)}
+                  <Group gap="xs" wrap="nowrap">
+                    <Text size="sm">{m.failureStages[group.stage]}</Text>
+                    <Badge
+                      size="sm"
+                      color={group.stage === 'image' ? 'yellow' : 'red'}
+                      variant="light"
+                    >
+                      {number(group.count)}
                     </Badge>
                   </Group>
                 </Accordion.Control>
                 <Accordion.Panel>
                   <Stack gap="md">
-                    {status.failedExercises.map((failure) => (
+                    {group.stage === 'image' && (
+                      <Text size="sm" c="dimmed">
+                        {m.imageFailureHint}
+                      </Text>
+                    )}
+                    {group.examples.map((failure) => (
                       <div key={failure.id}>
-                        <Group justify="space-between" gap="xs">
-                          <Text size="sm" fw={600}>
-                            {m.failedExercise} #{failure.id}
-                          </Text>
-                          <Text size="sm" c="dimmed">
-                            {date(failure.nextAttemptAt)}
-                          </Text>
-                        </Group>
+                        <Text size="sm" fw={600}>
+                          {m.failedExercise} #{failure.id}
+                        </Text>
                         <Text size="sm">
-                          {m.failureReasons[failure.reason]}
+                          {group.stage === 'metadata' &&
+                          failure.reason === 'not_found'
+                            ? m.missingExercise
+                            : m.failureReasons[failure.reason]}
+                          {failure.httpStatus !== null
+                            ? ` (${m.httpStatus} ${failure.httpStatus})`
+                            : ''}
+                        </Text>
+                        <Text size="sm" c="dimmed">
+                          {m.retryLabel}: {date(failure.nextAttemptAt)}
                         </Text>
                       </div>
                     ))}
                   </Stack>
                 </Accordion.Panel>
               </Accordion.Item>
-            )}
+            ))}
             <Accordion.Item value="storage">
               <Accordion.Control>
                 <Text size="sm">{m.details}</Text>

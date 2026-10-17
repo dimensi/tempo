@@ -1,4 +1,32 @@
 import { z } from 'zod';
+export const replicaFailureStages = [
+  'metadata',
+  'image',
+  'video',
+  'poster',
+  'job',
+] as const;
+export const replicaFailureSchema = z.object({
+  reason: z.enum([
+    'storage',
+    'waiting',
+    'media_or_upstream',
+    'invalid_media',
+    'limit',
+    'not_found',
+    'forbidden',
+  ]),
+  httpStatus: z.number().int().min(100).max(599).nullable(),
+});
+export type ReplicaFailureStage = (typeof replicaFailureStages)[number];
+export type ReplicaFailure = z.infer<typeof replicaFailureSchema>;
+export const replicaFailuresSchema = z.object({
+  metadata: replicaFailureSchema.optional(),
+  image: replicaFailureSchema.optional(),
+  video: replicaFailureSchema.optional(),
+  poster: replicaFailureSchema.optional(),
+  job: replicaFailureSchema.optional(),
+});
 export const transformMateReplicaStatusSchema = z.object({
   total: z.number().int().nonnegative(),
   descriptions: z.number().int().nonnegative(),
@@ -6,21 +34,21 @@ export const transformMateReplicaStatusSchema = z.object({
   previews: z.number().int().nonnegative(),
   bytes: z.number().int().nonnegative(),
   pending: z.number().int().nonnegative(),
-  errors: z.number().int().nonnegative(),
   lastSuccessAt: z.iso.datetime().nullable(),
   nextAttemptAt: z.iso.datetime().nullable(),
-  failedExercises: z
+  failureGroups: z
     .array(
       z.object({
-        id: z.number().int().positive(),
-        reason: z.enum([
-          'storage',
-          'waiting',
-          'media_or_upstream',
-          'invalid_media',
-          'limit',
-        ]),
-        nextAttemptAt: z.iso.datetime(),
+        stage: z.enum(replicaFailureStages),
+        count: z.number().int().positive(),
+        examples: z
+          .array(
+            replicaFailureSchema.extend({
+              id: z.number().int().positive(),
+              nextAttemptAt: z.iso.datetime(),
+            }),
+          )
+          .max(5),
       }),
     )
     .max(5),
@@ -41,7 +69,18 @@ export const replicaMessages = {
   catalog: 'в каталоге',
   catalogShare: 'каталога',
   details: 'Как хранится база',
-  failures: 'Ошибки обработки',
+  failureStages: {
+    metadata: 'Ошибки описаний',
+    image: 'Ошибки исходных картинок',
+    video: 'Ошибки загрузки видео',
+    poster: 'Ошибки создания превью',
+    job: 'Другие ошибки очереди',
+  },
+  imageFailureHint:
+    'Проблемы исходных картинок учитываются отдельно от видео и собственных превью.',
+  missingExercise: 'Упражнение не найдено у TransformMate',
+  retryLabel: 'Повтор',
+  httpStatus: 'HTTP',
   queue: 'В очереди',
   storageSize: 'Занято файлами',
   updated: 'Последнее сохранение',
@@ -61,13 +100,14 @@ export const replicaMessages = {
   previews: 'Превью',
   bytes: 'Занято',
   pending: 'Ожидают обработки',
-  errors: 'Ошибки обработки',
   failedExercise: 'Упражнение',
   failureReasons: {
     storage: 'Хранилище недоступно',
     waiting: 'Ожидает восстановления TransformMate',
-    media_or_upstream: 'Не удалось обновить данные',
-    invalid_media: 'Не удалось обработать медиа',
+    media_or_upstream: 'Не удалось выполнить запрос или обработку',
+    invalid_media: 'Не удалось обработать файл',
+    not_found: 'Файл не найден у TransformMate',
+    forbidden: 'TransformMate не разрешил доступ',
     limit: 'Превышен лимит размера файла',
   },
   lastSuccess: 'Последняя успешная обработка',

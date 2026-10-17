@@ -33,8 +33,7 @@ export async function getReplicaStatus(headers: Headers) {
     previews: result?.previews ?? 0,
     bytes: result?.bytes ?? 0,
     pending: result?.pending ?? 0,
-    errors: result?.errors ?? 0,
-    failedExercises: result?.failedExercises ?? [],
+    failureGroups: result?.failureGroups ?? [],
     lastSuccessAt: state?.last_success_at
       ? new Date(state.last_success_at).toISOString()
       : null,

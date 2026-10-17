@@ -206,6 +206,7 @@ async function assertReplicaRecovery(
     detailRequests = 0,
     revoked = false,
     metadataGone = false;
+  let metadataImage: string | null = null;
   const synthetic = join(directory, 'synthetic.mp4');
   await promisify(execFile)(
     'ffmpeg',
@@ -246,7 +247,7 @@ async function assertReplicaRecovery(
       detailRequests++;
       return metadataGone
         ? Response.json({ detail: 'gone' }, { status: 404 })
-        : Response.json(fixture);
+        : Response.json({ ...fixture, image: metadataImage });
     },
   });
   const access = async () => {
@@ -335,8 +336,12 @@ async function assertReplicaRecovery(
       ready.data.video!.key,
     );
     expect(store().state(scope).reason).toBe('storage');
-    expect(store().status(scope, Date.now()).failedExercises).toMatchObject([
-      { id: 501, reason: 'storage' },
+    expect(store().status(scope, Date.now()).failureGroups).toMatchObject([
+      {
+        stage: 'video',
+        count: 1,
+        examples: [{ id: 501, reason: 'storage', httpStatus: null }],
+      },
     ]);
     // Storage backoff pauses replication, while upstream playback stays available.
     const reserve = await replicaMediaRequest(
@@ -444,7 +449,9 @@ async function assertReplicaRecovery(
     await worker().tick(connected);
     expect(store().job(scope, ready.key)!.data.poster).not.toBeNull();
     expect(store().job(scope, ready.key)!.data.detailAt).toBe(0);
-    expect(store().job(scope, ready.key)!.error).not.toBeNull();
+    expect(store().job(scope, ready.key)!.data.failures.metadata).toMatchObject(
+      { reason: 'not_found', httpStatus: 404 },
+    );
     expect(videoRequests).toBe(failedCalls);
     store().patch(scope, {
       reason: null,
@@ -466,6 +473,67 @@ async function assertReplicaRecovery(
       }),
     ).rejects.toBeInstanceOf(CatalogError);
     expect(store().state(scope).reason).toBeNull();
+    const blockedImage = store().job(scope, ready.key)!;
+    const imageUrl =
+      'https://transformmate.pht.space/ipt/media/synthetic-missing.jpg';
+    metadataGone = false;
+    metadataImage = imageUrl;
+    fixture.kinescope_data[0]!.id = 'stage-split-version';
+    catalog().detail(
+      scope,
+      { ...detail, image: imageUrl },
+      new Date().toISOString(),
+    );
+    blockedImage.data.detailAt = 0;
+    blockedImage.data.imageAt = 0;
+    blockedImage.data.videoAt = 0;
+    blockedImage.next_at = Date.now();
+    store().save(scope, blockedImage);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: URL | string) =>
+        new URL(input).hostname === 'transformmate.pht.space'
+          ? new Response(null, { status: 404 })
+          : new Response(null, { status: 403 }),
+      ),
+    );
+    vi.setSystemTime(Date.now() + 10000);
+    await worker().tick(connected);
+    expect(store().job(scope, ready.key)!.data.failures).toMatchObject({
+      image: { reason: 'not_found', httpStatus: 404 },
+      video: { reason: 'forbidden', httpStatus: 403 },
+    });
+    expect(store().job(scope, ready.key)!.data.video?.key).toBe(
+      ready.data.video!.key,
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: URL | string) =>
+        new URL(input).hostname === 'transformmate.pht.space'
+          ? new Response(null, { status: 404 })
+          : new Response(bytes, {
+              headers: {
+                'Content-Type': 'video/mp4',
+                'Content-Length': String(bytes.length),
+              },
+            }),
+      ),
+    );
+    const retryImage = store().job(scope, ready.key)!;
+    retryImage.next_at = Date.now();
+    retryImage.data.detailAt = Date.now() + 86400000;
+    store().save(scope, retryImage);
+    vi.setSystemTime(Date.now() + 10000);
+    await worker().tick(connected);
+    const separated = store().status(scope, Date.now()).failureGroups;
+    expect(separated).toMatchObject([
+      {
+        stage: 'image',
+        count: 1,
+        examples: [{ id: 501, reason: 'not_found', httpStatus: 404 }],
+      },
+    ]);
+    expect(store().job(scope, ready.key)!.data.failures.video).toBeUndefined();
     revoked = true;
     await expect(
       serveReplicaMedia(
