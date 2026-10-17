@@ -42,6 +42,9 @@ vi.mock('@/server/anamnesis/worker', () => ({
 }));
 
 const { authorize } = await import('@/server/auth/guards');
+const { requireCatalogAccess } = await import('@/server/transformmate/catalog');
+const { getReplicaStatus } =
+  await import('@/server/transformmate/replica-status');
 const { ensureAnamnesisCatalog } = await import('@/server/anamnesis/catalog');
 const { anamnesisRepository } = await import('@/server/anamnesis/repository');
 const anamnesis = await import('@/server/anamnesis');
@@ -107,12 +110,21 @@ it('fails closed for generic and selective medical-PDF trainer access, including
     ok: false,
     status: 403,
   });
+  await expect(
+    requireCatalogAccess(headers(), ownerId),
+  ).resolves.toBeUndefined();
+  await expect(getReplicaStatus(headers())).rejects.toMatchObject({
+    status: 403,
+  });
   connection.db.delete(trainerAccess).run();
   expect(await authorize(new Headers(), 'nutrition:read', ownerId)).toEqual({
     ok: false,
     status: 403,
   });
 
+  await expect(requireCatalogAccess(headers(), ownerId)).rejects.toMatchObject({
+    status: 403,
+  });
   connection.db
     .insert(trainerAccess)
     .values({ trainerId, ownerId, createdAt: new Date() })

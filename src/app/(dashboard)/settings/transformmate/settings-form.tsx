@@ -1,4 +1,5 @@
 'use client';
+import { ReplicaStatus } from './replica-status';
 import {
   transformMateConnectionMessages as m,
   transformMateCredentialsSchema,
@@ -284,6 +285,7 @@ export function TransformMateSettingsForm({
             </Stack>
           </form>
         )}
+      {!denied && <ReplicaStatus configured={status.configured} />}
       <Modal
         opened={disconnectOpen}
         onClose={() => {

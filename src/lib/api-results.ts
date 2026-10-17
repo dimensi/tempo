@@ -1,3 +1,4 @@
+import { transformMateReplicaStatusSchema } from '@/contracts/transformmate-replica';
 import { syncStatusSchema } from '@/contracts/nutrition-sync';
 import { transformMateReadSchema } from '@/contracts/read-resources';
 import { stepsGoalSchema } from '@/contracts/steps-goal';
@@ -16,6 +17,8 @@ import { measurementPrecisionIssueSchema } from '@/contracts/yazio-body';
 import { z } from 'zod';
 /** Response decoders belong to the transport layer; input validation stays with forms. */
 export const apiResults = {
+  replica: (value: unknown) =>
+    z.object({ data: transformMateReplicaStatusSchema }).parse(value).data,
   stepsGoal: (value: unknown) => stepsGoalSchema.parse(value),
   dayRefresh: (value: unknown) => syncStatusSchema.parse(value),
   measurementIssues: (value: unknown) =>

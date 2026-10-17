@@ -1,12 +1,15 @@
 import 'server-only';
 import {
   getExercise,
+  catalogScope,
   requireCatalogAccess,
   CatalogError,
   exerciseId,
 } from '@/server/transformmate/catalog';
 
-import { selectMediaUrl } from '@/server/transformmate/catalog-schema';
+import { serveReplicaMedia } from './replica-playback';
+import { replicaMediaRequest } from './replica-gate';
+import { selectedVideo } from './replica-media';
 import { getTransformMateConnectionFence } from '@/server/transformmate/runtime';
 export { selectMediaUrl } from '@/server/transformmate/catalog-schema';
 export async function streamExerciseVideo(
@@ -20,7 +23,14 @@ export async function streamExerciseVideo(
     'X-Content-Type-Options': 'nosniff',
   };
   try {
-    await requireCatalogAccess(request.headers, ownerId);
+    const scope = await catalogScope(request.headers, ownerId);
+    const local = await serveReplicaMedia(
+      request,
+      scope,
+      exerciseId(id),
+      'video',
+    );
+    if (local) return local;
     const range = request.headers.get('range');
     if (
       range &&
@@ -30,7 +40,7 @@ export async function streamExerciseVideo(
     const connection = await getTransformMateConnectionFence(ownerId);
     if (!connection) throw new CatalogError(503);
     let detail = await getExercise(request.headers, ownerId, exerciseId(id));
-    let url = selectMediaUrl(detail);
+    let url = selectedVideo(detail)?.url ?? null;
     let refreshedMetadata = false;
     if (!url) {
       refreshedMetadata = true;
@@ -40,19 +50,21 @@ export async function streamExerciseVideo(
         exerciseId(id),
         true,
       );
-      url = selectMediaUrl(detail);
+      url = selectedVideo(detail)?.url ?? null;
     }
     if (!url) throw new CatalogError(404);
     let upstream: Response;
     await connection.assertCurrent();
     const fetchMedia = (target: URL) =>
-      requestFetch(target, {
-        method: request.method === 'HEAD' ? 'HEAD' : 'GET',
-        headers: range ? { Range: range } : {},
-        redirect: 'error',
-        cache: 'no-store',
-        signal: AbortSignal.any([request.signal, AbortSignal.timeout(30000)]),
-      });
+      replicaMediaRequest(scope, () =>
+        requestFetch(target, {
+          method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+          headers: range ? { Range: range } : {},
+          redirect: 'error',
+          cache: 'no-store',
+          signal: AbortSignal.any([request.signal, AbortSignal.timeout(30000)]),
+        }),
+      );
     try {
       upstream = await fetchMedia(url);
       if (
@@ -68,7 +80,7 @@ export async function streamExerciseVideo(
           exerciseId(id),
           true,
         );
-        const refreshed = selectMediaUrl(detail);
+        const refreshed = selectedVideo(detail)?.url ?? null;
         if (!refreshed) throw new CatalogError(404);
         upstream = await fetchMedia(refreshed);
       }

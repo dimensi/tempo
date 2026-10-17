@@ -1,47 +1,27 @@
 # Persistent private TransformMate catalog
 
 The home-server SQLite database stores catalog summaries, a real muscle dictionary,
-opened/visible exercise details and canonical query pages. Devices and application
-restarts share this backend cache. It does not store videos or create offline media.
+exercise details. Devices and application restarts share this backend copy.
+[Persistent replica](transformmate-replica.md) describes the durable queue, S3 media,
+generated posters, monthly jitter and disconnected access.
 
-All rows are scoped by owner, accountScope, persisted connectionId generation and
+All rows are scoped by owner, accountScope, stable account identity and
 locale (`ru`). Every request checks `workouts:read` for its owner and the active
 connection before reading, before committing upstream results and before responding.
-Disconnected/replaced generations remain inaccessible. Token refresh retains the
-same connection identity. SQLite writes are short transactions; HTTP never runs
-inside them. The new migration adds only three cache tables and scoped indexes.
+Disconnect stops updates while preserving local reads. A different account remains
+isolated. Token refresh does not invalidate catalog reads. SQLite writes are short
+transactions; HTTP never runs inside them.
 
 The catalog response has one v1 format:
 `{ contractVersion: 1, source: 'user', data: CatalogItem[], catalog: Metadata }`.
 Dictionary and detail responses retain typed objects in `data`. Producers always
 include rich fields and metadata; no legacy format or fallback exists.
 
-Catalog metadata `complete` means a successful full-list snapshot for an unfiltered
-request, or a verified canonical SDK query page for a filtered request. It does not
-mean every description, preview or membership is enriched. `partial` denotes local
-matches without an authoritative query snapshot. `unknown` denotes cold/failed
-coverage, including an empty result that cannot prove there are no matching exercises.
-`total` is null when not established. `unknownMembershipCount` counts returned
-page rows without detail for verified snapshots, or unknown cached candidates
-before filtering for a local fallback; it does not assert unknown rows fail filters. `refreshState` distinguishes idle, updating
-and unavailable. Fetched timestamps and `stale` remain visible during outages.
-
-Subgroup selections use exact localized dictionary names and form a union. One
-common group intersects those subgroups. IDs are never guessed into filter names.
-Search text is trimmed/lowercased; subgroup names are deduplicated and sorted for
-canonical page keys. Cached aliases come only from fetched details. Unknown membership
-is never treated as confirmed absence. Filtered pages cannot complete or replace
-the unfiltered catalog; successful full refresh replaces only that membership set.
-
-Freshness is five minutes. Known stale records return while a coalesced refresh runs;
-cold requests wait for their bounded SDK request and report unknown/unavailable on
-failure. At most 64 query snapshots persist per scope. Failed-operation bookkeeping
-is bounded to 256 entries and 429 cooldowns to 32 scopes. Detail enrichment accepts
-at most six explicitly visible IDs already on the returned page (`visible` repeated
-query parameters), with two upstream detail requests globally and a queue bound of 64. Opened details have priority over queued visible items. UI should request visible
-enrichment once after rendering a page, not for each typed character. Repeated/opened
-IDs coalesce; warm details avoid repeated HTTP. These are application budgets, not
-claims about provider limits. Old-generation rows are not automatically deleted.
+Catalog coverage distinguishes a complete short list from incomplete membership
+or alias enrichment. Filtering and paging run locally. Missing details remain unknown,
+not evidence that an exercise has no matching muscles or alias. Read-only requests
+return stored details even when stale; the persistent worker owns monthly refresh.
+Visible IDs only raise queue priority and do not launch a batch of HTTP requests.
 
 Detail persistence is a bounded validated projection: name, description, aliases,
 actual muscles/groups/positions, publication metric metadata, real image URL and
@@ -71,7 +51,8 @@ no poster or image source is invented. Responses are private/no-store/nosniff.
 Video GET/HEAD reuse persisted metadata and refresh unavailable/expired URLs at most
 once per request. HTTPS exact `kinescopecdn.net`, no port/userinfo/hash, no redirects
 or credential forwarding, single Range validation, response MIME/range checks and
-permissions/connection fences remain enforced. Video mirroring is deferred.
+permissions/binding fences remain enforced. Stored S3 video and generated posters
+are preferred; upstream streaming is a bounded reserve.
 
 Tests use synthetic fixtures and disposable databases. Fresh and pre-catalog
 migration paths, restart persistence, isolated scopes, owner cascade, query bounds,

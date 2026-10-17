@@ -6,41 +6,12 @@ import {
 } from '@/server/transformmate/catalog';
 import { cachedDetail } from '@/server/transformmate/catalog-cache';
 import { catalogStore } from '@/server/transformmate/catalog-store';
+import { selectPreviewUrl, matchesSignature } from './preview-validation';
+import { serveReplicaMedia } from './replica-playback';
+import { replicaMediaRequest } from './replica-gate';
 const PREVIEW_FAILURE_RETRY_MS = 60_000;
 const MAX_BYTES = 5 * 1024 * 1024;
 const TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
-export function selectPreviewUrl(value: string | null): URL | null {
-  if (!value || !/^https:\/\/transformmate\.pht\.space(?:[/?]|$)/.test(value))
-    return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' &&
-      url.hostname === 'transformmate.pht.space' &&
-      !url.port &&
-      !url.username &&
-      !url.password &&
-      !url.hash
-      ? url
-      : null;
-  } catch {
-    return null;
-  }
-}
-function matchesSignature(bytes: Uint8Array, type: string) {
-  if (type === 'image/jpeg')
-    return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  if (type === 'image/png')
-    return [137, 80, 78, 71, 13, 10, 26, 10].every(
-      (value, index) => bytes[index] === value,
-    );
-  const text = (start: number, end: number) =>
-    new TextDecoder().decode(bytes.slice(start, end));
-  if (type === 'image/webp')
-    return text(0, 4) === 'RIFF' && text(8, 12) === 'WEBP';
-  return (
-    text(4, 8) === 'ftyp' && (text(8, 12) === 'avif' || text(8, 12) === 'avis')
-  );
-}
 export async function streamExercisePreview(
   request: Request,
   idValue: string,
@@ -54,6 +25,9 @@ export async function streamExercisePreview(
     const id = exerciseId(idValue);
     const ownerId = new URL(request.url).searchParams.get('ownerId') ?? '';
     const scope = await catalogScope(request.headers, ownerId);
+    const local = await serveReplicaMedia(request, scope, id, 'preview');
+    if (local) return local;
+    if (!scope.client) throw new CatalogError(503);
     const cached = catalogStore().record(scope, id);
     if (
       cached?.detail?.previewCoverage === 'unknown' &&
@@ -86,12 +60,14 @@ export async function streamExercisePreview(
       }
     };
     const fetchImage = (target: URL) =>
-      requestFetch(target, {
-        headers: {},
-        redirect: 'error',
-        cache: 'no-store',
-        signal,
-      }).catch(async (error: unknown) => {
+      replicaMediaRequest(scope, () =>
+        requestFetch(target, {
+          headers: {},
+          redirect: 'error',
+          cache: 'no-store',
+          signal,
+        }),
+      ).catch(async (error: unknown) => {
         await markUnknown();
         throw error;
       });

@@ -109,13 +109,12 @@ creation or new background scheduler.
 ## Catalog and video
 
 Owner/granted trainer routes return safe catalog and detail DTOs. Search returns at most 50 items.
-The complete short catalog is cached for five minutes per owner connection and locale, with one
-in-flight request shared by concurrent searches. Typing filters the local index; it does not issue
-a provider request for every 250 ms input change. HTTP 429 establishes a bounded cooldown using a
-parsed Retry-After value, while failures remain explicit instead of becoming an empty result.
+The short catalog, details and media use the [permanent server replica](transformmate-replica.md).
+Search filters the local index. Background jobs persist their progress, refresh with
+25–35 day jitter and respect a shared failure cooldown.
 The verified short payload guarantees name/metrics only. Alternative names are searchable after
-that exercise detail has been requested during the current cache lifetime; no bulk detail or video
-prefetch is used, and unsupported group fields are not invented.
+that exercise detail has been requested during the current cache lifetime; the server worker gradually enriches the whole catalog; unsupported group fields
+are not invented.
 The server checks detailed straight-metric capability before publication. Provider responses and
 media URLs never reach the browser. Read-only verification found 1 098 catalog items and direct
 MP4 variants at the exact HTTPS host `kinescopecdn.net`. Anonymous HEAD returned 200 video/mp4
@@ -127,15 +126,15 @@ uses `preload: none` and no autoplay. Play, seeking, speed and fullscreen work i
 tests. Scoped controls have 44 px targets, and speed stays available at mobile widths. Selection
 changes/unmount dispose the player. Chromium mobile emulation is not a physical iPhone check.
 
-The private same-origin video route checks current access, obtains fresh exercise detail for every
-HEAD/GET/seek request, allows only the exact CDN host and MP4 format, forwards one validated Range,
+The private same-origin video route checks current access, prefers the stored S3 object for each
+HEAD/GET/seek request. Upstream fallback uses validated metadata, allows only the exact CDN host and MP4 format, forwards one validated Range,
 and streams rather than buffering the entire video. It rejects redirects, cancels on client abort
 or revoked authorization before response, validates 206/416 headers, and sends private no-store.
 No Firebase/JWT credentials, provider cookies, signed URLs or upstream errors are forwarded/logged.
-Only the requested video is streamed; catalog video downloading does not occur.
+The worker gradually downloads catalog videos; playback prefers the stored copy.
 
 Observed links have `expires`/`sign` query fields. Their duration is provider-controlled and is not
-assumed stable or hardcoded. Fresh detail on each media request avoids reusing an expired URL.
+assumed stable or hardcoded. Expired upstream fallback URLs trigger a bounded metadata refresh.
 Provider auth/expiry/transport failures show a safe error; closing/reopening the player requests
 fresh detail. API-token refresh is managed by the owner-scoped FirebaseSession runtime; refresh-token rotation
 is persisted to the encrypted store before the new token is cached. Disconnect/reconnect fences
