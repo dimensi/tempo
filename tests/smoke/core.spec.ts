@@ -229,9 +229,19 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .getByRole('radiogroup', { name: 'Тренировка дня' })
     .getByText('План', { exact: true })
     .click();
+  const planUpdate = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/workouts/plans/') &&
+      response.request().method() === 'PUT' &&
+      response.status() === 200,
+  );
   await page
     .getByRole('button', { name: 'Сохранить план', exact: true })
     .click();
+  await planUpdate;
+  await expect(
+    page.getByRole('button', { name: 'Сохранить план', exact: true }),
+  ).toBeEnabled();
   await expect(
     page.getByText('Есть несохранённые изменения', { exact: true }),
   ).toBeVisible();

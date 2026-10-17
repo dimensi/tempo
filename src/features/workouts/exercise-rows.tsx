@@ -190,11 +190,15 @@ export function ExerciseRows({
                 <Text size="sm" fw={600}>
                   {m.prepare}
                 </Text>
-                <Group gap="xs" wrap="wrap">
+                <div className={styles.planSets}>
                   {guide.sets.map((set, setIndex) => (
                     <div key={setIndex} className={styles.planSet}>
                       {guide.sets.length > 1 && (
-                        <Text size="sm" c="dimmed">
+                        <Text
+                          size="sm"
+                          c="dimmed"
+                          className={styles.planSetIndex}
+                        >
                           {m.set} {setIndex + 1}
                         </Text>
                       )}
@@ -216,7 +220,7 @@ export function ExerciseRows({
                       </Stack>
                     </div>
                   ))}
-                </Group>
+                </div>
               </div>
             )}
             {mode === 'result' && (

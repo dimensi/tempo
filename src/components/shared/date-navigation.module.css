@@ -20,12 +20,28 @@
   .weekControls {
     display: none;
   }
-  .days > :global(.mantine-Button-root) {
+  .days > :global(.mantine-Button-root)[data-variant] {
     min-height: 72px;
     background: transparent;
     color: var(--mantine-color-dimmed);
-    border-radius: 0;
+    border: 1px solid var(--mantine-color-default-border);
+    border-radius: 12px;
     font-weight: 400;
+  }
+  .days > :global(.mantine-Button-root)[aria-current='date'] {
+    border-color: var(--mantine-primary-color-filled);
+  }
+  .days
+    > :global(.mantine-Button-root)[data-variant]:hover:not(
+      :disabled,
+      [data-disabled]
+    ),
+  .days
+    > :global(.mantine-Button-root)[data-variant]:active:not(
+      :disabled,
+      [data-disabled]
+    ) {
+    background: var(--mantine-color-default-hover);
   }
   .days
     > :global(.mantine-Button-root)
@@ -36,9 +52,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 18px;
+    width: 40px;
+    height: 40px;
+    border-radius: 16px;
     font-size: 20px;
     font-weight: 500;
     color: var(--mantine-color-text);

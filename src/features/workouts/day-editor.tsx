@@ -642,8 +642,9 @@ export function DayEditor({
           </Group>
           {mode !== 'plan' && value.result.status === 'completed' && canLog && (
             <Button
-              variant="transparent"
-              size="compact-sm"
+              variant="default"
+              color="gray"
+              size="sm"
               mih={44}
               loading={busy}
               aria-label={m.reopenWorkout}
