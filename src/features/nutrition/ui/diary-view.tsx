@@ -1,4 +1,5 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 
 import { useState, type ReactNode } from 'react';
 import {
@@ -161,9 +162,7 @@ export function DiaryView({
   return (
     <Stack gap="md" className={classes.diary}>
       <Group justify="space-between">
-        <Title order={1} size="h2">
-          {m.title}
-        </Title>
+        <PageHeader>{m.title}</PageHeader>
         {source === 'demo' && <Badge color="orange">{m.demo}</Badge>}
       </Group>
       {navigationSlot}

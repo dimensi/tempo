@@ -1,28 +1,52 @@
 'use client';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
-import { Alert, Button, Group, Stack } from '@mantine/core';
+import {
+  Alert,
+  Button,
+  Drawer,
+  Group,
+  Stack,
+  UnstyledButton,
+} from '@mantine/core';
 import { useViewState } from '@/lib/use-view-state';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { CatalogReadContent } from './catalog-read';
 import { ExerciseDetails } from './exercise-details';
 import { workoutMessages as m } from './messages';
-function CatalogDetails({ ownerId, id }: { ownerId: string; id: number }) {
+function CatalogDetails({
+  ownerId,
+  id,
+  name,
+}: {
+  ownerId: string;
+  id: number;
+  name: string;
+}) {
   const [open, setOpen] = useViewState(
     `catalog:${ownerId}:${id}:details`,
     false,
   );
   return (
     <Stack gap="xs">
-      <Button
-        variant="subtle"
-        mih={44}
+      <UnstyledButton
+        style={{ minHeight: 44, fontSize: 17, fontWeight: 650 }}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        {m.view}
-      </Button>
-      {open && <ExerciseDetails ownerId={ownerId} exerciseId={id} />}
+        {name}
+      </UnstyledButton>
+      {open && (
+        <Drawer
+          opened
+          onClose={() => setOpen(false)}
+          title={name}
+          position="right"
+          size="min(480px, 100vw)"
+        >
+          <ExerciseDetails ownerId={ownerId} exerciseId={id} />
+        </Drawer>
+      )}
     </Stack>
   );
 }
@@ -62,8 +86,8 @@ export function CatalogPage({ ownerId }: { ownerId: string }) {
             !current.catalog.hasMore &&
             offset === 0
           }
-          renderDetails={(id) => (
-            <CatalogDetails key={id} ownerId={ownerId} id={id} />
+          renderDetails={(id, name) => (
+            <CatalogDetails key={id} ownerId={ownerId} id={id} name={name} />
           )}
         />
       )}

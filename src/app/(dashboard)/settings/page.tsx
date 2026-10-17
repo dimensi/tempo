@@ -1,4 +1,5 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 import { ru } from '@/config/messages';
 import { useReadContext } from '@/lib/client-session';
 import { AccessPanel } from '@/features/anamnesis';
@@ -6,7 +7,7 @@ import { OfflineSettings } from '@/features/offline';
 import { TrainerSettings } from '@/features/trainer';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
-import { Skeleton, Stack, Text, Title } from '@mantine/core';
+import { Skeleton, Stack, Text } from '@mantine/core';
 import { useState } from 'react';
 import { SettingsNavigation } from './settings-navigation';
 import { StepsGoalForm } from './steps-goal-form';
@@ -24,9 +25,9 @@ export default function Page() {
   if (!owner || !ownerId)
     return (
       <Stack>
-        <Title order={1}>
+        <PageHeader>
           {ru.sections.find((section) => section.href === '/settings')!.title}
-        </Title>
+        </PageHeader>
         <Text>{ru.settings.ownerOnly}</Text>
       </Stack>
     );
@@ -35,9 +36,9 @@ export default function Page() {
   return (
     <Stack gap="xl">
       <Stack gap="xs">
-        <Title order={1}>
+        <PageHeader>
           {ru.sections.find((section) => section.href === '/settings')!.title}
-        </Title>
+        </PageHeader>
         <Text c="dimmed">{ru.settings.description}</Text>
       </Stack>
       <SettingsNavigation>

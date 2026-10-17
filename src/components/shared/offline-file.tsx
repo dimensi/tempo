@@ -10,6 +10,7 @@ export function OfflineFile({
   kind,
   size,
   offline = false,
+  compact = false,
 }: {
   id: string;
   label: string;
@@ -17,6 +18,7 @@ export function OfflineFile({
   kind: 'pdf' | 'video';
   size?: number;
   offline?: boolean;
+  compact?: boolean;
 }) {
   const controller = savedFiles;
   const state = useSyncExternalStore(
@@ -56,9 +58,18 @@ export function OfflineFile({
     try {
       if (remove) await controller.removeFile(id);
       else if (href) {
-        if (size === undefined && !prepared)
-          setPreflight({ href, size: await controller.fileSize(href) });
-        else
+        if (size === undefined && !prepared) {
+          const bytes = await controller.fileSize(href);
+          setPreflight({ href, size: bytes });
+          if (compact)
+            await controller.saveFile({
+              id,
+              label,
+              href,
+              kind,
+              size: bytes ?? undefined,
+            });
+        } else
           await controller.saveFile({
             id,
             label,
@@ -75,18 +86,22 @@ export function OfflineFile({
   }
   return (
     <Stack gap="xs" style={{ minWidth: 0 }}>
-      <Text fw={500} style={{ overflowWrap: 'anywhere' }}>
-        {label}
-      </Text>
-      <Text size="sm" c="dimmed">
-        {file
-          ? `${m.saved} · ${(file.bytes.size / 1024 / 1024).toFixed(1)} ${m.mib}`
-          : knownSize
-            ? `${(knownSize / 1024 / 1024).toFixed(1)} ${m.mib}`
-            : prepared
-              ? m.sizeUnknown
-              : m.size}
-      </Text>
+      {!compact && (
+        <Text fw={500} style={{ overflowWrap: 'anywhere' }}>
+          {label}
+        </Text>
+      )}
+      {(!compact || file) && (
+        <Text size="sm" c="dimmed">
+          {file
+            ? `${m.saved} · ${(file.bytes.size / 1024 / 1024).toFixed(1)} ${m.mib}`
+            : knownSize
+              ? `${(knownSize / 1024 / 1024).toFixed(1)} ${m.mib}`
+              : prepared
+                ? m.sizeUnknown
+                : m.size}
+        </Text>
+      )}
       {failed && (
         <Alert role="status" color="orange">
           {m.failed}
@@ -94,7 +109,7 @@ export function OfflineFile({
       )}
       {offline && !file && <Text>{m.missing}</Text>}
       <Group>
-        {url && (
+        {url && !(offline && compact) && (
           <Button
             component="a"
             href={url}
@@ -122,7 +137,7 @@ export function OfflineFile({
             disabled={offline || !href || !state.ready}
             onClick={() => void change(false)}
           >
-            {size === undefined && !prepared ? m.size : m.save}
+            {!compact && size === undefined && !prepared ? m.size : m.save}
           </Button>
         )}
       </Group>

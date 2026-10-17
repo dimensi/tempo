@@ -75,4 +75,55 @@ it('commits an offline receipt with its record and replays it without cross-owne
   );
   expect(() => failed.repository.apply('owner', operation())).toThrow('full');
   expect(failed.repository.catalog('owner')).toEqual([]);
+
+  const exercise = {
+    id: crypto.randomUUID(),
+    name: 'Synthetic squat',
+    sets: [{ reps: 8, weightKg: 40 }],
+  };
+  const workout = offlineWriteSchema.parse({
+    ...operation(),
+    payload: {
+      kind: 'workout',
+      data: {
+        date: '2026-10-15',
+        title: '',
+        note: '',
+        status: 'in_progress',
+        exercises: [exercise],
+      },
+    },
+  });
+  const recorded = repository.apply('owner', workout);
+  const next = offlineWriteSchema.parse({
+    ...workout,
+    id: crypto.randomUUID(),
+    base: recorded.version,
+    payload: {
+      kind: 'workout',
+      data: {
+        ...workout.payload.data,
+        exercises: [
+          exercise,
+          { ...exercise, id: crypto.randomUUID(), name: 'Synthetic row' },
+        ],
+      },
+    },
+  });
+  const extended = repository.apply('owner', next);
+  expect(
+    extended.payload.kind === 'workout' && extended.payload.data.exercises,
+  ).toHaveLength(2);
+  const removal = offlineWriteSchema.parse({
+    ...next,
+    id: crypto.randomUUID(),
+    base: extended.version,
+    payload: { kind: 'workout', data: { ...next.payload.data, exercises: [] } },
+  });
+  expect(() => repository.apply('owner', removal)).toThrow();
+  expect(
+    repository
+      .catalog('owner')
+      .find((record) => record.id === workout.recordId),
+  ).toEqual(extended);
 });

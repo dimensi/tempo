@@ -1,0 +1,123 @@
+.workspace {
+  min-width: 0;
+  max-width: 860px;
+  margin-inline: auto;
+  width: 100%;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+
+.exercise {
+  padding-block: 16px;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  font-variant-numeric: tabular-nums;
+}
+
+.exerciseName {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  font-size: 17px;
+  line-height: 1.4;
+  font-weight: 650;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+  color: var(--mantine-color-text);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.exerciseName svg {
+  flex-shrink: 0;
+  color: var(--mantine-primary-color-filled);
+}
+.exerciseName:hover {
+  color: var(--mantine-primary-color-filled);
+  text-decoration: underline;
+}
+.ordinal {
+  width: 24px;
+  padding-top: 12px;
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+}
+.setHeading,
+.setRow {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1fr) 44px;
+  gap: 8px;
+  align-items: center;
+}
+.setHeading {
+  font-size: 12px;
+  color: var(--mantine-color-dimmed);
+  margin-block: 4px 8px;
+}
+.setRow {
+  margin-block: 6px;
+}
+.setRow input {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  min-height: 44px;
+  font-size: 17px;
+}
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pickerRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-block: 12px;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  min-height: 64px;
+  cursor: pointer;
+}
+.pickerRow:has(input:checked) {
+  background: var(--mantine-primary-color-light);
+}
+.pickerName {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 550;
+  line-height: 1.4;
+}
+.pickerFooter {
+  position: sticky;
+  bottom: 0;
+  background: var(--mantine-color-body);
+  padding-block: 12px max(12px, env(safe-area-inset-bottom));
+}
+.empty {
+  text-align: center;
+  padding: 48px 16px;
+}
+.status {
+  min-height: 20px;
+  font-size: 12px;
+  color: var(--mantine-color-dimmed);
+}
+@media (min-width: 48em) {
+  .setHeading,
+  .setRow {
+    grid-template-columns: 32px minmax(80px, 150px) minmax(80px, 150px) 44px;
+  }
+  .exercise {
+    padding-block: 20px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace *,
+  .workspace *::before,
+  .workspace *::after {
+    scroll-behavior: auto;
+  }
+}

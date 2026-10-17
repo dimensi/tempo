@@ -58,42 +58,34 @@ function LoadedExerciseDetails({
       )}
       {info.hasVideo && (
         <OfflineFile
+          compact
           id={`exercise-video:${exerciseId}`}
           label={info.name}
           kind="video"
           href={`/api/workouts/transformmate/exercises/${exerciseId}/video?ownerId=${encodeURIComponent(ownerId)}`}
         />
       )}
-      <Badge variant="outline" color="gray" c="dimmed">
-        {m.catalogueSource}
-      </Badge>
-      {info.description && (
-        <Text
-          size="sm"
-          style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
-        >
-          {info.description}
-        </Text>
-      )}
-      {info.muscleGroups.length > 0 && (
-        <Group gap="xs">
-          {info.muscleGroups.map((group) => (
-            <Badge key={group.id} variant="light" color="gray">
-              {group.name}
-            </Badge>
-          ))}
-        </Group>
-      )}
-      {info.publicationCapability.state === 'unknown' && (
-        <Text size="sm" c="dimmed">
-          {m.publicationUnknown}
-        </Text>
-      )}
-      {info.publicationCapability.state === 'unsupported' && (
-        <Text size="sm" c="dimmed">
-          {m.publicationUnsupported}
-        </Text>
-      )}
+      {!info.hasVideo && <Text c="dimmed">{m.noTechnique}</Text>}
+      <details>
+        <summary>{m.moreAboutExercise}</summary>
+        {info.description && (
+          <Text
+            size="sm"
+            style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+          >
+            {info.description}
+          </Text>
+        )}
+        {info.muscleGroups.length > 0 && (
+          <Group gap="xs">
+            {info.muscleGroups.map((group) => (
+              <Badge key={group.id} variant="light" color="gray">
+                {group.name}
+              </Badge>
+            ))}
+          </Group>
+        )}
+      </details>
     </Stack>
   );
 }

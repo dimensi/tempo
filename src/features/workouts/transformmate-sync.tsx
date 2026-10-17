@@ -14,12 +14,7 @@ import {
   transformMateReasons as reasons,
   transformMateStatuses as statuses,
 } from './messages';
-export function useTransformMateSync(
-  ownerId: string,
-  version: unknown,
-  date: string,
-) {
-  const lastAutomatic = useRef(0);
+export function useTransformMateSync(ownerId: string, date: string) {
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const inflight = useRef<AbortController | null>(null);
@@ -43,14 +38,8 @@ export function useTransformMateSync(
   };
   const configured = resource.data?.configured ?? null;
   const refresh = useCallback(
-    async (cursor?: string, automatic = false) => {
-      if (
-        !navigator.onLine ||
-        inflight.current ||
-        (automatic && Date.now() - lastAutomatic.current < 60_000)
-      )
-        return;
-      if (automatic) lastAutomatic.current = Date.now();
+    async (cursor?: string) => {
+      if (!navigator.onLine || inflight.current) return;
       const controller = new AbortController();
       inflight.current = controller;
       const current = generation.current;
@@ -112,26 +101,12 @@ export function useTransformMateSync(
     const effectGeneration = ++generation.current;
     inflight.current?.abort();
     inflight.current = null;
-    lastAutomatic.current = 0;
-    void Promise.resolve().then(async () => {
-      if (generation.current !== effectGeneration) return;
-      await refresh(undefined, true);
-    });
-    const visible = () => {
-      if (document.visibilityState === 'visible') void refresh(undefined, true);
-    };
-    window.addEventListener('focus', visible);
-    document.addEventListener('visibilitychange', visible);
-    const timer = setInterval(visible, 60_000);
     return () => {
       generation.current = effectGeneration + 1;
       inflight.current?.abort();
       inflight.current = null;
-      clearInterval(timer);
-      window.removeEventListener('focus', visible);
-      document.removeEventListener('visibilitychange', visible);
     };
-  }, [refresh, version]);
+  }, [refresh]);
   return {
     items,
     nativePage,

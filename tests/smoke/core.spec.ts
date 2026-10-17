@@ -68,23 +68,98 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .getByRole('button', { name: 'Добавить тренировку', exact: true })
     .click();
   const title = 'Production smoke workout';
+  await page.getByText('Название и заметка', { exact: true }).click();
   await page
     .getByRole('textbox', { name: 'Название (необязательно)', exact: true })
     .fill(title);
   await page
-    .getByRole('combobox', { name: 'Упражнение', exact: true })
+    .getByRole('button', { name: 'Добавить упражнения', exact: true })
+    .click();
+  await page
+    .getByRole('textbox', { name: 'Поиск по названию', exact: true })
     .fill('Smoke squat');
   await page
-    .getByRole('option', { name: 'Добавить вручную: Smoke squat', exact: true })
+    .getByRole('button', { name: 'Добавить вручную: Smoke squat', exact: true })
     .click();
-  await page.getByLabel('Вес, кг', { exact: true }).fill('0');
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page).toHaveURL(
-    /\/workouts\/plans\/[^/]+\/workouts\/[^?]+\?date=/,
-  );
+  await page
+    .getByLabel('Smoke squat, Подход 1, Вес, кг', { exact: true })
+    .fill('0');
+  await page
+    .getByRole('button', { name: 'Сохранить план', exact: true })
+    .click();
   await expect(
-    page.getByRole('heading', { name: title, exact: true }),
+    page.getByRole('button', { name: 'Завершить тренировку', exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Техника: Smoke squat', exact: true }),
+  ).toBeVisible();
+  await page
+    .getByLabel('Smoke squat, Подход 1, Повторения', { exact: true })
+    .fill('8');
+  await page
+    .getByRole('button', { name: 'Завершить тренировку', exact: true })
+    .click();
+  await expect(
+    page.getByRole('button', { name: 'Продолжить тренировку', exact: true }),
+  ).toBeVisible();
+
+  // An incomplete actual set must survive acknowledging an unrelated plan edit.
+  await page
+    .getByRole('button', { name: 'Добавить подход', exact: true })
+    .click();
+  await page
+    .getByLabel('Smoke squat, Подход 2, Вес, кг', { exact: true })
+    .fill('25');
+  await page.getByRole('radio', { name: 'План', exact: true }).check();
+  await page
+    .getByRole('button', { name: 'Сохранить план', exact: true })
+    .click();
+  await expect(page.getByRole('status')).toHaveText(
+    'Есть несохранённые изменения',
+  );
+  const dayUrl = page.url();
+  await page.goto('/diary');
+  await page.goto(dayUrl);
+  await expect(
+    page.getByLabel('Smoke squat, Подход 2, Вес, кг', { exact: true }),
+  ).toHaveValue('25');
+  await page
+    .getByLabel('Smoke squat, Подход 2, Вес, кг', { exact: true })
+    .fill('');
+
+  // Coalesce a note edit made while the previous result is being committed.
+  const sending = Promise.withResolvers<void>();
+  const releaseWrite = Promise.withResolvers<void>();
+  let delayed = false;
+  await page.route('**/api/offline/writes', async (route) => {
+    if (route.request().method() === 'POST' && !delayed) {
+      delayed = true;
+      sending.resolve();
+      await releaseWrite.promise;
+    }
+    await route.continue();
+  });
+  await page
+    .getByLabel('Заметка к тренировке', { exact: true })
+    .fill('First note');
+  await sending.promise;
+  await page
+    .getByLabel('Заметка к тренировке', { exact: true })
+    .fill('Final note');
+  // Intentionally cross the input debounce while the first write is held.
+  await page.waitForTimeout(900);
+  releaseWrite.resolve();
+  await expect
+    .poll(async () => {
+      const body = await (
+        await page.request.get(`/api/workouts?ownerId=${owner}`)
+      ).json();
+      return body.data.sessions.find(
+        (item: { title: string }) => item.title === title,
+      )?.note;
+    })
+    .toBe('Final note');
+  await page.unroute('**/api/offline/writes');
 
   await expect
     .poll(() => cachedReadBody(page, title).catch(() => ''))
@@ -93,7 +168,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   const stalledRead = Promise.withResolvers<void>();
   const readStarted = Promise.withResolvers<void>();
   const readFinished = Promise.withResolvers<void>();
-  await page.route('**/api/read/workout?*', async (route) => {
+  await page.route('**/api/workouts?*', async (route) => {
     readStarted.resolve();
     try {
       await stalledRead.promise;
@@ -108,15 +183,15 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await page.reload({ waitUntil: 'domcontentloaded' });
   await readStarted.promise;
   await expect(
-    page.getByRole('heading', { name: title, exact: true }),
+    page.getByRole('button', { name: 'Техника: Smoke squat', exact: true }),
   ).toBeVisible();
   stalledRead.resolve();
   await readFinished.promise;
-  await page.unroute('**/api/read/workout?*');
+  await page.unroute('**/api/workouts?*');
 
   await context.setOffline(true);
   await expect(
-    page.getByRole('heading', { name: title, exact: true }),
+    page.getByRole('button', { name: 'Техника: Smoke squat', exact: true }),
   ).toBeVisible();
   await context.setOffline(false);
 

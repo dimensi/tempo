@@ -1,4 +1,5 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 import { OfflineFile } from '@/components/shared/offline-file';
 import { offlineMessages } from '@/config/offline';
 import { readResources } from '@/lib/read-descriptors';
@@ -60,7 +61,7 @@ export function DocumentViewer({
   if ((error || loadError) && !document)
     return (
       <Stack data-testid="anamnesis-document-viewer">
-        <Title order={1}>{m.documents.title}</Title>
+        <PageHeader>{m.documents.title}</PageHeader>
         <Alert color="red" role="alert">
           {error ?? m.errors.load}
         </Alert>
@@ -72,7 +73,7 @@ export function DocumentViewer({
       <a href="/anamnesis#documents">
         {m.title} · {m.workspace.documents}
       </a>
-      <Title order={1}>{document?.filename ?? '…'}</Title>
+      <PageHeader>{document?.filename ?? '…'}</PageHeader>
       {(error || loadError) && (
         <Alert color="red" role="alert">
           {error ?? m.errors.load}

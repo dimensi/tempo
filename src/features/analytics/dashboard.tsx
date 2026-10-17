@@ -1,6 +1,7 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 import type { ReactNode } from 'react';
-import { Stack, Text, Title } from '@mantine/core';
+import { Stack, Text } from '@mantine/core';
 import type { AnalyticsData } from '@/contracts/analytics';
 import { analyticsMessages as m } from './messages';
 import { AnalyticsOverview } from './overview';
@@ -26,7 +27,7 @@ export function AnalyticsDashboard({
     <Stack gap="xl" className={classes.root}>
       <Stack gap="md">
         <div>
-          <Title order={1}>{m.title}</Title>
+          <PageHeader>{m.title}</PageHeader>
           <Text c="dimmed">{m.description}</Text>
         </div>
         {navigationSlot}

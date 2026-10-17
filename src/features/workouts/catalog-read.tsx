@@ -1,4 +1,5 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 import { offlineMessages as m } from '@/config/offline';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -27,7 +28,7 @@ export function CatalogReadContent({
     hasVideo: boolean;
   }[];
   complete: boolean;
-  renderDetails?: (id: number) => ReactNode;
+  renderDetails?: (id: number, name: string) => ReactNode;
   partialLabel?: string;
 }) {
   const params = useSearchParams();
@@ -48,7 +49,7 @@ export function CatalogReadContent({
   return (
     <Stack>
       <Group justify="space-between">
-        <Title order={1}>{m.cachedCatalog}</Title>
+        <PageHeader>{m.cachedCatalog}</PageHeader>
         <Anchor component={Link} href="/workouts">
           {m.workouts}
         </Anchor>
@@ -62,16 +63,19 @@ export function CatalogReadContent({
       {!rows.length && <Alert>{m.noMatches}</Alert>}
       {rows.map((row) => (
         <Stack key={row.id} gap="xs">
-          <Title order={2} size="h3">
-            {row.name}
-          </Title>
+          {renderDetails ? (
+            renderDetails(row.id, row.name)
+          ) : (
+            <Title order={2} size="h3">
+              {row.name}
+            </Title>
+          )}
           <Text size="sm" c="dimmed">
             {row.muscleGroups.join(' · ')}
           </Text>
           <Text style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
             {row.description ?? m.noDescription}
           </Text>
-          {renderDetails?.(row.id)}
         </Stack>
       ))}
     </Stack>

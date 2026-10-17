@@ -155,7 +155,7 @@ export function offlineWriteRepository(database = getDatabase()) {
             .map((e) => e.id)
             .sort();
           const after = payload.data.exercises.map((e) => e.id).sort();
-          if (JSON.stringify(before) !== JSON.stringify(after))
+          if (before.some((id) => !after.includes(id)))
             throw new OfflineWriteError(422);
           const actual = workoutSessionInputSchema.parse({
             date: payload.data.date,

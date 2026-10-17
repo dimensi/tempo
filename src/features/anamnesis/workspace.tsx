@@ -1,9 +1,10 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 import { SectionNavigation } from '@/components/shared/section-navigation';
 import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
-import { Alert, Group, Stack, Text, Title } from '@mantine/core';
+import { Alert, Group, Stack, Text } from '@mantine/core';
 import { ownerIdQuery } from './api';
 import { DocumentsPanel } from './documents-panel';
 import { MarkerTable } from './marker-table';
@@ -27,7 +28,7 @@ export function AnamnesisWorkspace({
   const error = resource.error;
   return (
     <Stack data-testid="anamnesis-page">
-      <Title order={1}>{m.title}</Title>
+      <PageHeader>{m.title}</PageHeader>
       {error && <Alert color="red">{m.errors.load}</Alert>}
       {overview && (
         <Group gap="md" aria-label={m.overview.title}>

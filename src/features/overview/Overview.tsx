@@ -1,4 +1,5 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 import type { OverviewData } from '@/contracts/overview';
 import { formatDecimal, toChartNumber } from '@/lib/number-display';
 import { readResources } from '@/lib/read-descriptors';
@@ -90,7 +91,7 @@ export function Overview({
   return (
     <Stack gap={32} className={classes.surface}>
       <Stack gap={4}>
-        <Title order={1}>{m.title}</Title>
+        <PageHeader>{m.title}</PageHeader>
         <Text c="dimmed">
           {saved || calendar
             ? `${date(saved?.today ?? calendar!.today)} · ${m.subtitle}`

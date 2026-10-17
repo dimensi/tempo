@@ -1,568 +1,410 @@
 'use client';
-import { DateNavigation } from '@/components/shared/date-navigation';
-import {
-  type PlannedWorkout,
-  type WorkoutPlan,
-  type WorkoutSession,
-} from '@/contracts/workouts';
-import { apiFetch } from '@/lib/api-client';
-import { readResources } from '@/lib/read-descriptors';
-import { useReadResource } from '@/lib/use-read-resource';
-import { workoutTitle } from '@/lib/workout-title';
+import { useState, type ReactNode } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ActionIcon,
   Alert,
-  Badge,
   Button,
   Group,
   Loader,
+  Menu,
   Modal,
-  Paper,
+  Select,
   Stack,
   Text,
   TextInput,
   Title,
   Tooltip,
 } from '@mantine/core';
-import {
-  IconArrowRight,
-  IconCalendar,
-  IconClipboardCheck,
-  IconCopy,
-  IconPencil,
-  IconTrash,
-} from '@tabler/icons-react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { IconDots, IconRefresh } from '@tabler/icons-react';
 import { z } from 'zod';
-import { ExerciseTable } from './exercise-table';
-import { today } from './forms';
-import { workoutMessages as m } from './messages';
+import { PageHeader } from '@/components/layout/page-header';
+import { DateNavigation } from '@/components/shared/date-navigation';
+import type {
+  PlannedWorkout,
+  WorkoutPlan,
+  WorkoutSession,
+} from '@/contracts/workouts';
+import { apiFetch } from '@/lib/api-client';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
+import { workoutTitle } from '@/lib/workout-title';
+import { DayEditor } from './day-editor';
+import { copyPlanToDate } from './copy-plan';
 import { NativeWorkout } from './native-workout';
-import { WorkoutReadContent } from './read-content';
 import {
   SyncSummary,
   WorkoutSync,
   useTransformMateSync,
 } from './transformmate-sync';
-import classes from './workout-ui.module.css';
+import { workoutMessages as m } from './messages';
+import classes from './day-workout.module.css';
+import content from './workout-ui.module.css';
 
-type Deletion = { kind: 'plans' | 'sessions'; id: string; revision: number };
-function SessionResult({
-  session,
-  date,
-  canLog,
-  onEdit,
-  onDelete,
-  renderComments,
-  comparisonShown = false,
-}: {
-  session: WorkoutSession;
-  date: string;
-  canLog: boolean;
-  onEdit: () => void;
-  onDelete: () => void;
-  renderComments?: (sessionId: string) => ReactNode;
-  comparisonShown?: boolean;
-}) {
-  return (
-    <Stack data-testid={`session-${session.id}`}>
-      <Group justify="space-between">
-        <Title order={3}>{workoutTitle(session.title, session.date)}</Title>
-        <Text size="sm" c="dimmed">
-          {m[session.status]}
-        </Text>
-      </Group>
-      <Text size="sm">
-        {session.planSnapshot
-          ? `${m.snapshot}: ${workoutTitle(session.planSnapshot.planTitle, session.planSnapshot.workout.date)}`
-          : m.independent}
-      </Text>
-      {!comparisonShown && (
-        <WorkoutReadContent
-          kind="session"
-          showStatus={false}
-          status={session.status}
-          exercises={session.exercises}
-          snapshot={
-            session.planSnapshot
-              ? {
-                  title: session.planSnapshot.planTitle,
-                  exercises: session.planSnapshot.workout.exercises,
-                }
-              : null
-          }
-          note={session.note}
-        />
-      )}
-      {comparisonShown && session.note && (
-        <Text style={{ whiteSpace: 'pre-wrap' }}>{session.note}</Text>
-      )}
-      <Button
-        component={Link}
-        href={`/workouts/sessions/${session.id}?date=${date}`}
-        variant="subtle"
-        size="compact-sm"
-        mih={44}
-        leftSection={<IconArrowRight size={16} />}
-      >
-        {m.view}
-      </Button>
-      {canLog && (
-        <Group gap="xs">
-          <Tooltip label={m.editActual}>
-            <ActionIcon
-              size={44}
-              variant="subtle"
-              aria-label={m.editActual}
-              onClick={onEdit}
-            >
-              <IconPencil size={16} />
-            </ActionIcon>
-          </Tooltip>
-          <Tooltip label={m.removeActual}>
-            <ActionIcon
-              size={44}
-              variant="subtle"
-              color="red"
-              aria-label={m.removeActual}
-              onClick={onDelete}
-            >
-              <IconTrash size={16} />
-            </ActionIcon>
-          </Tooltip>
-        </Group>
-      )}
-      {renderComments?.(session.id)}
-    </Stack>
-  );
-}
-function ScopedWorkoutsDashboard({
+export function WorkoutsDashboard({
   ownerId,
+  userId,
   canLog,
   renderComments,
 }: {
   ownerId: string;
+  userId: string;
   canLog: boolean;
   renderComments?: (sessionId: string) => ReactNode;
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const selectedDate = z.iso.date().safeParse(searchParams.get('date'));
-  const date = selectedDate.success ? selectedDate.data : today();
-  const setDate = (value: string) => {
-    const href = `/workouts?date=${value}`;
-    router.replace(href, { scroll: false });
-  };
-  const [copy, setCopy] = useState<{
-    plan: WorkoutPlan;
+  const params = useSearchParams();
+  const selected = z.iso.date().safeParse(params.get('date'));
+  const date = selected.success
+    ? selected.data
+    : new Date().toLocaleDateString('en-CA');
+  const resource = useReadResource(
+    readResources.workouts(
+      `/api/workouts?ownerId=${encodeURIComponent(ownerId)}`,
+    ),
+  );
+  const data = resource.data;
+  const sync = useTransformMateSync(ownerId, date);
+  const [creating, setCreating] = useState<string | null>(null);
+  const [copied, setCopied] = useState<{
+    date: string;
     workout: PlannedWorkout;
   } | null>(null);
-  const [copyDate, setCopyDate] = useState('');
-  const [editorError, setEditorError] = useState<string | null>(null);
+  const [active, setActive] = useState<string | null>(null);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyDate, setCopyDate] = useState(date);
+  const [deletion, setDeletion] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [deletion, setDeletion] = useState<Deletion | null>(null);
-  const endpoint = useCallback(
-    (path = '') =>
-      `/api/workouts${path}?ownerId=${encodeURIComponent(ownerId)}`,
-    [ownerId],
-  );
-  const resource = useReadResource(readResources.workouts(endpoint()));
-  const data = resource.data;
-  const error = resource.error ? m.loadError : null;
-  const sync = useTransformMateSync(ownerId, data, date);
-  const load = resource.refresh;
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  async function mutate(path: string, method: string, body: unknown) {
-    setBusy(true);
-    setEditorError(null);
-    try {
-      const response = await apiFetch(endpoint(path), {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.error ?? m.error);
-      }
-      if (!mounted.current) return;
-      setDeletion(null);
-      await load();
-    } catch (error) {
-      if (mounted.current)
-        setEditorError(error instanceof Error ? error.message : m.error);
-    } finally {
-      if (mounted.current) setBusy(false);
-    }
-  }
-  const record = (plan: WorkoutPlan, workout: PlannedWorkout) =>
-    router.push(
-      `/workouts/plans/${plan.id}/workouts/${workout.id}/results?date=${date}`,
-    );
-  const editSession = (session: WorkoutSession) =>
-    router.push(`/workouts/sessions/${session.id}/edit?date=${date}`);
-  const dayPlans =
+  const [error, setError] = useState<string | null>(null);
+  const plans =
     data?.plans.flatMap((plan) =>
       plan.workouts
         .filter((workout) => workout.date === date)
         .map((workout) => ({ plan, workout })),
     ) ?? [];
-  const daySessions =
+  const sessions =
     data?.sessions.filter((session) => session.date === date) ?? [];
-  const dayRemote = sync.items.filter(
-    (item) =>
-      item.actual?.date === date &&
-      !sync.nativePage.items.some(
-        (native) => native.remoteTrainingId === item.remoteTrainingId,
-      ) &&
-      !dayPlans.some(
-        ({ plan, workout }) =>
-          item.planId === plan.id && item.workoutId === workout.id,
-      ),
-  );
-  const editWorkout = (plan: WorkoutPlan, workout: PlannedWorkout) =>
-    router.push(
-      `/workouts/plans/${plan.id}/edit?workout=${workout.id}&date=${date}`,
+  const entries: {
+    id: string;
+    label: string;
+    plan?: WorkoutPlan;
+    workout?: PlannedWorkout;
+    session?: WorkoutSession;
+    native?: (typeof sync.nativePage.items)[number];
+    remote?: (typeof sync.items)[number];
+  }[] = [];
+  for (const { plan, workout } of plans) {
+    const results = sessions.filter(
+      (session) =>
+        session.planId === plan.id && session.plannedWorkoutId === workout.id,
     );
-  if (sync.denied)
-    return (
-      <Alert color="red" role="alert">
-        {m.noAccess}
-      </Alert>
+    const session = results.at(-1);
+    const remote = sync.items.find(
+      (item) => item.planId === plan.id && item.workoutId === workout.id,
     );
+    const native = !session
+      ? sync.nativePage.items.find(
+          (item) => item.remoteTrainingId === remote?.remoteTrainingId,
+        )
+      : undefined;
+    entries.push({
+      id: workout.id,
+      label: workoutTitle(workout.title, workout.date),
+      plan,
+      workout,
+      session,
+      native,
+      remote,
+    });
+  }
+  for (const session of sessions)
+    if (!entries.some((entry) => entry.session?.id === session.id))
+      entries.push({
+        id: session.id,
+        label: `${workoutTitle(session.title, session.date)} · ${m[session.status]}`,
+        session,
+        workout: session.planSnapshot?.workout,
+      });
+  for (const native of sync.nativePage.items)
+    if (
+      native.date === date &&
+      !sync.items.some(
+        (item) =>
+          item.remoteTrainingId === native.remoteTrainingId &&
+          entries.some((entry) => entry.workout?.id === item.workoutId),
+      )
+    )
+      entries.push({
+        id: `native:${native.remoteTrainingId}`,
+        label: workoutTitle(native.title, date),
+        native,
+      });
+  for (const remote of sync.items)
+    if (
+      remote.actual?.date === date &&
+      !entries.some(
+        (entry) =>
+          entry.remote?.id === remote.id ||
+          entry.native?.remoteTrainingId === remote.remoteTrainingId,
+      )
+    )
+      entries.push({
+        id: `remote:${remote.id}`,
+        label: workoutTitle(remote.actual.title, date),
+        remote,
+      });
+  const entry = entries.find((item) => item.id === active) ?? entries[0];
+  const create = creating === date;
+  const done = async () => {
+    await resource.refresh();
+    if (create) setCreating(null);
+  };
+  async function remove() {
+    if (!entry) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { plan, workout, session } = entry;
+      const remaining = plan?.workouts.filter(
+        (item) => item.id !== workout?.id,
+      );
+      const response = await apiFetch(
+        `/api/workouts/${plan ? 'plans' : 'sessions'}/${plan?.id ?? session!.id}?ownerId=${encodeURIComponent(ownerId)}`,
+        {
+          method: plan && remaining?.length ? 'PUT' : 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            plan && remaining?.length
+              ? {
+                  revision: plan.revision,
+                  data: {
+                    title: plan.title,
+                    description: plan.description,
+                    startsOn: plan.startsOn,
+                    endsOn: plan.endsOn,
+                    workouts: remaining,
+                  },
+                }
+              : { revision: plan?.revision ?? session!.revision },
+          ),
+        },
+      );
+      if (!response.ok)
+        throw new Error(response.status === 409 ? m.conflict : m.error);
+      setDeletion(false);
+      await resource.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.error);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
-    <Stack className={classes.content} style={{ minWidth: 0 }}>
-      <Group justify="space-between">
-        <Title order={1} size="h2">
-          {m.title}
-        </Title>
-        <Button
-          mih={44}
-          size="compact-sm"
-          onClick={() => router.push(`/workouts/new?date=${date}`)}
-        >
-          {m.newWorkout}
-        </Button>
-      </Group>
-      {!canLog && <Alert>{m.trainerHint}</Alert>}
-      {error && !data && (
+    <Stack className={`${classes.workspace} ${content.content}`}>
+      <PageHeader
+        actions={
+          <>
+            <Tooltip label={m.refreshShort}>
+              <ActionIcon
+                size={44}
+                variant="subtle"
+                aria-label={m.refreshShort}
+                disabled={sync.busy}
+                onClick={() => {
+                  setSyncOpen(true);
+                  void sync.refresh();
+                }}
+              >
+                <IconRefresh size={20} />
+              </ActionIcon>
+            </Tooltip>
+            <Menu position="bottom-end">
+              <Menu.Target>
+                <ActionIcon size={44} variant="subtle" aria-label={m.dayMenu}>
+                  <IconDots size={20} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  onClick={() => {
+                    setCopied(null);
+                    setCreating(date);
+                  }}
+                >
+                  {m.anotherWorkout}
+                </Menu.Item>
+                {entry?.workout && (
+                  <Menu.Item
+                    onClick={() => {
+                      setCopyDate(date);
+                      setCopyOpen(true);
+                    }}
+                  >
+                    {m.copy}
+                  </Menu.Item>
+                )}
+                <Menu.Item onClick={() => setSyncOpen(true)}>
+                  {m.syncDetails}
+                </Menu.Item>
+                {(entry?.plan || entry?.session) && (
+                  <Menu.Item color="red" onClick={() => setDeletion(true)}>
+                    {m.removeDayWorkout}
+                  </Menu.Item>
+                )}
+              </Menu.Dropdown>
+            </Menu>
+          </>
+        }
+      >
+        {m.title}
+      </PageHeader>
+      <DateNavigation
+        date={date}
+        onSelect={(value) => {
+          setActive(null);
+          router.push(`/workouts?date=${value}`, { scroll: false });
+        }}
+        labels={m.dateNavigation}
+      />
+      {(resource.error || sync.denied) && (
         <Alert color="red" role="alert">
-          {error}
-          <Button variant="subtle" mih={44} onClick={() => void load()}>
+          {sync.denied ? m.noAccess : m.loadError}
+          <Button variant="subtle" onClick={() => void resource.refresh()}>
             {m.refresh}
           </Button>
         </Alert>
       )}
-      {!data && !error && (
-        <Group>
-          <Loader size="sm" />
-          <Text>{m.loading}</Text>
-        </Group>
+      {!data && !resource.error && <Loader size="sm" />}
+      {entries.length > 1 && !create && (
+        <Select
+          label={m.chooseWorkout}
+          allowDeselect={false}
+          value={entry?.id}
+          data={entries.map((item) => ({ value: item.id, label: item.label }))}
+          onChange={setActive}
+        />
       )}
-      <DateNavigation
-        date={date}
-        onSelect={setDate}
-        labels={m.dateNavigation}
-      />
-      <SyncSummary sync={sync} />
-      {data &&
-        !dayPlans.length &&
-        !daySessions.length &&
-        !dayRemote.length &&
-        !sync.nativePage.items.length &&
-        !sync.busy &&
-        !sync.error && (
-          <Paper withBorder p="lg">
-            <Stack gap="xs">
-              <Title order={2}>{m.emptyDay}</Title>
-              <Text>{m.emptyDayHint}</Text>
-            </Stack>
-          </Paper>
-        )}
-      {sync.nativePage.items
-        .filter(
-          (item) =>
-            item.date === date &&
-            !dayPlans.some(({ plan, workout }) =>
-              sync.items.some(
-                (entry) =>
-                  entry.planId === plan.id &&
-                  entry.workoutId === workout.id &&
-                  entry.remoteTrainingId === item.remoteTrainingId,
-              ),
-            ),
-        )
-        .map((item) => (
-          <Stack key={item.remoteTrainingId}>
-            <NativeWorkout item={item} />
+      {data && !create && !entry && (
+        <div className={classes.empty}>
+          <Stack align="center" gap="md">
+            <Title order={2} size="h3">
+              {m.emptyDay}
+            </Title>
+            <Text c="dimmed">{m.prepareHint}</Text>
             <Button
-              component={Link}
-              href={`/workouts/native/${item.remoteTrainingId}?date=${date}`}
-              variant="subtle"
-              size="compact-sm"
               mih={44}
-              leftSection={<IconArrowRight size={16} />}
+              onClick={() => {
+                setCopied(null);
+                setCreating(date);
+              }}
             >
-              {m.view}
+              {m.newWorkout}
             </Button>
+            <Button
+              variant="subtle"
+              mih={44}
+              loading={sync.busy}
+              onClick={() => void sync.refresh()}
+            >
+              {m.refreshFromProvider}
+            </Button>
+            {sync.error && (
+              <Text c="red" role="alert">
+                {m.syncError}
+              </Text>
+            )}
           </Stack>
-        ))}
+        </div>
+      )}
+      {data && create && (
+        <DayEditor
+          key={`new:${ownerId}:${date}:${copied?.workout.id ?? ''}`}
+          ownerId={ownerId}
+          userId={userId}
+          date={date}
+          workout={copied?.date === date ? copied.workout : undefined}
+          canLog={canLog}
+          onSaved={done}
+          onCancel={() => setCreating(null)}
+        />
+      )}
+      {!create && entry && (entry.plan || entry.session) && (
+        <DayEditor
+          key={`${ownerId}:${date}:${entry.id}`}
+          ownerId={ownerId}
+          userId={userId}
+          date={date}
+          plan={entry.plan}
+          workout={entry.workout}
+          existing={entry.session}
+          canLog={canLog}
+          onSaved={done}
+          renderComments={renderComments}
+        />
+      )}
+      {!create && entry?.native && !entry.session && (
+        <details open={!entry.plan}>
+          <summary>{m.remoteActual}</summary>
+          <NativeWorkout item={entry.native} ownerId={ownerId} fullView />
+        </details>
+      )}
+      {!create && entry?.remote?.actual && !entry.native && !entry.session && (
+        <details open={!entry.plan}>
+          <summary>{m.remoteActual}</summary>
+          <WorkoutSync item={entry.remote} />
+        </details>
+      )}
       {sync.nativePage.nextCursor && (
         <Button
-          mih={44}
-          variant="default"
-          loading={sync.busy}
+          variant="subtle"
+          disabled={sync.busy}
           onClick={() => void sync.loadMore()}
         >
           {m.loadMore}
         </Button>
       )}
-      {dayPlans.map(({ plan, workout }) => {
-        const item = sync.items.find(
-          (item) => item.planId === plan.id && item.workoutId === workout.id,
-        );
-        const results = data!.sessions.filter(
-          (session) =>
-            session.planId === plan.id &&
-            session.plannedWorkoutId === workout.id,
-        );
-        const latestResult = results.at(-1);
-        return (
-          <Paper
-            withBorder
-            p="md"
-            key={workout.id}
-            data-testid={`plan-${plan.id}`}
-            style={{ overflowWrap: 'anywhere' }}
-          >
-            <Stack>
-              <Group justify="space-between">
-                <Title order={2}>
-                  {workoutTitle(workout.title, workout.date)}
-                </Title>
-                <Badge variant="outline" color="gray" c="dimmed">
-                  {m.localSource}
-                </Badge>
-              </Group>
-              {plan.title && <Text size="sm">{plan.title}</Text>}
-              {plan.description && (
-                <Text style={{ whiteSpace: 'pre-wrap' }}>
-                  {plan.description}
-                </Text>
-              )}
-              <ExerciseTable
-                exercises={workout.exercises}
-                sync={item}
-                actual={latestResult?.exercises}
-              />
-              <WorkoutSync item={item} showActual={false} />
-              <Group gap="xs">
-                <Button
-                  component={Link}
-                  href={`/workouts/plans/${plan.id}/workouts/${workout.id}?date=${date}`}
-                  variant={canLog ? 'subtle' : 'filled'}
-                  size="compact-sm"
-                  mih={44}
-                  leftSection={<IconArrowRight size={16} />}
-                >
-                  {m.view}
-                </Button>
-                <Tooltip label={m.editWorkout}>
-                  <ActionIcon
-                    variant="subtle"
-                    size={44}
-                    aria-label={m.editWorkout}
-                    onClick={() => editWorkout(plan, workout)}
-                  >
-                    <IconPencil size={16} />
-                  </ActionIcon>
-                </Tooltip>
-                {canLog && (
-                  <Button
-                    size="compact-sm"
-                    mih={44}
-                    leftSection={<IconClipboardCheck size={16} />}
-                    aria-label={latestResult ? m.editActual : m.record}
-                    onClick={() =>
-                      latestResult
-                        ? editSession(latestResult)
-                        : record(plan, workout)
-                    }
-                  >
-                    {latestResult ? m.editActual : m.record}
-                  </Button>
-                )}
-                <Tooltip label={m.copy}>
-                  <ActionIcon
-                    variant="subtle"
-                    size={44}
-                    aria-label={m.copy}
-                    onClick={() => {
-                      setCopy({ plan, workout });
-                      setCopyDate(workout.date);
-                    }}
-                  >
-                    <IconCopy size={16} />
-                  </ActionIcon>
-                </Tooltip>
-                {plan.workouts.length > 1 && (
-                  <Tooltip label={m.editPlan}>
-                    <ActionIcon
-                      component={Link}
-                      href={`/workouts/plans/${plan.id}/edit?date=${date}`}
-                      variant="subtle"
-                      size={44}
-                      aria-label={m.editPlan}
-                    >
-                      <IconCalendar size={16} />
-                    </ActionIcon>
-                  </Tooltip>
-                )}
-                <Tooltip label={m.removePlan}>
-                  <ActionIcon
-                    variant="subtle"
-                    color="red"
-                    size={44}
-                    aria-label={m.removePlan}
-                    onClick={() => {
-                      setEditorError(null);
-                      setDeletion({
-                        kind: 'plans',
-                        id: plan.id,
-                        revision: plan.revision,
-                      });
-                    }}
-                  >
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                </Tooltip>
-              </Group>
-              {results.map((session) => (
-                <SessionResult
-                  key={session.id}
-                  session={session}
-                  date={date}
-                  comparisonShown={session.id === latestResult?.id}
-                  canLog={canLog}
-                  renderComments={renderComments}
-                  onEdit={() => editSession(session)}
-                  onDelete={() => {
-                    setEditorError(null);
-                    setDeletion({
-                      kind: 'sessions',
-                      id: session.id,
-                      revision: session.revision,
-                    });
-                  }}
-                />
-              ))}
-            </Stack>
-          </Paper>
-        );
-      })}
-      {dayRemote.map((item) => (
-        <Paper withBorder p="md" key={item.id}>
-          <Stack>
-            <Group justify="space-between">
-              <Title order={2}>{item.actual?.title}</Title>
-              <Button
-                component={Link}
-                href={`/workouts/links/${item.id}?date=${date}`}
-                variant="subtle"
-                size="compact-sm"
-                mih={44}
-                leftSection={<IconArrowRight size={16} />}
-              >
-                {m.view}
-              </Button>
-            </Group>
-            <Text>
-              {m.publishedSnapshot}:{' '}
-              {workoutTitle(
-                (item.publishedSnapshot ?? item.planSnapshot).planTitle,
-                (item.publishedSnapshot ?? item.planSnapshot).workout.date,
-              )}
-            </Text>
-            <ExerciseTable
-              exercises={
-                (item.publishedSnapshot ?? item.planSnapshot).workout.exercises
-              }
-              sync={item}
-            />
-            <WorkoutSync item={item} />
-          </Stack>
-        </Paper>
-      ))}
-      {daySessions
-        .filter(
-          (session) =>
-            !dayPlans.some(
-              ({ plan, workout }) =>
-                session.planId === plan.id &&
-                session.plannedWorkoutId === workout.id,
-            ),
-        )
-        .map((session) => (
-          <Paper withBorder p="md" key={session.id}>
-            <SessionResult
-              session={session}
-              date={date}
-              canLog={canLog}
-              renderComments={renderComments}
-              onEdit={() => editSession(session)}
-              onDelete={() => {
-                setEditorError(null);
-                setDeletion({
-                  kind: 'sessions',
-                  id: session.id,
-                  revision: session.revision,
-                });
-              }}
-            />
-          </Paper>
-        ))}
       <Modal
-        opened={copy !== null}
-        onClose={() => setCopy(null)}
-        title={m.copy}
+        opened={syncOpen}
+        onClose={() => setSyncOpen(false)}
+        title={m.syncQuiet}
         closeButtonProps={{ 'aria-label': m.close, size: 44 }}
+      >
+        <SyncSummary sync={sync} />
+        {entry?.remote && (
+          <WorkoutSync item={entry.remote} showActual={false} />
+        )}
+      </Modal>
+      <Modal
+        opened={copyOpen}
+        onClose={() => setCopyOpen(false)}
+        title={m.copy}
       >
         <Stack>
           <TextInput
             type="date"
             label={m.copyDate}
             value={copyDate}
-            onChange={(event) => setCopyDate(event.currentTarget.value)}
+            onChange={(e) => setCopyDate(e.currentTarget.value)}
           />
           <Button
-            mih={44}
-            disabled={
-              !/^\d{4}-\d{2}-\d{2}$/.test(copyDate) ||
-              !Number.isFinite(Date.parse(copyDate))
-            }
+            disabled={!z.iso.date().safeParse(copyDate).success}
             onClick={() => {
-              if (copy) {
-                router.push(
-                  `/workouts/new?copy=${copy.plan.id}&workout=${copy.workout.id}&date=${copyDate}&returnDate=${date}`,
-                );
-                setCopy(null);
-              }
+              if (!entry?.workout) return;
+              const next = copyPlanToDate(
+                {
+                  title: '',
+                  description: '',
+                  startsOn: entry.workout.date,
+                  endsOn: entry.workout.date,
+                  workouts: [entry.workout],
+                },
+                copyDate,
+              );
+              setCopied({ date: copyDate, workout: next.workouts[0]! });
+              setCreating(copyDate);
+              setCopyOpen(false);
+              router.push(`/workouts?date=${copyDate}`, { scroll: false });
             }}
           >
             {m.copy}
@@ -570,52 +412,29 @@ function ScopedWorkoutsDashboard({
         </Stack>
       </Modal>
       <Modal
-        opened={deletion !== null}
+        opened={deletion}
         onClose={() => {
-          if (!busy) setDeletion(null);
+          if (!busy) setDeletion(false);
         }}
         title={m.confirmDelete}
-        closeOnEscape={!busy}
-        closeOnClickOutside={!busy}
-        withCloseButton={!busy}
-        closeButtonProps={{ 'aria-label': m.close, size: 44 }}
       >
         <Stack>
           <Text>{m.confirmText}</Text>
-          {editorError && <Alert color="red">{editorError}</Alert>}
-          <Group grow>
+          {error && <Alert color="red">{error}</Alert>}
+          <Group justify="flex-end">
             <Button
-              mih={44}
               variant="default"
               disabled={busy}
-              onClick={() => setDeletion(null)}
+              onClick={() => setDeletion(false)}
             >
               {m.cancel}
             </Button>
-            <Button
-              mih={44}
-              color="red"
-              loading={busy}
-              onClick={() => {
-                if (deletion)
-                  void mutate(`/${deletion.kind}/${deletion.id}`, 'DELETE', {
-                    revision: deletion.revision,
-                  });
-              }}
-            >
-              {m.confirmDelete}
+            <Button color="red" loading={busy} onClick={() => void remove()}>
+              {m.remove}
             </Button>
           </Group>
         </Stack>
       </Modal>
     </Stack>
   );
-}
-
-export function WorkoutsDashboard(props: {
-  ownerId: string;
-  canLog: boolean;
-  renderComments?: (sessionId: string) => ReactNode;
-}) {
-  return <ScopedWorkoutsDashboard key={props.ownerId} {...props} />;
 }

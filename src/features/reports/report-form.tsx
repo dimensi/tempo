@@ -1,4 +1,5 @@
 'use client';
+import { PageHeader } from '@/components/layout/page-header';
 import { DateNavigation } from '@/components/shared/date-navigation';
 import { browserToday } from '@/components/shared/date-navigation-dates';
 import { OfflineFile } from '@/components/shared/offline-file';
@@ -15,7 +16,6 @@ import {
   Stack,
   Text,
   TextInput,
-  Title,
 } from '@mantine/core';
 import {
   useCallback,
@@ -223,7 +223,7 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
   }
   return (
     <Stack>
-      <Title order={1}>{m.title}</Title>
+      <PageHeader>{m.title}</PageHeader>
       <Text c="dimmed">{m.description}</Text>
       {ownerId === null && (
         <Alert color="red" role="alert">
