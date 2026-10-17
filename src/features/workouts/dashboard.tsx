@@ -30,6 +30,7 @@ import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
 import { workoutTitle } from '@/lib/workout-title';
 import { DayEditor } from './day-editor';
+import { DownloadWorkoutButton } from './download-workout-button';
 import { copyPlanToDate } from './copy-plan';
 import { NativeWorkout } from './native-workout';
 import {
@@ -79,6 +80,7 @@ export function WorkoutsDashboard({
   const [copyDate, setCopyDate] = useState(date);
   const [deletion, setDeletion] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [draftDirty, setDraftDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const plans =
     data?.plans.flatMap((plan) =>
@@ -158,6 +160,34 @@ export function WorkoutsDashboard({
         remote,
       });
   const entry = entries.find((item) => item.id === active) ?? entries[0];
+  const downloadExercises = [
+    ...(entry?.workout?.exercises ?? []),
+    ...(entry?.session?.exercises ?? []),
+  ].flatMap((exercise) =>
+    exercise.transformMate
+      ? [{ id: exercise.transformMate.exerciseId, name: exercise.name }]
+      : [],
+  );
+  if (entry?.native)
+    downloadExercises.push(
+      ...entry.native.exercises.map((exercise) => ({
+        id: exercise.exerciseId,
+        name: exercise.name,
+      })),
+    );
+  if (!downloadExercises.length && entry?.remote?.actual)
+    downloadExercises.push(
+      ...entry.remote.actual.exercises.map((exercise) => ({
+        id: exercise.exerciseId,
+        name: exercise.name,
+      })),
+    );
+  const downloadSignature = JSON.stringify([
+    entry?.workout,
+    entry?.session,
+    entry?.native,
+    entry?.remote?.actual,
+  ]);
   const create = creating === date;
   const done = async () => {
     await resource.refresh();
@@ -337,6 +367,28 @@ export function WorkoutsDashboard({
           onCancel={() => setCreating(null)}
         />
       )}
+      {!create && entry && (
+        <DownloadWorkoutButton
+          key={`${entry.id}:${downloadSignature}`}
+          ownerId={ownerId}
+          blocked={draftDirty}
+          workoutKey={`${ownerId}:${entry.id}`}
+          signature={downloadSignature}
+          resources={[
+            readResources.workouts(
+              `/api/workouts?ownerId=${encodeURIComponent(ownerId)}`,
+            ),
+            ...(entry.native || entry.remote
+              ? [
+                  readResources.transformMate(
+                    `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20' })}`,
+                  ),
+                ]
+              : []),
+          ]}
+          exercises={downloadExercises}
+        />
+      )}
       {!create && entry && (entry.plan || entry.session) && (
         <DayEditor
           key={`${ownerId}:${date}:${entry.id}`}
@@ -349,6 +401,7 @@ export function WorkoutsDashboard({
           canLog={canLog}
           onSaved={done}
           renderComments={renderComments}
+          onDirtyChange={setDraftDirty}
         />
       )}
       {!create && entry?.native && !entry.session && (

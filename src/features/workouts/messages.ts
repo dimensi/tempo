@@ -1,4 +1,23 @@
 export const workoutMessages = {
+  downloadWorkout: 'Скачать тренировку',
+  downloadSaveFirst:
+    'Сохраните изменения, чтобы скачать актуальную тренировку.',
+  downloadingWorkout: 'Скачиваем тренировку…',
+  workoutDownloaded: 'Скачана для зала',
+  downloadingData: 'Сохраняем упражнения и подходы…',
+  downloadedVideos: 'Видео на устройстве',
+  downloadProgress: 'Скачивание тренировки',
+  downloadNeedsNetwork:
+    'Подключитесь к интернету, чтобы скачать тренировку с видео.',
+  downloadFailed:
+    'Не удалось скачать всё. Проверьте подключение и свободное место, затем повторите. Уже скачанные видео сохранятся.',
+  downloadNoVideo: 'В источнике нет видео',
+  allMuscles: 'Все упражнения',
+  playTechnique: 'Смотреть видео',
+  chooseCard: 'Выбрать упражнение',
+  unchooseCard: 'Убрать из выбранных',
+  capacityReached: 'Больше упражнений в эту тренировку добавить нельзя.',
+  library: 'Упражнения',
   addExercises: 'Добавить упражнения',
   selectExercises: 'Выберите упражнения',
   addSelected: 'Добавить выбранные',

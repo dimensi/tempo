@@ -38,3 +38,8 @@ export function actualSetForExercise(
     )
     ?.sets.find((set) => set.order === order);
 }
+
+export const techniqueHref = (ownerId: string, id: number) =>
+  `/api/workouts/transformmate/exercises/${id}/video?ownerId=${encodeURIComponent(ownerId)}`;
+export const exerciseHref = (ownerId: string, id: number) =>
+  `/api/workouts/transformmate/exercises/${id}?ownerId=${encodeURIComponent(ownerId)}`;

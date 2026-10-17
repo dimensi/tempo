@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { testOrigin } from './origin';
+import { readFileSync } from 'node:fs';
 
 async function cachedReadBody(page: Page, expectedTitle: string) {
   return page.evaluate(async (title) => {
@@ -189,6 +190,97 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await readFinished.promise;
   await page.unroute('**/api/workouts?*');
 
+  // One explicit download retains data and playable technique, then logout purges both.
+  const gymDate = '2026-01-20';
+  const techniqueId = 501;
+  const exercise = {
+    id: crypto.randomUUID(),
+    name: 'Downloaded technique',
+    transformMate: {
+      exerciseId: techniqueId,
+      occurrenceKey: crypto.randomUUID(),
+    },
+    sets: [{ reps: 10, weightKg: 20 }],
+  };
+  const created = await page.request.post(
+    `/api/workouts/plans?ownerId=${owner}`,
+    {
+      headers: { origin: testOrigin },
+      data: {
+        title: 'Gym download',
+        description: '',
+        startsOn: gymDate,
+        endsOn: gymDate,
+        workouts: [
+          {
+            id: crypto.randomUUID(),
+            date: gymDate,
+            title: 'Gym download',
+            exercises: [exercise],
+          },
+        ],
+      },
+    },
+  );
+  expect(created.status()).toBe(200);
+  await page.route('**/api/workouts/transformmate/exercises/501?*', (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          id: 501,
+          name: exercise.name,
+          description: 'Synthetic technique instructions',
+          canPlan: true,
+          hasVideo: true,
+          publicationCapability: { state: 'supported', reason: null },
+          snippet: null,
+          preview: { coverage: 'absent', path: null, revision: 'a'.repeat(64) },
+          detailCoverage: 'available',
+          membershipCoverage: 'available',
+          muscleGroups: [],
+          muscles: [],
+          fetchedAt: new Date().toISOString(),
+          detailFetchedAt: new Date().toISOString(),
+          stale: false,
+        },
+      },
+    }),
+  );
+  const technique = readFileSync(
+    new URL('../fixtures/technique-demo.mp4', import.meta.url),
+  );
+  await page.route(
+    '**/api/workouts/transformmate/exercises/501/video?*',
+    (route) => route.fulfill({ contentType: 'video/mp4', body: technique }),
+  );
+  await page.goto(`/workouts?date=${gymDate}`);
+  await page
+    .getByRole('button', { name: 'Скачать тренировку', exact: true })
+    .click();
+  await expect(
+    page.getByRole('button', { name: 'Скачана для зала', exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole('button', { name: 'Скачана для зала', exact: true }),
+  ).toBeVisible();
+  await context.setOffline(true);
+  await page
+    .getByRole('button', { name: 'Техника: Downloaded technique', exact: true })
+    .click();
+  await expect(
+    page.getByText('Synthetic technique instructions', { exact: true }),
+  ).toBeVisible();
+  const media = page.locator('video');
+  await expect(media).toHaveAttribute('src', /^blob:/);
+  await page.getByRole('button', { name: 'Play Video', exact: true }).click();
+  await expect
+    .poll(() => media.evaluate((video: HTMLVideoElement) => video.readyState))
+    .toBeGreaterThan(1);
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await context.setOffline(false);
+  await page.goto(dayUrl);
+
   await context.setOffline(true);
   await expect(
     page.getByRole('button', { name: 'Техника: Smoke squat', exact: true }),
@@ -212,11 +304,16 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       });
       try {
         return await new Promise<boolean>((resolve) => {
-          const count = database
-            .transaction('resources')
-            .objectStore('resources')
-            .count();
-          count.onsuccess = () => resolve(count.result === 0);
+          const tx = database.transaction(['resources', 'files', 'metadata']);
+          let remaining = 3;
+          let empty = true;
+          for (const name of ['resources', 'files', 'metadata']) {
+            const count = tx.objectStore(name).count();
+            count.onsuccess = () => {
+              empty &&= count.result === 0;
+              if (--remaining === 0) resolve(empty);
+            };
+          }
         });
       } finally {
         database.close();

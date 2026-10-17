@@ -33,12 +33,6 @@ export function OfflineFile({
   const [resource, setResource] = useState<{ bytes: Blob; url: string } | null>(
     null,
   );
-  const [preflight, setPreflight] = useState<{
-    href: string;
-    size: number | null;
-  } | null>(null);
-  const prepared = preflight?.href === href;
-  const knownSize = size ?? (prepared ? preflight?.size : undefined);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -58,25 +52,13 @@ export function OfflineFile({
     try {
       if (remove) await controller.removeFile(id);
       else if (href) {
-        if (size === undefined && !prepared) {
-          const bytes = await controller.fileSize(href);
-          setPreflight({ href, size: bytes });
-          if (compact)
-            await controller.saveFile({
-              id,
-              label,
-              href,
-              kind,
-              size: bytes ?? undefined,
-            });
-        } else
-          await controller.saveFile({
-            id,
-            label,
-            href,
-            kind,
-            size: kind === 'pdf' ? undefined : (knownSize ?? undefined),
-          });
+        await controller.saveFile({
+          id,
+          label,
+          href,
+          kind,
+          size: kind === 'pdf' ? undefined : size,
+        });
       }
     } catch {
       setFailed(true);
@@ -95,11 +77,9 @@ export function OfflineFile({
         <Text size="sm" c="dimmed">
           {file
             ? `${m.saved} · ${(file.bytes.size / 1024 / 1024).toFixed(1)} ${m.mib}`
-            : knownSize
-              ? `${(knownSize / 1024 / 1024).toFixed(1)} ${m.mib}`
-              : prepared
-                ? m.sizeUnknown
-                : m.size}
+            : size
+              ? `${(size / 1024 / 1024).toFixed(1)} ${m.mib}`
+              : m.sizeUnknown}
         </Text>
       )}
       {failed && (
@@ -137,7 +117,7 @@ export function OfflineFile({
             disabled={offline || !href || !state.ready}
             onClick={() => void change(false)}
           >
-            {!compact && size === undefined && !prepared ? m.size : m.save}
+            {m.save}
           </Button>
         )}
       </Group>

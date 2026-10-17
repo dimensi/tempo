@@ -78,6 +78,7 @@ Teal carries actions against neutral light or dark surfaces. Semantic status col
 
 - **Action teal** (`primary`): filled actions in the light theme; the dark theme uses `primary-dark` through Mantine's primary shade selection.
 - **Quiet teal controls**: subtle and light variants use darker teal text in light mode and lighter teal text in dark mode. Their background mixes the current text color with transparency, rather than adding another fixed palette.
+- **Exercise browser controls**: play overlays, selected body categories, selected exercise actions and the add-selected action use the existing Mantine teal shade 9 (`#087f5b`) with white text in both themes. Hover mixes that shade with black (15%). This local contrast treatment does not replace the application's primary shades or add a brand token.
 
 ### Neutral
 
@@ -123,7 +124,7 @@ Use Mantine Button and ActionIcon. Buttons default to medium size; shared contro
 
 ### Chips
 
-Mantine light badges identify role, muscle group or an existing status. Keep status meaning in text as well as color. Badges are labels; the searchable exercise picker uses actual checkboxes for multi-selection.
+Mantine light badges identify role, muscle group or an existing status. Keep status meaning in text as well as color. Badges are labels; body-category filters and exercise selection use buttons with pressed states. Selected exercise actions include a check icon and a text label.
 
 ### Cards / Containers
 
@@ -135,15 +136,21 @@ Use Mantine inputs with visible labels or specific accessible names. Default fie
 
 ### Navigation
 
-The desktop sidebar contains the brand, theme toggle and icon-led section links. Active links use Mantine's selected treatment. The exercise catalogue is an indented subitem of workouts. On mobile the burger opens the navigation; choosing a link closes it. Keep the skip link and current-page semantics.
+The desktop sidebar contains the brand, theme toggle and icon-led section links. Active links use Mantine's selected treatment. Exercise discovery belongs to the add-exercise task and has no standalone navigation item. On mobile the burger opens the navigation; choosing a link closes it. Keep the skip link and current-page semantics.
 
 ### Shared page header
 
 PageHeader owns a semantic title and optional actions; the shell owns their placement. PageActions places additional controls in the same header. Actions stay compact and nonwrapping; icon buttons have accessible names and explanatory tooltips where present.
 
-### Exercise rows and media drawer
+### Exercise rows and media dialog
 
-Plan and result entry use the same name-and-set structure. Exercise names wrap and act as video controls. Technique and personal videos share one focused drawer; its slide lasts 180ms, or zero with reduced motion. The workout-specific picker, offline save and day flow are specified in the surface brief.
+Plan and result entry use the same name-and-set structure. Exercise names wrap and act as video controls. Technique and personal videos share one focused dialog, full-screen on phones; its transition lasts 180ms, or zero with reduced motion. The description stays openly visible below the technique player. Closing the dialog restores the exercise workspace and its entered sets.
+
+### Exercise picker and gym download
+
+The picker is a full-screen task on phones and a wide dialog on desktop. Search, visible body-category buttons and a muscle filter lead into video cards. The grid becomes one column on small phones; playback opens inside its card. A sticky add-selected action confirms multi-selection together. This focused selection-and-playback flow is the workout signature, rather than a sidebar detail panel.
+
+One workout download action shows data preparation, video progress and a completed state with the saved video count. Partial failure stays explicit and permits retry while retaining completed downloads; exercises without a source video are listed separately. Saved technique video is preferred even online. The precise retention, write-safety and day-flow contract stays in [the surface brief](docs/design/workouts-day.md).
 
 ## Do's and Don'ts
 

@@ -160,22 +160,6 @@ export function ApplicationShellFrame({
                         mb={4}
                         style={{ borderRadius: 'var(--mantine-radius-md)' }}
                       />
-                      {section.href === '/workouts' && (
-                        <NavLink
-                          component={linkComponent as 'a'}
-                          href="/workouts/catalog"
-                          label={ru.exerciseCatalog}
-                          active={pathname === '/workouts/catalog'}
-                          aria-current={
-                            pathname === '/workouts/catalog'
-                              ? 'page'
-                              : undefined
-                          }
-                          onClick={close}
-                          pl={44}
-                          mih={44}
-                        />
-                      )}
                     </div>
                   );
                 })}

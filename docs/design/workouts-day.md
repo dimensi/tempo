@@ -16,7 +16,7 @@ Extend the existing Mantine application identity: its teal accent, system font, 
 
 **FIRST VIEWPORT:** One shared header contains the section heading and compact refresh/menu/save actions. The date ribbon precedes a centered exercise sequence (maximum 860px). Wrapping exercise names and numeric set rows take priority over descriptions, provider metadata and media.
 
-**FORM:** Code-led extension of the approved existing application. No composition-ranking workshop or random seed was used for this incumbent extension; no seed key is claimed. Signature: opening technique from an exercise name preserves entered sets. The media drawer slides for 180ms, or zero with reduced motion.
+**FORM:** Code-led extension of the approved existing application. No composition-ranking workshop or random seed was used for this incumbent extension; no seed key is claimed. Signature: opening technique from an exercise name preserves entered sets. A focused video dialog uses a short transition, or zero with reduced motion.
 
 **FINISH:** unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 
@@ -26,15 +26,19 @@ The shared app header identifies the current section and carries page actions. B
 
 ## Signature interaction
 
-Tap an exercise name to open its technique video in a focused drawer without leaving or losing entered sets. Switch to personal videos in the same drawer. The drawer returns focus to the exercise on close. Keep motion limited to the drawer and respect reduced motion.
+Tap an exercise name to open its technique video in a focused dialog without leaving or losing entered sets. Switch to personal videos in the same dialog. The dialog returns focus to the exercise on close. Keep its transition short and respect reduced motion. While choosing exercises, play technique inside a video card and select several exercises before adding them together; no details sidebar interrupts selection.
 
 ## Flow
 
 An empty day offers creation and an explicit provider refresh. Creation starts with multi-selection in a searchable exercise picker, with secondary muscle filters and an explicit manual option. Plan editing and result entry use the same exercise/set visual grammar. Results preserve missingness, revision conflicts, account separation and the durable owner write queue. One session owns one comment thread. Multiple real records on a date remain accessible through a compact selector.
 
-Provider refresh is explicit; its status and details live in a dialog rather than permanent provider panels above exercises. Successful background exchange remains quiet. The exercise picker opens as a right drawer on desktop and a bottom drawer on mobile; selected exercises are added together. Technique and «Мои видео» share the exercise-name drawer. A compact technique-save control stores the video for later offline playback; unavailable technique and unsaved personal videos have explicit local states.
+Provider refresh is explicit; its status and details live in a dialog rather than permanent provider panels above exercises. Successful background exchange remains quiet. The exercise picker opens as a full-screen task on phones and a wide dialog on desktop. Video-led cards expose playback in place, with visible body categories, a muscle filter and multi-selection. Selected exercises are added together. Technique and «Мои видео» share a focused dialog; the description stays openly visible below the technique video. One «Скачать тренировку» action saves the loaded data, exercise details and all available technique videos for the gym, with progress and an explicit partial-failure state. Saved videos play from the device even while online.
 
-The shared header pattern applies across top-level pages. The exercise catalogue remains a workout navigation subitem, not an extra action competing with daily entry. Former new/detail/result page routes do not remain as compatibility paths. Existing authorization, trainer grants, result missingness, provider write restrictions and stored user data remain unchanged by this visual structure.
+The new play overlays, selected category and exercise buttons, and add-selected action use Mantine teal 9 with white text in both themes; hover mixes black at 15%. This scoped contrast adjustment keeps the incumbent palette and primary theme settings. Selection remains explicit through pressed states, labels and the exercise check icon.
+
+Download progress names the current exercise and completed/total video count after data preparation. Completion shows the saved video count; missing source videos are named separately. A failed attempt keeps completed files and the action available for retry. Unsaved day edits must be saved before download. This retains an already loaded workout through the existing account-scoped stores; it does not introduce another router or a cold offline shell.
+
+The shared header pattern applies across top-level pages. Exercise discovery is part of adding exercises; the catalogue no longer occupies daily navigation. The existing catalogue route uses the same cards and filters. Former new/detail/result page routes do not remain as compatibility paths. Existing authorization, trainer grants, result missingness, provider write restrictions and stored user data remain unchanged by this visual structure.
 
 Drafts are scoped by actor, owner, resource and day, with acknowledged plan and result revisions tracked separately. Saving a plan preserves incomplete result input. Edits made during a pending result write are coalesced into a later save. Automatic saves never silently remove recorded exercise occurrences or their private-video references; an explicit removal confirmation precedes the existing destructive online operation.
 

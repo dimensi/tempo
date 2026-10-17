@@ -71,31 +71,6 @@
   gap: 12px;
   flex-wrap: wrap;
 }
-.pickerRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-block: 12px;
-  border-bottom: 1px solid var(--mantine-color-default-border);
-  min-height: 64px;
-  cursor: pointer;
-}
-.pickerRow:has(input:checked) {
-  background: var(--mantine-primary-color-light);
-}
-.pickerName {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-weight: 550;
-  line-height: 1.4;
-}
-.pickerFooter {
-  position: sticky;
-  bottom: 0;
-  background: var(--mantine-color-body);
-  padding-block: 12px max(12px, env(safe-area-inset-bottom));
-}
 .empty {
   text-align: center;
   padding: 48px 16px;

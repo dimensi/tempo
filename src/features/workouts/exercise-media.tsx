@@ -1,9 +1,7 @@
 'use client';
 import { useState } from 'react';
-import { Drawer, SegmentedControl, Stack, Text } from '@mantine/core';
+import { Modal, SegmentedControl, Stack, Text } from '@mantine/core';
 import { useMediaQuery, useReducedMotion } from '@mantine/hooks';
-import { OfflineFile } from '@/components/shared/offline-file';
-import { useReadOnline } from '@/lib/use-read-online';
 import type { WorkoutExercise, WorkoutSession } from '@/contracts/workouts';
 import { ExerciseDetails } from './exercise-details';
 import { ExerciseVideos } from './workout-videos';
@@ -25,7 +23,6 @@ export function ExerciseMedia({
   const [tab, setTab] = useState('technique');
   const mobile = useMediaQuery('(max-width: 48em)');
   const reduceMotion = useReducedMotion();
-  const online = useReadOnline();
   const actual = session?.exercises.find((item) =>
     exercise.transformMate
       ? item.transformMate?.occurrenceKey ===
@@ -33,12 +30,13 @@ export function ExerciseMedia({
       : item.id === exercise.id || item.name === exercise.name,
   );
   return (
-    <Drawer
+    <Modal
       opened
       onClose={onClose}
       title={exercise.name}
-      position={mobile ? 'bottom' : 'right'}
-      size={mobile ? '85dvh' : 480}
+      fullScreen={mobile}
+      size={720}
+      centered
       closeButtonProps={{ 'aria-label': m.close, size: 44 }}
       transitionProps={{ duration: reduceMotion ? 0 : 180 }}
     >
@@ -62,20 +60,10 @@ export function ExerciseMedia({
         />
         {tab === 'technique' ? (
           exercise.transformMate ? (
-            online ? (
-              <ExerciseDetails
-                ownerId={ownerId}
-                exerciseId={exercise.transformMate.exerciseId}
-              />
-            ) : (
-              <OfflineFile
-                compact
-                offline
-                id={`exercise-video:${exercise.transformMate.exerciseId}`}
-                label={exercise.name}
-                kind="video"
-              />
-            )
+            <ExerciseDetails
+              ownerId={ownerId}
+              exerciseId={exercise.transformMate.exerciseId}
+            />
           ) : (
             <Text c="dimmed">{m.noTechnique}</Text>
           )
@@ -91,6 +79,6 @@ export function ExerciseMedia({
           <Text c="dimmed">{m.ownVideoAfterSave}</Text>
         )}
       </Stack>
-    </Drawer>
+    </Modal>
   );
 }

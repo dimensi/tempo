@@ -9,7 +9,6 @@ import {
 import {
   Alert,
   Button,
-  Drawer,
   SegmentedControl,
   Stack,
   Text,
@@ -161,6 +160,7 @@ export function DayEditor({
   onSaved,
   onCancel,
   renderComments,
+  onDirtyChange,
 }: {
   ownerId: string;
   userId: string;
@@ -172,6 +172,7 @@ export function DayEditor({
   onSaved: () => Promise<void>;
   onCancel?: () => void;
   renderComments?: (id: string) => ReactNode;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [initial] = useState(() => {
     const selected = workout ??
@@ -229,6 +230,8 @@ export function DayEditor({
   const [savedSession, setSavedSession] = useState(existing);
   const sessionRef = useRef(existing);
   const planRef = useRef(plan);
+  const [hasPlan, setHasPlan] = useState(!!plan);
+  const [draftConflict, setDraftConflict] = useState(false);
   const dirty = useRef(false);
   const planDirty = useRef(false);
   const resultDirty = useRef(false);
@@ -273,6 +276,7 @@ export function DayEditor({
           restored.value.planRevision !== (planRef.current?.revision ?? null) ||
           restored.value.sessionRevision !==
             (sessionRef.current?.revision ?? null);
+        setDraftConflict(staleDraft.current);
         if (planDirty.current) setMode('plan');
         if (staleDraft.current) setError(m.conflict);
         setStatus(dirty.current ? m.unsaved : '');
@@ -310,6 +314,9 @@ export function DayEditor({
       );
     }
   };
+  useEffect(() => {
+    onDirtyChange?.(dirty.current);
+  }, [value, status, busy, onDirtyChange]);
   async function savePlan() {
     if (pending.current || staleDraft.current) return;
     const parsed = workoutPlanInputSchema.safeParse(valueRef.current.plan);
@@ -343,6 +350,7 @@ export function DayEditor({
       const saved = apiResults.plan((await response.json()).data);
       if (!mounted.current || generation !== sessionGeneration()) return;
       planRef.current = saved;
+      setHasPlan(true);
       planDirty.current = false;
       const savedWorkout = saved.workouts.find(
         (item) => item.id === selected.id,
@@ -585,7 +593,7 @@ export function DayEditor({
         </Tooltip>
       </PageActions>
       <div className={styles.toolbar}>
-        {planRef.current ? (
+        {hasPlan ? (
           <SegmentedControl
             aria-label={m.dayWorkout}
             value={mode}
@@ -608,7 +616,7 @@ export function DayEditor({
       {error && (
         <Alert color="red" role="alert">
           {error}
-          {staleDraft.current && (
+          {draftConflict && (
             <Button
               variant="subtle"
               onClick={() => {
@@ -786,11 +794,12 @@ export function DayEditor({
           {savedSession && renderComments?.(savedSession.id)}
         </>
       )}
-      <Drawer
+      <Modal
         opened={picker}
         onClose={() => setPicker(false)}
-        position={mobile ? 'bottom' : 'right'}
-        size={mobile ? '90dvh' : 520}
+        fullScreen={mobile}
+        size={1000}
+        centered
         title={m.selectExercises}
         closeButtonProps={{ 'aria-label': m.close, size: 44 }}
       >
@@ -820,7 +829,7 @@ export function DayEditor({
             }}
           />
         )}
-      </Drawer>
+      </Modal>
       <Modal
         opened={confirmRemoval}
         onClose={() => setConfirmRemoval(false)}
