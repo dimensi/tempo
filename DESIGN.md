@@ -104,13 +104,15 @@ Teal carries actions against neutral light or dark surfaces. Semantic status col
 
 ## Layout
 
-The application shell has a fixed-height header (68px) and a desktop navigation column (250px). At Mantine's small breakpoint (48em), the mobile burger gives way to the persistent navigation. Main padding changes from `md` to `xl`; keep content shrinkable with `min-width: 0`.
+The application shell has a fixed-height header (68px) and a desktop navigation column (250px). At Mantine's small breakpoint (48em), the mobile bottom navigation gives way to the persistent sidebar. Main padding changes from `md` to `xl`; keep content shrinkable with `min-width: 0`.
 
 Spacing follows the frontmatter Mantine scale. Header action groups use a tighter local gap (4px), while controls retain their touch area. The workout workspace is centered and bounded (860px); this width is specific to that surface. Its set grid uses fluid numeric columns on mobile and bounded columns from the small breakpoint, with no horizontal overflow.
 
 ## Elevation & Depth
 
 The shell and workout rows rely on boundaries and tonal backgrounds. Bordered Paper containers remain valid elsewhere in the application. Drawers, dialogs and menus retain Mantine's overlay behavior; no new shadow vocabulary is introduced by the workout work. Do not infer a global ban on cards or shadows from the flat exercise list.
+
+The mobile navigation uses a 32px capsule radius and 27px item radius, with 11px semibold navigation labels. These are local navigation dimensions, not replacements for the default component scale.
 
 ## Shapes
 
@@ -136,7 +138,7 @@ Use Mantine inputs with visible labels or specific accessible names. Default fie
 
 ### Navigation
 
-The desktop sidebar contains the brand, theme toggle and icon-led section links. Active links use Mantine's selected treatment. Exercise discovery belongs to the add-exercise task and has no standalone navigation item. On mobile the burger opens the navigation; choosing a link closes it. Keep the skip link and current-page semantics.
+The desktop sidebar contains the brand and icon-led section links. Active links use Mantine's selected treatment. Exercise discovery belongs to the add-exercise task and has no standalone navigation item. Below 48em, a floating four-item navigation links to Overview, Food, Workouts and More. More is a normal page listing secondary sections and account actions, not a sheet. The mobile header contains the brand and page actions; the single left-aligned page title starts the content. The bar reserves content space and the device safe area, stays visible on scroll, and sits below dialogs. Theme selection (light, dark, system) lives in Settings → Appearance for both roles. Keep the skip link and current-page semantics.
 
 ### Shared page header
 

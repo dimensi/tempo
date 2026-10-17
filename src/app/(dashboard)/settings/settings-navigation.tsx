@@ -9,6 +9,7 @@ import classes from './settings.module.css';
 import { offlineDeviceMessages } from '@/lib/offline-device';
 
 const sections = [
+  { id: 'appearance', label: ru.appearance.title },
   { id: 'connection', label: ru.yazioSettings },
   { id: 'sync', label: ru.settings.syncTitle },
   { id: 'transformmate', label: transformMateConnectionMessages.title },
