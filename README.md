@@ -1,20 +1,22 @@
-# yazio-dashboard
+# Tempo
 
-Self-hosted личное пространство для питания, физических показателей и тренировок. Реализованы авторизация, адаптивный Mantine-каркас, дневник питания, ручная синхронизация YAZIO за период, приватные фотографии, замеры, планы и результаты тренировок, аналитика, комментарии и PDF-отчёты. Владелец приглашает тренеров и отзывает доступ через UI. Chromium и шрифты включены в runtime; наличие функции в main не означает её развёртывание на preview.
+Личное приложение для питания, тренировок и показателей здоровья с самостоятельным размещением. Владелец подключает свои аккаунты YAZIO и TransformMate, ведёт дневник и разрешает тренеру доступ к данным.
 
-## Архитектура и стек
+- Дневник питания, синхронизация YAZIO и приватные фотографии.
+- Замеры, планы и результаты тренировок, каталог TransformMate и видео выполнения.
+- Аналитика, комментарии и PDF-отчёты.
+- Медицинские документы, лабораторные показатели и отдельные разрешения для тренера.
+- Кеш загруженных данных и очередь записей при нестабильной сети.
 
-Одно приложение Next.js App Router: страницы → серверные permissions → Drizzle/SQLite или серверный адаптер YAZIO. Общие нормализованные контракты отделяют UI от внешнего API. Feature-модули независимы.
-
-Принятая модель [клиентского кеша](docs/architecture/client-read-cache.md) сохраняет Next.js как единственный маршрутизатор, кеширует только загруженные данные и допускает старую копию тренера до обнаружения серверного отказа. Cold offline boot и отдельный shell больше не требуются. Runtime использует обычные страницы Next.js, общий read store и retirement worker для удаления прежнего shell. Решение и границы — [ADR 002](docs/decisions/002-resilient-client-reads.md).
-
-Next.js 16.4, React 19.3, Mantine 9.7.2, Recharts 3.10, Drizzle 0.45, Better Auth 1.7, Zod 4. Vitest 5, Playwright Test 1.64, TypeScript strict. Полные версии — `package.json` и `pnpm-lock.yaml`; причины выбора — [ADR](docs/decisions/001-foundation.md).
+Открытая регистрация отключена. Доступ проверяется на сервере; медицинские документы требуют отдельных разрешений. Подключения к внешним сервисам хранятся в зашифрованных файлах. Для распознавания лабораторных PDF приложение передаёт текст или изображения страниц в OpenRouter.
 
 ## Локальный запуск
 
-Нужны Node.js 22.18+ (22.x), pnpm 9.15.4 и инструменты сборки нативного SQLite: Xcode Command Line Tools на macOS; Python, make, g++ на Linux.
+Нужны Node.js 22.18+ (22.x), pnpm 9.15.4 и инструменты сборки SQLite: Xcode Command Line Tools на macOS или Python, make и g++ на Linux. Для обработки видео установите FFmpeg (`ffmpeg` и `ffprobe`).
 
 ```sh
+git clone https://github.com/dimensi/tempo.git
+cd tempo
 corepack enable
 corepack prepare pnpm@9.15.4 --activate
 pnpm install --frozen-lockfile
@@ -22,106 +24,57 @@ cp .env.example .env
 openssl rand -base64 48
 ```
 
-Вставьте результат генерации в `BETTER_AUTH_SECRET` в `.env`. `DATABASE_URL=file:./.data/development.sqlite` создаёт базу в текущем worktree; `BETTER_AUTH_URL=http://localhost:3000`. Не используйте префикс NEXT_PUBLIC для секретов. YAZIO credentials не нужны.
+Вставьте сгенерированное значение в `BETTER_AUTH_SECRET` в `.env`. Для разработки оставьте `BETTER_AUTH_URL=http://localhost:3000` и `DATABASE_URL=file:./.data/development.sqlite`. В каждом worktree используйте отдельную базу.
 
 ```sh
 pnpm db:migrate
 pnpm db:seed
-pnpm auth:create-user
 ```
 
-Перед последней командой задайте `CREATE_USER_EMAIL`, `CREATE_USER_NAME`, `CREATE_USER_PASSWORD` и необязательный `CREATE_USER_ROLE=OWNER` в окружении либо временно в локальном `.env`. Новый пароль аккаунта — 8–128 символов; обязательных специальных символов нет. В интерактивном bash/zsh пароль можно прочитать без echo и записи в history:
+Создайте владельца через переменные окружения. В bash/zsh пароль можно ввести скрыто:
 
 ```sh
+export CREATE_USER_EMAIL=you@example.com
+export CREATE_USER_NAME=Owner
 printf 'Password: '
 read -r -s CREATE_USER_PASSWORD
 export CREATE_USER_PASSWORD
-export CREATE_USER_EMAIL=you@example.com
-export CREATE_USER_NAME=Owner
 pnpm auth:create-user
 unset CREATE_USER_PASSWORD
 pnpm dev
 ```
 
-Откройте [localhost:3000](http://localhost:3000). Войти можно только созданным пользователем. Повторный owner блокируется уникальным индексом. Для тренера используйте `CREATE_USER_ROLE=TRAINER`; `GRANT_OWNER_ACCESS=true` явно разрешает доступ к данным owner. Без этого тренер может войти, но не читать данные владельца. Владелец управляет приглашениями и grants на `/settings#trainers`; тренер принимает одноразовое приглашение. Открытая регистрация отключена.
+Откройте [localhost:3000](http://localhost:3000). В настройках подключите YAZIO и TransformMate; credentials этих сервисов для запуска приложения не нужны. Тренеров приглашает владелец через раздел настроек.
 
-`DEMO_MODE=true` разрешает серверную загрузку маркированных fixtures для разработки. Авторизация остаётся обязательной. Рабочие страницы читают данные владельца; отсутствие данных отображается явно. В production demo запрещён.
+Для разработки доступны маркированные fixtures с `DEMO_MODE=true`; авторизация остаётся обязательной. Demo-режим запрещён в production. Базы, uploads, токены и локальные env-файлы не коммитьте.
 
-## Команды и проверки
-
-| Команда                                     | Назначение                                               |
-| ------------------------------------------- | -------------------------------------------------------- |
-| `pnpm dev`                                  | Next.js development server                               |
-| `pnpm build` / `pnpm start`                 | Production build / local production server               |
-| `pnpm lint`                                 | ESLint и ограничения зависимостей features               |
-| `pnpm format` / `pnpm format:check`         | Prettier                                                 |
-| `pnpm typecheck`                            | Генерация типов маршрутов и strict TypeScript            |
-| `pnpm test:unit`                            | Ключевые расчёты и offline session/cache safety          |
-| `pnpm test:integration`                     | Авторизация/PDF grants, SQLite/migrations, записи и sync |
-| `pnpm test:e2e`                             | Два desktop smoke-сценария: приложение и YAZIO           |
-| `pnpm test:budget`                          | Проверка глобального лимита тест-кейсов                  |
-| `pnpm verify:merge`                         | Полная компактная проверка перед merge                   |
-| `pnpm db:generate`                          | SQL-миграция из схемы                                    |
-| `pnpm db:migrate`                           | Версионированные миграции                                |
-| `pnpm db:seed`                              | Проверка готовности инфраструктурной базы без fake data  |
-| `pnpm auth:create-user`                     | Локальное создание owner/trainer                         |
-| `pnpm db:backup /secure/path/backup.sqlite` | Online backup с учётом WAL                               |
-
-Для E2E сначала `pnpm exec playwright install chromium`. Для локальных проверок
-серверной копии TransformMate требуются `ffmpeg` и `ffprobe` (в Docker-образ они включены). Перед merge используйте `pnpm verify:merge` на чистом финальном коммите. Команда последовательно запускает format, lint, typecheck, `test:budget`, сокращённые unit/integration, один production build и два desktop smoke-сценария. Глобальный лимит — 3 unit, 8 integration, 2 browser E2E и 14 тест-кейсов всего; `test:budget` строит manifest через discovery Vitest/Playwright, а `verify:merge` сверяет его с JSON-отчётами фактического выполнения и блокирует skipped/retried/missing cases. Лимиты времени: 30 с unit, 60 с integration, 90 с E2E и 5 мин на полную проверку; каждая команда выполняется в отдельной process group и принудительно завершается по дедлайну. E2E-лаунчер выбирает свободную пару локальных HTTPS/backend-портов, использует worktree-local `.data/e2e.sqlite` и блокирует параллельное использование этой базы; каждый из двух сценариев создаёт свежую синтетическую БД. Реальная тестовая аутентификация обязательна. Итог с SHA, build ID, лимитами и длительностями — `test-results/merge-verification.json`. Команда не делает merge или deploy. Для адресной диагностики используйте `pnpm test:e2e smoke`, `pnpm test:e2e nutrition`, `pnpm test:unit` или `pnpm test:integration`.
-
-CI для PR отключён; на main единый workflow `release.yml` выполняет сборку Docker-образа и публикацию в GHCR в job `build`, затем развёртывание закреплённого образа в отдельной job `deploy`, которую можно перезапустить без пересборки. Его можно запустить вручную на main; деплой включается переменной `NUTRITION_CD_ENABLED`. После подтверждённого merge агент обязан удалить свои ветки и worktree вместе с временными данными, без архивирования; чужие и несохранённые пользовательские изменения не удаляются.
-
-`pnpm start` требует предварительно применённых миграций и production-конфигурации: HTTPS `BETTER_AUTH_URL`, сильный секрет и `DEMO_MODE=false`. Для локального HTTPS используйте reverse proxy. Для повседневной разработки используйте `pnpm dev`.
-
-## TransformMate API probe
-
-Локальный исследовательский клиент. В `.env` один раз задайте Firebase
-credentials из первого SSO/Charles: `TRANSFORMMATE_FIREBASE_API_KEY` и
-`TRANSFORMMATE_FIREBASE_REFRESH_TOKEN`.
+## Проверки
 
 ```sh
-npm run transformmate:auth-probe
-npm run transformmate:probe -- --save
-# Вместо 123 укажите ID из списка тренировок:
-npm run transformmate:probe -- --training-id 123 --save
+pnpm exec playwright install --with-deps chromium
+pnpm verify:merge
 ```
 
-ID token обновляется автоматически; `TRANSFORMMATE_ID_TOKEN` больше не нужен
-и не используется. Google `oauthAccessToken`/`oauthIdToken` для refresh не подходят.
-Секреты нельзя коммитить. `--save` сохраняет JSON в ignored-файл
-`.tmp/transformmate-trainings.json`; `--raw` печатает полные ответы.
-[Кэш, rotation и диагностика](docs/architecture/transformmate-probe.md).
+`verify:merge` запускается на чистом финальном коммите и выполняет форматирование, lint, typecheck, проверку бюджета тестов, unit/integration, production build и два browser smoke-сценария. Результат сохраняется в `test-results/merge-verification.json`. [Уровни проверок и ограничения](AGENTS.md).
 
-Клиент имеет типизированные `getTrainings()` / `getTraining(id)` с runtime validation
-реального wire-контракта. CRUD/write методы используют отдельные DTO и подтверждённый APK + live probes PATCH contract.
-[Write contract, lifecycle и ограничения](docs/architecture/transformmate-write.md).
-[Постоянная серверная копия каталога и видео](docs/architecture/transformmate-replica.md).
-[Каталог с фильтрами групп мышц, справочник, exercise detail, видео и заголовки клиента](docs/architecture/transformmate-exercises.md).
-Редактор тренировок использует каталог и автоматически отправляет новые связанные планы;
-фактические результаты сохраняются отдельно от ручной истории. Безопасные ограничения,
-статусы и настройка описаны в [интеграции TransformMate](docs/architecture/transformmate-integration.md).
-
-Сохранённые результаты завершённых тренировок поддерживают [приватные видео выполнения](docs/architecture/workout-videos.md): выбор на телефоне, сжатие на устройстве, превью и возобновляемая загрузка в общее хранилище с доступом владельца и разрешённого тренера.
+Для отдельных проверок: `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e smoke` или `pnpm test:e2e nutrition`.
 
 ## Развёртывание
 
-Preview доступен на [tempo.dimensi.dev](https://tempo.dimensi.dev). Исходная проверенная preview revision — `b8b8a1cd154063b713db417a7ab2c2d3d9388a8c`; это историческая точка проверки, а не указание текущего latest после обновлений. Оператор фиксирует точную deployed revision и image ID/digest при каждом релизе; изменения main автоматически не развёртываются. На home-server stack расположен в `/opt/compose/yazio-dashboard`, Compose project — `nutrition`. Server-local `compose.home.yaml` подключает external network `web` с alias `nutrition` и убирает host port; Caddy направляет публичный HTTPS hostname на приложение.
+Приложение работает в Docker: один Node.js процесс, SQLite и постоянные volumes `database` и `uploads`. Runtime включает Chromium, шрифты и FFmpeg; миграции применяются перед стартом. Production требует HTTPS, постоянного `BETTER_AUTH_SECRET` и `DEMO_MODE=false`.
 
-Runtime работает от пользователя node, применяет миграции перед стартом, хранит SQLite в `database`, приватные фотографии в `uploads`. В образ включены Chromium, соответствующий закреплённому Playwright, и DejaVu font; disposable Docker smoke проверяет PDF rendering, backup и restore. PDF product flow merged в main; live-проверка относится к конкретному развёрнутому релизу.
+[Release workflow](.github/workflows/release.yml) выполняется на стандартных GitHub-hosted Ubuntu runners при push в main или ручном запуске на main. Он собирает и публикует `ghcr.io/dimensi/tempo:latest`, затем при `NUTRITION_CD_ENABLED=true` развёртывает полученный digest по SSH. PR-проверки и полный набор тестов в этом workflow не запускаются.
 
-Первого владельца создаёт сам пользователь на сервере командой `bash /opt/compose/yazio-dashboard/bootstrap-owner.sh`: пароль вводится скрыто. OWNER уже создан пользователем; bootstrap нужен только для нового пустого stack. Разделение постоянного секрета и release-конфигурации, repository Compose и ротация новых backup sets описаны в [CD operator handoff](docs/deployment-cd.md); установка этих изменений требует отдельного согласованного шага.
+[Руководство оператора](docs/deployment.md) описывает конфигурацию, создание владельца и резервное копирование. [CD](docs/deployment-cd.md) — публикацию образа, deployment и восстановление после ошибок. При переименовании репозитория существующие серверные пути, Compose project и volumes сохраняются.
 
-В `/settings#connection` владелец вводит email/password YAZIO и выбирает начало загрузки; submit запускает сохранение зашифрованного подключения и серверную загрузку выбранного периода. Пароль не сохраняется, отдельного checkbox нет. Подключённый аккаунт показывает безопасную проекцию SDK-профиля или нейтральное состояние; форма входа скрыта до явного отключения. В `/settings#sync` кнопка «Обновить сейчас» загружает историю с выбранной даты по сегодня в часовом поясе браузера. Последний явно выбранный старт и timezone сохраняются. При `ENABLE_NUTRITION_SCHEDULER=true` один production Node сервер раз в 4 часа обновляет сегодня и вчера, не раньше этого старта. Готовую старую историю пропускаем, отсутствующие дни и незавершённые части догружаем. После ошибок повторяем через 4 часа; кнопка выбранного дня в дневнике принудительно обновляет его независимо от давности. Отключение сохраняет дневник и фотографии. JSON import находится в дополнительных настройках и использует тот же защищённый store. Все секции, включая тренеров, находятся на одной странице `/settings`.
+## Устройство проекта
 
-Пользователь согласовал encrypted token store `/app/data/yazio-token.json`; координатор активировал его в preview revision `a36fd75775d1033f611864f9ef3816046ae96d75`. Encryption key выводится из существующего `BETTER_AUTH_SECRET` с HKDF и owner context, новый постоянный секрет не создаётся. Резервировать нужно encrypted token file вместе с DB/uploads и сохранять тот же auth secret/owner ID для восстановления. Plaintext fallback отсутствует; rotation секрета или legacy JSON file требуют явной миграции либо переподключения. Реальный YAZIO token не настроен; проверки используют synthetic OAuth/upstream и настоящие сессии. Пользователь сам подключает аккаунт по HTTPS и проверяет live sync.
+Next.js App Router, React, Mantine, Better Auth, Drizzle и SQLite. Актуальные версии закреплены в `package.json` и `pnpm-lock.yaml`.
 
-Подробности запуска, резервирования и rollback — [deployment](docs/deployment.md). Секреты устанавливает оператор; базы, uploads и token files не включаются в Git.
+- `src/app` — страницы и API routes.
+- `src/features` — интерфейсы отдельных функций.
+- `src/contracts` — общие схемы и типы.
+- `src/server` — авторизация, база, интеграции и фоновые задачи.
+- `drizzle`, `scripts`, `tests` — миграции, операторские команды и проверки.
 
-## Разработка несколькими агентами
-
-Читайте [AGENTS.md](AGENTS.md), [parallel development](docs/agents/parallel-development.md), [feature boundaries](docs/agents/feature-boundaries.md), [task template](docs/agents/task-template.md).
-
-[Architecture](docs/architecture/overview.md) · [Client read cache](docs/architecture/client-read-cache.md) · [Data flow](docs/architecture/data-flow.md) · [Permissions](docs/architecture/permissions.md) · [Database/migrations](docs/architecture/database.md) · [YAZIO](docs/architecture/yazio.md) · [ADR 001](docs/decisions/001-foundation.md) · [ADR 002](docs/decisions/002-resilient-client-reads.md).
-
-Секреты, базы и фотографии не коммитить. Контракты согласовываются до зависимых реализаций. Shared/core меняются отдельным согласованным шагом. Никаких прямых зависимостей между features.
+[Архитектура](docs/architecture/overview.md) · [Права доступа](docs/architecture/permissions.md) · [База данных](docs/architecture/database.md) · [Клиентский кеш](docs/architecture/client-read-cache.md) · [TransformMate](docs/architecture/transformmate-integration.md) · [API probe](docs/architecture/transformmate-probe.md) · [Разработка](docs/agents/parallel-development.md)
