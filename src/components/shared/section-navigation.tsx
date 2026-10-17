@@ -7,10 +7,12 @@ export function SectionNavigation({
   children,
   sections,
   label,
+  contentReady = true,
 }: {
   children: ReactNode;
   sections: ReadonlyArray<{ id: string; label: string }>;
   label: string;
+  contentReady?: boolean;
 }) {
   const navigation = useRef<HTMLElement>(null);
   const [active, setActive] = useState(sections[0]!.id);
@@ -47,6 +49,7 @@ export function SectionNavigation({
       });
     }
     function followHash() {
+      if (!contentReady) return;
       const id = window.location.hash.slice(1);
       if (!sections.some((section) => section.id === id)) return;
       const element = document.getElementById(id);
@@ -59,7 +62,8 @@ export function SectionNavigation({
     if (
       !focused ||
       focused === document.body ||
-      focused === document.documentElement
+      focused === document.documentElement ||
+      navigation.current?.contains(focused)
     ) {
       followHash();
     }
@@ -73,7 +77,7 @@ export function SectionNavigation({
       window.removeEventListener('resize', update);
       window.removeEventListener('hashchange', followHash);
     };
-  }, [sections]);
+  }, [sections, contentReady]);
 
   return (
     <div className={classes.layout}>

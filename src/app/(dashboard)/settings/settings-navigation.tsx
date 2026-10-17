@@ -18,9 +18,19 @@ const sections = [
   { id: 'offline', label: offlineMessages.downloads.title },
 ];
 
-export function SettingsNavigation({ children }: { children: ReactNode }) {
+export function SettingsNavigation({
+  children,
+  contentReady,
+}: {
+  children: ReactNode;
+  contentReady: boolean;
+}) {
   return (
-    <SectionNavigation sections={sections} label={ru.settings.navigation}>
+    <SectionNavigation
+      sections={sections}
+      label={ru.settings.navigation}
+      contentReady={contentReady}
+    >
       <div className={classes.content}>{children}</div>
     </SectionNavigation>
   );

@@ -42,7 +42,7 @@ export default function Page() {
         </PageHeader>
         <Text c="dimmed">{ru.settings.description}</Text>
       </Stack>
-      <SettingsNavigation>
+      <SettingsNavigation contentReady={!!data}>
         <Stack gap={48}>
           <AppearanceSettings />
           {!data ? (

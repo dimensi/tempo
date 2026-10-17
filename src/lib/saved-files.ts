@@ -7,6 +7,7 @@ import {
   type StoredOfflineFile,
 } from './offline-device';
 import { readSession, sessionGeneration } from './session-state';
+const filesRemovedEvent = 'tempo:saved-files-removed';
 const empty = { files: [] as StoredOfflineFile[], ready: false };
 class SavedFiles {
   private state = empty;
@@ -14,11 +15,28 @@ class SavedFiles {
   private listeners = new Set<() => void>();
   getSnapshot = () => this.state;
   getServerSnapshot = () => empty;
+  private onStorage = (event: StorageEvent) => {
+    if (event.key !== filesRemovedEvent || !event.newValue) return;
+    try {
+      const change = JSON.parse(event.newValue);
+      if (
+        typeof change.partition === 'string' &&
+        change.partition === readSession()?.partition
+      )
+        this.clear();
+    } catch {
+      /* Ignore malformed cross-tab notifications. */
+    }
+  };
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
+    if (this.listeners.size === 1)
+      window.addEventListener('storage', this.onStorage);
     const stop = subscribeSessionReset(() => this.set(empty));
     return () => {
       this.listeners.delete(listener);
+      if (!this.listeners.size)
+        window.removeEventListener('storage', this.onStorage);
       stop();
     };
   };
@@ -128,7 +146,17 @@ class SavedFiles {
         cursor.continue();
       };
     });
-    if (isCurrent()) this.set({ files: [], ready: true });
+    if (isCurrent()) {
+      this.set({ files: [], ready: true });
+      try {
+        localStorage.setItem(
+          filesRemovedEvent,
+          JSON.stringify({ partition, nonce: crypto.randomUUID() }),
+        );
+      } catch {
+        /* Local removal succeeds when cross-tab storage is unavailable. */
+      }
+    }
   }
   async removeFile(id: string) {
     const partition = readSession()?.partition;
