@@ -21,7 +21,44 @@
     display: none;
   }
   .days > :global(.mantine-Button-root) {
-    height: 56px;
+    min-height: 72px;
+    background: transparent;
+    color: var(--mantine-color-dimmed);
+    border-radius: 0;
+    font-weight: 400;
+  }
+  .days
+    > :global(.mantine-Button-root)
+    :global(.mantine-Text-root):first-child {
+    font-size: 14px;
+  }
+  .days > :global(.mantine-Button-root) :global(.mantine-Text-root):last-child {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 18px;
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--mantine-color-text);
+  }
+  .days
+    > :global(.mantine-Button-root)[aria-current='date']
+    :global(.mantine-Text-root):first-child {
+    color: var(--mantine-primary-color-light-color);
+  }
+  .days
+    > :global(.mantine-Button-root)[aria-current='date']
+    :global(.mantine-Text-root):last-child {
+    color: var(--mantine-primary-color-contrast);
+    background: var(--mantine-primary-color-filled);
+  }
+  .selectedDate {
+    font-size: 18px;
+  }
+  .dateActions {
+    flex-shrink: 0;
   }
 }
 
@@ -32,4 +69,10 @@
   outline: 2px solid var(--mantine-primary-color-filled);
   outline-offset: 2px;
   border-radius: var(--mantine-radius-default);
+}
+
+@media (max-width: 22em) {
+  .days > :global(.mantine-Button-root) :global(.mantine-Text-root):last-child {
+    width: 36px;
+  }
 }

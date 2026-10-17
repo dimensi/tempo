@@ -5,7 +5,6 @@ import {
   Button,
   Group,
   Menu,
-  Drawer,
   NumberInput,
   Stack,
   Text,
@@ -13,8 +12,17 @@ import {
   Tooltip,
   UnstyledButton,
 } from '@mantine/core';
-import { IconDots, IconTrash, IconPlus, IconX } from '@tabler/icons-react';
+import {
+  IconDots,
+  IconTrash,
+  IconPlus,
+  IconX,
+  IconPlayerPlay,
+  IconClipboardCopy,
+} from '@tabler/icons-react';
 import { useMediaQuery } from '@mantine/hooks';
+import { BottomSheet } from '@/components/shared/bottom-sheet';
+import { ExerciseOrder } from './exercise-order';
 import type { PlannedWorkout, WorkoutSession } from '@/contracts/workouts';
 import type { ResultExercise } from './result-draft';
 import { ExerciseMedia } from './exercise-media';
@@ -30,6 +38,7 @@ export function ExerciseRows({
   onChange,
   onCommit,
   disabled = false,
+  reordering = false,
 }: {
   ownerId: string;
   exercises: ResultExercise[];
@@ -39,6 +48,7 @@ export function ExerciseRows({
   onChange?: (value: ResultExercise[]) => void;
   onCommit?: () => void;
   disabled?: boolean;
+  reordering?: boolean;
 }) {
   const [media, setMedia] = useState<ResultExercise | null>(null);
   const mobile = useMediaQuery('(max-width: 47.99em)');
@@ -46,6 +56,14 @@ export function ExerciseRows({
   const [note, setNote] = useState<string | null>(null);
   const update = (index: number, next: ResultExercise) =>
     onChange?.(exercises.map((exercise, i) => (i === index ? next : exercise)));
+  if (reordering && onChange)
+    return (
+      <ExerciseOrder
+        exercises={exercises}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    );
   return (
     <Stack gap={0}>
       {exercises.map((exercise, index) => {
@@ -60,32 +78,19 @@ export function ExerciseRows({
           : planned?.exercises.find((item) => item.name === exercise.name);
         const titleParts = /^(.*?)\s*(\([^)]*\))$/.exec(exercise.name);
         const options = [
-          { label: m.techniqueAndVideo, run: () => setMedia(exercise) },
+          {
+            label: m.techniqueAndVideo,
+            icon: <IconPlayerPlay size={20} />,
+            run: () => setMedia(exercise),
+          },
           {
             label: m.exerciseComment,
             run: () => setNote(note === key ? null : key),
           },
           {
-            label: m.up,
-            disabled: index === 0,
-            run: () => {
-              const next = [...exercises];
-              [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
-              onChange?.(next);
-            },
-          },
-          {
-            label: m.down,
-            disabled: index === exercises.length - 1,
-            run: () => {
-              const next = [...exercises];
-              [next[index + 1], next[index]] = [next[index]!, next[index + 1]!];
-              onChange?.(next);
-            },
-          },
-          {
             label: m.removeExercise,
             color: 'red',
+            icon: <IconTrash size={20} />,
             run: () => onChange?.(exercises.filter((_, i) => i !== index)),
           },
         ];
@@ -124,30 +129,23 @@ export function ExerciseRows({
                     >
                       <IconDots size={18} />
                     </ActionIcon>
-                    <Drawer
+                    <BottomSheet
                       opened={actions === key}
                       onClose={() => setActions(null)}
-                      position="bottom"
-                      size="auto"
                       title={exercise.name}
-                      closeButtonProps={{ 'aria-label': m.close }}
-                      padding="md"
-                      styles={{
-                        body: {
-                          paddingBottom:
-                            'calc(16px + env(safe-area-inset-bottom))',
-                        },
-                      }}
+                      closeLabel={m.close}
                     >
                       <Stack gap="xs">
                         {options.map((option) => (
                           <Button
                             key={option.label}
-                            variant="subtle"
+                            variant="default"
+                            leftSection={option.icon}
                             color={option.color}
+                            c={option.color ? 'red.7' : undefined}
                             justify="start"
                             mih={52}
-                            disabled={disabled || option.disabled}
+                            disabled={disabled}
                             onClick={() => {
                               setActions(null);
                               option.run();
@@ -157,7 +155,7 @@ export function ExerciseRows({
                           </Button>
                         ))}
                       </Stack>
-                    </Drawer>
+                    </BottomSheet>
                   </>
                 ) : (
                   <Menu position="bottom-end">
@@ -177,7 +175,7 @@ export function ExerciseRows({
                         <Menu.Item
                           key={option.label}
                           color={option.color}
-                          disabled={disabled || option.disabled}
+                          disabled={disabled}
                           onClick={option.run}
                         >
                           {option.label}
@@ -188,15 +186,38 @@ export function ExerciseRows({
                 ))}
             </Group>
             {mode !== 'plan' && guide && (
-              <Text size="sm" c="dimmed" mb="xs">
-                {m.planGuide}:{' '}
-                {guide.sets
-                  .map(
-                    (set) =>
-                      `${set.reps} ${m.resultReps} · ${set.weightKg === null ? m.noWeight : `${set.weightKg} ${m.resultWeight}`}`,
-                  )
-                  .join(' · ')}
-              </Text>
+              <div className={styles.planSummary}>
+                <Text size="sm" fw={600}>
+                  {m.prepare}
+                </Text>
+                <Group gap="xs" wrap="wrap">
+                  {guide.sets.map((set, setIndex) => (
+                    <div key={setIndex} className={styles.planSet}>
+                      {guide.sets.length > 1 && (
+                        <Text size="sm" c="dimmed">
+                          {m.set} {setIndex + 1}
+                        </Text>
+                      )}
+                      <Stack gap={0}>
+                        <Text size="sm" c="dimmed">
+                          {m.reps}
+                        </Text>
+                        <Text size="md" fw={600}>
+                          {set.reps}
+                        </Text>
+                      </Stack>
+                      <Stack gap={0}>
+                        <Text size="sm" c="dimmed">
+                          {m.weight}
+                        </Text>
+                        <Text size="md" fw={600}>
+                          {set.weightKg === null ? m.noWeight : set.weightKg}
+                        </Text>
+                      </Stack>
+                    </div>
+                  ))}
+                </Group>
+              </div>
             )}
             {mode === 'result' && (
               <Text size="sm" fw={600} mb={4}>
@@ -290,65 +311,57 @@ export function ExerciseRows({
                 {mode === 'result' && onChange ? (
                   <div className={styles.setActions}>
                     {guide?.sets[setIndex] && (
-                      <Button
-                        variant="subtle"
-                        size="compact-sm"
-                        mih={44}
-                        disabled={disabled}
-                        aria-label={`${m.fillFromPlan}, ${m.set} ${setIndex + 1}: ${exercise.name}`}
-                        onClick={() =>
-                          update(index, {
-                            ...exercise,
-                            sets: exercise.sets.map((row, i) =>
-                              i === setIndex
-                                ? { ...guide.sets[setIndex]! }
-                                : row,
-                            ),
-                          })
-                        }
-                      >
-                        {m.planGuide}
-                      </Button>
-                    )}
-                    <Tooltip
-                      label={
-                        exercise.sets.length === 1
-                          ? m.lastSetHint
-                          : `${m.removeSet} ${setIndex + 1}`
-                      }
-                    >
-                      <span className={styles.removeSet}>
+                      <Tooltip label={m.fillFromPlan}>
                         <ActionIcon
                           variant="subtle"
-                          color="gray"
                           size={44}
-                          disabled={disabled || exercise.sets.length === 1}
-                          aria-label={`${m.removeSet} ${setIndex + 1}: ${exercise.name}`}
-                          aria-description={
-                            exercise.sets.length === 1
-                              ? m.lastSetHint
-                              : undefined
-                          }
+                          disabled={disabled}
+                          aria-label={`${m.fillFromPlan}, ${m.set} ${setIndex + 1}: ${exercise.name}`}
                           onClick={() =>
                             update(index, {
                               ...exercise,
-                              sets: exercise.sets.filter(
-                                (_, i) => i !== setIndex,
+                              sets: exercise.sets.map((row, i) =>
+                                i === setIndex
+                                  ? { ...guide.sets[setIndex]! }
+                                  : row,
                               ),
                             })
                           }
                         >
-                          <IconTrash size={18} />
+                          <IconClipboardCopy size={20} />
                         </ActionIcon>
-                      </span>
-                    </Tooltip>
+                      </Tooltip>
+                    )}
+                    {exercise.sets.length > 1 && (
+                      <Tooltip label={`${m.removeSet} ${setIndex + 1}`}>
+                        <span className={styles.removeSet}>
+                          <ActionIcon
+                            variant="subtle"
+                            color="gray"
+                            size={44}
+                            disabled={disabled}
+                            aria-label={`${m.removeSet} ${setIndex + 1}: ${exercise.name}`}
+                            onClick={() =>
+                              update(index, {
+                                ...exercise,
+                                sets: exercise.sets.filter(
+                                  (_, i) => i !== setIndex,
+                                ),
+                              })
+                            }
+                          >
+                            <IconTrash size={18} />
+                          </ActionIcon>
+                        </span>
+                      </Tooltip>
+                    )}
                   </div>
-                ) : onChange ? (
+                ) : onChange && exercise.sets.length > 1 ? (
                   <ActionIcon
                     size={44}
                     variant="subtle"
                     color="gray"
-                    disabled={disabled || exercise.sets.length === 1}
+                    disabled={disabled}
                     aria-label={`${m.removeSet} ${setIndex + 1}: ${exercise.name}`}
                     onClick={() =>
                       update(index, {
@@ -366,10 +379,11 @@ export function ExerciseRows({
             ))}
             {onChange && (
               <Button
-                variant="subtle"
-                size="compact-sm"
+                variant="light"
+                fullWidth
+                size="sm"
                 mih={44}
-                mt={4}
+                mt={8}
                 leftSection={<IconPlus size={15} />}
                 disabled={disabled || exercise.sets.length >= 50}
                 onClick={() =>

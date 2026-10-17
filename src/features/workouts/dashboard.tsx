@@ -15,9 +15,16 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { IconDots, IconRefresh } from '@tabler/icons-react';
+import { useMediaQuery } from '@mantine/hooks';
+import {
+  IconArrowsSort,
+  IconDots,
+  IconRefresh,
+  IconTrash,
+} from '@tabler/icons-react';
 import { z } from 'zod';
 import { PageHeader } from '@/components/layout/page-header';
+import { BottomSheet } from '@/components/shared/bottom-sheet';
 import { DateNavigation } from '@/components/shared/date-navigation';
 import type {
   PlannedWorkout,
@@ -65,6 +72,9 @@ export function WorkoutsDashboard({
   const data = resource.data;
   const online = useReadOnline();
   const sync = useTransformMateSync(ownerId, date);
+  const mobile = useMediaQuery('(max-width: 47.99em)');
+  const [dayActions, setDayActions] = useState(false);
+  const [reorderTarget, setReorderTarget] = useState<string | null>(null);
   const [creating, setCreating] = useState<string | null>(null);
   const [copied, setCopied] = useState<{
     date: string;
@@ -229,54 +239,127 @@ export function WorkoutsDashboard({
       setBusy(false);
     }
   }
+  const editorKey = create ? `new:${date}` : `${date}:${entry?.id}`;
+  const reordering = reorderTarget === editorKey;
+  const dayOptions = [
+    {
+      label: m.anotherWorkout,
+      run: () => {
+        setCopied(null);
+        setCreating(date);
+      },
+    },
+    ...(entry?.workout
+      ? [
+          {
+            label: m.copy,
+            run: () => {
+              setCopyDate(date);
+              setCopyOpen(true);
+            },
+          },
+        ]
+      : []),
+    ...(create || entry?.plan || (canLog && entry?.session)
+      ? [
+          {
+            label: m.reorderExercises,
+            icon: <IconArrowsSort size={20} />,
+            run: () => setReorderTarget(editorKey),
+          },
+        ]
+      : []),
+    {
+      label: sync.busy ? m.syncRefreshing : m.refreshShort,
+      icon: <IconRefresh size={20} />,
+      disabled: sync.busy || !online,
+      run: () => {
+        setSyncRequested(date);
+        void sync.refresh();
+      },
+    },
+    ...(entry?.plan || entry?.session
+      ? [
+          {
+            label: m.removeDayWorkout,
+            icon: <IconTrash size={20} />,
+            color: 'red',
+            run: () => setDeletion(true),
+          },
+        ]
+      : []),
+  ];
   return (
     <Stack className={`${classes.workspace} ${content.content}`}>
       <PageHeader
         actions={
           <>
-            <Menu position="bottom-end">
-              <Menu.Target>
-                <ActionIcon size={44} variant="subtle" aria-label={m.dayMenu}>
+            {mobile ? (
+              <>
+                <ActionIcon
+                  size={44}
+                  variant="subtle"
+                  aria-label={m.dayMenu}
+                  onClick={() => setDayActions(true)}
+                >
                   <IconDots size={20} />
                 </ActionIcon>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item
-                  onClick={() => {
-                    setCopied(null);
-                    setCreating(date);
-                  }}
+                <BottomSheet
+                  opened={dayActions}
+                  onClose={() => setDayActions(false)}
+                  title={m.dayMenu}
+                  closeLabel={m.close}
                 >
-                  {m.anotherWorkout}
-                </Menu.Item>
-                {entry?.workout && (
-                  <Menu.Item
-                    onClick={() => {
-                      setCopyDate(date);
-                      setCopyOpen(true);
-                    }}
-                  >
-                    {m.copy}
-                  </Menu.Item>
-                )}
-                <Menu.Item
-                  leftSection={<IconRefresh size={16} />}
-                  disabled={sync.busy || !online}
-                  onClick={() => {
-                    setSyncRequested(date);
-                    void sync.refresh();
-                  }}
-                >
-                  {sync.busy ? m.syncRefreshing : m.refreshShort}
-                </Menu.Item>
-                {!online && <Menu.Label>{m.refreshOfflineHint}</Menu.Label>}
-                {(entry?.plan || entry?.session) && (
-                  <Menu.Item color="red" onClick={() => setDeletion(true)}>
-                    {m.removeDayWorkout}
-                  </Menu.Item>
-                )}
-              </Menu.Dropdown>
-            </Menu>
+                  <Stack gap="xs">
+                    {dayOptions.map((option) => (
+                      <Button
+                        key={option.label}
+                        variant="default"
+                        leftSection={option.icon}
+                        color={option.color}
+                        c={option.color ? 'red.7' : undefined}
+                        justify="start"
+                        mih={52}
+                        disabled={option.disabled}
+                        onClick={() => {
+                          setDayActions(false);
+                          option.run();
+                        }}
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
+                    {!online && (
+                      <Text size="sm" c="dimmed">
+                        {m.refreshOfflineHint}
+                      </Text>
+                    )}
+                  </Stack>
+                </BottomSheet>
+              </>
+            ) : (
+              <Menu position="bottom-end">
+                <Menu.Target>
+                  <ActionIcon size={44} variant="subtle" aria-label={m.dayMenu}>
+                    <IconDots size={20} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {dayOptions.map((option) => (
+                    <Menu.Item
+                      key={option.label}
+                      leftSection={option.icon}
+                      color={option.color}
+                      disabled={option.disabled}
+                      onClick={option.run}
+                    >
+                      {option.label}
+                    </Menu.Item>
+                  ))}
+                  {!online && <Menu.Label>{m.refreshOfflineHint}</Menu.Label>}
+                </Menu.Dropdown>
+              </Menu>
+            )}
           </>
         }
       >
@@ -286,6 +369,7 @@ export function WorkoutsDashboard({
         date={date}
         onSelect={(value) => {
           setActive(null);
+          setReorderTarget(null);
           router.push(`/workouts?date=${value}`, { scroll: false });
         }}
         labels={m.dateNavigation}
@@ -369,6 +453,8 @@ export function WorkoutsDashboard({
           workout={copied?.date === date ? copied.workout : undefined}
           canLog={canLog}
           onSaved={done}
+          reordering={reordering}
+          onReorderDone={() => setReorderTarget(null)}
           onCancel={() => setCreating(null)}
         />
       )}
@@ -405,6 +491,8 @@ export function WorkoutsDashboard({
           existing={entry.session}
           canLog={canLog}
           onSaved={done}
+          reordering={reordering}
+          onReorderDone={() => setReorderTarget(null)}
           renderComments={renderComments}
           onDirtyChange={setDraftDirty}
         />

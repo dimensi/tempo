@@ -17,6 +17,7 @@ import {
   TextInput,
   Modal,
 } from '@mantine/core';
+import { IconCircleCheckFilled } from '@tabler/icons-react';
 import { PageActions } from '@/components/layout/page-header';
 import { useMediaQuery } from '@mantine/hooks';
 import { z } from 'zod';
@@ -156,6 +157,8 @@ export function DayEditor({
   onCancel,
   renderComments,
   onDirtyChange,
+  reordering = false,
+  onReorderDone,
 }: {
   ownerId: string;
   userId: string;
@@ -168,6 +171,8 @@ export function DayEditor({
   onCancel?: () => void;
   renderComments?: (id: string) => ReactNode;
   onDirtyChange?: (dirty: boolean) => void;
+  reordering?: boolean;
+  onReorderDone?: () => void;
 }) {
   const [initial] = useState(() => {
     const selected = workout ??
@@ -207,13 +212,14 @@ export function DayEditor({
     result: initial.result,
   });
   const valueRef = useRef(value);
-  const [mode, setMode] = useState(
+  const [selectedMode, setMode] = useState(
     !plan && !existing
       ? 'plan'
       : plan && !canLog && !existing
         ? 'plan'
         : 'result',
   );
+  const mode = reordering && !canLog ? 'plan' : selectedMode;
   const [ready, setReady] = useState(false);
   const [picker, setPicker] = useState(false);
   const [confirmRemoval, setConfirmRemoval] = useState(false);
@@ -601,6 +607,7 @@ export function DayEditor({
             aria-label={m.dayWorkout}
             value={mode}
             onChange={setMode}
+            disabled={reordering}
             data={[
               { value: 'result', label: m.execution },
               { value: 'plan', label: m.prepare },
@@ -613,18 +620,36 @@ export function DayEditor({
           <Text fw={600}>{existing ? m.execution : m.startPlan}</Text>
         )}
         <Group gap="xs">
-          <Text size="sm" c="dimmed">
-            {savedSession ? m[value.result.status] : m.plannedStatus}
-          </Text>
+          <Group
+            gap={6}
+            c={
+              savedSession && value.result.status === 'completed'
+                ? 'var(--mantine-primary-color-light-color)'
+                : 'dimmed'
+            }
+          >
+            {savedSession && value.result.status === 'completed' && (
+              <IconCircleCheckFilled size={24} aria-hidden />
+            )}
+            <Text
+              size="sm"
+              fw={
+                savedSession && value.result.status === 'completed' ? 600 : 400
+              }
+            >
+              {savedSession ? m[value.result.status] : m.plannedStatus}
+            </Text>
+          </Group>
           {mode !== 'plan' && value.result.status === 'completed' && canLog && (
             <Button
-              variant="subtle"
+              variant="transparent"
               size="compact-sm"
               mih={44}
               loading={busy}
+              aria-label={m.reopenWorkout}
               onClick={() => void saveResult('in_progress', true, false, true)}
             >
-              {m.reopenWorkout}
+              {m.undoCompletion}
             </Button>
           )}
         </Group>
@@ -646,10 +671,19 @@ export function DayEditor({
         </Alert>
       )}
       {!stored && <Alert color="orange">{m.draftUnavailable}</Alert>}
-      {mode === 'result' && canLog && (
-        <Text size="sm" c="dimmed">
-          {m.autoSaveHint}
-        </Text>
+      {reordering && (
+        <Group justify="space-between" wrap="nowrap">
+          <Text size="sm" fw={600}>
+            {m.reorderExercises}
+          </Text>
+          <Button
+            variant="light"
+            onClick={onReorderDone}
+            style={{ flexShrink: 0 }}
+          >
+            {m.reorderDone}
+          </Button>
+        </Group>
       )}
       {status && (
         <Text className={styles.status} role="status">
@@ -705,6 +739,7 @@ export function DayEditor({
           </Stack>
           <ExerciseRows
             ownerId={ownerId}
+            reordering={reordering}
             exercises={selected.exercises}
             mode="plan"
             session={savedSession}
@@ -759,28 +794,6 @@ export function DayEditor({
         </>
       ) : (
         <>
-          {!savedSession && (
-            <Text size="sm" c="dimmed">
-              {m.noResultYet}
-            </Text>
-          )}
-          <ExerciseRows
-            ownerId={ownerId}
-            exercises={value.result.exercises}
-            planned={selected}
-            session={savedSession}
-            mode={canLog ? 'result' : 'read'}
-            disabled={busy}
-            onChange={
-              canLog
-                ? (exercises) =>
-                    change(
-                      { ...value, result: { ...value.result, exercises } },
-                      'result',
-                    )
-                : undefined
-            }
-          />
           <Textarea
             label={m.workoutNote}
             autosize
@@ -797,6 +810,29 @@ export function DayEditor({
                 },
                 'result',
               )
+            }
+          />
+          {!savedSession && (
+            <Text size="sm" c="dimmed">
+              {m.noResultYet}
+            </Text>
+          )}
+          <ExerciseRows
+            ownerId={ownerId}
+            reordering={reordering}
+            exercises={value.result.exercises}
+            planned={selected}
+            session={savedSession}
+            mode={canLog ? 'result' : 'read'}
+            disabled={busy}
+            onChange={
+              canLog
+                ? (exercises) =>
+                    change(
+                      { ...value, result: { ...value.result, exercises } },
+                      'result',
+                    )
+                : undefined
             }
           />
           {error && canLog && (

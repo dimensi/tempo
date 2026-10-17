@@ -53,6 +53,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "3.1151.0",
     "@dimensi/yazio": "file:vendor/yazio",
+    "@dnd-kit/react": "0.5.1",
     "@mantine/charts": "9.7.2",
     "@mantine/core": "9.7.2",
     "@mantine/dates": "9.7.2",

@@ -1,4 +1,8 @@
 export const workoutMessages = {
+  reorderExercises: 'Изменить порядок упражнений',
+  moveExercise: 'Перетащить упражнение',
+  reorderDone: 'Готово',
+  undoCompletion: 'Отменить',
   techniqueAndVideo: 'Техника и видео',
   downloadWorkout: 'Скачать тренировку',
   downloadSaveFirst:

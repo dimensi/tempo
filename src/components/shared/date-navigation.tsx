@@ -9,7 +9,6 @@ import {
   Popover,
   Stack,
   Text,
-  Drawer,
   VisuallyHidden,
 } from '@mantine/core';
 import {
@@ -18,6 +17,7 @@ import {
   IconChevronDown,
   IconCalendar,
 } from '@tabler/icons-react';
+import { BottomSheet } from '@/components/shared/bottom-sheet';
 import { DatePicker } from '@mantine/dates';
 import { useMediaQuery } from '@mantine/hooks';
 import 'dayjs/locale/ru';
@@ -188,12 +188,12 @@ export function DateNavigation({
               </>
             )}
           </Text>
-          <Group gap={0} wrap="nowrap">
+          <Group gap="xs" wrap="nowrap" className={classes.dateActions}>
             {date !== browserToday() && (
               <Button
-                variant="subtle"
+                variant="default"
                 mih={44}
-                px={6}
+                px="sm"
                 onClick={() => selectDate(browserToday())}
                 disabled={disabled}
               >
@@ -204,7 +204,7 @@ export function DateNavigation({
               <Box className={classes.nativeTrigger}>
                 <ActionIcon
                   component="span"
-                  variant="subtle"
+                  variant="default"
                   size={44}
                   aria-hidden
                 >
@@ -229,7 +229,7 @@ export function DateNavigation({
               </Box>
             ) : (
               <ActionIcon
-                variant="subtle"
+                variant="default"
                 size={44}
                 aria-label={m.jumpDate}
                 onClick={() => setOpened(true)}
@@ -239,22 +239,14 @@ export function DateNavigation({
               </ActionIcon>
             )}
           </Group>
-          <Drawer
+          <BottomSheet
             opened={opened}
             onClose={() => setOpened(false)}
-            position="bottom"
             title={m.jumpDate}
-            closeButtonProps={{ 'aria-label': calendarMessages.close }}
-            size="auto"
-            padding="md"
-            styles={{
-              body: {
-                paddingBottom: 'calc(16px + env(safe-area-inset-bottom))',
-              },
-            }}
+            closeLabel={calendarMessages.close}
           >
             <DateJump key={date} date={date} labels={m} onSelect={selectDate} />
-          </Drawer>
+          </BottomSheet>
         </Group>
       ) : (
         <Group justify="space-between" wrap="nowrap">

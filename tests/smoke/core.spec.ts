@@ -107,7 +107,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       name: 'Удалить подход 1: Smoke squat',
       exact: true,
     }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await page
     .getByRole('button', {
       name: 'Заполнить по плану, Подход 1: Smoke squat',
