@@ -141,7 +141,7 @@ export async function generateReplicaPoster(video: string, output: string) {
       '-i',
       video,
       '-vf',
-      "thumbnail=50,scale='min(960,iw)':-2",
+      "scale='min(960,iw)':-2,thumbnail=50",
       '-frames:v',
       '1',
       '-q:v',

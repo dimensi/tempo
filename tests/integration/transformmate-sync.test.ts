@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -201,7 +203,27 @@ async function assertReplicaRecovery(
   let videoRequests = 0,
     detailRequests = 0,
     revoked = false;
-  const bytes = readFileSync('tests/fixtures/technique-demo.mp4');
+  const synthetic = join(directory, 'synthetic.mp4');
+  await promisify(execFile)(
+    'ffmpeg',
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc=size=320x240:rate=10',
+      '-t',
+      '0.5',
+      '-c:v',
+      'mpeg4',
+      '-y',
+      synthetic,
+    ],
+    { timeout: 60000 },
+  );
+  const bytes = readFileSync(synthetic);
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => {
