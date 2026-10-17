@@ -177,6 +177,7 @@ export async function processReplicaMedia(
   storage: ObjectStorage,
   save: () => Promise<void>,
   now: number,
+  mode: 'all' | 'poster',
 ) {
   const store = replicaStore();
   const nextCheckAt =
@@ -223,7 +224,7 @@ export async function processReplicaMedia(
   try {
     let failure: unknown;
     try {
-      if (job.data.imageAt <= now) {
+      if (mode === 'all' && job.data.imageAt <= now) {
         const url = selectPreviewUrl(detail.image);
         if (url) {
           await scope.assertUpstreamCurrent();
@@ -288,7 +289,7 @@ export async function processReplicaMedia(
     }
     const selected = selectedVideo(detail);
     try {
-      if (job.data.videoAt <= now) {
+      if (mode === 'all' && job.data.videoAt <= now) {
         if (selected) {
           const current = job.data.video;
           if (

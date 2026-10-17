@@ -31,6 +31,9 @@ await build({
   format: 'esm',
   outExtension: { '.js': '.mjs' },
   external: ['@playwright/test', 'better-sqlite3'],
+  banner: {
+    js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+  },
   plugins: [
     {
       name: 'operator-server-only',

@@ -204,7 +204,8 @@ async function assertReplicaRecovery(
   }
   let videoRequests = 0,
     detailRequests = 0,
-    revoked = false;
+    revoked = false,
+    metadataGone = false;
   const synthetic = join(directory, 'synthetic.mp4');
   await promisify(execFile)(
     'ffmpeg',
@@ -243,7 +244,9 @@ async function assertReplicaRecovery(
     tokenProvider: { getIdToken: async () => 'synthetic' },
     fetch: async () => {
       detailRequests++;
-      return Response.json(fixture);
+      return metadataGone
+        ? Response.json({ detail: 'gone' }, { status: 404 })
+        : Response.json(fixture);
     },
   });
   const access = async () => {
@@ -365,6 +368,37 @@ async function assertReplicaRecovery(
     await worker().tick(connected);
     expect(videoRequests).toBe(failedCalls);
     expect(store().state(scope).blocked_until).toBe(persisted);
+    vi.setSystemTime(persisted + 10000);
+    await replicaMediaRequest(scope, async () => new Response('recovered'));
+    expect(store().state(scope)).toMatchObject({
+      reason: null,
+      failures: 0,
+      blocked_until: 0,
+    });
+    const canceled = new AbortController();
+    canceled.abort();
+    await expect(
+      replicaMediaRequest(
+        scope,
+        async () => {
+          throw canceled.signal.reason;
+        },
+        canceled.signal,
+      ),
+    ).rejects.toBeDefined();
+    expect(store().state(scope).reason).toBeNull();
+    const missingPoster = store().job(scope, ready.key)!;
+    missingPoster.data.detailAt = 0;
+    missingPoster.data.poster = null;
+    missingPoster.data.posterAt = 0;
+    missingPoster.next_at = Date.now();
+    store().save(scope, missingPoster);
+    metadataGone = true;
+    await worker().tick(connected);
+    expect(store().job(scope, ready.key)!.data.poster).not.toBeNull();
+    expect(store().job(scope, ready.key)!.data.detailAt).toBe(0);
+    expect(store().job(scope, ready.key)!.error).not.toBeNull();
+    expect(videoRequests).toBe(failedCalls);
     revoked = true;
     await expect(
       serveReplicaMedia(

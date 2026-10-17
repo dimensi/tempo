@@ -164,10 +164,21 @@ export async function refreshReplicaJob(
   }
   const id = Number(job.key.slice('exercise:'.length)),
     now = Date.now();
+  let metadataFailure: unknown;
   if (job.data.detailAt <= now) {
-    await cachedDetail(scope, id, true);
-    job.data.detailAt = monthFrom(now);
-    await save();
+    try {
+      await cachedDetail(scope, id, true);
+      job.data.detailAt = monthFrom(now);
+      await save();
+    } catch (error) {
+      if (
+        error instanceof TransformMateStaleConnectionError ||
+        !catalogStore().record(scope, id)?.detail
+      )
+        throw error;
+      // Existing media can still make progress when upstream metadata is gone.
+      metadataFailure = error;
+    }
   }
   const record = catalogStore().record(scope, id);
   if (!record?.detail) throw new Error('Missing exercise detail');
@@ -182,7 +193,16 @@ export async function refreshReplicaJob(
   } catch {
     throw new ReplicaStorageError();
   }
-  await processReplicaMedia(scope, job, record.detail, storage, save, now);
+  await processReplicaMedia(
+    scope,
+    job,
+    record.detail,
+    storage,
+    save,
+    now,
+    metadataFailure ? 'poster' : 'all',
+  );
+  if (metadataFailure) throw metadataFailure;
 }
 const runtime = globalThis as typeof globalThis & {
   transformMateReplicaLoop?: {

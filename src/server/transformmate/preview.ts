@@ -60,13 +60,16 @@ export async function streamExercisePreview(
       }
     };
     const fetchImage = (target: URL) =>
-      replicaMediaRequest(scope, () =>
-        requestFetch(target, {
-          headers: {},
-          redirect: 'error',
-          cache: 'no-store',
-          signal,
-        }),
+      replicaMediaRequest(
+        scope,
+        () =>
+          requestFetch(target, {
+            headers: {},
+            redirect: 'error',
+            cache: 'no-store',
+            signal,
+          }),
+        request.signal,
       ).catch(async (error: unknown) => {
         await markUnknown();
         throw error;

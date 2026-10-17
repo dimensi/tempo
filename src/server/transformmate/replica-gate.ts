@@ -99,6 +99,7 @@ export async function replicaRequest<T>(
 export async function replicaMediaRequest(
   scope: CatalogIdentity,
   work: () => Promise<Response>,
+  callerSignal?: AbortSignal,
 ) {
   const state = replicaStore().state(scope);
   if (
@@ -126,9 +127,16 @@ export async function replicaMediaRequest(
         retryAfterMs,
       });
     }
+    if (response.ok && replicaStore().state(scope).reason === 'upstream') {
+      replicaStore().patch(scope, {
+        failures: 0,
+        reason: null,
+        blocked_until: 0,
+      });
+    }
     return response;
   } catch (error) {
-    recordReplicaFailure(scope, error);
+    if (!callerSignal?.aborted) recordReplicaFailure(scope, error);
     throw error;
   }
 }

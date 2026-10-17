@@ -56,14 +56,20 @@ export async function streamExerciseVideo(
     let upstream: Response;
     await connection.assertCurrent();
     const fetchMedia = (target: URL) =>
-      replicaMediaRequest(scope, () =>
-        requestFetch(target, {
-          method: request.method === 'HEAD' ? 'HEAD' : 'GET',
-          headers: range ? { Range: range } : {},
-          redirect: 'error',
-          cache: 'no-store',
-          signal: AbortSignal.any([request.signal, AbortSignal.timeout(30000)]),
-        }),
+      replicaMediaRequest(
+        scope,
+        () =>
+          requestFetch(target, {
+            method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+            headers: range ? { Range: range } : {},
+            redirect: 'error',
+            cache: 'no-store',
+            signal: AbortSignal.any([
+              request.signal,
+              AbortSignal.timeout(30000),
+            ]),
+          }),
+        request.signal,
       );
     try {
       upstream = await fetchMedia(url);
