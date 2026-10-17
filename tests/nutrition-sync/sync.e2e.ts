@@ -65,9 +65,19 @@ test('durable YAZIO data remains readable after a failed refresh and ungranted t
     ignoreHTTPSErrors: true,
   });
   try {
-    const trainer = await trainerContext.newPage();
-    await login(trainer, 'trainer');
-    expect((await trainer.request.get(dayUrl)).status()).toBe(403);
+    // Keep the API denial independent of the UI's revoked-access logout.
+    const trainerLogin = await trainerContext.request.post(
+      '/api/auth/sign-in/email',
+      {
+        headers: { Origin: testOrigin },
+        data: {
+          email: 'trainer@example.test',
+          password: 'Test-only-password-12345',
+        },
+      },
+    );
+    expect(trainerLogin.status()).toBe(200);
+    expect((await trainerContext.request.get(dayUrl)).status()).toBe(403);
   } finally {
     await trainerContext.close();
   }
