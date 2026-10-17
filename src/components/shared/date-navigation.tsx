@@ -135,6 +135,7 @@ export function DateNavigation({
     (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
   const selectDate = (value: string) => {
+    if (disabled) return;
     setAnchor(value);
     setOpened(false);
     onSelect(value);
@@ -171,8 +172,21 @@ export function DateNavigation({
       {mobile ? (
         <Group justify="space-between" wrap="nowrap" gap="xs">
           <Text fw={650} className={classes.selectedDate}>
-            {format(date, { day: 'numeric', month: 'long' })},{' '}
-            {format(date, { weekday: 'long' })}
+            {dates.includes(date) ? (
+              <>
+                {format(date, { day: 'numeric', month: 'long' })},{' '}
+                {format(date, { weekday: 'long' })}
+              </>
+            ) : (
+              <>
+                {format(dates[0]!, { day: 'numeric', month: 'short' })} —{' '}
+                {format(dates[6]!, {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              </>
+            )}
           </Text>
           <Group gap={0} wrap="nowrap">
             {date !== browserToday() && (
@@ -198,6 +212,8 @@ export function DateNavigation({
                 </ActionIcon>
                 <input
                   type="date"
+                  min="0001-01-01"
+                  max="9999-12-31"
                   value={date}
                   disabled={disabled}
                   aria-label={m.jumpDate}
