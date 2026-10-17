@@ -13,8 +13,12 @@ import type { CatalogScope } from './catalog-cache';
 import type { PersistedDetail } from './catalog-projection';
 import { selectMediaUrl } from './catalog-schema';
 import { selectPreviewUrl, matchesSignature } from './preview-validation';
-import { ReplicaMediaError, ReplicaStorageError } from './replica-gate';
-import { TransformMateApiError } from './errors';
+import {
+  ReplicaMediaError,
+  ReplicaStorageError,
+  replicaMediaRequest,
+  recordReplicaFailure,
+} from './replica-gate';
 import {
   replicaStore,
   monthFrom,
@@ -65,33 +69,21 @@ export function selectedVideo(detail: PersistedDetail) {
     resolution: media.resolution,
   };
 }
-async function checkedFetch(url: URL, options: RequestInit = {}) {
-  const response = await fetch(url, {
-    ...options,
-    redirect: 'error',
-    cache: 'no-store',
-    signal: options.signal ?? AbortSignal.timeout(15 * 60000),
-  });
-  if (response.status === 429 || response.status >= 500) {
-    await response.body?.cancel();
-    const retry = response.headers.get('retry-after');
-    const retryAfterMs =
-      retry && /^\d+$/.test(retry)
-        ? Number(retry) * 1000
-        : retry
-          ? Math.max(0, Date.parse(retry) - Date.now())
-          : undefined;
-    throw new TransformMateApiError({
-      status: response.status,
-      statusText: '',
-      isJson: false,
-      body: null,
-      contentType: '',
-      retryAfterMs,
-    });
-  }
-  return response;
+async function checkedFetch(
+  scope: CatalogScope,
+  url: URL,
+  options: RequestInit = {},
+) {
+  return replicaMediaRequest(scope, () =>
+    fetch(url, {
+      ...options,
+      redirect: 'error',
+      cache: 'no-store',
+      signal: options.signal ?? AbortSignal.timeout(15 * 60000),
+    }),
+  );
 }
+
 async function writeBounded(
   body: ReadableStream<Uint8Array>,
   path: string,
@@ -236,7 +228,7 @@ export async function processReplicaMedia(
         if (url) {
           await scope.assertUpstreamCurrent();
           const current = job.data.image;
-          const response = await checkedFetch(url, {
+          const response = await checkedFetch(scope, url, {
             signal: AbortSignal.timeout(10000),
             headers:
               current?.fingerprint === hash(url.href)
@@ -291,6 +283,7 @@ export async function processReplicaMedia(
       }
     } catch (error) {
       if (error instanceof ReplicaStorageError) throw error;
+      recordReplicaFailure(scope, error);
       failure = error;
     }
     const selected = selectedVideo(detail);
@@ -305,7 +298,7 @@ export async function processReplicaMedia(
             Boolean(current?.etag || current?.modified)
           ) {
             await scope.assertUpstreamCurrent();
-            const response = await checkedFetch(selected.url, {
+            const response = await checkedFetch(scope, selected.url, {
               headers:
                 current?.fingerprint === selected.fingerprint
                   ? {
@@ -366,6 +359,7 @@ export async function processReplicaMedia(
       }
     } catch (error) {
       if (error instanceof ReplicaStorageError) throw error;
+      recordReplicaFailure(scope, error);
       failure = error;
     }
     try {
@@ -400,6 +394,7 @@ export async function processReplicaMedia(
       }
     } catch (error) {
       if (error instanceof ReplicaStorageError) throw error;
+      recordReplicaFailure(scope, error);
       failure = error;
     }
     if (failure) throw failure;

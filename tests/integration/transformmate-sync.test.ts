@@ -170,6 +170,8 @@ async function assertReplicaRecovery(
     await import('@/server/transformmate/replica-playback');
   const { selectedVideo } =
     await import('@/server/transformmate/replica-media');
+  const { replicaMediaRequest } =
+    await import('@/server/transformmate/replica-gate');
   const { TransformMateStaleConnectionError } =
     await import('@/server/transformmate/token-store');
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -330,6 +332,12 @@ async function assertReplicaRecovery(
       ready.data.video!.key,
     );
     expect(store().state(scope).reason).toBe('storage');
+    // Storage backoff pauses replication, while upstream playback stays available.
+    const reserve = await replicaMediaRequest(
+      scope,
+      async () => new Response('synthetic reserve'),
+    );
+    expect(await reserve.text()).toBe('synthetic reserve');
     const failedCalls = videoRequests;
     await worker().tick(connected);
     expect(videoRequests).toBe(failedCalls);

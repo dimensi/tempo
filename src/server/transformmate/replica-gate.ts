@@ -21,7 +21,7 @@ export function allowReplicaUpstream(scope: CatalogIdentity, now = Date.now()) {
   const state = replicaStore().state(scope);
   if (
     state.reason === 'auth' ||
-    state.blocked_until > now ||
+    (state.reason !== 'storage' && state.blocked_until > now) ||
     state.next_request_at > now
   )
     throw new ReplicaUnavailable();
@@ -99,7 +99,10 @@ export async function replicaMediaRequest(
   work: () => Promise<Response>,
 ) {
   const state = replicaStore().state(scope);
-  if (state.reason === 'auth' || state.blocked_until > Date.now())
+  if (
+    state.reason === 'auth' ||
+    (state.reason !== 'storage' && state.blocked_until > Date.now())
+  )
     throw new ReplicaUnavailable();
   try {
     const response = await work();
