@@ -69,7 +69,9 @@ function ExerciseCard({
     ),
   );
   const info = detail.data;
-  const preview = useExercisePreview(ownerId, info ?? item);
+  const enrichedItem =
+    item.detailCoverage === 'available' ? item : (info ?? item);
+  const preview = useExercisePreview(ownerId, enrichedItem);
   return (
     <Paper
       ref={host}
@@ -113,7 +115,7 @@ function ExerciseCard({
           {item.name}
         </Text>
         <Group gap={6}>
-          {(info?.muscleGroups ?? item.muscleGroups).map((group) => (
+          {enrichedItem.muscleGroups.map((group) => (
             <Badge key={group.id} size="sm" variant="light" color="gray">
               {group.name}
             </Badge>
@@ -182,6 +184,22 @@ export function ExerciseBrowser({
   const read = useReadResource(
     readResources.catalog(`/api/workouts/transformmate/exercises?${params}`),
   );
+  const refreshCatalog = read.refresh;
+  const refreshState = read.data?.catalog.refreshState;
+  useEffect(() => {
+    if (refreshState !== 'updating') return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      if (document.visibilityState !== 'hidden') await refreshCatalog();
+      if (active) timer = setTimeout(() => void refresh(), 10000);
+    };
+    timer = setTimeout(() => void refresh(), 10000);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [refreshState, refreshCatalog]);
   const resetPage = () => {
     setOffset(0);
     setPlaying(null);

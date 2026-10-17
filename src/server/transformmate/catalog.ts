@@ -105,7 +105,8 @@ export async function listCatalog(
   }
   await scope.assertCurrent();
   state = store.state(scope);
-  let records = store.records(scope, true);
+  const allRecords = store.records(scope, true);
+  let records = allRecords;
   const unknownMembershipCount = records.filter((r) => !r.detail).length;
   let coverage: 'unknown' | 'partial' | 'complete' =
     state?.full_catalog_fetched_at ? 'complete' : 'unknown';
@@ -167,8 +168,18 @@ export async function listCatalog(
       scope,
       ids.filter((id) => allowed.has(id)),
     );
-    records = records.map((r) => store.record(scope, r.id) ?? r);
   }
+  const replicaState = replicaStore().state(scope);
+  const enrichmentCandidates =
+    coverage === 'partial'
+      ? [...allRecords.filter((record) => !record.detail), ...records]
+      : records;
+  const pendingEnrichment =
+    Boolean(scope.client) &&
+    enrichmentCandidates.some((record) => {
+      const job = replicaStore().job(scope, `exercise:${record.id}`);
+      return job && !job.error && job.next_at <= Date.now();
+    });
   await scope.assertCurrent();
   return {
     items: records.map((r) =>
@@ -181,7 +192,11 @@ export async function listCatalog(
       total,
       hasMore,
       unknownMembershipCount,
-      refreshState: replicaStore().state(scope).reason ? 'unavailable' : 'idle',
+      refreshState: replicaState.reason
+        ? 'unavailable'
+        : pendingEnrichment
+          ? 'updating'
+          : 'idle',
       filters,
     }),
   };
