@@ -9,6 +9,28 @@
 body {
   margin: 0;
 }
+
+.pwa-top-edge {
+  display: none;
+}
+
+/* iOS 27 PWA top blur workaround: keep an opaque fixed surface at the edge.
+   https://modernwebweekly.substack.com/p/so-whats-up-with-the-ios27-blur
+   TODO: remove when verified unnecessary in an installed iOS PWA. */
+@media (display-mode: standalone) {
+  .pwa-top-edge {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: max(6px, var(--tempo-safe-top));
+    background: var(--mantine-color-body);
+    z-index: 99; /* Below AppShell (100) and dialogs (200). */
+    pointer-events: none;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
