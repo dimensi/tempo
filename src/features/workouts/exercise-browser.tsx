@@ -143,6 +143,152 @@ function ExerciseCard({
   );
 }
 
+function ExerciseResults({
+  ownerId,
+  query,
+  chosen,
+  capacity,
+  playing,
+  onPlay,
+  onChoose,
+  offset = 0,
+  previousIds = [],
+}: {
+  ownerId: string;
+  query: string;
+  chosen: TransformMateCatalogItem[];
+  capacity: number;
+  playing: number | null;
+  onPlay: (id: number) => void;
+  onChoose?: (item: TransformMateCatalogItem) => void;
+  offset?: number;
+  previousIds?: number[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const end = useRef<HTMLDivElement>(null);
+  const read = useReadResource(
+    readResources.catalog(
+      `/api/workouts/transformmate/exercises?${query}&offset=${offset}`,
+    ),
+  );
+  const refreshCatalog = read.refresh;
+  const refreshState = read.data?.catalog.refreshState;
+  useEffect(() => {
+    if (expanded || refreshState !== 'updating') return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      if (document.visibilityState !== 'hidden') await refreshCatalog();
+      if (active) timer = setTimeout(() => void refresh(), 10000);
+    };
+    timer = setTimeout(() => void refresh(), 10000);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [expanded, refreshState, refreshCatalog]);
+  const canLoad =
+    !expanded &&
+    Boolean(read.data?.catalog.hasMore) &&
+    !read.refreshing &&
+    !read.error;
+  useEffect(() => {
+    if (!canLoad || !end.current) return;
+    // The picker scrolls inside its dialog; the standalone catalogue uses the page.
+    let root = end.current.parentElement;
+    while (
+      root &&
+      root !== document.body &&
+      !/(auto|scroll)/.test(getComputedStyle(root).overflowY)
+    )
+      root = root.parentElement;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          observer.disconnect();
+          setExpanded(true);
+        }
+      },
+      { root: root === document.body ? null : root, rootMargin: '240px 0px' },
+    );
+    observer.observe(end.current);
+    return () => observer.disconnect();
+  }, [canLoad]);
+  const seen = new Set(previousIds);
+  const items = (read.data?.data ?? []).filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+  return (
+    <>
+      {items.map((item) => {
+        const checked = chosen.some((value) => value.id === item.id);
+        return (
+          <ExerciseCard
+            key={item.id}
+            ownerId={ownerId}
+            item={item}
+            active={playing === item.id}
+            onPlay={() => onPlay(item.id)}
+            checked={checked}
+            disabled={
+              !checked &&
+              (!item.canPlan ||
+                item.name.length > 160 ||
+                chosen.length >= capacity)
+            }
+            onChoose={onChoose ? () => onChoose(item) : undefined}
+          />
+        );
+      })}
+      {expanded ? (
+        <ExerciseResults
+          ownerId={ownerId}
+          query={query}
+          chosen={chosen}
+          capacity={capacity}
+          playing={playing}
+          onPlay={onPlay}
+          onChoose={onChoose}
+          offset={offset + 12}
+          previousIds={[...seen]}
+        />
+      ) : (
+        <div ref={end} className={styles.catalogTail}>
+          {read.error ? (
+            <Alert color="orange">
+              {m.catalogPageError}
+              <Button
+                variant="subtle"
+                mih={44}
+                onClick={() => void read.refresh()}
+              >
+                {m.refresh}
+              </Button>
+            </Alert>
+          ) : !read.data || read.refreshing ? (
+            <Group gap="sm" role="status">
+              <Loader size="sm" aria-hidden />
+              <Text size="sm" c="dimmed">
+                {m.catalogLoading}
+              </Text>
+            </Group>
+          ) : offset === 0 && items.length === 0 ? (
+            <Text c="dimmed">{m.catalogEmpty}</Text>
+          ) : (
+            <Text size="sm" c="dimmed" role="status">
+              {m.catalogLoaded} {seen.size}
+              {read.data.catalog.total !== null &&
+                ` ${m.catalogOf} ${read.data.catalog.total}`}
+            </Text>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function ExerciseBrowser({
   ownerId,
   chosen = [],
@@ -162,7 +308,6 @@ export function ExerciseBrowser({
   const [debounced] = useDebouncedValue(query, 250);
   const [common, setCommon] = useState('');
   const [muscle, setMuscle] = useState('');
-  const [offset, setOffset] = useState(0);
   const [playing, setPlaying] = useState<number | null>(null);
   const dictionary = useReadResource(
     readResources.muscleDictionary(
@@ -176,32 +321,11 @@ export function ExerciseBrowser({
   const params = new URLSearchParams({
     ownerId,
     q: debounced,
-    offset: String(offset),
     limit: '12',
   });
   if (common) params.set('commonMuscleGroup', common);
   if (muscle) params.set('muscleGroup', muscle);
-  const read = useReadResource(
-    readResources.catalog(`/api/workouts/transformmate/exercises?${params}`),
-  );
-  const refreshCatalog = read.refresh;
-  const refreshState = read.data?.catalog.refreshState;
-  useEffect(() => {
-    if (refreshState !== 'updating') return;
-    let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const refresh = async () => {
-      if (document.visibilityState !== 'hidden') await refreshCatalog();
-      if (active) timer = setTimeout(() => void refresh(), 10000);
-    };
-    timer = setTimeout(() => void refresh(), 10000);
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [refreshState, refreshCatalog]);
   const resetPage = () => {
-    setOffset(0);
     setPlaying(null);
   };
   return (
@@ -293,64 +417,18 @@ export function ExerciseBrowser({
           {m.manualChoice}: {query.trim()}
         </Button>
       )}
-      {read.error && (
-        <Alert color="orange">
-          {m.catalogError}
-          <Button variant="subtle" onClick={() => void read.refresh()}>
-            {m.refresh}
-          </Button>
-        </Alert>
-      )}
-      {!read.data && !read.error && <Loader size="sm" aria-label={m.loading} />}
-      {read.data?.data.length === 0 && <Text c="dimmed">{m.catalogEmpty}</Text>}
-      <div className={styles.grid} aria-busy={read.refreshing}>
-        {read.data?.data.map((item) => {
-          const checked = chosen.some((value) => value.id === item.id);
-          return (
-            <ExerciseCard
-              key={item.id}
-              ownerId={ownerId}
-              item={item}
-              active={playing === item.id}
-              onPlay={() => setPlaying(playing === item.id ? null : item.id)}
-              checked={checked}
-              disabled={
-                !checked &&
-                (!item.canPlan ||
-                  item.name.length > 160 ||
-                  chosen.length >= capacity)
-              }
-              onChoose={onChoose ? () => onChoose(item) : undefined}
-            />
-          );
-        })}
+      <div className={styles.grid}>
+        <ExerciseResults
+          key={params.toString()}
+          ownerId={ownerId}
+          query={params.toString()}
+          chosen={chosen}
+          capacity={capacity}
+          playing={playing}
+          onPlay={(id) => setPlaying(playing === id ? null : id)}
+          onChoose={onChoose}
+        />
       </div>
-      <Group justify="space-between">
-        {offset > 0 && (
-          <Button
-            variant="default"
-            mih={44}
-            onClick={() => {
-              setOffset(Math.max(0, offset - 12));
-              setPlaying(null);
-            }}
-          >
-            {m.catalogPrevious}
-          </Button>
-        )}
-        {read.data?.catalog.hasMore && (
-          <Button
-            variant="default"
-            mih={44}
-            onClick={() => {
-              setOffset(offset + 12);
-              setPlaying(null);
-            }}
-          >
-            {m.moreExercises}
-          </Button>
-        )}
-      </Group>
       {footer && <div className={styles.footer}>{footer}</div>}
     </Stack>
   );

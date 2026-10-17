@@ -25,6 +25,12 @@
   overflow: hidden;
   min-width: 0;
 }
+.catalogTail {
+  grid-column: 1 / -1;
+  min-height: 48px;
+  display: grid;
+  align-items: center;
+}
 .card[data-selected] {
   border-color: var(--mantine-primary-color-filled);
 }

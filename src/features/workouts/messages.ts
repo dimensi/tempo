@@ -28,7 +28,11 @@ export const workoutMessages = {
   addSelected: 'Добавить выбранные',
   searchExercises: 'Поиск по названию',
   filters: 'Фильтры',
-  moreExercises: 'Показать ещё',
+  catalogLoading: 'Загружаем упражнения…',
+  catalogLoaded: 'Показано',
+  catalogOf: 'из',
+  catalogPageError:
+    'Не удалось загрузить упражнения. Уже загруженные остались в списке.',
   selected: 'Выбрано',
   manualName: 'Название упражнения',
   dayMenu: 'Действия с тренировкой',
