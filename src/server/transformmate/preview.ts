@@ -1,9 +1,6 @@
 import 'server-only';
-import {
-  CatalogError,
-  catalogScope,
-  exerciseId,
-} from '@/server/transformmate/catalog';
+import { CatalogError } from './errors';
+import { catalogScope, exerciseId } from '@/server/transformmate/catalog';
 import { cachedDetail } from '@/server/transformmate/catalog-cache';
 import { catalogStore } from '@/server/transformmate/catalog-store';
 import { selectPreviewUrl, matchesSignature } from './preview-validation';

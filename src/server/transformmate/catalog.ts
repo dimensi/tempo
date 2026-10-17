@@ -20,7 +20,10 @@ import {
   catalogItem,
   detailInfo,
 } from '@/server/transformmate/catalog-projection';
-import { TransformMateApiError } from '@/server/transformmate/errors';
+import {
+  CatalogError,
+  TransformMateApiError,
+} from '@/server/transformmate/errors';
 import { selectMediaUrl } from '@/server/transformmate/catalog-schema';
 import {
   transformMateCatalogFiltersSchema,
@@ -29,11 +32,6 @@ import {
   type TransformMateCatalogFilters,
 } from '@/contracts/transformmate';
 
-export class CatalogError extends Error {
-  constructor(public readonly status: number) {
-    super('TransformMate catalog unavailable');
-  }
-}
 export async function requireCatalogAccess(headers: Headers, ownerId: string) {
   const access = await authorize(headers, 'workouts:read', ownerId);
   if (!access.ok) throw new CatalogError(access.status);

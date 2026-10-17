@@ -1,7 +1,12 @@
 import 'server-only';
 import type { CatalogIdentity } from './catalog-store';
 import { replicaStore, type ReplicaState } from './replica-store';
-import { FirebaseRefreshError, TransformMateApiError } from './errors';
+import {
+  CatalogError,
+  FirebaseRefreshError,
+  TransformMateApiError,
+} from './errors';
+import { TransformMateStaleConnectionError } from './token-store';
 export class ReplicaUnavailable extends Error {
   constructor() {
     super('Catalog temporarily unavailable');
@@ -33,7 +38,12 @@ export function recordReplicaFailure(
   error: unknown,
   now = Date.now(),
 ) {
-  if (error instanceof ReplicaUnavailable) return;
+  if (
+    error instanceof ReplicaUnavailable ||
+    error instanceof TransformMateStaleConnectionError ||
+    error instanceof CatalogError
+  )
+    return;
   const store = replicaStore(),
     state = store.state(scope);
   const auth =

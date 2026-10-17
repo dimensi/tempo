@@ -170,7 +170,7 @@ async function assertReplicaRecovery(
     await import('@/server/transformmate/replica-playback');
   const { selectedVideo } =
     await import('@/server/transformmate/replica-media');
-  const { replicaMediaRequest } =
+  const { replicaMediaRequest, replicaRequest } =
     await import('@/server/transformmate/replica-gate');
   const { TransformMateStaleConnectionError } =
     await import('@/server/transformmate/token-store');
@@ -446,6 +446,26 @@ async function assertReplicaRecovery(
     expect(store().job(scope, ready.key)!.data.detailAt).toBe(0);
     expect(store().job(scope, ready.key)!.error).not.toBeNull();
     expect(videoRequests).toBe(failedCalls);
+    store().patch(scope, {
+      reason: null,
+      failures: 0,
+      blocked_until: 0,
+      next_request_at: 0,
+    });
+    await expect(
+      replicaRequest(scope, async () => {
+        throw new TransformMateStaleConnectionError();
+      }),
+    ).rejects.toBeInstanceOf(TransformMateStaleConnectionError);
+    expect(store().state(scope).reason).toBeNull();
+    vi.setSystemTime(Date.now() + 10000);
+    const { CatalogError } = await import('@/server/transformmate/errors');
+    await expect(
+      replicaRequest(scope, async () => {
+        throw new CatalogError(403);
+      }),
+    ).rejects.toBeInstanceOf(CatalogError);
+    expect(store().state(scope).reason).toBeNull();
     revoked = true;
     await expect(
       serveReplicaMedia(

@@ -1,9 +1,9 @@
 import 'server-only';
+import { CatalogError } from './errors';
 import {
   getExercise,
   catalogScope,
   requireCatalogAccess,
-  CatalogError,
   exerciseId,
 } from '@/server/transformmate/catalog';
 
