@@ -28,7 +28,9 @@
   .mobileNav {
     position: fixed;
     bottom: calc(12px + env(safe-area-inset-bottom));
-    inset-inline: 12px;
+    inset-inline: 0;
+    width: min(400px, calc(100% - 24px));
+    margin-inline: auto;
     height: 64px;
     z-index: 101;
     display: grid;

@@ -112,6 +112,8 @@ Spacing follows the frontmatter Mantine scale. Header action groups use a tighte
 
 The shell and workout rows rely on boundaries and tonal backgrounds. Bordered Paper containers remain valid elsewhere in the application. Drawers, dialogs and menus retain Mantine's overlay behavior; no new shadow vocabulary is introduced by the workout work. Do not infer a global ban on cards or shadows from the flat exercise list.
 
+The mobile navigation is centered and capped at 400px, retaining 12px side clearance on smaller screens. Mobile section navigation uses a single horizontally scrollable row with a thin scrollbar; the active section is kept visible without moving the document.
+
 The mobile navigation uses a 32px capsule radius and 27px item radius, with 11px semibold navigation labels. These are local navigation dimensions, not replacements for the default component scale.
 
 ## Shapes
@@ -138,7 +140,7 @@ Use Mantine inputs with visible labels or specific accessible names. Default fie
 
 ### Navigation
 
-The desktop sidebar contains the brand and icon-led section links. Active links use Mantine's selected treatment. Exercise discovery belongs to the add-exercise task and has no standalone navigation item. Below 48em, a floating four-item navigation links to Overview, Food, Workouts and More. More is a normal page listing secondary sections and account actions, not a sheet. The mobile header contains the brand and page actions; the single left-aligned page title starts the content. The bar reserves content space and the device safe area, stays visible on scroll, and sits below dialogs. Theme selection (light, dark, system) lives in Settings → Appearance for both roles. Keep the skip link and current-page semantics.
+The desktop sidebar contains the brand and icon-led section links. Active links use Mantine's selected treatment. Exercise discovery belongs to the add-exercise task and has no standalone navigation item. Below 48em, a floating four-item navigation links to Overview, Food, Workouts and More. More is a normal page listing secondary sections and account actions, not a sheet. The header also shows the current account role: beneath the brand name on mobile and beside the page actions on desktop. The mobile header contains the brand and page actions; the single left-aligned page title starts the content. The bar reserves content space and the device safe area, stays visible on scroll, and sits below dialogs. Theme selection (light, dark, system) lives in Settings → Appearance for both roles. Keep the skip link and current-page semantics.
 
 ### Shared page header
 

@@ -59,9 +59,13 @@ export function ApplicationShellFrame({
       setBusy(false);
     }
   }
+  const roleBadge = (
+    <Badge variant="light" size="xs">
+      {role === 'OWNER' ? 'Владелец' : 'Тренер'}
+    </Badge>
+  );
   const accountControls = (
     <Stack gap="xs">
-      <Badge variant="light">{role === 'OWNER' ? 'Владелец' : 'Тренер'}</Badge>
       {demo && <Badge color="orange">Демо-режим</Badge>}
       {error && (
         <Text c="red" role="alert" size="sm">
@@ -113,9 +117,15 @@ export function ApplicationShellFrame({
                   className={classes.mobileBrand}
                 >
                   <Image src={brandSrc} w={28} h={28} alt="" />
-                  <Text fw={700}>{ru.appName}</Text>
+                  <Stack gap={2} align="flex-start">
+                    <Text fw={700} lh={1.2}>
+                      {ru.appName}
+                    </Text>
+                    {roleBadge}
+                  </Stack>
                 </UnstyledButton>
                 <div ref={setHeaderTarget} className={classes.desktopTitle} />
+                <Group visibleFrom="sm">{roleBadge}</Group>
                 <Group ref={setActionsTarget} gap={4} wrap="nowrap" />
               </Group>
             </AppShell.Header>

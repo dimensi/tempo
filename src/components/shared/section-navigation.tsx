@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import classes from './section-navigation.module.css';
 
 export function SectionNavigation({
@@ -12,7 +12,19 @@ export function SectionNavigation({
   sections: ReadonlyArray<{ id: string; label: string }>;
   label: string;
 }) {
+  const navigation = useRef<HTMLElement>(null);
   const [active, setActive] = useState(sections[0]!.id);
+
+  useEffect(() => {
+    const nav = navigation.current;
+    const link = nav?.querySelector<HTMLElement>('[aria-current]');
+    if (!nav || !link || nav.scrollWidth <= nav.clientWidth) return;
+    const left = link.offsetLeft - 2;
+    const right = link.offsetLeft + link.offsetWidth + 2;
+    if (left < nav.scrollLeft) nav.scrollLeft = left;
+    else if (right > nav.scrollLeft + nav.clientWidth)
+      nav.scrollLeft = right - nav.clientWidth;
+  }, [active]);
 
   useEffect(() => {
     let frame = 0;
@@ -65,7 +77,7 @@ export function SectionNavigation({
 
   return (
     <div className={classes.layout}>
-      <nav className={classes.navigation} aria-label={label}>
+      <nav ref={navigation} className={classes.navigation} aria-label={label}>
         {sections.map(({ id, label }) => (
           <a
             key={id}
