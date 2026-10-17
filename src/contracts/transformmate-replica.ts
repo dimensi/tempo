@@ -9,6 +9,21 @@ export const transformMateReplicaStatusSchema = z.object({
   errors: z.number().int().nonnegative(),
   lastSuccessAt: z.iso.datetime().nullable(),
   nextAttemptAt: z.iso.datetime().nullable(),
+  failedExercises: z
+    .array(
+      z.object({
+        id: z.number().int().positive(),
+        reason: z.enum([
+          'storage',
+          'waiting',
+          'media_or_upstream',
+          'invalid_media',
+          'limit',
+        ]),
+        nextAttemptAt: z.iso.datetime(),
+      }),
+    )
+    .max(5),
   reason: z.enum(['disconnected', 'auth', 'storage', 'upstream']).nullable(),
 });
 export type TransformMateReplicaStatus = z.infer<
@@ -30,6 +45,14 @@ export const replicaMessages = {
   bytes: 'Занято',
   pending: 'Ожидают обработки',
   errors: 'Ошибки обработки',
+  failedExercise: 'Упражнение',
+  failureReasons: {
+    storage: 'Хранилище недоступно',
+    waiting: 'Ожидает восстановления TransformMate',
+    media_or_upstream: 'Не удалось обновить данные',
+    invalid_media: 'Не удалось обработать медиа',
+    limit: 'Превышен лимит размера файла',
+  },
   lastSuccess: 'Последняя успешная обработка',
   nextAttempt: 'Следующая попытка',
   ready: 'Автоматическое обновление включено',

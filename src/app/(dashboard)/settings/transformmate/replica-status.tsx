@@ -96,6 +96,13 @@ export function ReplicaStatus({ configured }: { configured: boolean }) {
               ))}
             </Stack>
           )}
+          {status.failedExercises.map((failure) => (
+            <Text key={failure.id} size="sm">
+              {m.failedExercise} #{failure.id}:{' '}
+              {m.failureReasons[failure.reason]}. {m.nextAttempt}:{' '}
+              {date(failure.nextAttemptAt)}
+            </Text>
+          ))}
         </>
       )}
     </Stack>

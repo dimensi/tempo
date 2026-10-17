@@ -13,7 +13,9 @@ export class ReplicaStorageError extends Error {
   }
 }
 export class ReplicaMediaError extends Error {
-  constructor() {
+  constructor(
+    public readonly code: 'invalid_media' | 'limit' = 'invalid_media',
+  ) {
     super('Invalid replica media');
   }
 }

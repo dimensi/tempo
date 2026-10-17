@@ -261,6 +261,14 @@ export function createReplicaStore(sqlite: Database.Database) {
         ),
         pending: jobs.filter((j) => j.next_at <= now).length,
         errors: jobs.filter((j) => j.error).length,
+        failedExercises: jobs
+          .filter((j) => j.error)
+          .slice(0, 5)
+          .map((j) => ({
+            id: Number(j.key.slice('exercise:'.length)),
+            reason: j.error,
+            nextAttemptAt: new Date(j.next_at).toISOString(),
+          })),
         nextAt: nextAt.at,
         state: state(s),
       };

@@ -104,7 +104,7 @@ async function writeBounded(
               break;
             }
             bytes += chunk.value.byteLength;
-            if (bytes > max) throw new ReplicaMediaError();
+            if (bytes > max) throw new ReplicaMediaError('limit');
             yield chunk.value;
           }
           if (!bytes || (expected !== undefined && bytes !== expected))
@@ -319,6 +319,8 @@ export async function processReplicaMedia(
               }
               if (response.status !== 304 || !current) {
                 const declared = response.headers.get('content-length');
+                if (declared && Number(declared) > MAX_VIDEO_BYTES)
+                  throw new ReplicaMediaError('limit');
                 if (
                   response.status !== 200 ||
                   response.headers

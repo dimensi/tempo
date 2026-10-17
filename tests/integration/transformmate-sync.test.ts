@@ -332,6 +332,9 @@ async function assertReplicaRecovery(
       ready.data.video!.key,
     );
     expect(store().state(scope).reason).toBe('storage');
+    expect(store().status(scope, Date.now()).failedExercises).toMatchObject([
+      { id: 501, reason: 'storage' },
+    ]);
     // Storage backoff pauses replication, while upstream playback stays available.
     const reserve = await replicaMediaRequest(
       scope,

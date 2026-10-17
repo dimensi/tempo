@@ -52,7 +52,9 @@ FFmpeg/ffprobe входят в runtime. FFmpeg генерирует JPEG из р
 плеера. HTTP/allowlist/MIME/range-проверки upstream остаются обязательными.
 
 `GET /api/transformmate/replica` — owner-only v1 статус: total, descriptions,
-videos, previews, bytes, pending, errors, lastSuccessAt, nextAttemptAt, reason.
+videos, previews, bytes, pending, errors, failedExercises, lastSuccessAt, nextAttemptAt, reason.
+До пяти конкретных упражнений с ошибками показываются с безопасной причиной
+(включая превышение размера файла) и сроком следующей попытки.
 Настройки опрашивают его каждые 30 секунд, пока страница видима и сеть доступна;
 сбой обновления не стирает ранее показанные числа. Кнопок запуска/паузы нет.
 

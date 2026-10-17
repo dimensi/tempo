@@ -22,6 +22,7 @@ import { processReplicaMedia, replicaTemporaryRoot } from './replica-media';
 import {
   recordReplicaFailure,
   ReplicaStorageError,
+  ReplicaMediaError,
   ReplicaUnavailable,
 } from './replica-gate';
 import { TransformMateStaleConnectionError } from './token-store';
@@ -96,7 +97,9 @@ export function createReplicaWorker(deps: {
                 ? 'storage'
                 : error instanceof ReplicaUnavailable
                   ? 'waiting'
-                  : 'media_or_upstream';
+                  : error instanceof ReplicaMediaError
+                    ? error.code
+                    : 'media_or_upstream';
             job.next_at =
               now() +
               Math.min(
