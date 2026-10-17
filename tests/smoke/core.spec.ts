@@ -386,6 +386,11 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     },
     sets: [{ reps: 10, weightKg: 20 }],
   };
+  const repeated = [1, 2].map((count) => ({
+    id: crypto.randomUUID(),
+    name: 'Repeated manual',
+    sets: Array.from({ length: count }, () => ({ reps: 12, weightKg: 30 })),
+  }));
   const created = await page.request.post(
     `/api/workouts/plans?ownerId=${owner}`,
     {
@@ -400,13 +405,37 @@ test('real login reaches core sections, recovers a cached workout offline, purge
             id: crypto.randomUUID(),
             date: gymDate,
             title: 'Gym download',
-            exercises: [exercise],
+            exercises: [exercise, ...repeated],
           },
         ],
       },
     },
   );
   expect(created.status()).toBe(200);
+  const gymPlan = (await created.json()).data;
+  const recordedId = crypto.randomUUID();
+  expect(
+    (
+      await page.request.post(`/api/workouts/sessions?ownerId=${owner}`, {
+        headers: { origin: testOrigin },
+        data: {
+          date: gymDate,
+          title: 'Gym download',
+          planId: gymPlan.id,
+          plannedWorkoutId: gymPlan.workouts[0].id,
+          exercises: [
+            {
+              id: recordedId,
+              name: 'Repeated manual',
+              sets: [{ reps: 6, weightKg: 15 }],
+            },
+          ],
+          note: '',
+          status: 'in_progress',
+        },
+      })
+    ).status(),
+  ).toBe(200);
   await page.route('**/api/workouts/transformmate/exercises/501?*', (route) =>
     route.fulfill({
       json: {
@@ -438,6 +467,40 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     (route) => route.fulfill({ contentType: 'video/mp4', body: technique }),
   );
   await page.goto(`/workouts?date=${gymDate}`);
+  // Repeated manual rows retain separate guides and the original result ID.
+  const repeatedRows = page.getByRole('region', {
+    name: 'Упражнение: Repeated manual',
+    exact: true,
+  });
+  await expect(repeatedRows).toHaveCount(2);
+  await expect(
+    repeatedRows.nth(0).getByLabel('Repeated manual, Подход 1, Повторения'),
+  ).toHaveValue('6');
+  await expect(
+    repeatedRows.nth(1).getByLabel('Repeated manual, Подход 2, Повторения'),
+  ).toHaveAttribute('placeholder', '12');
+  // Deleting results must leave the plan available and discard the deleted draft.
+  await page.getByRole('button', { name: 'Действия с тренировкой' }).click();
+  await page.getByRole('menuitem', { name: 'Удалить результаты' }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Удалить', exact: true })
+    .click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const afterDeletion = (
+    await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json()
+  ).data;
+  expect(
+    afterDeletion.plans.find((item: { id: string }) => item.id === gymPlan.id),
+  ).toEqual(gymPlan);
+  expect(
+    afterDeletion.sessions.some(
+      (item: { date: string }) => item.date === gymDate,
+    ),
+  ).toBe(false);
+  await expect(
+    repeatedRows.nth(0).getByLabel('Repeated manual, Подход 1, Повторения'),
+  ).toHaveValue('');
   await page
     .getByRole('button', { name: 'Скачать тренировку', exact: true })
     .click();

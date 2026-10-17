@@ -23,6 +23,7 @@ import {
 import { useMediaQuery } from '@mantine/hooks';
 import { BottomSheet } from '@/components/shared/bottom-sheet';
 import { ExerciseOrder } from './exercise-order';
+import { matchExerciseGuides } from './exercise-guides';
 import type { PlannedWorkout, WorkoutSession } from '@/contracts/workouts';
 import type { ResultExercise } from './result-draft';
 import { ExerciseMedia } from './exercise-media';
@@ -56,6 +57,7 @@ export function ExerciseRows({
   const mobile = useMediaQuery('(max-width: 47.99em)');
   const [actions, setActions] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const guides = matchExerciseGuides(exercises, planned?.exercises ?? []);
   const update = (index: number, next: ResultExercise) =>
     onChange?.(exercises.map((exercise, i) => (i === index ? next : exercise)));
   if (reordering && onChange)
@@ -71,13 +73,7 @@ export function ExerciseRows({
       {exercises.map((exercise, index) => {
         const key =
           exercise.id ?? exercise.transformMate?.occurrenceKey ?? `${index}`;
-        const guide = exercise.transformMate
-          ? planned?.exercises.find(
-              (item) =>
-                item.transformMate?.occurrenceKey ===
-                exercise.transformMate?.occurrenceKey,
-            )
-          : planned?.exercises.find((item) => item.name === exercise.name);
+        const guide = guides[index];
         const titleParts = /^(.*?)\s*(\([^)]*\))$/.exec(exercise.name);
         const options = [
           {

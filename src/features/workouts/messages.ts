@@ -79,7 +79,10 @@ export const workoutMessages = {
   discardAndReload: 'Отбросить черновик и обновить',
   confirmResultRemoval:
     'При удалении записанного упражнения удалятся и прикреплённые к нему видео. Подтвердите удаление или верните подходы.',
-  removeDayWorkout: 'Удалить тренировку',
+  removeDayPlan: 'Удалить план на этот день',
+  removeDayResult: 'Удалить результаты',
+  confirmResultDelete:
+    'Записанные подходы, заметка и личные видео будут удалены. Это действие нельзя отменить.',
   returnToDay: 'Вернуться к тренировке',
   exerciseCatalog: 'Каталог упражнений',
   catalogPageCoverage:

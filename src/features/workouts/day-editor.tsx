@@ -43,6 +43,7 @@ import { sessionGeneration } from '@/lib/session-state';
 import {
   clearWorkoutDraft,
   clearWorkoutDrafts,
+  dayWorkoutDraftKey,
   readWorkoutDraft,
   storeWorkoutDraft,
 } from './draft-storage';
@@ -52,6 +53,7 @@ import {
   type ResultDraft,
 } from './result-draft';
 import { ExerciseRows } from './exercise-rows';
+import { matchExerciseGuides } from './exercise-guides';
 import { ExercisePicker } from './exercise-picker';
 import { workoutMessages as m } from './messages';
 import styles from './day-workout.module.css';
@@ -100,32 +102,25 @@ function initialResult(
   const exercises = existing.exercises.map((exercise) =>
     structuredClone(exercise),
   );
+  const guides = matchExerciseGuides(exercises, workout.exercises);
+  const matched = new Set(guides);
   for (const guide of workout.exercises) {
-    const match = exercises.find((item) =>
-      guide.transformMate
-        ? item.transformMate?.occurrenceKey ===
-          guide.transformMate.occurrenceKey
-        : item.name === guide.name,
-    );
-    if (!match)
+    if (!matched.has(guide)) {
       exercises.push({
         ...structuredClone(guide),
         id: crypto.randomUUID(),
         sets: [],
       });
+      guides.push(guide);
+    }
   }
   return {
     title: existing.title,
     date: existing.date,
     note: existing.note,
     status: existing.status,
-    exercises: exercises.map((exercise) => {
-      const guide = workout.exercises.find((item) =>
-        exercise.transformMate
-          ? item.transformMate?.occurrenceKey ===
-            exercise.transformMate.occurrenceKey
-          : item.name === exercise.name,
-      );
+    exercises: exercises.map((exercise, index) => {
+      const guide = guides[index];
       return {
         ...exercise,
         sets: [
@@ -203,9 +198,13 @@ export function DayEditor({
     };
   });
   const identity = `${userId}:${ownerId}`;
-  const [key] = useState(
-    () =>
-      `workout-draft:${identity}:day:${plan?.id ?? existing?.id ?? 'new'}:${workout?.id ?? ''}:${date}`,
+  const [key] = useState(() =>
+    dayWorkoutDraftKey(
+      identity,
+      date,
+      plan?.id ?? existing?.id ?? 'new',
+      workout?.id,
+    ),
   );
   const [value, setValue] = useState({
     plan: initial.plan,
@@ -387,14 +386,11 @@ export function DayEditor({
         (item) => item.id === selected.id,
       )!;
       const nextResult = structuredClone(valueRef.current.result);
+      const matched = new Set(
+        matchExerciseGuides(nextResult.exercises, savedWorkout.exercises),
+      );
       for (const exercise of savedWorkout.exercises) {
-        const current = nextResult.exercises.find((item) =>
-          exercise.transformMate
-            ? item.transformMate?.occurrenceKey ===
-              exercise.transformMate.occurrenceKey
-            : item.name === exercise.name,
-        );
-        if (!current)
+        if (!matched.has(exercise))
           nextResult.exercises.push({
             ...structuredClone(exercise),
             id: crypto.randomUUID(),

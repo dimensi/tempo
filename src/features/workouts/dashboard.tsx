@@ -37,6 +37,7 @@ import { useReadResource } from '@/lib/use-read-resource';
 import { useReadOnline } from '@/lib/use-read-online';
 import { workoutTitle } from '@/lib/workout-title';
 import { DayEditor } from './day-editor';
+import { clearWorkoutDraft, dayWorkoutDraftKey } from './draft-storage';
 import { DownloadWorkoutButton } from './download-workout-button';
 import { copyPlanToDate } from './copy-plan';
 import { NativeWorkout } from './native-workout';
@@ -84,7 +85,11 @@ export function WorkoutsDashboard({
   const [syncRequested, setSyncRequested] = useState<string | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyDate, setCopyDate] = useState(date);
-  const [deletion, setDeletion] = useState(false);
+  const [deletion, setDeletion] = useState<{
+    kind: 'plan' | 'result';
+    entryId: string;
+  } | null>(null);
+  const [editorVersion, setEditorVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const [draftDirty, setDraftDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -200,11 +205,18 @@ export function WorkoutsDashboard({
     if (create) setCreating(null);
   };
   async function remove() {
-    if (!entry || (!entry.plan && !canLog)) return;
+    if (
+      !entry ||
+      entry.id !== deletion?.entryId ||
+      (deletion.kind === 'plan' && !entry.plan) ||
+      (deletion.kind === 'result' && (!canLog || !entry.session))
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
-      const { plan, workout, session } = entry;
+      const { workout, session } = entry;
+      const plan = deletion.kind === 'plan' ? entry.plan : undefined;
       const remaining = plan?.workouts.filter(
         (item) => item.id !== workout?.id,
       );
@@ -231,8 +243,18 @@ export function WorkoutsDashboard({
       );
       if (!response.ok)
         throw new Error(response.status === 409 ? m.conflict : m.error);
-      setDeletion(false);
+      clearWorkoutDraft(
+        dayWorkoutDraftKey(
+          `${userId}:${ownerId}`,
+          date,
+          entry.plan?.id ?? session!.id,
+          workout?.id,
+        ),
+      );
       await resource.refresh();
+      setEditorVersion((version) => version + 1);
+      setDraftDirty(false);
+      setDeletion(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.error);
     } finally {
@@ -278,13 +300,25 @@ export function WorkoutsDashboard({
         void sync.refresh();
       },
     },
-    ...(entry?.plan || (canLog && entry?.session)
+    ...(entry?.plan
       ? [
           {
-            label: m.removeDayWorkout,
+            label: m.removeDayPlan,
             icon: <IconTrash size={20} />,
             color: 'red',
-            run: () => setDeletion(true),
+            disabled: draftDirty || busy,
+            run: () => setDeletion({ kind: 'plan', entryId: entry.id }),
+          },
+        ]
+      : []),
+    ...(canLog && entry?.session
+      ? [
+          {
+            label: m.removeDayResult,
+            icon: <IconTrash size={20} />,
+            color: 'red',
+            disabled: draftDirty || busy,
+            run: () => setDeletion({ kind: 'result', entryId: entry.id }),
           },
         ]
       : []),
@@ -482,7 +516,7 @@ export function WorkoutsDashboard({
       )}
       {!create && entry && (entry.plan || entry.session) && (
         <DayEditor
-          key={`${ownerId}:${date}:${entry.id}`}
+          key={`${ownerId}:${date}:${entry.id}:${editorVersion}`}
           ownerId={ownerId}
           userId={userId}
           date={date}
@@ -559,20 +593,24 @@ export function WorkoutsDashboard({
         </Stack>
       </Modal>
       <Modal
-        opened={deletion}
+        opened={deletion !== null}
         onClose={() => {
-          if (!busy) setDeletion(false);
+          if (!busy) setDeletion(null);
         }}
         title={m.confirmDelete}
       >
         <Stack>
-          <Text>{m.confirmText}</Text>
+          <Text>
+            {deletion?.kind === 'result'
+              ? m.confirmResultDelete
+              : m.confirmText}
+          </Text>
           {error && <Alert color="red">{error}</Alert>}
           <Group justify="flex-end">
             <Button
               variant="default"
               disabled={busy}
-              onClick={() => setDeletion(false)}
+              onClick={() => setDeletion(null)}
             >
               {m.cancel}
             </Button>
