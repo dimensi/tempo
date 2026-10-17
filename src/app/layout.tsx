@@ -69,6 +69,7 @@ export default function RootLayout({
         <ColorSchemeScript defaultColorScheme="auto" />
       </head>
       <body>
+        <div className="pwa-top-edge" aria-hidden="true" />
         <Providers>{children}</Providers>
       </body>
     </html>
