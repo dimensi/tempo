@@ -20,14 +20,20 @@ await build({
 
 // Only this operator smoke bundles server-only modules into a non-browser CLI.
 await build({
-  entryPoints: ['scripts/anamnesis-pdf-smoke.ts'],
+  entryPoints: [
+    'scripts/anamnesis-pdf-smoke.ts',
+    'scripts/transformmate-media-smoke.ts',
+  ],
   outdir: 'dist-cli',
   bundle: true,
   platform: 'node',
   target: 'node22',
   format: 'esm',
   outExtension: { '.js': '.mjs' },
-  external: ['@playwright/test'],
+  external: ['@playwright/test', 'better-sqlite3'],
+  banner: {
+    js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+  },
   plugins: [
     {
       name: 'operator-server-only',

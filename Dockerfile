@@ -31,7 +31,7 @@ COPY --from=builder --chown=node:node /app/node_modules/.pnpm/playwright@1.64.0/
 COPY --from=builder --chown=node:node /app/node_modules/.pnpm/playwright-core@1.64.0/node_modules/playwright-core ./node_modules/playwright-core
 COPY --from=builder --chown=node:node /app/scripts/pdf-runtime-smoke.mjs ./scripts/pdf-runtime-smoke.mjs
 RUN node node_modules/playwright-core/cli.js install --with-deps chromium \
-    && apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && chown -R node:node /ms-playwright
 RUN mkdir -p /app/data /app/uploads && chown node:node /app/data /app/uploads

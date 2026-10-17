@@ -17,7 +17,6 @@ function scopeColumns() {
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     accountScope: text('account_scope').notNull(),
-    generation: text('generation').notNull(),
     locale: text('locale', { enum: ['ru'] }).notNull(),
   };
 }
@@ -34,7 +33,7 @@ export const transformMateCatalogState = sqliteTable(
   },
   (t) => [
     primaryKey({
-      columns: [t.ownerId, t.accountScope, t.generation, t.locale],
+      columns: [t.ownerId, t.accountScope, t.locale],
     }),
     check('tm_catalog_state_locale', sql`${t.locale} = 'ru'`),
     check(
@@ -70,18 +69,11 @@ export const transformMateCatalogExercise = sqliteTable(
   },
   (t) => [
     primaryKey({
-      columns: [
-        t.ownerId,
-        t.accountScope,
-        t.generation,
-        t.locale,
-        t.exerciseId,
-      ],
+      columns: [t.ownerId, t.accountScope, t.locale, t.exerciseId],
     }),
     index('tm_catalog_exercise_full_idx').on(
       t.ownerId,
       t.accountScope,
-      t.generation,
       t.locale,
       t.inFullCatalog,
     ),
@@ -92,33 +84,5 @@ export const transformMateCatalogExercise = sqliteTable(
       'tm_catalog_exercise_detail_pair',
       sql`(${t.detail} is null) = (${t.detailFetchedAt} is null)`,
     ),
-  ],
-);
-
-export const transformMateCatalogQuery = sqliteTable(
-  'transformmate_catalog_query',
-  {
-    ...scopeColumns(),
-    // Canonical normalized query + exact localized names + offset/limit.
-    queryKey: text('query_key').notNull(),
-    exerciseIds: text('exercise_ids').notNull(),
-    total: integer('total').notNull(),
-    hasMore: integer('has_more', { mode: 'boolean' }).notNull(),
-    fetchedAt: text('fetched_at').notNull(),
-  },
-  (t) => [
-    primaryKey({
-      columns: [t.ownerId, t.accountScope, t.generation, t.locale, t.queryKey],
-    }),
-    index('tm_catalog_query_fetched_idx').on(
-      t.ownerId,
-      t.accountScope,
-      t.generation,
-      t.locale,
-      t.fetchedAt,
-    ),
-    check('tm_catalog_query_total', sql`${t.total} >= 0`),
-    check('tm_catalog_query_locale', sql`${t.locale} = 'ru'`),
-    check('tm_catalog_query_more', sql`${t.hasMore} in (0, 1)`),
   ],
 );

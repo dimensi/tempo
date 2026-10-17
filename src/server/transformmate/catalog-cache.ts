@@ -1,204 +1,92 @@
 import 'server-only';
-import type { TransformMateClient } from '@/server/transformmate/client';
-import type { CatalogIdentity } from '@/server/transformmate/catalog-store';
-import { catalogStore } from '@/server/transformmate/catalog-store';
-import { projectDetail } from '@/server/transformmate/catalog-projection';
-import { TransformMateApiError } from '@/server/transformmate/errors';
-import { MAX_RETRY_AFTER_MS } from '@/server/transformmate/retry-after';
-import type { TransformMateCatalogFilters } from '@/contracts/transformmate';
+import type { TransformMateClient } from './client';
+import type { CatalogIdentity } from './catalog-store';
+import { catalogStore } from './catalog-store';
+import { projectDetail } from './catalog-projection';
+import { replicaRequest } from './replica-gate';
+import { replicaStore, monthFrom } from './replica-store';
 export type CatalogScope = CatalogIdentity & {
-  client: TransformMateClient;
+  client: TransformMateClient | null;
   assertCurrent: () => Promise<void>;
+  assertUpstreamCurrent: () => Promise<void>;
 };
-// Freshness is independent of retention: persisted catalog DTOs remain usable.
-export const CATALOG_TTL_MS = 30 * 24 * 60 * 60_000;
-const FAILURE_RETRY_MS = 60_000;
+export const CATALOG_TTL_MS = 30 * 86400000;
+export const fresh = (at: string | null | undefined) =>
+  Boolean(at && Date.now() - Date.parse(at) < CATALOG_TTL_MS);
 const pending = new Map<string, Promise<unknown>>();
-const cooldown = new Map<string, number>();
-const failed = new Set<string>();
-let runningDetails = 0;
-const detailWaiters: { priority: boolean; run: () => void }[] = [];
-async function detailSlot<T>(work: () => Promise<T>, priority: boolean) {
-  if (detailWaiters.length >= 64) throw new Error('Catalog detail queue full');
-  if (runningDetails >= 2)
-    await new Promise<void>((resolve) => {
-      const waiter = { priority, run: resolve };
-      if (priority) {
-        const firstVisible = detailWaiters.findIndex(
-          (entry) => !entry.priority,
-        );
-        detailWaiters.splice(
-          firstVisible < 0 ? detailWaiters.length : firstVisible,
-          0,
-          waiter,
-        );
-      } else detailWaiters.push(waiter);
-    });
-  else runningDetails++;
-  try {
-    return await work();
-  } finally {
-    const next = detailWaiters.shift();
-    if (next) next.run();
-    else runningDetails--;
-  }
-}
-function boundFailures() {
-  while (failed.size > 256) failed.delete(failed.values().next().value!);
-  while (cooldown.size > 32) cooldown.delete(cooldown.keys().next().value!);
-}
-export function scopeKey(scope: CatalogIdentity) {
-  return JSON.stringify([
-    scope.ownerId,
-    scope.accountScope,
-    scope.generation,
-    scope.locale,
-  ]);
-}
-export function fresh(at: string | null | undefined) {
-  return Boolean(at && Date.now() - Date.parse(at) < CATALOG_TTL_MS);
-}
-export function invalidateTransformMateCatalog(ownerId: string) {
-  // Persisted generations stay private/inaccessible; pending old writes fail fences.
-  for (const key of [...cooldown.keys()])
-    if (key.startsWith(JSON.stringify([ownerId]).slice(0, -1) + ','))
-      cooldown.delete(key);
-}
-export function refreshState(scope: CatalogScope, operation: string) {
-  const key = scopeKey(scope) + operation;
-  return pending.has(key)
-    ? ('updating' as const)
-    : failed.has(key)
-      ? ('unavailable' as const)
-      : ('idle' as const);
-}
+export const scopeKey = (s: CatalogIdentity) =>
+  JSON.stringify([s.ownerId, s.accountScope, s.locale]);
 async function coalesce<T>(
   scope: CatalogScope,
-  operation: string,
+  key: string,
   work: () => Promise<T>,
 ): Promise<T> {
-  const key = scopeKey(scope) + operation;
-  const current = pending.get(key);
-  if (current) return current as Promise<T>;
-  if ((cooldown.get(scopeKey(scope)) ?? 0) > Date.now()) {
-    failed.add(key);
-    throw new Error('Catalog cooldown');
-  }
-  const task = work()
-    .then((result) => {
-      failed.delete(key);
-      return result;
-    })
-    .catch((error: unknown) => {
-      failed.add(key);
-      cooldown.set(
-        scopeKey(scope),
-        Date.now() +
-          (error instanceof TransformMateApiError && error.status === 429
-            ? Math.min(
-                MAX_RETRY_AFTER_MS,
-                Math.max(1000, error.retryAfterMs ?? 5000),
-              )
-            : FAILURE_RETRY_MS),
-      );
-      boundFailures();
-      throw error;
-    })
-    .finally(() => {
-      if (pending.get(key) === task) pending.delete(key);
-    });
-  pending.set(key, task);
+  const id = scopeKey(scope) + key;
+  const active = pending.get(id);
+  if (active) return active as Promise<T>;
+  const task = replicaRequest(scope, async () => {
+    await scope.assertUpstreamCurrent();
+    const result = await work();
+    await scope.assertUpstreamCurrent();
+    return result;
+  }).finally(() => {
+    pending.delete(id);
+  });
+  pending.set(id, task);
   return task;
-}
-export function queryKey(filters: TransformMateCatalogFilters) {
-  return JSON.stringify(filters);
 }
 export async function refreshFull(scope: CatalogScope) {
   return coalesce(scope, ':full', async () => {
+    if (!scope.client) throw new Error('Not connected');
     const { body } = await scope.client.listExercises();
-    await scope.assertCurrent();
+    await scope.assertUpstreamCurrent();
     catalogStore().full(scope, body, new Date().toISOString());
-  });
-}
-export async function refreshPage(
-  scope: CatalogScope,
-  filters: TransformMateCatalogFilters,
-) {
-  return coalesce(scope, ':page:' + queryKey(filters), async () => {
-    const { body } = await scope.client.listExercisePage({
-      search: filters.query,
-      ...(filters.commonMuscleGroup
-        ? { commonMuscleGroup: filters.commonMuscleGroup }
-        : {}),
-      muscleGroups: filters.muscleGroups,
-      offset: filters.offset,
-      limit: filters.limit,
-    });
-    await scope.assertCurrent();
-    catalogStore().page(
-      scope,
-      queryKey(filters),
-      body.results,
-      body.count,
-      filters.offset + body.results.length < body.count,
-      new Date().toISOString(),
-    );
+    for (const row of catalogStore().records(scope, true))
+      replicaStore().enqueue(scope, `exercise:${row.id}`);
   });
 }
 export async function refreshDictionary(scope: CatalogScope) {
   return coalesce(scope, ':dictionary', async () => {
+    if (!scope.client) throw new Error('Not connected');
     const { body } = await scope.client.listMuscleGroups();
-    const groups = body.map((group) => ({
-      id: group.id,
-      name: group.name,
-      commonGroup: group.common_muscle_group,
-      muscleIds: group.muscles,
-    }));
-    await scope.assertCurrent();
-    catalogStore().dictionary(scope, groups, new Date().toISOString());
+    await scope.assertUpstreamCurrent();
+    catalogStore().dictionary(
+      scope,
+      body.map((g) => ({
+        id: g.id,
+        name: g.name,
+        commonGroup: g.common_muscle_group,
+        muscleIds: g.muscles,
+      })),
+      new Date().toISOString(),
+    );
   });
 }
 export async function cachedDetail(
   scope: CatalogScope,
   id: number,
   force = false,
-  priority = true,
 ) {
   const current = catalogStore().record(scope, id);
-  if (!force && current?.detail && fresh(current.detailFetchedAt))
-    return current;
-  const refresh = coalesce(scope, ':detail:' + id, async () => {
-    const { body } = await detailSlot(async () => {
-      await scope.assertCurrent();
-      return scope.client.getExercise(id);
-    }, priority);
+  if (!force && current?.detail) return current;
+  if (!scope.client) throw new Error('Not connected');
+  await coalesce(scope, ':detail:' + id, async () => {
+    const { body } = await scope.client!.getExercise(id);
     if (body.id !== id) throw new Error('Catalog exercise mismatch');
     const detail = projectDetail(body);
-    await scope.assertCurrent();
+    await scope.assertUpstreamCurrent();
     catalogStore().detail(scope, detail, new Date().toISOString());
+    const store = replicaStore();
+    store.enqueue(scope, `exercise:${id}`, 0, 100);
+    const job = store.job(scope, `exercise:${id}`)!;
+    job.data.detailAt = monthFrom(Date.now());
+    store.save(scope, job);
   });
-  if (!force && current?.detail) {
-    void refresh.catch(() => {});
-    return current;
-  }
-  await refresh;
-  const result = catalogStore().record(scope, id);
-  if (!result?.detail) throw new Error('Catalog detail unavailable');
-  return result;
+  const row = catalogStore().record(scope, id);
+  if (!row?.detail) throw new Error('Catalog unavailable');
+  return row;
 }
-// Caller supplies visible IDs once per visible page, never a request per keystroke.
-export async function enrichVisible(scope: CatalogScope, ids: number[]) {
-  const queue = [...new Set(ids)].slice(0, 6);
-  async function worker() {
-    for (;;) {
-      const id = queue.shift();
-      if (id === undefined) return;
-      try {
-        await cachedDetail(scope, id, false, false);
-      } catch {
-        /* Item retains unknown coverage. */
-      }
-    }
-  }
-  await Promise.all([worker(), worker()]);
+export function enrichVisible(scope: CatalogScope, ids: number[]) {
+  for (const id of [...new Set(ids)].slice(0, 6))
+    replicaStore().enqueue(scope, `exercise:${id}`, 0, 50);
 }

@@ -187,3 +187,28 @@ export async function getTransformMateBindingFence(ownerId: string) {
     assertBindingCurrent: () => store.assertBindingRevision(bindingRevision),
   };
 }
+
+/** Persistent catalog reads depend on account identity, not token-file rotations. */
+export async function getTransformMateCatalogBindingFence(ownerId: string) {
+  const store = configuredTransformMateStore(ownerId);
+  const revision = store.bindingRevision();
+  const initial = await store.load();
+  const identity = initial.binding
+    ? accountScope(ownerId, initial.binding)
+    : null;
+  store.assertBindingRevision(revision);
+  return {
+    configured: Boolean(initial.token),
+    accountScope: identity,
+    assertBindingCurrent: () => store.assertBindingRevision(revision),
+    assertCurrent: async () => {
+      const current = await store.load();
+      if (
+        (current.binding ? accountScope(ownerId, current.binding) : null) !==
+        identity
+      )
+        throw new TransformMateStaleConnectionError();
+      store.assertBindingRevision(revision);
+    },
+  };
+}

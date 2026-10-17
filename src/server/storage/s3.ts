@@ -23,6 +23,7 @@ export function s3ObjectStorage(config: S3StorageConfig) {
     endpoint: config.endpoint,
     region: config.region,
     forcePathStyle: true,
+    requestHandler: { connectionTimeout: 10000, requestTimeout: 60000 },
     requestChecksumCalculation: 'WHEN_REQUIRED',
     credentials: {
       accessKeyId: config.accessKeyId,

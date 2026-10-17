@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { CatalogIdentity } from '@/server/transformmate/catalog-store';
 import { transformMatePublicationCapability } from '@/contracts/transformmate-capability';
 import { z } from 'zod';
+import { replicaStore } from './replica-store';
 import {
   transformMateCatalogSchema,
   canPlanExercise,
@@ -42,9 +43,14 @@ export const persistedDetailSchema = z.object({
       }),
     )
     .max(50),
+  videoMetadataComplete: z.boolean(),
   kinescope_data: z
     .array(
       z.object({
+        id: z.string().nullable(),
+        resolution: z.string().nullable(),
+        file_size: z.number().int().nonnegative().optional(),
+        created_at: z.iso.datetime({ offset: true }).optional(),
         url: z.string().max(4000).nullable(),
         filetype: z.string().max(100).optional(),
       }),
@@ -59,6 +65,7 @@ export function projectDetail(
 ): PersistedDetail {
   return persistedDetailSchema.parse({
     ...detail,
+    videoMetadataComplete: true,
     previewCoverage: detail.image === null ? 'absent' : 'unknown',
     previewCheckedAt: null,
     other_names: detail.other_names
@@ -79,6 +86,9 @@ export function catalogItem(
   identity: CatalogIdentity,
 ) {
   const ownerId = identity.ownerId;
+  const replica = replicaStore().job(identity, `exercise:${summary.id}`)?.data;
+  const localPreview = Boolean(replica?.poster || replica?.image);
+  const available = localPreview || detail?.previewCoverage === 'available';
   const groups = new Map(
     detail?.muscles.map(({ muscle }) => [
       muscle.muscle_group.id,
@@ -98,21 +108,21 @@ export function catalogItem(
           JSON.stringify([
             identity.ownerId,
             identity.accountScope,
-            identity.generation,
             identity.locale,
             summary.id,
             detail?.image,
+            replica?.poster?.key ?? replica?.image?.key,
           ]),
         )
         .digest('hex'),
       coverage:
-        detail?.previewCoverage === 'available' && ownerId
+        available && ownerId
           ? 'available'
           : detail?.image === null
             ? 'absent'
             : 'unknown',
       path:
-        detail?.previewCoverage === 'available' && ownerId
+        available && ownerId
           ? `/api/workouts/transformmate/exercises/${summary.id}/preview?ownerId=${encodeURIComponent(ownerId)}`
           : null,
     },

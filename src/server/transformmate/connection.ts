@@ -13,8 +13,10 @@ import {
 import {
   configuredTransformMateStore,
   getTransformMateClient,
+  getTransformMateConnectionFence,
   invalidateTransformMateClient,
 } from './runtime';
+import { replicaStore } from './replica-store';
 import { FirebaseSession } from './firebase-session';
 import { createTransformMateClient } from './client';
 import { readTransformMateAccount } from './account';
@@ -151,6 +153,23 @@ export async function connectTransformMate(headers: Headers, input: unknown) {
     await store.save(token);
     invalidateTransformMateClient(ownerId);
     await recheck(headers, ownerId);
+    const fence = await getTransformMateConnectionFence(ownerId);
+    if (fence) {
+      await fence.assertCurrent();
+      fence.assertBindingCurrent();
+      const identity = {
+        ownerId,
+        accountScope: fence.accountScope,
+        locale: 'ru' as const,
+      };
+      if (replicaStore().state(identity).reason === 'auth')
+        replicaStore().patch(identity, {
+          reason: null,
+          failures: 0,
+          blocked_until: 0,
+          connection_id: fence.generation,
+        });
+    }
     const snapshot = status(await store.load());
     await recheck(headers, ownerId);
     return snapshot;
@@ -186,6 +205,23 @@ export async function checkTransformMate(headers: Headers, input: unknown) {
     });
     invalidateTransformMateClient(ownerId);
     await recheck(headers, ownerId);
+    const fence = await getTransformMateConnectionFence(ownerId);
+    if (fence) {
+      await fence.assertCurrent();
+      fence.assertBindingCurrent();
+      const identity = {
+        ownerId,
+        accountScope: fence.accountScope,
+        locale: 'ru' as const,
+      };
+      if (replicaStore().state(identity).reason === 'auth')
+        replicaStore().patch(identity, {
+          reason: null,
+          failures: 0,
+          blocked_until: 0,
+          connection_id: fence.generation,
+        });
+    }
     const snapshot = status(await store.load());
     await recheck(headers, ownerId);
     return snapshot;

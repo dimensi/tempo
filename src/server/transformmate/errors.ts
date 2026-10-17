@@ -45,3 +45,9 @@ export class TransformMateResponseError extends Error {
     this.name = 'TransformMateResponseError';
   }
 }
+
+export class CatalogError extends Error {
+  constructor(public readonly status: number) {
+    super('TransformMate catalog unavailable');
+  }
+}

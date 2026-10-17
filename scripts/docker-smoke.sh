@@ -31,6 +31,9 @@ docker compose exec -T app node -e "const D=require('better-sqlite3');const db=n
 docker compose exec -T app node scripts/backup.mjs /app/data/smoke-backup.sqlite
 docker compose exec -T app node -e "const D=require('better-sqlite3');const db=new D('/app/data/smoke-backup.sqlite');if(db.pragma('integrity_check',{simple:true})!=='ok'||db.prepare('SELECT count(*) AS n FROM user').get().n!==1)process.exit(1);db.close();if(require('node:fs').readFileSync('/app/uploads/smoke.txt','utf8')!=='persistent-upload')process.exit(1)"
 
+# Real FFmpeg and object-storage Range in the shipped non-root runtime.
+docker compose exec -T app node scripts/transformmate-media-smoke.mjs
+
 # Genuine rendering in the non-root runtime; only synthetic Cyrillic content.
 docker compose exec -T app node scripts/pdf-runtime-smoke.mjs /app/data/runtime-smoke.pdf
 docker compose cp app:/app/data/runtime-smoke.pdf "$pdf_smoke_dir/runtime-smoke.pdf"

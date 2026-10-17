@@ -12,16 +12,12 @@ import { z } from 'zod';
 export type CatalogIdentity = {
   ownerId: string;
   accountScope: string;
-  generation: string;
   locale: 'ru';
 };
-const WHERE = 'owner_id=? AND account_scope=? AND generation=? AND locale=?';
+const WHERE = 'owner_id=? AND account_scope=? AND locale=?';
 function values(scope: CatalogIdentity) {
-  return [scope.ownerId, scope.accountScope, scope.generation, scope.locale];
+  return [scope.ownerId, scope.accountScope, scope.locale];
 }
-const idsSchema = z
-  .array(z.number().int().positive().max(Number.MAX_SAFE_INTEGER))
-  .max(50);
 export function createCatalogStore(sqlite: Database.Database) {
   function state(scope: CatalogIdentity) {
     return sqlite
@@ -41,6 +37,7 @@ export function createCatalogStore(sqlite: Database.Database) {
     summary_fetched_at: string;
     detail: string | null;
     detail_fetched_at: string | null;
+    in_full_catalog: number;
   };
   function decode(r: Row) {
     return {
@@ -51,6 +48,7 @@ export function createCatalogStore(sqlite: Database.Database) {
         ? persistedDetailSchema.parse(JSON.parse(r.detail))
         : null,
       detailFetchedAt: r.detail_fetched_at,
+      inFullCatalog: Boolean(r.in_full_catalog),
     };
   }
   function record(scope: CatalogIdentity, id: number) {
@@ -78,7 +76,7 @@ export function createCatalogStore(sqlite: Database.Database) {
   ) {
     sqlite
       .prepare(
-        `INSERT INTO transformmate_catalog_exercise (owner_id,account_scope,generation,locale,exercise_id,summary,summary_fetched_at,in_full_catalog) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,account_scope,generation,locale,exercise_id) DO UPDATE SET summary=excluded.summary,summary_fetched_at=excluded.summary_fetched_at,in_full_catalog=MAX(in_full_catalog,excluded.in_full_catalog)`,
+        `INSERT INTO transformmate_catalog_exercise (owner_id,account_scope,locale,exercise_id,summary,summary_fetched_at,in_full_catalog) VALUES (?,?,?,?,?,?,?) ON CONFLICT(owner_id,account_scope,locale,exercise_id) DO UPDATE SET summary=excluded.summary,summary_fetched_at=excluded.summary_fetched_at,in_full_catalog=MAX(in_full_catalog,excluded.in_full_catalog)`,
       )
       .run(
         ...values(scope),
@@ -91,7 +89,7 @@ export function createCatalogStore(sqlite: Database.Database) {
   function ensure(scope: CatalogIdentity) {
     sqlite
       .prepare(
-        'INSERT OR IGNORE INTO transformmate_catalog_state (owner_id,account_scope,generation,locale) VALUES (?,?,?,?)',
+        'INSERT OR IGNORE INTO transformmate_catalog_state (owner_id,account_scope,locale) VALUES (?,?,?)',
       )
       .run(...values(scope));
   }
@@ -196,64 +194,6 @@ export function createCatalogStore(sqlite: Database.Database) {
             `UPDATE transformmate_catalog_state SET dictionary=?,dictionary_fetched_at=? WHERE ${WHERE}`,
           )
           .run(JSON.stringify(parsed), at, ...values(scope));
-      })();
-    },
-    query(scope: CatalogIdentity, queryKey: string) {
-      const row = sqlite
-        .prepare(
-          `SELECT exercise_ids,total,has_more,fetched_at FROM transformmate_catalog_query WHERE ${WHERE} AND query_key=?`,
-        )
-        .get(...values(scope), queryKey) as
-        | {
-            exercise_ids: string;
-            total: number;
-            has_more: number;
-            fetched_at: string;
-          }
-        | undefined;
-      return row
-        ? {
-            ids: idsSchema.parse(JSON.parse(row.exercise_ids)),
-            total: row.total,
-            hasMore: Boolean(row.has_more),
-            fetchedAt: row.fetched_at,
-          }
-        : null;
-    },
-    page(
-      scope: CatalogIdentity,
-      queryKey: string,
-      summaries: Summary[],
-      total: number,
-      hasMore: boolean,
-      at: string,
-    ) {
-      const parsed = transformMateCatalogSchema.max(50).parse(summaries);
-      idsSchema.parse(parsed.map((s) => s.id));
-      if (new Set(parsed.map((summary) => summary.id)).size !== parsed.length)
-        throw new Error('Duplicate catalog IDs');
-      z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).parse(total);
-      sqlite.transaction(() => {
-        ensure(scope);
-        for (const summary of parsed) upsert(scope, summary, at, false);
-        sqlite
-          .prepare(
-            `INSERT INTO transformmate_catalog_query (owner_id,account_scope,generation,locale,query_key,exercise_ids,total,has_more,fetched_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,account_scope,generation,locale,query_key) DO UPDATE SET exercise_ids=excluded.exercise_ids,total=excluded.total,has_more=excluded.has_more,fetched_at=excluded.fetched_at`,
-          )
-          .run(
-            ...values(scope),
-            queryKey,
-            JSON.stringify(parsed.map((s) => s.id)),
-            total,
-            Number(hasMore),
-            at,
-          );
-        // Bound query snapshots to 64 per active connection; exercise data persists.
-        sqlite
-          .prepare(
-            `DELETE FROM transformmate_catalog_query WHERE ${WHERE} AND query_key NOT IN (SELECT query_key FROM transformmate_catalog_query WHERE ${WHERE} ORDER BY fetched_at DESC,query_key DESC LIMIT 64)`,
-          )
-          .run(...values(scope), ...values(scope));
       })();
     },
   };
