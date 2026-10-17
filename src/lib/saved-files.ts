@@ -13,6 +13,12 @@ class SavedFiles {
   private state = empty;
   private generation = 0;
   private listeners = new Set<() => void>();
+  private watchingRemovals = false;
+  private watchRemovals() {
+    if (this.watchingRemovals) return;
+    window.addEventListener('storage', this.onStorage);
+    this.watchingRemovals = true;
+  }
   getSnapshot = () => this.state;
   getServerSnapshot = () => empty;
   private onStorage = (event: StorageEvent) => {
@@ -30,13 +36,10 @@ class SavedFiles {
   };
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
-    if (this.listeners.size === 1)
-      window.addEventListener('storage', this.onStorage);
+    this.watchRemovals();
     const stop = subscribeSessionReset(() => this.set(empty));
     return () => {
       this.listeners.delete(listener);
-      if (!this.listeners.size)
-        window.removeEventListener('storage', this.onStorage);
       stop();
     };
   };
@@ -49,6 +52,7 @@ class SavedFiles {
     this.set({ files: [], ready: true });
   }
   async load() {
+    this.watchRemovals();
     const partition = readSession()?.partition;
     const generation = sessionGeneration();
     const localGeneration = this.generation;
@@ -85,6 +89,7 @@ class SavedFiles {
     size?: number;
     signal?: AbortSignal;
   }) {
+    this.watchRemovals();
     const partition = readSession()?.partition;
     const generation = sessionGeneration();
     const localGeneration = this.generation;
@@ -126,6 +131,7 @@ class SavedFiles {
     await this.load();
   }
   async removeAll() {
+    this.watchRemovals();
     const partition = readSession()?.partition;
     const generation = sessionGeneration();
     if (!partition) throw new Error('Session unavailable');
@@ -159,6 +165,7 @@ class SavedFiles {
     }
   }
   async removeFile(id: string) {
+    this.watchRemovals();
     const partition = readSession()?.partition;
     if (!partition) return;
     await new OfflineStorage().writeFile({
