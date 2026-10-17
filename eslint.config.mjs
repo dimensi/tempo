@@ -56,6 +56,7 @@ export default defineConfig([
     },
   },
   globalIgnores([
+    '.agents/',
     '.next/**',
     'public/offline/assets/**',
     'public/offline-sw.js',
