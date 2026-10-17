@@ -11,6 +11,7 @@ import {
   Button,
   Stack,
   Badge,
+  UnstyledButton,
   useMantineColorScheme,
   useComputedColorScheme,
 } from '@mantine/core';
@@ -120,8 +121,17 @@ export function ApplicationShellFrame({
           <AppShell.Navbar p="md">
             <Stack h="100%" gap="md">
               <Group gap="sm">
-                <Image src={brandSrc} w={28} h={28} alt="" />
-                <Text fw={700}>{ru.appName}</Text>
+                <UnstyledButton
+                  component={linkComponent as 'a'}
+                  href="/"
+                  onClick={close}
+                  mih={44}
+                >
+                  <Group gap="sm" wrap="nowrap">
+                    <Image src={brandSrc} w={28} h={28} alt="" />
+                    <Text fw={700}>{ru.appName}</Text>
+                  </Group>
+                </UnstyledButton>
                 <ActionIcon
                   ml="auto"
                   size={44}

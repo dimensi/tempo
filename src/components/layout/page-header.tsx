@@ -2,6 +2,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Group, Title } from '@mantine/core';
+import Link from 'next/link';
 
 export const PageHeaderTarget = createContext<HTMLElement | null>(null);
 export const PageActionsTarget = createContext<HTMLElement | null>(null);
@@ -32,7 +33,9 @@ export function PageHeader({
           textOverflow: 'ellipsis',
         }}
       >
-        {children}
+        <Link href="/" style={{ color: 'inherit', textDecoration: 'none' }}>
+          {children}
+        </Link>
       </Title>
       {actions && (
         <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
