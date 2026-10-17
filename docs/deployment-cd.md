@@ -9,8 +9,7 @@ No deployment receiver, custom archive protocol, installer or new server helper 
 
 Release runs on main pushes or manually on main. The `build` job checks out the revision,
 builds the image and publishes it to GHCR. The `deploy` job depends on `build` and
-checks out the same revision before SSH deployment. Deployment runs only
-when `NUTRITION_CD_ENABLED` is `true`; build and publication remain available otherwise.
+checks out the same revision before SSH deployment. Deployment runs automatically after a successful build on main.
 PR CI, formatting, lint, typecheck, unit/integration tests, browser gates and
 disposable Docker smoke do not run in this workflow. Required pre-merge checks follow the verification tiers in AGENTS.md. Full
 verification uses `pnpm verify:merge`, including two browser smoke journeys.
@@ -62,8 +61,7 @@ The current auth secret therefore remains server-local.
 
 All deployment infrastructure settings are individual Secrets in the
 `nutrition-production` environment. The workflow does not read their former
-repository/environment Variables. `NUTRITION_CD_ENABLED` remains a non-sensitive
-repository Variable controlling whether deployment is enabled.
+repository/environment Variables. Deployment needs no enablement Variable.
 
 - SSH: `NUTRITION_DEPLOY_HOST`, `NUTRITION_DEPLOY_USER`,
   `NUTRITION_DEPLOY_PORT`, `NUTRITION_DEPLOY_KNOWN_HOSTS`, `NUTRITION_DEPLOY_KEY`.
@@ -97,10 +95,10 @@ The approved runtime checksum, exact main SHA, image digest, host-key verificati
 backup, storage-switch guard and health checks remain mandatory.
 
 Setting Secrets does not erase old logs, source history or existing Variables.
-After this workflow is merged, remove the superseded infrastructure Variables;
-removing them before merge would break the still-active old workflow. Old run
-logs must be deleted separately using the Actions logs API, preserving run
-metadata. This PR does not rewrite Git history or erase previously copied data.
+Remove superseded infrastructure Variables only after the workflow no longer
+reads them. Delete exposed historical logs or their entire workflow runs separately
+using the Actions API. Deletion does not rewrite Git history or erase previously
+copied data.
 
 Registry authentication uses the short-lived job `GITHUB_TOKEN` via stdin and a
 private temporary `DOCKER_CONFIG`. It does not replace the server's existing
@@ -130,7 +128,7 @@ imports must not be processed as a test.
 
 ## Existing access and activation
 
-Deployment remains gated by `NUTRITION_CD_ENABLED` and the production environment.
+Deployment uses the production environment after a successful build on main.
 The workflow requires an SSH account that can read the existing runtime file,
 write the stack directory and use Docker. It refuses the obsolete receiver-only
 account because ordinary SCP/SSH deployment requires a different interface.

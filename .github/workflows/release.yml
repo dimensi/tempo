@@ -53,7 +53,7 @@ jobs:
           PYIMAGE
   deploy:
     needs: build
-    if: github.ref == 'refs/heads/main' && vars.NUTRITION_CD_ENABLED == 'true'
+    if: github.ref == 'refs/heads/main'
     environment: nutrition-production
     runs-on: ubuntu-24.04
     permissions:

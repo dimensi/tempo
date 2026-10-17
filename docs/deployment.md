@@ -52,7 +52,7 @@ For disposable image validation, build `docker build -t nutrition-foundation .`,
 
 The release workflow runs on main pushes or manually on main. Its `build` job
 publishes `ghcr.io/dimensi/tempo:latest` and passes the immutable digest to a
-separate `deploy` job. Deployment requires `NUTRITION_CD_ENABLED=true` and the
+separate `deploy` job. Deployment runs after a successful build and requires the
 current main SHA; it pulls that exact digest without rebuilding.
 
 PR checks and the full verification suite do not run in the release workflow.
