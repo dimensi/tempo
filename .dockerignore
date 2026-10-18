@@ -11,3 +11,9 @@ test-results
 coverage
 dist-cli
 *.tsbuildinfo
+next-env.d.ts
+public/offline-sw.js
+.agents
+.tmp
+runtime.env*
+release.env*

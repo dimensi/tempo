@@ -23,26 +23,16 @@ RUN --mount=type=bind,from=dependencies,source=/app/node_modules/.pnpm/playwrigh
     && rm -rf /var/lib/apt/lists/* \
     && chown -R node:node /ms-playwright
 RUN mkdir -p /app/data /app/uploads && chown node:node /app/data /app/uploads
-FROM runtime-dependencies AS runtime
-COPY --from=builder --chown=node:node /app/.next/standalone ./
-COPY --from=builder --chown=node:node /app/.next/static ./.next/static
-COPY --from=builder --chown=node:node /app/public ./public
-COPY --from=builder --chown=node:node /app/drizzle ./drizzle
-COPY --from=builder --chown=node:node /app/dist-cli ./scripts
-# Keep a canonical SDK directory regardless of Next tracing/symlink output.
-RUN rm -rf ./node_modules/@dimensi/yazio
-COPY --from=builder --chown=node:node /app/vendor/yazio/package.json ./node_modules/@dimensi/yazio/package.json
-COPY --from=builder --chown=node:node /app/vendor/yazio/dist ./node_modules/@dimensi/yazio/dist
-COPY --from=builder --chown=node:node /app/node_modules/.pnpm/zod@3.25.76/node_modules/zod ./node_modules/@dimensi/yazio/node_modules/zod
-# Keep locked Playwright packages/CLI available before report routes are merged/traced.
-RUN rm -rf ./node_modules/@playwright/test ./node_modules/playwright ./node_modules/playwright-core
-COPY --from=builder --chown=node:node /app/node_modules/.pnpm/@playwright+test@1.64.0/node_modules/@playwright/test ./node_modules/@playwright/test
-COPY --from=builder --chown=node:node /app/node_modules/.pnpm/playwright@1.64.0/node_modules/playwright ./node_modules/playwright
-COPY --from=builder --chown=node:node /app/node_modules/.pnpm/playwright-core@1.64.0/node_modules/playwright-core ./node_modules/playwright-core
-COPY --from=builder --chown=node:node /app/scripts/pdf-runtime-smoke.mjs ./scripts/pdf-runtime-smoke.mjs
+FROM builder AS artifact
+RUN node scripts/prepare-image.mjs
+WORKDIR /app/.next/standalone
 USER node
-COPY --from=builder --chown=node:node /app/vendor/yazio/smoke.mjs /tmp/yazio-sdk-smoke.mjs
-RUN --network=none node /tmp/yazio-sdk-smoke.mjs && rm /tmp/yazio-sdk-smoke.mjs
+RUN --network=none node /app/vendor/yazio/smoke.mjs
+FROM runtime-dependencies AS runtime
+# Keep the app independent of the browser layer. Numeric ownership avoids
+# reading /etc/passwd from the base image; no RUN may follow this linked COPY.
+COPY --link --from=artifact --chown=1000:1000 /app/.next/standalone ./
+USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["sh", "-c", "node scripts/migrate.mjs && exec node server.js"]

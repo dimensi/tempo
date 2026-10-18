@@ -7,7 +7,7 @@ No deployment receiver, custom archive protocol, installer or new server helper 
 
 ## Image and checks
 
-Release runs on main pushes or manually on main. The `build` job checks out the revision,
+Release runs on main pushes or manually on a selected branch. The `build` job checks out the revision,
 builds the image and publishes it to GHCR. The `deploy` job depends on `build` and
 checks out the same revision before SSH deployment. Deployment runs automatically after a successful build on main.
 PR CI, formatting, lint, typecheck, unit/integration tests, browser gates and
@@ -20,21 +20,34 @@ There is no second build. Publication updates `latest` and returns its immutable
 pulls that exact digest, so a retry cannot accidentally pick a later `latest`.
 The immutable revision label must match the workflow SHA before startup and after deployment. There is no manual full-test CI branch.
 
-Buildx imports and exports a GitHub Actions v2 layer cache scoped to
-`tempo-linux-amd64`, including intermediate dependency stages (`mode=max`).
-The Chromium, FFmpeg, fonts and system-library installation lives in an independent
-runtime dependency stage, so application edits neither reinstall these packages nor
-change their image layers. This also lets the server reuse the heavy layers when
-pulling subsequent releases. The first run populates the cache; missing/evicted
-cache still produces a normal full build. Cache export is best-effort with a
-two-minute timeout and cannot fail an otherwise successful publication. The Next.js
-build still performs TypeScript checking. Build records are not uploaded as artifacts.
+Buildx embeds inline cache metadata in the published image and imports it from
+the target tag and `latest`. It does not upload intermediate builder layers to
+GitHub Actions Cache. Dependency installation runs against the frozen lockfile;
+shipping the complete builder filesystem cost more than installing these packages.
+The Next.js build still performs TypeScript checking.
+
+Chromium, FFmpeg, fonts and system libraries live in an independent runtime stage.
+The application, canonical SDK/Playwright packages and operator CLIs are assembled
+and checked in the builder, then added with one `COPY --link` using numeric
+ownership. No filesystem-changing command follows it in the final stage. BuildKit
+can therefore reuse the runtime layers already in GHCR without downloading and
+extracting them on the runner. The server also reuses those layers on subsequent
+pulls. A separate base-image workflow is unnecessary: the runtime stage and inline
+cache retain the same dependency boundary. Missing cache performs a full build;
+the first publication with this format primes the inline cache. Build records are
+not uploaded as artifacts.
+
+Manual non-main runs publish only `build-<SHA>` and skip deployment. Their cache
+can be reused by rerunning that branch revision, without updating `latest` or
+reading production environment secrets. Use Actions job and step durations plus
+build logs for performance comparisons; local build times are not release timings.
 
 Deployment runs only after the `build` job succeeds, and accepts
 only the current main SHA. Manual runs have no external run ID or revision inputs.
 No Actions artifacts are uploaded or downloaded. Production concurrency remains
 `nutrition-production`, cancel-in-progress true: each new main push or manual main run cancels the
-previous running release in this group, including an in-progress build or deploy. SSH verifies the existing host key
+previous running main release in this group, including an in-progress build or deploy.
+Manual branch builds use separate branch-scoped concurrency groups. SSH verifies the existing host key
 on the port configured in the production environment. The pulled image revision label and final running image/revision must match.
 
 The image repository follows `GITHUB_REPOSITORY`. Renaming the source repository
