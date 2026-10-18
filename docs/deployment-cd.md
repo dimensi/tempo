@@ -36,6 +36,8 @@ this context; Markdown files are excluded even inside asset directories. Changes
 to excluded files retain the application build cache. New runtime build inputs
 must be added to the allowlist. Local Full verification still checks the complete
 repository, including tests and development tools.
+Keep individual operator scripts in the allowlist: permitting the whole
+`scripts/` directory would also admit host-side deployment files.
 
 Chromium, FFmpeg, fonts and system libraries live in an independent runtime stage.
 The application, canonical SDK/Playwright packages and operator CLIs are assembled

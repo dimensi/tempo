@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs from the workflow checkout; .dockerignore excludes this host-side script.
+# Host-side deployment runs from the checkout and is excluded from image context.
 set -euo pipefail
 set +x
 umask 077
