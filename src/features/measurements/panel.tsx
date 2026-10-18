@@ -380,7 +380,7 @@ export function MeasurementsPanel({
           data={chart}
           dataKey="date"
           withLegend={metric === 'weight'}
-          connectNulls={false}
+          connectNulls
           valueFormatter={(value) =>
             `${formatDecimal(value)} ${m.units[metric === 'weight' ? 'kg' : 'cm']}`
           }
