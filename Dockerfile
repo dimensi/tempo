@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
-FROM node:22-bookworm-slim AS base
+ARG NODE_IMAGE=node:22-bookworm-slim
+ARG APPLICATION_IMAGE=node:22-bookworm-slim
+# Reuse identical application inputs while updating release labels only.
+FROM ${APPLICATION_IMAGE} AS reuse
+FROM ${NODE_IMAGE} AS base
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
@@ -10,9 +14,10 @@ COPY vendor/yazio/package.json ./vendor/yazio/package.json
 COPY vendor/yazio/dist ./vendor/yazio/dist
 RUN pnpm install --frozen-lockfile
 FROM dependencies AS builder
+# .dockerignore admits only application/image inputs; docs and CD stay outside.
 COPY . .
 RUN pnpm build && node scripts/build-cli.mjs
-FROM node:22-bookworm-slim AS runtime-dependencies
+FROM ${NODE_IMAGE} AS runtime-dependencies
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000 DATABASE_URL=file:/app/data/nutrition.sqlite UPLOADS_DIR=/app/uploads PLAYWRIGHT_BROWSERS_PATH=/ms-playwright PDF_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 # Browser/system layers must not depend on application output. BuildKit can build

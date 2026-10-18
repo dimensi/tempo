@@ -21,13 +21,35 @@ pulls that exact digest, so a retry cannot accidentally pick a later `latest`.
 The immutable revision label must match the workflow SHA before startup and after deployment. There is no manual full-test CI branch.
 
 Buildx embeds inline cache metadata in the published image and imports it from
-the target tag, `buildcache` and `latest`. `buildcache` is another tag on the same
-published image, allowing manual branch builds and main to share matching cache
-records without transferring another image. Only main updates `latest`.
+the target tag, `buildcache` and `latest`. Real application builds update
+`buildcache`, allowing manual branch builds and main to share matching runtime
+cache records without transferring another image. Metadata-only releases leave
+this tag on the last real build. Only main updates `latest`.
 It does not upload intermediate builder layers to
 GitHub Actions Cache. Dependency installation runs against the frozen lockfile;
 shipping the complete builder filesystem cost more than installing these packages.
 The Next.js build still performs TypeScript checking.
+
+The Docker build context uses a `.dockerignore` allowlist: application source,
+public assets, build configuration, migrations and the operator scripts shipped
+in the image. Documentation, CI/deployment scripts and Compose files never enter
+this context; Markdown files are excluded even inside asset directories. Changes
+to excluded files retain the application build cache. New runtime build inputs
+must be added to the allowlist. Local Full verification still checks the complete
+repository, including tests and development tools.
+Keep individual operator scripts in the allowlist: permitting the whole
+`scripts/` directory would also admit host-side deployment files.
+
+The workflow fingerprints the allowlisted Git paths, tracked content and modes,
+Dockerfile, ignore rules and the resolved Node base-image digest. It publishes
+`inputs-<fingerprint>` alongside the normal release tag. If that image exists and
+its input label matches, the native Docker `reuse` stage uses its immutable digest
+and updates the release revision/tree labels without running the application
+build. Otherwise the `runtime` stage builds normally against the resolved base
+digest. A changed base image, dependency, source, asset or Dockerfile therefore
+requires a new build. Missing cache also builds normally. Deployment still checks
+the exact main revision, published digest, backup and health. Inline cache keeps
+the heavy runtime layers reusable when an actual application build is needed.
 
 Chromium, FFmpeg, fonts and system libraries live in an independent runtime stage.
 The application, canonical SDK/Playwright packages and operator CLIs are assembled
@@ -40,8 +62,8 @@ cache retain the same dependency boundary. Missing cache performs a full build;
 the first publication with this format primes the inline cache. Build records are
 not uploaded as artifacts.
 
-Manual non-main runs publish `build-<branch-hash>` and the shared `buildcache`,
-and skip deployment. The branch
+Manual non-main runs publish `build-<branch-hash>` and `inputs-<fingerprint>`,
+updating `buildcache` on real application builds, and skip deployment. The branch
 tag uses the first 16 hex characters of SHA-256 over the full Git ref, so different
 branches have separate tags and new commits can reuse their own branch cache.
 These builds never update `latest` or read production environment secrets.

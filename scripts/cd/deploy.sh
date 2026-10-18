@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Runs from the checkout; deployment-only edits preserve application image inputs.
 set -euo pipefail
 set +x
 umask 077
