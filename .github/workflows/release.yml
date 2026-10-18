@@ -65,7 +65,7 @@ jobs:
   deploy:
     needs: build
     if: github.ref == 'refs/heads/main'
-    environment: nutrition-production
+    environment: production
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

@@ -123,7 +123,7 @@ Never decrypt either file as a migration test.
 
 ## GitHub Actions secrets
 
-The `nutrition-production` environment needs only these deployment secrets after
+The `production` environment needs only these deployment secrets after
 cutover:
 
 | Secret             | Purpose                                                           |
@@ -132,13 +132,7 @@ cutover:
 | `COOLIFY_APP_UUID` | Identifies only the Tempo Docker Image application                |
 | `COOLIFY_TOKEN`    | Updates the revision variable/image tag, deploys and reads status |
 
-Use a dedicated token with the narrowest available permissions and description:
-
-`GitHub Actions — dimensi/tempo — update image tag and deploy`
-
-Link its internal credential record to the repository release workflow. Rotate it
-by installing the replacement secret, completing and verifying a manual main
-deployment, then revoking the former token.
+Use the existing shared pet-project CLI and CI key with `read`, `write`, and `deploy` abilities and expiry **Never**. Store it in the **production** Environment as `COOLIFY_TOKEN`, restricted to `main` without manual approvers; keep `COOLIFY_URL` and `COOLIFY_APP_UUID` separate. Save the same key in Bitwarden as **Home pet projects / Coolify CLI and CI**. See the [shared access runbook](https://github.com/dimensi/home-portal/blob/main/docs/deployment.md#shared-coolify-access). Rotate all consumers together, verify every deployment, then revoke the previous key.
 
 After the first verified Coolify release, remove the obsolete
 `NUTRITION_DEPLOY_*` SSH/path/runtime-checksum secrets and the duplicated S3/LLM
