@@ -10,16 +10,8 @@ COPY vendor/yazio/package.json ./vendor/yazio/package.json
 COPY vendor/yazio/dist ./vendor/yazio/dist
 RUN pnpm install --frozen-lockfile
 FROM dependencies AS builder
-# Only application/image inputs affect the build cache; docs and CD stay outside.
-COPY next.config.ts tsconfig.json postcss.config.cjs serwist.config.mjs ./
-COPY src ./src
-COPY public ./public
-COPY drizzle ./drizzle
-COPY vendor/yazio/smoke.mjs ./vendor/yazio/smoke.mjs
-COPY scripts/build-cli.mjs scripts/prepare-standalone.mjs \
-    scripts/migrate.ts scripts/create-user.ts scripts/backup.ts scripts/seed.ts \
-    scripts/anamnesis-pdf-smoke.ts scripts/transformmate-media-smoke.ts \
-    scripts/pdf-runtime-smoke.mjs ./scripts/
+# .dockerignore admits only application/image inputs; docs and CD stay outside.
+COPY . .
 RUN pnpm build && node scripts/build-cli.mjs
 FROM node:22-bookworm-slim AS runtime-dependencies
 WORKDIR /app
