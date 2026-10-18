@@ -24,7 +24,20 @@ RUN --mount=type=bind,from=dependencies,source=/app/node_modules/.pnpm/playwrigh
     && chown -R node:node /ms-playwright
 RUN mkdir -p /app/data /app/uploads && chown node:node /app/data /app/uploads
 FROM builder AS artifact
-RUN node scripts/prepare-image.mjs
+# Replace traced package symlinks with complete runtime packages before copying.
+RUN rm -rf .next/standalone/node_modules/@dimensi/yazio \
+    .next/standalone/node_modules/@playwright/test \
+    .next/standalone/node_modules/playwright \
+    .next/standalone/node_modules/playwright-core
+COPY --from=builder /app/drizzle ./.next/standalone/drizzle
+COPY --from=builder /app/dist-cli ./.next/standalone/scripts
+COPY --from=builder /app/scripts/pdf-runtime-smoke.mjs ./.next/standalone/scripts/pdf-runtime-smoke.mjs
+COPY --from=builder /app/vendor/yazio/package.json ./.next/standalone/node_modules/@dimensi/yazio/package.json
+COPY --from=builder /app/vendor/yazio/dist ./.next/standalone/node_modules/@dimensi/yazio/dist
+COPY --from=builder /app/node_modules/.pnpm/zod@3.25.76/node_modules/zod ./.next/standalone/node_modules/@dimensi/yazio/node_modules/zod
+COPY --from=builder /app/node_modules/.pnpm/@playwright+test@1.64.0/node_modules/@playwright/test ./.next/standalone/node_modules/@playwright/test
+COPY --from=builder /app/node_modules/.pnpm/playwright@1.64.0/node_modules/playwright ./.next/standalone/node_modules/playwright
+COPY --from=builder /app/node_modules/.pnpm/playwright-core@1.64.0/node_modules/playwright-core ./.next/standalone/node_modules/playwright-core
 WORKDIR /app/.next/standalone
 USER node
 RUN --network=none node /app/vendor/yazio/smoke.mjs
