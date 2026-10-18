@@ -44,6 +44,39 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
+      - name: Select application build or image reuse
+        id: application
+        env:
+          IMAGE: ${{ steps.revision.outputs.image }}
+        run: |
+          set -euo pipefail
+          paths=(Dockerfile .dockerignore)
+          while IFS= read -r rule || [[ -n "$rule" ]]; do
+            case "$rule" in
+              ''|\#*|'**') ;;
+              '!'*) paths+=(":(top,glob)${rule:1}") ;;
+              *) paths+=(":(top,exclude,glob)$rule") ;;
+            esac
+          done < .dockerignore
+          base=$(sed -n 's/^ARG NODE_IMAGE=//p' Dockerfile)
+          base_digest=$(docker buildx imagetools inspect "$base" --format '{{.Manifest.Digest}}')
+          [[ "$base_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "base=$base@$base_digest" >> "$GITHUB_OUTPUT"
+          inputs=$({ printf '%s\n' "$base_digest"; git ls-files --stage -- "${paths[@]}"; } | sha256sum | cut -d' ' -f1)
+          echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
+          cached="$IMAGE:inputs-$inputs"
+          if metadata=$(docker buildx imagetools inspect "$cached" --format '{{.Manifest.Digest}} {{index .Image.Config.Labels "dev.tempo.build-inputs"}}' 2>/dev/null); then
+            read -r digest recorded_inputs <<< "$metadata"
+            if [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ && "$recorded_inputs" == "$inputs" ]]; then
+              echo 'target=reuse' >> "$GITHUB_OUTPUT"
+              echo "application=$IMAGE@$digest" >> "$GITHUB_OUTPUT"
+              echo 'Application inputs unchanged; reusing the published image.'
+              exit 0
+            fi
+          fi
+          echo 'target=runtime' >> "$GITHUB_OUTPUT"
+          echo "cache-tag=$IMAGE:buildcache" >> "$GITHUB_OUTPUT"
+          echo 'Application inputs changed or image missing; building the application.'
       - name: Build and push image
         id: publish
         uses: docker/build-push-action@v7.4.0
@@ -52,13 +85,19 @@ jobs:
         with:
           context: .
           push: true
+          target: ${{ steps.application.outputs.target }}
+          build-args: |
+            NODE_IMAGE=${{ steps.application.outputs.base }}
+            APPLICATION_IMAGE=${{ steps.application.outputs.application || steps.application.outputs.base }}
           tags: |
             ${{ steps.revision.outputs.image }}:${{ steps.revision.outputs.tag }}
-            ${{ steps.revision.outputs.image }}:buildcache
+            ${{ steps.revision.outputs.image }}:inputs-${{ steps.application.outputs.inputs }}
+            ${{ steps.application.outputs.cache-tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.tree=${{ steps.revision.outputs.tree }}
+            dev.tempo.build-inputs=${{ steps.application.outputs.inputs }}
           cache-from: |
             type=registry,ref=${{ steps.revision.outputs.image }}:${{ steps.revision.outputs.tag }}
             type=registry,ref=${{ steps.revision.outputs.image }}:buildcache
