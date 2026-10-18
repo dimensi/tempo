@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Host-side deployment runs from the workflow checkout, outside image build inputs.
 set -euo pipefail
 set +x
 umask 077
