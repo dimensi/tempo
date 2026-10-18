@@ -17,3 +17,5 @@ public/offline-sw.js
 .tmp
 runtime.env*
 release.env*
+# Documentation is not a runtime asset, including public/branding/README.md.
+**/*.md
