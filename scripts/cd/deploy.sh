@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Host-side deployment runs from the checkout and is excluded from image context.
+# Runs from the checkout; deployment-only edits preserve application image inputs.
 set -euo pipefail
 set +x
 umask 077
