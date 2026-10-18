@@ -6,6 +6,10 @@
   --tempo-header-height: calc(68px + var(--tempo-safe-top));
 }
 
+html {
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
 }
