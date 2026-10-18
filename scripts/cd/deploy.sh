@@ -84,8 +84,26 @@ mkdir -m 700 "$DOCKER_CONFIG"
 docker login ghcr.io -u "$actor" --password-stdin < "$stage/registry-token" >/dev/null
 rm "$stage/registry-token"
 compose_stage() { docker compose -p "$project" --env-file runtime.env --env-file "$stage/.env.deploy" -f "$stage/compose.yaml" -f "$stage/compose.home.yaml" "$@"; }
+pull_image() {
+  local attempt pull_status pull_log="$stage/pull.log"
+  for attempt in 1 2 3; do
+    if compose_stage pull app >"$pull_log" 2>&1; then
+      cat "$pull_log"
+      return 0
+    else
+      pull_status=$?
+    fi
+    cat "$pull_log" >&2
+    # Retry transport failures only; authentication/configuration errors fail fast.
+    if [[ "$attempt" == 3 ]] || ! grep -Eiq 'TLS handshake timeout|i/o timeout|context deadline exceeded|Client.Timeout exceeded|connection reset by peer|unexpected EOF|net/http: request canceled|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout' "$pull_log"; then
+      return "$pull_status"
+    fi
+    printf 'Transient image download failure; retry %s/3 in %ss.\n' "$((attempt + 1))" "$((attempt * 5))" >&2
+    sleep "$((attempt * 5))"
+  done
+}
 compose_stage config --quiet
-compose_stage pull app
+pull_image
 image=$(sed -n "s/^NUTRITION_IMAGE='\(.*\)'$/\1/p" "$stage/.env.deploy")
 [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == "$revision" ]]
 # Use the application's existing online-backup CLI before migrations.
