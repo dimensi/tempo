@@ -172,6 +172,15 @@ together against `nutrition_database`.
 The coordinator owns the backup and stop/start window. Do not let a workflow push
 activate the new CD path before the resource and recovery set are verified.
 
+The completed migration was verified at revision
+`a4d42fa0e3d6556f95ec30a255d1985cf45c96ba` by
+[Release run 39136461370](https://github.com/dimensi/tempo/actions/runs/39136461370).
+The sanitized machine-readable evidence is in
+[`migration-verification.json`](migration-verification.json). It records the exact
+native container contract, persistent-volume checks, fixed pre-deployment backup,
+public health and unchanged host baselines without environment values, credentials
+or personal records.
+
 ## Failure and rollback
 
 If Coolify fails before the new app starts, keep the existing volumes untouched,

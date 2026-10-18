@@ -1,0 +1,69 @@
+{
+  "format": 1,
+  "verifiedAt": "2026-10-18T14:35:41.159583+00:00",
+  "repository": "dimensi/tempo",
+  "revision": "a4d42fa0e3d6556f95ec30a255d1985cf45c96ba",
+  "workflowRun": "https://github.com/dimensi/tempo/actions/runs/39136461370",
+  "coolify": {
+    "serverUuid": "qqojrctskvoplg5s9knrxkeh",
+    "applicationUuid": "msswqdtq5bagqr5wfcfz9qj1",
+    "containerId": "6caa94ac4b48dde81ac19f8f55bf0d436cab87a8aef7c81c0b01b1c8041d422b",
+    "image": "ghcr.io/dimensi/tempo:a4d42fa0e3d6556f95ec30a255d1985cf45c96ba",
+    "ociRevisionMatches": true,
+    "deployedCommitMatches": true,
+    "instanceCount": 1,
+    "restartCount": 0,
+    "dockerHealth": "healthy",
+    "imageNodeHealthcheckInherited": true,
+    "generatedHealthcheckEnabled": false
+  },
+  "runtime": {
+    "network": "web",
+    "aliases": ["nutrition", "app", "nutrition-app-1"],
+    "containerPort": 3000,
+    "publicHealthStatus": 200,
+    "environmentPreserved": true,
+    "nutritionSchedulerEnabled": true,
+    "anamnesisWorkerEnabled": false
+  },
+  "persistence": {
+    "volumes": [
+      {
+        "name": "nutrition_database",
+        "mountPath": "/app/data",
+        "readWrite": true
+      },
+      {
+        "name": "nutrition_uploads",
+        "mountPath": "/app/uploads",
+        "readWrite": true
+      }
+    ],
+    "sqliteQuickCheck": "ok",
+    "schemaAndUserVersionPreserved": true,
+    "encryptedConnectionFilesPresentAndPrivate": true,
+    "uploadsVerified": true,
+    "databaseCountsChanged": false,
+    "tokenFilesChanged": [],
+    "uploadsChanged": false,
+    "preDeploymentBackup": {
+      "path": "/app/data/coolify-pre-deploy.sqlite",
+      "singleFixedDatabase": true,
+      "executedForVerifiedRelease": true,
+      "quickCheck": "ok",
+      "schemaVerified": true
+    }
+  },
+  "host": {
+    "caddyConfigurationUnchanged": true,
+    "caddyContainerUnchanged": true,
+    "dockerDaemonConfigurationUnchanged": true,
+    "unrelatedContainersUnchanged": true
+  },
+  "recovery": {
+    "rootPrivateSnapshot": "/var/backups/coolify-tempo-before-20261018T140213Z",
+    "snapshotQuickCheck": "ok",
+    "originalContainerStoppedForRollbackAtVerification": true,
+    "volumesNeverRestoredOrReplaced": true
+  }
+}
