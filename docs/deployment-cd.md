@@ -29,13 +29,13 @@ GitHub Actions Cache. Dependency installation runs against the frozen lockfile;
 shipping the complete builder filesystem cost more than installing these packages.
 The Next.js build still performs TypeScript checking.
 
-The Dockerfile explicitly copies application source, public assets, build
-configuration, migrations and the operator scripts shipped in the image.
-Documentation, CI/deployment scripts and Compose files are not application build
-inputs; Markdown files are excluded even inside asset directories. Changes to
-these excluded files retain the application build cache. New runtime build inputs
-must be added to the Dockerfile's explicit `COPY` list. Local Full verification
-still checks the complete repository, including tests and development tools.
+The Docker build context uses a `.dockerignore` allowlist: application source,
+public assets, build configuration, migrations and the operator scripts shipped
+in the image. Documentation, CI/deployment scripts and Compose files never enter
+this context; Markdown files are excluded even inside asset directories. Changes
+to excluded files retain the application build cache. New runtime build inputs
+must be added to the allowlist. Local Full verification still checks the complete
+repository, including tests and development tools.
 
 Chromium, FFmpeg, fonts and system libraries live in an independent runtime stage.
 The application, canonical SDK/Playwright packages and operator CLIs are assembled
