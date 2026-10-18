@@ -63,7 +63,7 @@ pnpm verify:merge
 
 Приложение работает в Docker: один Node.js процесс, SQLite и постоянные volumes `database` и `uploads`. Runtime включает Chromium, шрифты и FFmpeg; миграции применяются перед стартом. Production требует HTTPS, постоянного `BETTER_AUTH_SECRET` и `DEMO_MODE=false`.
 
-[Release workflow](.github/workflows/release.yml) выполняется на стандартных GitHub-hosted Ubuntu runners при push в main или ручном запуске. На main он собирает и публикует `ghcr.io/dimensi/tempo:latest`, затем развёртывает полученный digest по SSH. Ручной запуск другой ветки публикует только `build-<SHA>` без деплоя. Рабочие слои Chromium/FFmpeg переиспользуются из GHCR через inline cache и `COPY --link`. PR-проверки и полный набор тестов в этом workflow не запускаются.
+[Release workflow](.github/workflows/release.yml) выполняется на стандартных GitHub-hosted Ubuntu runners при push в main или ручном запуске. На main он собирает и публикует `ghcr.io/dimensi/tempo:latest`, затем развёртывает полученный digest по SSH. Ручной запуск другой ветки публикует только `build-<branch-hash>` без деплоя. Рабочие слои Chromium/FFmpeg переиспользуются из GHCR через inline cache и `COPY --link`. PR-проверки и полный набор тестов в этом workflow не запускаются.
 
 [Руководство оператора](docs/deployment.md) описывает конфигурацию, создание владельца и резервное копирование. [CD](docs/deployment-cd.md) — публикацию образа, deployment и восстановление после ошибок. При переименовании репозитория существующие серверные пути, Compose project и volumes сохраняются.
 

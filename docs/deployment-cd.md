@@ -37,8 +37,10 @@ cache retain the same dependency boundary. Missing cache performs a full build;
 the first publication with this format primes the inline cache. Build records are
 not uploaded as artifacts.
 
-Manual non-main runs publish only `build-<SHA>` and skip deployment. Their cache
-can be reused by rerunning that branch revision, without updating `latest` or
+Manual non-main runs publish only `build-<branch-hash>` and skip deployment. The
+tag uses the first 16 hex characters of SHA-256 over the full Git ref, so different
+branches have separate tags and new commits can reuse their own branch cache.
+This does not update `latest` or
 reading production environment secrets. Use Actions job and step durations plus
 build logs for performance comparisons; local build times are not release timings.
 
