@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs from the checkout; deployment-only edits preserve application image inputs.
+# This host-side script stays outside the application Docker context.
 set -euo pipefail
 set +x
 umask 077
