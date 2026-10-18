@@ -52,13 +52,16 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ steps.revision.outputs.image }}:${{ steps.revision.outputs.tag }}
+          tags: |
+            ${{ steps.revision.outputs.image }}:${{ steps.revision.outputs.tag }}
+            ${{ steps.revision.outputs.image }}:buildcache
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.tree=${{ steps.revision.outputs.tree }}
           cache-from: |
             type=registry,ref=${{ steps.revision.outputs.image }}:${{ steps.revision.outputs.tag }}
+            type=registry,ref=${{ steps.revision.outputs.image }}:buildcache
             type=registry,ref=${{ steps.revision.outputs.image }}:latest
           cache-to: type=inline
   deploy:

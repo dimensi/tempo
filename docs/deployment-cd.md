@@ -21,7 +21,10 @@ pulls that exact digest, so a retry cannot accidentally pick a later `latest`.
 The immutable revision label must match the workflow SHA before startup and after deployment. There is no manual full-test CI branch.
 
 Buildx embeds inline cache metadata in the published image and imports it from
-the target tag and `latest`. It does not upload intermediate builder layers to
+the target tag, `buildcache` and `latest`. `buildcache` is another tag on the same
+published image, allowing manual branch builds and main to share matching cache
+records without transferring another image. Only main updates `latest`.
+It does not upload intermediate builder layers to
 GitHub Actions Cache. Dependency installation runs against the frozen lockfile;
 shipping the complete builder filesystem cost more than installing these packages.
 The Next.js build still performs TypeScript checking.
@@ -37,7 +40,8 @@ cache retain the same dependency boundary. Missing cache performs a full build;
 the first publication with this format primes the inline cache. Build records are
 not uploaded as artifacts.
 
-Manual non-main runs publish only `build-<branch-hash>` and skip deployment. The
+Manual non-main runs publish `build-<branch-hash>` and the shared `buildcache`,
+and skip deployment. The branch
 tag uses the first 16 hex characters of SHA-256 over the full Git ref, so different
 branches have separate tags and new commits can reuse their own branch cache.
 These builds never update `latest` or read production environment secrets.
