@@ -2,8 +2,6 @@
 import { PageHeader } from '@/components/layout/page-header';
 import { DateNavigation } from '@/components/shared/date-navigation';
 import { browserToday } from '@/components/shared/date-navigation-dates';
-import { OfflineFile } from '@/components/shared/offline-file';
-import { offlineFileMessages } from '@/config/offline-files';
 import { reportMessages as m } from '@/config/reports';
 import { reportRequestSchema } from '@/contracts/reports';
 import { apiFetch } from '@/lib/api-client';
@@ -314,19 +312,6 @@ export function ReportForm({ ownerId }: { ownerId: string | null }) {
           </Text>
         )}
       </Group>
-      {ownerId && finish && selectedStart && (
-        <>
-          <OfflineFile
-            id={`report:${period}:${selectedStart}:${finish}`}
-            label={`${m.title}: ${selectedStart} — ${finish}`}
-            kind="pdf"
-            href={`/api/reports?${new URLSearchParams({ ownerId, period, start: selectedStart, end: finish, format: 'pdf' })}`}
-          />
-          <Text size="sm" c="dimmed">
-            {offlineFileMessages.limit}
-          </Text>
-        </>
-      )}
       {html && (
         <Text size="sm">
           {m.preview}: {previewRange}
