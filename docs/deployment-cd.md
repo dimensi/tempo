@@ -63,6 +63,14 @@ Compose project `nutrition`, network alias and persistent volumes stay unchanged
 
 ## Retrying a release
 
+Image downloads automatically retry transient transport failures (including GHCR
+TLS handshake timeouts) up to three total attempts, waiting 5 then 10 seconds.
+Authentication, missing-image and other non-transient failures stop immediately.
+Only `compose pull app` is repeated, against the same immutable digest, before
+backup, migrations or container replacement. Exhausting the attempts leaves the
+current application running and fails the deployment; raw pull logs remain private
+and are removed with the temporary deployment directory.
+
 In GitHub Actions, select the failed `deploy` job and use **Re-run jobs**, or choose
 **Re-run failed jobs** on the run. The successful `build` job and its image output
 are reused, so deployment retries do not rebuild or republish the image. A full
