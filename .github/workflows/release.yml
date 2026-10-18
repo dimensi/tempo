@@ -15,8 +15,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      image: ${{ steps.revision.outputs.image }}@${{ steps.publish.outputs.digest }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
@@ -45,7 +43,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Build and push image
-        id: publish
         uses: docker/build-push-action@v7.4.0
         env:
           DOCKER_BUILD_RECORD_UPLOAD: 'false'
@@ -54,6 +51,7 @@ jobs:
           push: true
           tags: |
             ${{ steps.revision.outputs.image }}:${{ steps.revision.outputs.tag }}
+            ${{ steps.revision.outputs.image }}:${{ github.sha }}
             ${{ steps.revision.outputs.image }}:buildcache
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -69,52 +67,68 @@ jobs:
     if: github.ref == 'refs/heads/main'
     environment: nutrition-production
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
-      packages: read
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Copy env and Compose, then pull and start over SSH
+      - name: Deploy published image through Coolify
         env:
-          GH_TOKEN: ${{ github.token }}
-          DEPLOY_KEY: ${{ secrets.NUTRITION_DEPLOY_KEY }}
-          KNOWN_HOSTS: ${{ secrets.NUTRITION_DEPLOY_KNOWN_HOSTS }}
-          DEPLOY_HOST: ${{ secrets.NUTRITION_DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.NUTRITION_DEPLOY_USER }}
-          DEPLOY_PORT: ${{ secrets.NUTRITION_DEPLOY_PORT }}
-          DEPLOY_PATH: ${{ secrets.NUTRITION_DEPLOY_PATH }}
-          DEPLOY_PROJECT: ${{ secrets.NUTRITION_DEPLOY_PROJECT }}
-          DEPLOY_HEALTH_URL: ${{ secrets.NUTRITION_DEPLOY_HEALTH_URL }}
-          APPROVED_RUNTIME_SHA256: ${{ secrets.NUTRITION_DEPLOY_RUNTIME_SHA256 }}
-          IMAGE_REF: ${{ needs.build.outputs.image }}
-          REVISION: ${{ github.sha }}
-          RUN_ID: ${{ github.run_id }}
-          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-          S3_REGION: ${{ secrets.S3_REGION }}
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
-          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          ANAMNESIS_LLM_BASE_URL: ${{ secrets.ANAMNESIS_LLM_BASE_URL }}
-          ANAMNESIS_LLM_MODEL: ${{ secrets.ANAMNESIS_LLM_MODEL }}
-          ANAMNESIS_LLM_TIMEOUT_MS: ${{ secrets.ANAMNESIS_LLM_TIMEOUT_MS }}
-          ENABLE_ANAMNESIS_WORKER: ${{ secrets.ENABLE_ANAMNESIS_WORKER }}
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_APP_UUID: ${{ secrets.COOLIFY_APP_UUID }}
+          DEPLOY_SHA: ${{ github.sha }}
+          HEALTH_URL: https://tempo.dimensi.dev/api/health
         run: |
-          set -euo pipefail
-          set +x
-          log=$(mktemp "$RUNNER_TEMP/tempo-deploy-output.XXXXXX")
-          export DEPLOY_PHASE_FILE=$(mktemp "$RUNNER_TEMP/tempo-deploy-phase.XXXXXX")
-          trap 'rm -f "$log" "$DEPLOY_PHASE_FILE"' EXIT
-          if bash scripts/cd/deploy.sh >"$log" 2>&1; then
-            echo 'Deployment completed; revision and health verified.'
-          else
-            phase=$(cat "$DEPLOY_PHASE_FILE")
-            case "$phase" in
-              configuration|revision|connection|transfer|rollout) ;;
-              *) phase=initialization ;;
-            esac
-            printf '::error::Deployment failed during %s; infrastructure output withheld.\n' "$phase"
-            exit 1
-          fi
+          python3 - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+
+          base = os.environ["COOLIFY_URL"].rstrip("/") + "/api/v1"
+          application = os.environ["COOLIFY_APP_UUID"]
+          revision = os.environ["DEPLOY_SHA"]
+
+          def api(method, path, data=None):
+              request = urllib.request.Request(
+                  base + path,
+                  method=method,
+                  data=json.dumps(data).encode() if data is not None else None,
+                  headers={
+                      "Authorization": "Bearer " + os.environ["COOLIFY_TOKEN"],
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  raise RuntimeError(f"Coolify request failed with HTTP {error.code}") from None
+
+          api("PATCH", "/applications/" + application, {"docker_registry_image_tag": revision})
+          deployment = api("POST", "/deploy", {"uuid": application})["deployments"][0]["deployment_uuid"]
+          for attempt in range(120):
+              status = api("GET", "/deployments/" + deployment)["status"]
+              if status == "finished":
+                  break
+              if status in {"failed", "cancelled", "cancelled-by-user"}:
+                  raise RuntimeError("Coolify deployment " + status)
+              time.sleep(5)
+          else:
+              raise RuntimeError("Timed out waiting for Coolify deployment")
+
+          application_state = api("GET", "/applications/" + application)
+          if application_state["docker_registry_image_tag"] != revision:
+              raise RuntimeError("Coolify application image tag does not match the release revision")
+
+          try:
+              with urllib.request.urlopen(os.environ["HEALTH_URL"], timeout=30) as response:
+                  if response.status != 200:
+                      raise RuntimeError("Public health check did not return HTTP 200")
+          except urllib.error.URLError:
+              raise RuntimeError("Public health check failed") from None
+
+          print("Coolify deployed and verified revision " + revision)
+          PY

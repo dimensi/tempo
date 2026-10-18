@@ -1,197 +1,177 @@
-# Nutrition deployment
+# Coolify deployment
 
-Tempo uses the same basic deployment path as `dimensi/dark-corses-vault`:
-One workflow (`.github/workflows/release.yml`) builds the image, publishes it to GHCR, then copies env/Compose
-and runs ordinary SSH commands `docker compose pull` and `up --wait`.
-No deployment receiver, custom archive protocol, installer or new server helper is used.
+Tempo's release workflow builds the reviewed revision once, publishes it to GHCR,
+then asks the existing Coolify installation to deploy that exact Git SHA tag. Coolify
+owns the container lifecycle and runtime configuration. GitHub Actions does not copy
+Compose files, application environment values or production data to the server.
 
-## Image and checks
+## Image and release workflow
 
-Release runs on main pushes or manually on a selected branch. The `build` job checks out the revision,
-builds the image and publishes it to GHCR. The `deploy` job depends on `build` and
-checks out the same revision before SSH deployment. Deployment runs automatically after a successful build on main.
-PR CI, formatting, lint, typecheck, unit/integration tests, browser gates and
-disposable Docker smoke do not run in this workflow. Required pre-merge checks follow the verification tiers in AGENTS.md. Full
-verification uses `pnpm verify:merge`, including two browser smoke journeys.
-A main push builds and publishes that exact checked-out revision as
-`ghcr.io/dimensi/tempo:latest` using the job's `GITHUB_TOKEN`.
-There is no second build. Publication updates `latest` and returns its immutable
-`ghcr.io/dimensi/tempo@sha256:...` reference as a job output. Deployment
-pulls that exact digest, so a retry cannot accidentally pick a later `latest`.
-The immutable revision label must match the workflow SHA before startup and after deployment. There is no manual full-test CI branch.
+The `build` job keeps the existing BuildKit strategy. Main releases publish three
+references to the same image:
 
-Buildx embeds inline cache metadata in the published image and imports it from
-the target tag, `buildcache` and `latest`. Every build updates `buildcache`,
-allowing manual branch builds and main to share matching cache records without
-transferring another image. Only main updates `latest`.
-It does not upload intermediate builder layers to
-GitHub Actions Cache. Dependency installation runs against the frozen lockfile;
-shipping the complete builder filesystem cost more than installing these packages.
-The Next.js build still performs TypeScript checking.
+- `ghcr.io/dimensi/tempo:<40-character Git SHA>` for deployment;
+- `ghcr.io/dimensi/tempo:latest` for humans and cache lookup;
+- `ghcr.io/dimensi/tempo:buildcache` for the shared inline cache.
 
-The Docker build context uses a `.dockerignore` allowlist: application source,
-public assets, build configuration, migrations and the operator scripts shipped
-in the image. Documentation, CI/deployment scripts and Compose files never enter
-this context; Markdown files are excluded even inside asset directories. Changes
-to excluded files retain the application build cache. New runtime build inputs
-must be added to the allowlist. Local Full verification still checks the complete
-repository, including tests and development tools.
-Keep individual operator scripts in the allowlist: permitting the whole
-`scripts/` directory would also admit host-side deployment files.
+Manual non-main builds publish the SHA, the existing branch cache tag and
+`buildcache`, but do not deploy. Documentation and deployment files remain outside
+the Docker context, so a deployment-only change can reuse the application layers.
+The workflow does not run PR checks or the Full verification tier; follow
+[AGENTS.md](../AGENTS.md) before merge.
 
-Every release runs the same Docker build. BuildKit decides which instructions
-are cached from their inputs; the workflow has no separate input fingerprint,
-input-tag lookup or image-reuse stage. Excluded documentation/deployment edits
-leave the application inputs unchanged. A cache hit skips dependency installation
-and compilation while publishing the current revision/tree labels. Changed inputs
-or missing cache rebuild the affected layers. Deployment still checks the exact
-main revision, published digest, backup and health.
+On main, the `deploy` job updates the Coolify application's
+`docker_registry_image_tag`, starts a deployment, waits for a terminal status,
+checks that the saved tag still equals the workflow SHA, and requires HTTP 200 from
+`https://tempo.dimensi.dev/api/health`. The image's existing command runs
+`node scripts/migrate.mjs` before `server.js`, and its Docker health check covers
+`/api/health`. Do not configure a second migration or scheduler command in Coolify.
 
-Chromium, FFmpeg, fonts and system libraries live in an independent runtime stage.
-The application, canonical SDK/Playwright packages and operator CLIs are assembled
-and checked in the builder, then added with one `COPY --link` using numeric
-ownership. No filesystem-changing command follows it in the final stage. BuildKit
-can therefore reuse the runtime layers already in GHCR without downloading and
-extracting them on the runner. The server also reuses those layers on subsequent
-pulls. A separate base-image workflow is unnecessary: the runtime stage and inline
-cache retain the same dependency boundary. Missing cache performs a full build;
-the first publication with this format primes the inline cache. Build records are
-not uploaded as artifacts.
+Production concurrency remains `nutrition-production` with cancellation enabled.
+An older main release must not finish after a newer one. Coolify uses a consistent
+container identity and a stop-first replacement for this single-process SQLite
+application; rolling two replicas would run concurrent migrations and schedulers
+against the same files.
 
-Manual non-main runs publish `build-<branch-hash>` and `buildcache`, and skip
-deployment. The branch
-tag uses the first 16 hex characters of SHA-256 over the full Git ref, so different
-branches have separate tags and new commits can reuse their own branch cache.
-These builds never update `latest` or read production environment secrets.
-Use Actions job and step durations plus
-build logs for performance comparisons; local build times are not release timings.
+## Coolify application contract
 
-Deployment runs only after the `build` job succeeds, and accepts
-only the current main SHA. Manual runs have no external run ID or revision inputs.
-No Actions artifacts are uploaded or downloaded. Production concurrency remains
-`nutrition-production`, cancel-in-progress true: each new main push or manual main run cancels the
-previous running main release in this group, including an in-progress build or deploy.
-Manual branch builds use separate branch-scoped concurrency groups. SSH verifies the existing host key
-on the port configured in the production environment. The pulled image revision label and final running image/revision must match.
+Create a Docker Image application with the following values:
 
-The image repository follows `GITHUB_REPOSITORY`. Renaming the source repository
-to `dimensi/tempo` changes future publications to `ghcr.io/dimensi/tempo`; it does
-not migrate existing image tags. The server path `/opt/compose/yazio-dashboard`,
-Compose project `nutrition`, network alias and persistent volumes stay unchanged.
+- Coolify: `https://coolify.dimensi.dev`
+- server: `home-server` (`qqojrctskvoplg5s9knrxkeh`)
+- image: `ghcr.io/dimensi/tempo`
+- initial tag: the currently verified production Git SHA
+- exposed container port: `3000`
+- domains and Coolify proxy: none
+- Docker restart policy: `unless-stopped`
+- `is_consistent_container_name_enabled`: `true`
+- `custom_internal_name`: `nutrition`
+- external Docker network: `web`
+- `stop_grace_period`: `10` seconds (the current Docker default)
+- automatic image updates: disabled
+- `docker_images_to_keep`: `0`
+- persistent volume `nutrition_database` mounted read/write at `/app/data`
+- persistent volume `nutrition_uploads` mounted read/write at `/app/uploads`
 
-## Retrying a release
+Caddy remains the only public proxy and keeps the existing route:
 
-Image downloads automatically retry transient transport failures (including GHCR
-TLS handshake timeouts) up to three total attempts, waiting 5 then 10 seconds.
-Authentication, missing-image and other non-transient failures stop immediately.
-Only `compose pull app` is repeated, against the same immutable digest, before
-backup, migrations or container replacement. Exhausting the attempts leaves the
-current application running and fails the deployment; raw pull logs remain private
-and are removed with the temporary deployment directory.
+```caddyfile
+tempo.dimensi.dev {
+	reverse_proxy nutrition:3000
+}
+```
 
-In GitHub Actions, select the failed `deploy` job and use **Re-run jobs**, or choose
-**Re-run failed jobs** on the run. The successful `build` job and its image output
-are reused, so deployment retries do not rebuild or republish the image. A full
-workflow rerun executes both jobs. The current-main revision guard still applies:
-retrying an older release after main advances is intentionally rejected.
-Pruning remains after successful health verification inside `deploy`.
+Do not publish a host port or create a Coolify domain. The application must join
+the existing external `web` network with alias `nutrition` before Caddy is switched
+to it. Preserve the server cleanup threshold of 80%, keep unused-volume and
+unused-network cleanup disabled, and keep the native Coolify scheduler enabled.
 
-## Files and secrets
+Use the existing named volumes. A newly generated Coolify volume with an empty
+database is a failed cutover, even when `/api/health` returns 200. Never remove,
+rename or initialize the existing volumes during application creation.
 
-The workflow copies repository `compose.yaml`, `compose.home.yaml` and a generated
-mode-0600 `.env.deploy` using SCP into a private temporary directory under
-`/opt/compose/yazio-dashboard`. It then uses SSH to pull the image, install those
-three configuration files, and run Compose. All Compose commands explicitly use
-project `nutrition`, the existing `runtime.env` first, then `.env.deploy`.
-The existing database/uploads volumes and network alias are preserved; no down,
-volume deletion, auth bootstrap or secret rotation is performed. After successful startup
-and HTTPS health verification, image pruning removes only unused images carrying this
-repository's source label. Running/container-referenced images are retained. Build-cache
-pruning removes unused cache older than seven days across the Docker daemon;
-volumes and other applications' images are not pruned.
-`runtime.env` and historical `release.env` are never overwritten or copied to CI.
-The current auth secret therefore remains server-local.
+## Runtime environment
 
-### Private deployment configuration
+Copy the current production values directly into Coolify as masked runtime
+variables. Do not move values through GitHub Actions, repository files, tickets or
+logs. Preserve every value exactly, including the existing auth key and object
+storage credentials:
 
-All deployment infrastructure settings are individual Secrets in the
-`nutrition-production` environment. The workflow does not read their former
-repository/environment Variables. Deployment needs no enablement Variable.
+- `DATABASE_URL`
+- `BETTER_AUTH_URL`
+- `BETTER_AUTH_SECRET`
+- `UPLOADS_DIR`
+- `DEMO_MODE`
+- `YAZIO_TOKEN_FILE`
+- `TRANSFORMMATE_TOKEN_FILE`
+- `ENABLE_NUTRITION_SCHEDULER`
+- `S3_ENDPOINT`
+- `S3_REGION`
+- `S3_BUCKET`
+- `S3_ACCESS_KEY_ID`
+- `S3_SECRET_ACCESS_KEY`
+- `ANAMNESIS_LLM_BASE_URL`
+- `OPENROUTER_API_KEY`
+- `ANAMNESIS_LLM_MODEL`
+- `ANAMNESIS_LLM_TIMEOUT_MS`
+- `ENABLE_ANAMNESIS_WORKER`
 
-- SSH: `NUTRITION_DEPLOY_HOST`, `NUTRITION_DEPLOY_USER`,
-  `NUTRITION_DEPLOY_PORT`, `NUTRITION_DEPLOY_KNOWN_HOSTS`, `NUTRITION_DEPLOY_KEY`.
-- Existing stack: `NUTRITION_DEPLOY_PATH`, `NUTRITION_DEPLOY_PROJECT`,
-  `NUTRITION_DEPLOY_HEALTH_URL`. Keep the established path, project, volumes,
-  network and health endpoint when configuring these values.
-- Runtime: `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`,
-  `S3_SECRET_ACCESS_KEY`, `OPENROUTER_API_KEY`, `ANAMNESIS_LLM_BASE_URL`,
-  `ANAMNESIS_LLM_MODEL`, `ANAMNESIS_LLM_TIMEOUT_MS`, `ENABLE_ANAMNESIS_WORKER`.
-  The existing repository-level OpenRouter secret is also supported by GitHub's
-  normal secret resolution; the workflow has no variable or plaintext fallback.
-- Approval guard: `NUTRITION_DEPLOY_RUNTIME_SHA256` is the SHA-256 of compact,
-  sorted-key JSON for the seven noncredential runtime settings listed in
-  `scripts/cd/deploy.sh`. An intentional runtime configuration change must update
-  both the corresponding Secrets and this checksum. Credentials are excluded
-  from the checksum, so credential rotation does not change the runtime guard.
+The image supplies `NODE_ENV`, `HOSTNAME`, `PORT`, Chromium/font paths and Next.js
+telemetry defaults. They do not need duplicate Coolify values unless the running
+container audit shows an intentional override.
 
-The deployment body lives in `scripts/cd/deploy.sh`; the public Actions step
-contains only its invocation and output handling. GitHub masks Secret values in
-its step header. Raw SSH, SCP, Compose and validation output is captured in a
-mode-0600 runner-temporary file and removed on exit, never printed or uploaded.
-Public output reports success or a fixed, allowlisted failure phase. Debugging
-requires private operator inspection; do not print that temporary log or add it
-to artifacts. This also prevents error messages from exposing addresses, resolved
-hosts, paths, fingerprints or connection strings that differ from a Secret's
-exact value.
+The encrypted files `/app/data/yazio-token.json` and
+`/app/data/transformmate-token.json` depend on the existing `BETTER_AUTH_SECRET`
+and owner identity. Preserve the files, database and secret as one recovery set.
+Never decrypt either file as a migration test.
 
-Env serialization rejects controls, single quotes and backslashes rather than
-accepting ambiguous dotenv escapes; literal dollars/hash/double quotes are quoted.
-The approved runtime checksum, exact main SHA, image digest, host-key verification,
-backup, storage-switch guard and health checks remain mandatory.
+## GitHub Actions secrets
 
-Setting Secrets does not erase old logs, source history or existing Variables.
-Remove superseded infrastructure Variables only after the workflow no longer
-reads them. Delete exposed historical logs or their entire workflow runs separately
-using the Actions API. Deletion does not rewrite Git history or erase previously
-copied data.
+The `nutrition-production` environment needs only these deployment secrets after
+cutover:
 
-Registry authentication uses the short-lived job `GITHUB_TOKEN` via stdin and a
-private temporary `DOCKER_CONFIG`. It does not replace the server's existing
-registry login and does not introduce a permanent registry credential. Temporary
-key/env/token/config files are removed on exit. Abrupt machine failure can leave a
-private staging directory; inspect/remove only the corresponding run directory.
+| Secret             | Purpose                                                     |
+| ------------------ | ----------------------------------------------------------- |
+| `COOLIFY_URL`      | Coolify base URL, currently `https://coolify.dimensi.dev`   |
+| `COOLIFY_APP_UUID` | Identifies only the Tempo Docker Image application          |
+| `COOLIFY_TOKEN`    | Updates the image tag, triggers deployment and reads status |
 
-## Cutover and failures
+Use a dedicated token with the narrowest available permissions and description:
 
-The workflow takes the existing `verification/rollout.lock`, also used by installed
-legacy receivers. It pulls and validates the new image before stopping anything.
-It invokes the application's existing online SQLite backup CLI before migrations;
-the protected backup remains under `/app/data/pre-deploy-RUN-SHA.sqlite`.
-Before first S3 activation or an S3 configuration change it stops the old app,
-checks document/job counts and local object files read-only with networking disabled,
-and refuses nonempty storage. An inventory/pre-cutover failure restarts the old
-container without changing its configuration. Nonempty storage requires a separate
-migration/backup plan; disabling the worker alone does not prevent direct queue kicks.
+`GitHub Actions — dimensi/tempo — update image tag and deploy`
 
-After Compose starts replacing the app, startup or health failure fails the workflow
-and leaves the state available for inspection. Like the reference deploy, it does
-not automatically restore SQLite or promise an automatic release rollback. Do not
-retry blindly after migrations: inspect health and choose recovery against the
-recorded image/config and online backup. HTTPS health must be 200 for success.
-Only synthetic PDFs may be used for activation testing; real documents or pending
-imports must not be processed as a test.
+Link its internal credential record to the repository release workflow. Rotate it
+by installing the replacement secret, completing and verifying a manual main
+deployment, then revoking the former token.
 
-## Existing access and activation
+After the first verified Coolify release, remove the obsolete
+`NUTRITION_DEPLOY_*` SSH/path/runtime-checksum secrets and the duplicated S3/LLM
+runtime secrets from GitHub. Keep runtime application values only in Coolify.
+Retire the old forced-command deployment key or helper only after rollback no
+longer relies on it.
 
-Deployment uses the production environment after a successful build on main.
-The workflow requires an SSH account that can read the existing runtime file,
-write the stack directory and use Docker. It refuses the obsolete receiver-only
-account because ordinary SCP/SSH deployment requires a different interface.
-This logging change does not grant new server privileges, rotate credentials,
-run a deployment or alter the server's existing registry login.
+## Stateful cutover
 
-Before activation, verify the final revision and required checks, configure the
-individual Secrets and approved runtime checksum, and confirm the current
-server path/project/volumes. If GHCR package policy denies job-token access,
-resolve that specific policy; do not automatically create a PAT or permanent
-server credential. Retain the existing rollout lock and recovery procedure.
+The cutover must be serialized; the old Compose app and Coolify app must never run
+together against `nutrition_database`.
+
+1. Record the running image digest, OCI revision, health, scheduler flags, mounts,
+   volume identities, `web` aliases and Caddy route.
+2. Quiesce writes. Create a SQLite online backup and a matching protected copy of
+   uploads, both encrypted connection files and runtime configuration. Verify the
+   database backup before changing container ownership.
+3. Create the Coolify application at the same verified image SHA with automatic
+   deployment disabled. Configure all environment values, existing named volumes,
+   consistent naming, `web` network and `nutrition` alias.
+4. Stop the old Compose container. Confirm no Tempo container remains running and
+   keep the old Compose configuration available for rollback.
+5. Start the same image through Coolify. Startup applies any pending migrations;
+   wait for the Docker health check and public health endpoint.
+6. Verify the running image/revision, single-container count, zero restarts,
+   volume mount sources, database integrity, encrypted-file presence, scheduler
+   flags, Caddy routing, login and representative owner/trainer reads. Do not run
+   real imports, OCR, sync or outbound integration tests during cutover.
+7. Add the three GitHub secrets and run the release workflow manually on main.
+   Verify the exact SHA tag and public health before enabling ordinary main-push
+   deployments.
+
+The coordinator owns the backup and stop/start window. Do not let a workflow push
+activate the new CD path before the resource and recovery set are verified.
+
+## Failure and rollback
+
+If Coolify fails before the new app starts, keep the existing volumes untouched,
+stop/delete only the failed Coolify container, and restart the recorded Compose
+image with its original environment and `web` alias. If startup ran migrations,
+inspect the schema and logs before rollback: an older image does not reverse a
+migration. Restore the matching verified recovery set only while all Tempo
+containers are stopped.
+
+Coolify image retention is zero by user policy, so rollback depends on the
+recorded immutable image reference and registry availability rather than local
+image history. Never use `docker compose down -v`, delete a Coolify storage record
+that owns an existing volume, or prune the two production volumes.
+
+For later releases, create and verify the documented stateful backup before the
+deployment when a schema or storage change is present. The Coolify API workflow
+does not replace the database/upload backup procedure.
