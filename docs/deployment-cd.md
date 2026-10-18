@@ -1,5 +1,7 @@
 # Coolify deployment
 
+Host recovery and the Bitwarden credential handoff: [Home server / Coolify runbook](https://github.com/dimensi/reels-downloader/blob/main/docs/operations/home-server-coolify.md).
+
 Tempo's release workflow builds the reviewed revision once, publishes it to GHCR,
 then asks the existing Coolify installation to deploy that exact Git SHA tag. Coolify
 owns the container lifecycle and runtime configuration. GitHub Actions does not copy
