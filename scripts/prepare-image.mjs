@@ -9,6 +9,7 @@ cpSync(
 );
 
 // Canonical package directories replace any symlinks emitted by Next tracing.
+// Keep these filesystem fixups here so the final image can reuse remote layers.
 const sdk = `${destination}/node_modules/@dimensi/yazio`;
 rmSync(sdk, { recursive: true, force: true });
 mkdirSync(`${sdk}/node_modules`, { recursive: true });

@@ -40,8 +40,8 @@ not uploaded as artifacts.
 Manual non-main runs publish only `build-<branch-hash>` and skip deployment. The
 tag uses the first 16 hex characters of SHA-256 over the full Git ref, so different
 branches have separate tags and new commits can reuse their own branch cache.
-This does not update `latest` or
-reading production environment secrets. Use Actions job and step durations plus
+These builds never update `latest` or read production environment secrets.
+Use Actions job and step durations plus
 build logs for performance comparisons; local build times are not release timings.
 
 Deployment runs only after the `build` job succeeds, and accepts
