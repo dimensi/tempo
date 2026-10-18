@@ -13,12 +13,22 @@ checks out the same revision before SSH deployment. Deployment runs automaticall
 PR CI, formatting, lint, typecheck, unit/integration tests, browser gates and
 disposable Docker smoke do not run in this workflow. Required pre-merge checks follow the verification tiers in AGENTS.md. Full
 verification uses `pnpm verify:merge`, including two browser smoke journeys.
-A main push publishes that exact local image as
+A main push builds and publishes that exact checked-out revision as
 `ghcr.io/dimensi/tempo:latest` using the job's `GITHUB_TOKEN`.
 There is no second build. Publication updates `latest` and returns its immutable
 `ghcr.io/dimensi/tempo@sha256:...` reference as a job output. Deployment
 pulls that exact digest, so a retry cannot accidentally pick a later `latest`.
 The immutable revision label must match the workflow SHA before startup and after deployment. There is no manual full-test CI branch.
+
+Buildx imports and exports a GitHub Actions v2 layer cache scoped to
+`tempo-linux-amd64`, including intermediate dependency stages (`mode=max`).
+The Chromium, FFmpeg, fonts and system-library installation lives in an independent
+runtime dependency stage, so application edits neither reinstall these packages nor
+change their image layers. This also lets the server reuse the heavy layers when
+pulling subsequent releases. The first run populates the cache; missing/evicted
+cache still produces a normal full build. Cache export is best-effort with a
+two-minute timeout and cannot fail an otherwise successful publication. The Next.js
+build still performs TypeScript checking. Build records are not uploaded as artifacts.
 
 Deployment runs only after the `build` job succeeds, and accepts
 only the current main SHA. Manual runs have no external run ID or revision inputs.
