@@ -20,15 +20,19 @@ the Docker context, so a deployment-only change can reuse the application layers
 The workflow does not run PR checks or the Full verification tier; follow
 [AGENTS.md](../AGENTS.md) before merge.
 
-On main, the `deploy` job updates the Coolify application's
-`docker_registry_image_tag`, starts a deployment, waits for a terminal status,
-checks that the saved tag still equals the workflow SHA, and requires HTTP 200 from
-`https://tempo.dimensi.dev/api/health`. The image's existing command runs
+On main, the `deploy` job updates only the non-secret `DEPLOYED_COMMIT` runtime
+variable and the Coolify application's `docker_registry_image_tag` to the same
+Git SHA, starts a deployment, waits for a terminal status, checks that the saved
+tag still equals the workflow SHA, and requires HTTP 200 from
+`https://tempo.dimensi.dev/api/health`. The public check polls for up to one minute
+so a short startup 503 or connection reset does not fail an otherwise healthy
+deployment. The image's existing command runs
 `node scripts/migrate.mjs` before `server.js`, and its Docker health check covers
 `/api/health`. Do not configure a second migration or scheduler command in Coolify.
 
-Production concurrency remains `nutrition-production` with cancellation enabled.
-An older main release must not finish after a newer one. Coolify uses a consistent
+Production concurrency remains `nutrition-production`, with cancellation disabled.
+A newer workflow waits for an already-started native deployment instead of
+cancelling it between the tag update and terminal status. Coolify uses a consistent
 container identity and a stop-first replacement for this single-process SQLite
 application; rolling two replicas would run concurrent migrations and schedulers
 against the same files.
@@ -47,7 +51,11 @@ Create a Docker Image application with the following values:
 - `is_consistent_container_name_enabled`: `true`
 - `custom_internal_name`: `nutrition`
 - external Docker network: `web`
-- `stop_grace_period`: `10` seconds (the current Docker default)
+- `stop_grace_period`: `30` seconds for an orderly single-process shutdown
+- Coolify-generated health check: disabled; inherit the image's Node-based
+  `/api/health` `HEALTHCHECK`
+- pre-deployment command:
+  `node scripts/backup.mjs /app/data/coolify-pre-deploy.sqlite`
 - automatic image updates: disabled
 - `docker_images_to_keep`: `0`
 - persistent volume `nutrition_database` mounted read/write at `/app/data`
@@ -96,6 +104,12 @@ storage credentials:
 - `ANAMNESIS_LLM_TIMEOUT_MS`
 - `ENABLE_ANAMNESIS_WORKER`
 
+Also create `DEPLOYED_COMMIT` as a non-secret, literal runtime variable. The release
+workflow owns only this variable and sets it to the exact image SHA immediately
+before each deployment. The application health route checks database availability;
+the immutable OCI revision label and Coolify image tag remain the authoritative
+running-build checks.
+
 The image supplies `NODE_ENV`, `HOSTNAME`, `PORT`, Chromium/font paths and Next.js
 telemetry defaults. They do not need duplicate Coolify values unless the running
 container audit shows an intentional override.
@@ -110,11 +124,11 @@ Never decrypt either file as a migration test.
 The `nutrition-production` environment needs only these deployment secrets after
 cutover:
 
-| Secret             | Purpose                                                     |
-| ------------------ | ----------------------------------------------------------- |
-| `COOLIFY_URL`      | Coolify base URL, currently `https://coolify.dimensi.dev`   |
-| `COOLIFY_APP_UUID` | Identifies only the Tempo Docker Image application          |
-| `COOLIFY_TOKEN`    | Updates the image tag, triggers deployment and reads status |
+| Secret             | Purpose                                                           |
+| ------------------ | ----------------------------------------------------------------- |
+| `COOLIFY_URL`      | Coolify base URL, currently `https://coolify.dimensi.dev`         |
+| `COOLIFY_APP_UUID` | Identifies only the Tempo Docker Image application                |
+| `COOLIFY_TOKEN`    | Updates the revision variable/image tag, deploys and reads status |
 
 Use a dedicated token with the narrowest available permissions and description:
 
@@ -172,6 +186,12 @@ recorded immutable image reference and registry availability rather than local
 image history. Never use `docker compose down -v`, delete a Coolify storage record
 that owns an existing volume, or prune the two production volumes.
 
-For later releases, create and verify the documented stateful backup before the
-deployment when a schema or storage change is present. The Coolify API workflow
-does not replace the database/upload backup procedure.
+For later releases, Coolify runs the bundled SQLite online backup before replacing
+an existing managed container. The fixed
+`/app/data/coolify-pre-deploy.sqlite` destination is intentionally overwritten, so
+routine deployments do not accumulate backups in the database volume. This hook
+does not run before the first Coolify start because no managed container exists.
+Create and verify the documented root-private stateful backup before that cutover
+and before later schema or storage changes. The native hook does not capture
+uploads, encrypted connection files or runtime configuration, so it does not
+replace the full database/upload recovery procedure.
