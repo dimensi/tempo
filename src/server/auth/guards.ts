@@ -1,14 +1,23 @@
 import 'server-only';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { exerciseReturnTo } from '@/lib/exercise-link';
 import { eq } from 'drizzle-orm';
 import { getAuth } from './index';
 import { getDatabase } from '../db';
 import { trainerAccess } from '../db/schema';
 import { hasPermission, type Permission } from '@/contracts/permissions';
 export async function requireSession() {
-  const session = await getAuth().api.getSession({ headers: await headers() });
-  if (!session) redirect('/login');
+  const requestHeaders = await headers();
+  const session = await getAuth().api.getSession({ headers: requestHeaders });
+  if (!session) {
+    const returnTo = exerciseReturnTo(
+      requestHeaders.get('x-tempo-exercise-return-to'),
+    );
+    redirect(
+      returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : '/login',
+    );
+  }
   return session;
 }
 export async function authorize(

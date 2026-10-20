@@ -282,8 +282,9 @@ export async function catalogResponse(
         status:
           error instanceof CatalogError
             ? error.status
-            : error instanceof TransformMateApiError && error.status === 429
-              ? 429
+            : error instanceof TransformMateApiError &&
+                [404, 429].includes(error.status)
+              ? error.status
               : error instanceof z.ZodError
                 ? 400
                 : 502,

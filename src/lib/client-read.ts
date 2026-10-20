@@ -202,7 +202,11 @@ export async function refreshClientRead(key: string) {
             throw new ReadFailure('denied');
           if (!response.ok)
             throw new ReadFailure(
-              response.status === 403 ? 'denied' : 'unavailable',
+              response.status === 403
+                ? 'denied'
+                : response.status === 404
+                  ? 'not-found'
+                  : 'unavailable',
               response.status,
             );
           const schema = readResponseSchema(

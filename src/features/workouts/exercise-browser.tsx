@@ -1,4 +1,7 @@
 'use client';
+import Link from 'next/link';
+import { exercisePageHref } from '@/lib/exercise-link';
+import { ExerciseShare } from './exercise-share';
 import { useEffect, useRef, useState } from 'react';
 import { useDebouncedValue } from '@mantine/hooks';
 import {
@@ -112,7 +115,22 @@ function ExerciseCard({
       )}
       <Stack gap="sm" p="md">
         <Text component="h2" size="md" fw={650} className={styles.name}>
-          {item.name}
+          {onChoose ? (
+            item.name
+          ) : (
+            <Link
+              href={exercisePageHref(item.id)}
+              style={{
+                color: 'inherit',
+                textUnderlineOffset: '0.2em',
+                display: 'flex',
+                alignItems: 'center',
+                minHeight: 44,
+              }}
+            >
+              {item.name}
+            </Link>
+          )}
         </Text>
         <Group gap={6}>
           {enrichedItem.muscleGroups.map((group) => (
@@ -121,6 +139,7 @@ function ExerciseCard({
             </Badge>
           ))}
         </Group>
+        {!onChoose && <ExerciseShare exerciseId={item.id} name={item.name} />}
         {onChoose && (
           <Button
             variant={checked ? 'filled' : 'light'}

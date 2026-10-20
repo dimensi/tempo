@@ -1,4 +1,16 @@
 export const workoutMessages = {
+  copyExerciseLink: 'Скопировать ссылку',
+  shareExercise: 'Поделиться',
+  exerciseLinkCopied: 'Ссылка скопирована',
+  exerciseLinkManual: 'Скопируйте ссылку вручную',
+  exerciseShareFailed: 'Не удалось поделиться. Скопируйте ссылку.',
+  returnToCatalog: 'В каталог упражнений',
+  exercisePage: 'Упражнение',
+  exerciseNotFound:
+    'Упражнение не найдено. Откройте каталог и выберите другое.',
+  exerciseUnavailable:
+    'Не удалось загрузить упражнение. Проверьте подключение и повторите.',
+
   reorderExercises: 'Изменить порядок упражнений',
   moveExercise: 'Перетащить упражнение',
   reorderDone: 'Готово',

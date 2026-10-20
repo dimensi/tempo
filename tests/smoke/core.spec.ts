@@ -38,7 +38,38 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   expect((await request.get('/api/workouts?ownerId=unknown')).status()).toBe(
     401,
   );
-  await page.goto('/login');
+  expect(
+    (
+      await request.get(
+        '/api/workouts/transformmate/exercises/501?ownerId=unknown',
+      )
+    ).status(),
+  ).toBe(401);
+  await page.route('**/api/workouts/transformmate/exercises/501?*', (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          id: 501,
+          name: 'Downloaded technique',
+          description: 'Synthetic technique instructions',
+          canPlan: true,
+          hasVideo: true,
+          publicationCapability: { state: 'supported', reason: null },
+          snippet: null,
+          preview: { coverage: 'absent', path: null, revision: 'a'.repeat(64) },
+          detailCoverage: 'available',
+          membershipCoverage: 'available',
+          muscleGroups: [],
+          muscles: [],
+          fetchedAt: new Date().toISOString(),
+          detailFetchedAt: new Date().toISOString(),
+          stale: false,
+        },
+      },
+    }),
+  );
+  await page.goto('/workouts/catalog/501');
+  await expect(page).toHaveURL('/login?returnTo=%2Fworkouts%2Fcatalog%2F501');
   await page.getByLabel('Электронная почта').fill('owner@example.test');
   await page
     .getByRole('textbox', { name: 'Пароль', exact: true })
@@ -48,7 +79,99 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   );
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   expect((await login).status()).toBe(200);
-  await expect(page).toHaveURL('/');
+  await expect(page).toHaveURL('/workouts/catalog/501');
+  await expect(
+    page.getByRole('heading', { name: 'Downloaded technique', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Synthetic technique instructions', { exact: true }),
+  ).toBeVisible();
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page
+    .getByRole('button', { name: 'Скопировать ссылку', exact: true })
+    .click();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Ссылка скопирована' }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    `${testOrigin}/workouts/catalog/501`,
+  );
+  // A broken clipboard still leaves a usable, selectable URL.
+  await page.evaluate(() => {
+    Object.defineProperty(navigator.clipboard, 'writeText', {
+      configurable: true,
+      value: () => Promise.reject(new Error('Unavailable')),
+    });
+  });
+  await page
+    .getByRole('button', { name: 'Скопировать ссылку', exact: true })
+    .click();
+  await expect(page.getByLabel('Скопируйте ссылку вручную')).toHaveValue(
+    `${testOrigin}/workouts/catalog/501`,
+  );
+  await page.route('**/api/workouts/transformmate/exercises?*', (route) =>
+    route.fulfill({
+      json: {
+        contractVersion: 1,
+        source: 'user',
+        data: [
+          {
+            id: 501,
+            name: 'Downloaded technique',
+            canPlan: true,
+            publicationCapability: { state: 'supported', reason: null },
+            snippet: null,
+            preview: {
+              coverage: 'absent',
+              path: null,
+              revision: 'a'.repeat(64),
+            },
+            detailCoverage: 'available',
+            membershipCoverage: 'available',
+            muscleGroups: [],
+            fetchedAt: new Date().toISOString(),
+            detailFetchedAt: new Date().toISOString(),
+          },
+        ],
+        catalog: {
+          fetchedAt: new Date().toISOString(),
+          stale: false,
+          coverage: 'complete',
+          refreshState: 'idle',
+          total: 1,
+          hasMore: false,
+          unknownMembershipCount: 0,
+          filters: {
+            query: '',
+            commonMuscleGroup: null,
+            muscleGroups: [],
+            offset: 0,
+            limit: 12,
+          },
+        },
+      },
+    }),
+  );
+  await page
+    .getByRole('navigation', { name: 'Навигация', exact: true })
+    .first()
+    .getByRole('link', { name: 'Каталог упражнений', exact: true })
+    .click();
+  await expect(page).toHaveURL('/workouts/catalog');
+  await expect(
+    page.getByRole('link', { name: 'Downloaded technique', exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('link', { name: 'Downloaded technique', exact: true })
+    .click();
+  await expect(page).toHaveURL('/workouts/catalog/501');
+  await page.goto('/more');
+  await page
+    .getByRole('main')
+    .getByRole('link', { name: 'Каталог упражнений', exact: true })
+    .click();
+  await expect(page).toHaveURL('/workouts/catalog');
+  await page.unroute('**/api/workouts/transformmate/exercises?*');
   const owner = (await (await page.request.get('/api/auth/get-session')).json())
     .user.id as string;
   for (const route of [
@@ -436,29 +559,6 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       })
     ).status(),
   ).toBe(200);
-  await page.route('**/api/workouts/transformmate/exercises/501?*', (route) =>
-    route.fulfill({
-      json: {
-        data: {
-          id: 501,
-          name: exercise.name,
-          description: 'Synthetic technique instructions',
-          canPlan: true,
-          hasVideo: true,
-          publicationCapability: { state: 'supported', reason: null },
-          snippet: null,
-          preview: { coverage: 'absent', path: null, revision: 'a'.repeat(64) },
-          detailCoverage: 'available',
-          membershipCoverage: 'available',
-          muscleGroups: [],
-          muscles: [],
-          fetchedAt: new Date().toISOString(),
-          detailFetchedAt: new Date().toISOString(),
-          stale: false,
-        },
-      },
-    }),
-  );
   const technique = readFileSync(
     new URL('../fixtures/technique-demo.mp4', import.meta.url),
   );
@@ -635,5 +735,12 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   expect(trainerLogin.status()).toBe(200);
   expect(
     (await page.request.get(`/api/workouts?ownerId=${owner}`)).status(),
+  ).toBe(403);
+  expect(
+    (
+      await page.request.get(
+        `/api/workouts/transformmate/exercises/501?ownerId=${owner}`,
+      )
+    ).status(),
   ).toBe(403);
 });
