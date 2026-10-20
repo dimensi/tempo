@@ -31,7 +31,7 @@ Workouts сохраняют kind и связи planId/workoutId. LOCAL план 
 
 ## OAuth и ограничения
 
-Better Auth OAuth Provider 1.7.7 работает в той же SQLite на текущем HTTPS-origin. Миграция 0019 аддитивно создаёт OAuth-таблицы. Регистрация пользователей и dynamic client registration отключены. Оператор создаёт конфиденциального клиента с точным HTTPS callback, PKCE S256 и явным consent.
+Better Auth OAuth Provider 1.7.7 работает в той же SQLite на текущем HTTPS-origin. Миграция 0019 аддитивно создаёт OAuth-таблицы. Регистрация пользователей и dynamic client registration отключены. Владелец в настройках создаёт конфиденциального клиента с точным HTTPS callback, PKCE S256 и явным consent.
 
 Scope данных — `tempo:read`; `offline_access` разрешает refresh, не меняя offline-кеш приложения. Code живёт 5 минут, opaque access token — 15 минут, refresh — до 30 дней с ротацией без окна повторного использования. Связанная сессия Tempo также обязательна (обычно 7 дней); после её завершения нужно переподключение. Provider хранит хеши токенов, client secret шифруется текущим BETTER_AUTH_SECRET. OAuth flow и криптография предоставлены библиотекой.
 
@@ -48,31 +48,13 @@ HTTP: 401 с WWW-Authenticate для отсутствующего/недейст
 1. В управлении MCP ChatGPT добавьте `https://<tempo-host>/api/mcp`, выберите OAuth с заранее зарегистрированными credentials. Скопируйте **точный callback URL** своего подключения; не угадывайте его и не используйте wildcard.
 2. В Tempo откройте **Настройки → AI-подключения · MCP** (`/settings#mcp`). Скопируйте адрес сервера, введите название и точный HTTPS Callback URL из ChatGPT. Нажмите «Создать подключение». Client ID и Client Secret появятся один раз; перенесите их в защищённые поля ChatGPT и закройте показ секрета. Секрет не сохраняется в браузерном кеше. Здесь же доступен список своих подключений и отзыв с подтверждением; TRAINER не может открыть API управления. Создание ограничено 20 клиентами за сутки и 50 активными клиентами на владельца. Список ограничен последними 100 регистрациями.
 
-   Для операторского подключения без UI в существующем контейнере:
-
-   ```sh
-   node scripts/mcp-client.mjs create 'https://<exact-client-callback>' /app/data/private/tempo-ai-client.json
-   ```
-
-   Локально после `pnpm db:migrate`:
-
-   ```sh
-   node --conditions=react-server --import tsx scripts/mcp-client.ts create 'https://<exact-client-callback>' .data/private/tempo-ai-client.json
-   ```
-
-   Файл создаётся эксклюзивно с mode 0600, secret не печатается. Команда использует операторский доступ к локальной БД, не создаёт web-сессию. Для каждого AI-клиента создавайте отдельную регистрацию. Существующий файл не перезаписывается.
-
 3. Перенесите client_id/client_secret из файла в защищённые поля OAuth клиента: auth method `client_secret_post`, scope `tempo:read offline_access`, PKCE S256. Не помещайте credentials или access token в prompt, сообщения, Git и логи.
 4. Discovery: `/.well-known/oauth-protected-resource/api/mcp` → issuer `https://<tempo-host>/api/auth` → `/.well-known/oauth-authorization-server/api/auth`. Authorization/token/revoke: `/api/auth/oauth2/authorize`, `/api/auth/oauth2/token`, `/api/auth/oauth2/revoke`. Resource authorize/token — точный HTTPS `/api/mcp`.
 5. Подключитесь, войдите OWNER на Tempo и подтвердите чтение. TRAINER не получает доступ даже с trainer_access. После подключения проверьте шесть инструментов и короткий запрос покрытия.
 
 Если конкретная поверхность клиента требует только CIMD/DCR и не принимает provided credentials, она не совместима с закрытой registration policy v1. Не включайте открытую регистрацию как обход: используйте интерфейс с заранее зарегистрированным клиентом. End-to-end проверка именно ChatGPT остаётся отдельной приёмкой на опубликованном endpoint.
 
-Немедленное отключение клиента:
-
-```sh
-node scripts/mcp-client.mjs revoke '<client-id>'
-```
+Для немедленного отключения откройте Настройки → AI-подключения · MCP, выберите подключение и подтвердите «Отозвать доступ».
 
 Disabled проверяется при каждом чтении и refresh, включая после рестарта. Для нового подключения создайте новый client. AI-клиент может отзывать токены стандартным revoke endpoint. Выход из связанной сессии Tempo прекращает MCP-доступ.
 

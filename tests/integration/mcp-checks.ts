@@ -83,6 +83,9 @@ export async function assertMcpAccess(
   expect(listed.clients.some((row) => row.clientId === client.client_id)).toBe(
     true,
   );
+  expect(
+    listed.clients.find((row) => row.clientId === client.client_id)?.callback,
+  ).toBe('https://client.example.test/callback');
   expect(JSON.stringify(listed)).not.toContain(client.client_secret);
   await expect(
     revokeMcpClient(trainerHeaders, { clientId: client.client_id }),

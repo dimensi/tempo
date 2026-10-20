@@ -1,4 +1,5 @@
 import 'server-only';
+import { z } from 'zod';
 import { and, eq, desc, gte, count } from 'drizzle-orm';
 import { getAuth } from '@/server/auth';
 import { authorize } from '@/server/auth/guards';
@@ -44,7 +45,11 @@ export async function listMcpClients(headers: Headers) {
     clients: clients.map((row) => ({
       clientId: row.clientId,
       name: row.name ?? 'Tempo AI',
-      callback: row.redirectUris[0] ?? '',
+      // Better Auth serializes array fields to JSON text before the Drizzle adapter.
+      callback:
+        z
+          .array(z.string())
+          .parse(JSON.parse(z.string().parse(row.redirectUris)))[0] ?? '',
       disabled: row.disabled === true,
       createdAt: row.createdAt?.toISOString() ?? null,
     })),

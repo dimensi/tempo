@@ -23,7 +23,6 @@ await build({
   entryPoints: [
     'scripts/anamnesis-pdf-smoke.ts',
     'scripts/transformmate-media-smoke.ts',
-    'scripts/mcp-client.ts',
   ],
   outdir: 'dist-cli',
   bundle: true,
