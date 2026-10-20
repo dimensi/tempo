@@ -16,6 +16,11 @@ import { authorize } from '@/server/auth/guards';
 import { handleMcp } from '@/server/mcp/http';
 import { mcpHistoryInput, mcpOutput, mcpTools } from '@/contracts/mcp';
 import { readMcpData } from '@/server/mcp/data';
+import {
+  createMcpClient,
+  listMcpClients,
+  revokeMcpClient,
+} from '@/server/mcp/clients';
 import { workoutRepository } from '@/server/workouts/repository';
 import {
   meals,
@@ -61,17 +66,30 @@ export async function assertMcpAccess(
   }
   const ownerHeaders = await signIn('owner');
   const trainerHeaders = await signIn('trainer');
-  const client = await auth.api.adminCreateOAuthClient({
-    headers: ownerHeaders,
-    body: {
-      redirect_uris: ['https://client.example.test/callback'],
-      client_name: 'Synthetic MCP',
-      scope: 'tempo:read offline_access',
-      grant_types: ['authorization_code', 'refresh_token'],
-      token_endpoint_auth_method: 'client_secret_post',
-      require_pkce: true,
-    },
+  await expect(
+    createMcpClient(trainerHeaders, {
+      name: 'Denied',
+      callback: 'https://client.example.test/callback',
+    }),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(listMcpClients(trainerHeaders)).rejects.toMatchObject({
+    status: 403,
   });
+  const client = await createMcpClient(ownerHeaders, {
+    name: 'Synthetic MCP',
+    callback: 'https://client.example.test/callback',
+  });
+  const listed = await listMcpClients(ownerHeaders);
+  expect(listed.clients.some((row) => row.clientId === client.client_id)).toBe(
+    true,
+  );
+  expect(JSON.stringify(listed)).not.toContain(client.client_secret);
+  await expect(
+    revokeMcpClient(trainerHeaders, { clientId: client.client_id }),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(
+    revokeMcpClient(ownerHeaders, { clientId: 'someone-elses-client' }),
+  ).rejects.toMatchObject({ status: 404 });
   expect(client.client_secret).toBeTruthy();
   const verifier = 'v'.repeat(64);
   async function authorizeQuery(
@@ -514,11 +532,7 @@ export async function assertMcpAccess(
     .set({ expiresAt: tokenRow.expiresAt })
     .where(eq(oauthAccessToken.id, tokenRow.id))
     .run();
-  connection.db
-    .update(oauthClient)
-    .set({ disabled: true })
-    .where(eq(oauthClient.clientId, client.client_id))
-    .run();
+  await revokeMcpClient(ownerHeaders, { clientId: client.client_id });
   expect((await handleMcp(request(tokens.access_token))).status).toBe(401);
   expect(
     (

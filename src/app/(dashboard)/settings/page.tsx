@@ -14,6 +14,7 @@ import { SettingsNavigation } from './settings-navigation';
 import { StepsGoalForm } from './steps-goal-form';
 import { TransformMateSettingsForm } from './transformmate/settings-form';
 import { YazioSettingsForm } from './yazio/settings-form';
+import { McpSettings } from './mcp-settings';
 export default function Page() {
   const context = useReadContext();
   const ownerId = context.ownerId;
@@ -69,6 +70,7 @@ export default function Page() {
                 </Stack>
               </section>
               <StepsGoalForm initial={data.stepsGoal} />
+              <McpSettings />
               <OfflineSettings />
             </>
           )}

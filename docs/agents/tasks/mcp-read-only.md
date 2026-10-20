@@ -11,4 +11,5 @@
 - Schema: additive OAuth-provider tables in the existing SQLite database; generated SQL and snapshot; existing production migrations untouched.
 - Test budget: 0 added cases, 0 removed, 0 consolidated. Extend existing server-authorization case with real Better Auth OAuth and official MCP client; pin migration-upgrade checkpoints by tag. No new browser case.
 - Required acceptance: protocol initialize/discovery/tools; OAuth code+PKCE/refresh/revocation, owner-only and IDOR; completeness/zero/empty distinctions and parity with analytics; pagination/range/size/rate bounds. Full verification on clean committed SHA, image build and disposable Docker smoke.
-- Merge/deploy: not authorized by this task.
+- Follow-up scope: owner-only Settings MCP section with endpoint copy, setup guide, confidential client issuance (secret shown once), list and immediate revocation. Reuse OAuth provider issuance and existing tables; extend the same authorization scenario, no added cases.
+- Merge/deploy: explicitly authorized by the user for PR #151; incorporate Settings follow-up before merge and rerun Full checks.
