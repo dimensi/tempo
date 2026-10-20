@@ -162,6 +162,15 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     page.getByRole('link', { name: 'Downloaded technique', exact: true }),
   ).toBeVisible();
   await page
+    .getByRole('button', {
+      name: 'Скопировать ссылку: Downloaded technique',
+      exact: true,
+    })
+    .click();
+  await expect(page.getByLabel('Скопируйте ссылку вручную')).toHaveValue(
+    `${testOrigin}/workouts/catalog/501`,
+  );
+  await page
     .getByRole('link', { name: 'Downloaded technique', exact: true })
     .click();
   await expect(page).toHaveURL('/workouts/catalog/501');

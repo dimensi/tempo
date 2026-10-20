@@ -33,6 +33,22 @@ import { exerciseHref, techniqueHref } from './transformmate-exercises';
 import { workoutMessages as m } from './messages';
 import styles from './exercise-browser.module.css';
 
+function ExerciseMuscles({
+  groups,
+}: {
+  groups: TransformMateCatalogItem['muscleGroups'];
+}) {
+  return (
+    <Group gap={6} style={{ flex: 1, minWidth: 0 }}>
+      {groups.map((group) => (
+        <Badge key={group.id} size="sm" variant="light" color="gray">
+          {group.name}
+        </Badge>
+      ))}
+    </Group>
+  );
+}
+
 function ExerciseCard({
   ownerId,
   item,
@@ -132,14 +148,13 @@ function ExerciseCard({
             </Link>
           )}
         </Text>
-        <Group gap={6}>
-          {enrichedItem.muscleGroups.map((group) => (
-            <Badge key={group.id} size="sm" variant="light" color="gray">
-              {group.name}
-            </Badge>
-          ))}
-        </Group>
-        {!onChoose && <ExerciseShare exerciseId={item.id} name={item.name} />}
+        {onChoose ? (
+          <ExerciseMuscles groups={enrichedItem.muscleGroups} />
+        ) : (
+          <ExerciseShare compact exerciseId={item.id} name={item.name}>
+            <ExerciseMuscles groups={enrichedItem.muscleGroups} />
+          </ExerciseShare>
+        )}
         {onChoose && (
           <Button
             variant={checked ? 'filled' : 'light'}

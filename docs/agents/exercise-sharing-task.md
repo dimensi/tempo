@@ -9,3 +9,9 @@
 - Fixtures: existing synthetic authenticated browser smoke, never production data.
 - Verification: Full, `pnpm verify:merge` on final clean commit; zero new, removed or consolidated cases. Extend existing smoke for links and login return.
 - Delivery: local feature commit, no merge or deployment authorized.
+
+## Catalog card refinement
+
+- Replace the two large card buttons with two distinct 44px icon buttons (copy and share) beside muscle badges; retain page actions and clipboard fallback.
+- Verification tier: Isolated, bounded workout UI only. Formatting, component ESLint, typecheck, production build and existing authenticated browser smoke in a disposable checkout, leaving the live preview and local data running.
+- Cases added/removed/consolidated: 0/0/0; extend the existing smoke to exercise the compact copy control and fallback.

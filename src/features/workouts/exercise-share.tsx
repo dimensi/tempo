@@ -1,6 +1,13 @@
 'use client';
-import { useState, useSyncExternalStore } from 'react';
-import { Button, Group, Stack, Text, TextInput } from '@mantine/core';
+import { useState, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  ActionIcon,
+  Button,
+  Group,
+  Stack,
+  Text,
+  TextInput,
+} from '@mantine/core';
 import { IconCopy, IconShare } from '@tabler/icons-react';
 import { exercisePageHref } from '@/lib/exercise-link';
 import { workoutMessages as m } from './messages';
@@ -12,9 +19,13 @@ const serverSupportsShare = () => false;
 export function ExerciseShare({
   exerciseId,
   name,
+  compact = false,
+  children,
 }: {
   exerciseId: number;
   name: string;
+  compact?: boolean;
+  children?: ReactNode;
 }) {
   const canShare = useSyncExternalStore(
     subscribe,
@@ -37,6 +48,7 @@ export function ExerciseShare({
     }
   }
   async function share() {
+    if (!canShare) return copy();
     setStatus('');
     try {
       await navigator.share({ title: name, url: href() });
@@ -47,26 +59,54 @@ export function ExerciseShare({
   }
   return (
     <Stack gap="xs">
-      <Group gap="xs">
-        <Button
-          variant="default"
-          mih={44}
-          leftSection={<IconCopy size={18} />}
-          onClick={() => void copy()}
-        >
-          {m.copyExerciseLink}
-        </Button>
-        {canShare && (
+      {compact ? (
+        <Group gap="xs" wrap="nowrap" justify="space-between">
+          {children}
+          <Group gap={0} wrap="nowrap" style={{ flexShrink: 0 }}>
+            <ActionIcon
+              size={44}
+              variant="subtle"
+              color="gray"
+              title={m.copyExerciseLink}
+              aria-label={`${m.copyExerciseLink}: ${name}`}
+              onClick={() => void copy()}
+            >
+              <IconCopy size={20} />
+            </ActionIcon>
+            <ActionIcon
+              size={44}
+              variant="subtle"
+              color="gray"
+              title={m.shareExercise}
+              aria-label={`${m.shareExercise}: ${name}`}
+              onClick={() => void share()}
+            >
+              <IconShare size={20} />
+            </ActionIcon>
+          </Group>
+        </Group>
+      ) : (
+        <Group gap="xs">
           <Button
-            variant="subtle"
+            variant="default"
             mih={44}
-            leftSection={<IconShare size={18} />}
-            onClick={() => void share()}
+            leftSection={<IconCopy size={18} />}
+            onClick={() => void copy()}
           >
-            {m.shareExercise}
+            {m.copyExerciseLink}
           </Button>
-        )}
-      </Group>
+          {canShare && (
+            <Button
+              variant="subtle"
+              mih={44}
+              leftSection={<IconShare size={18} />}
+              onClick={() => void share()}
+            >
+              {m.shareExercise}
+            </Button>
+          )}
+        </Group>
+      )}
       {status && (
         <Text size="sm" role="status">
           {status}
