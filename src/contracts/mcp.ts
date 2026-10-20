@@ -37,6 +37,18 @@ export const mcpHistoryInput = z
   });
 export type McpHistoryInput = z.infer<typeof mcpHistoryInput>;
 export const mcpProfileInput = z.strictObject({});
+/** Execution evidence, independent of snapshot availability or sync status. */
+export const mcpWorkoutExecutionStatus = z.enum([
+  'planned',
+  'not_started',
+  'in_progress',
+  'completed',
+  'skipped',
+  'unknown',
+]);
+export type McpWorkoutExecutionStatus = z.infer<
+  typeof mcpWorkoutExecutionStatus
+>;
 export const mcpOutput = z.strictObject({
   version: z.literal(1),
   data: z.record(z.string(), z.unknown()),
