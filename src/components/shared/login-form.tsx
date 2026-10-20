@@ -1,5 +1,6 @@
 'use client';
 import { ru } from '@/config/messages';
+import { exerciseReturnTo } from '@/lib/exercise-link';
 import { authClient } from '@/lib/auth-client';
 import { clearClientData, finishPendingLogout } from '@/lib/local-logout';
 import { offlineDeviceMessages } from '@/lib/offline-device';
@@ -32,7 +33,13 @@ export function LoginForm() {
         setError(true);
         return;
       }
-      location.replace('/');
+      const target =
+        exerciseReturnTo(
+          new URLSearchParams(location.search).get('returnTo'),
+        ) ??
+        exerciseReturnTo(location.pathname) ??
+        '/';
+      location.replace(target);
     } catch {
       setError(true);
     } finally {

@@ -5,7 +5,7 @@ export interface ReadResource<T> {
   savedAt?: number;
   coverage: 'complete' | 'partial' | 'missing';
   refreshing: boolean;
-  error?: 'network' | 'unavailable' | 'denied';
+  error?: 'network' | 'unavailable' | 'denied' | 'not-found';
 }
 export interface PersistedRead<T> {
   data: T;
@@ -20,7 +20,7 @@ export interface ReadPersistence<T> {
 }
 export class ReadFailure extends Error {
   constructor(
-    public readonly reason: 'network' | 'unavailable' | 'denied',
+    public readonly reason: 'network' | 'unavailable' | 'denied' | 'not-found',
     public readonly status = 0,
   ) {
     super(reason);
@@ -185,6 +185,7 @@ export class ReadResourceStore<T> {
         const reason = error instanceof ReadFailure ? error.reason : 'network';
         if (
           reason === 'denied' ||
+          reason === 'not-found' ||
           (error instanceof ReadFailure && error.status === 404)
         ) {
           this.publish(key, {

@@ -6,7 +6,7 @@ import { workoutMessages as m } from './messages';
 export function CatalogPage({ ownerId }: { ownerId: string }) {
   return (
     <Stack>
-      <PageHeader>{m.library}</PageHeader>
+      <PageHeader>{m.exerciseCatalog}</PageHeader>
       <ExerciseBrowser ownerId={ownerId} />
     </Stack>
   );

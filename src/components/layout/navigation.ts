@@ -8,6 +8,7 @@ import {
   IconFileText,
   IconSettings,
   IconDots,
+  IconListDetails,
 } from '@tabler/icons-react';
 import { ru } from '@/config/messages';
 const icons = {
@@ -36,18 +37,24 @@ export const mobileSections = [
   section('/workouts'),
   { href: '/more', title: ru.mobileNavigation.more, icon: IconDots },
 ];
+export const exerciseCatalogSection = {
+  href: '/workouts/catalog',
+  title: ru.exerciseCatalog,
+  icon: IconListDetails,
+};
 export const moreSections = [
-  '/measurements',
-  '/analytics',
-  '/anamnesis',
-  '/reports',
-  '/settings',
-].map((href) => sections.find((section) => section.href === href)!);
+  exerciseCatalogSection,
+  ...['/measurements', '/analytics', '/anamnesis', '/reports', '/settings'].map(
+    (href) => sections.find((section) => section.href === href)!,
+  ),
+];
 export function isSectionActive(pathname: string, href: string): boolean {
   if (href === '/more')
     return (
       pathname === '/more' ||
       moreSections.some((section) => isSectionActive(pathname, section.href))
     );
+  if (href === '/workouts' && pathname.startsWith('/workouts/catalog'))
+    return false;
   return pathname === href || (href !== '/' && pathname.startsWith(`${href}/`));
 }

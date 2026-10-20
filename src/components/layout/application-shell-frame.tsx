@@ -11,7 +11,12 @@ import {
   Badge,
   UnstyledButton,
 } from '@mantine/core';
-import { sections, mobileSections, isSectionActive } from './navigation';
+import {
+  sections,
+  mobileSections,
+  isSectionActive,
+  exerciseCatalogSection,
+} from './navigation';
 import classes from './application-shell.module.css';
 import { offlineDeviceMessages } from '@/lib/offline-device';
 import { ru } from '@/config/messages';
@@ -172,6 +177,31 @@ export function ApplicationShellFrame({
                           mb={4}
                           style={{ borderRadius: 'var(--mantine-radius-md)' }}
                         />
+                        {section.href === '/workouts' && (
+                          <NavLink
+                            component={linkComponent as 'a'}
+                            href={exerciseCatalogSection.href}
+                            label={exerciseCatalogSection.title}
+                            leftSection={
+                              <exerciseCatalogSection.icon size={18} />
+                            }
+                            active={
+                              pathname === exerciseCatalogSection.href ||
+                              pathname.startsWith(
+                                `${exerciseCatalogSection.href}/`,
+                              )
+                            }
+                            aria-current={
+                              pathname === exerciseCatalogSection.href
+                                ? 'page'
+                                : undefined
+                            }
+                            pl="xl"
+                            mih={44}
+                            mb={4}
+                            style={{ borderRadius: 'var(--mantine-radius-md)' }}
+                          />
+                        )}
                       </div>
                     );
                   })}

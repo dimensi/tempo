@@ -1,4 +1,7 @@
 'use client';
+import Link from 'next/link';
+import { exercisePageHref } from '@/lib/exercise-link';
+import { ExerciseShare } from './exercise-share';
 import { useEffect, useRef, useState } from 'react';
 import { useDebouncedValue } from '@mantine/hooks';
 import {
@@ -29,6 +32,22 @@ import { ExerciseDetails } from './exercise-details';
 import { exerciseHref, techniqueHref } from './transformmate-exercises';
 import { workoutMessages as m } from './messages';
 import styles from './exercise-browser.module.css';
+
+function ExerciseMuscles({
+  groups,
+}: {
+  groups: TransformMateCatalogItem['muscleGroups'];
+}) {
+  return (
+    <Group gap={6} style={{ flex: 1, minWidth: 0 }}>
+      {groups.map((group) => (
+        <Badge key={group.id} size="sm" variant="light" color="gray">
+          {group.name}
+        </Badge>
+      ))}
+    </Group>
+  );
+}
 
 function ExerciseCard({
   ownerId,
@@ -112,15 +131,30 @@ function ExerciseCard({
       )}
       <Stack gap="sm" p="md">
         <Text component="h2" size="md" fw={650} className={styles.name}>
-          {item.name}
+          {onChoose ? (
+            item.name
+          ) : (
+            <Link
+              href={exercisePageHref(item.id)}
+              style={{
+                color: 'inherit',
+                textUnderlineOffset: '0.2em',
+                display: 'flex',
+                alignItems: 'center',
+                minHeight: 44,
+              }}
+            >
+              {item.name}
+            </Link>
+          )}
         </Text>
-        <Group gap={6}>
-          {enrichedItem.muscleGroups.map((group) => (
-            <Badge key={group.id} size="sm" variant="light" color="gray">
-              {group.name}
-            </Badge>
-          ))}
-        </Group>
+        {onChoose ? (
+          <ExerciseMuscles groups={enrichedItem.muscleGroups} />
+        ) : (
+          <ExerciseShare compact exerciseId={item.id} name={item.name}>
+            <ExerciseMuscles groups={enrichedItem.muscleGroups} />
+          </ExerciseShare>
+        )}
         {onChoose && (
           <Button
             variant={checked ? 'filled' : 'light'}
