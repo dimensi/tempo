@@ -6,6 +6,9 @@ const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
   objects: new Map<string, Uint8Array>(),
   beforeObjectRead: null as null | (() => void),
+  realAuth: null as null | ReturnType<
+    (typeof import('@/server/auth'))['getAuth']
+  >,
 }));
 const database = vi.hoisted(() => ({
   handle: null as null | ReturnType<
@@ -15,7 +18,8 @@ const database = vi.hoisted(() => ({
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/server/auth', () => ({
-  getAuth: () => ({ api: { getSession: async () => state.session } }),
+  getAuth: () =>
+    state.realAuth ?? { api: { getSession: async () => state.session } },
 }));
 vi.mock('@/server/db', async () => {
   const { openDatabase } = await import('@/server/db/connection');
@@ -130,6 +134,15 @@ it('fails closed for generic and selective medical-PDF trainer access, including
     .values({ trainerId, ownerId, createdAt: new Date() })
     .run();
   await assertMedicalPdfGrants();
+  // Extend the existing access-boundary scenario: no extra test case or browser infrastructure.
+  const actual =
+    await vi.importActual<typeof import('@/server/auth')>('@/server/auth');
+  process.env.BETTER_AUTH_URL = 'http://localhost:3000';
+  process.env.BETTER_AUTH_SECRET =
+    'synthetic-mcp-integration-secret-at-least-32';
+  state.realAuth = actual.getAuth();
+  const { assertMcpAccess } = await import('./mcp-checks');
+  await assertMcpAccess(state.realAuth, connection);
 });
 
 async function assertMedicalPdfGrants() {

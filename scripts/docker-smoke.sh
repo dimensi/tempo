@@ -19,6 +19,14 @@ done
 curl -fsS http://127.0.0.1:3311/api/health
 # Exercise the bundled CLI and persisted SQLite inside the real non-root image.
 docker compose exec -T -e CREATE_USER_EMAIL=smoke@example.test -e CREATE_USER_NAME=Smoke -e CREATE_USER_PASSWORD=Smoke-test-password-1234 app node scripts/create-user.mjs
+# Check packaged MCP runtime metadata and closed access.
+docker compose exec -T app node --input-type=module -e '
+const denied=await fetch("http://127.0.0.1:3000/api/mcp",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
+if(denied.status!==401 || !denied.headers.get("www-authenticate")?.includes("oauth-protected-resource")) throw new Error("MCP auth boundary");
+const metadata=await fetch("http://127.0.0.1:3000/.well-known/oauth-protected-resource/api/mcp").then(r=>r.json());
+if(!metadata.resource.endsWith("/api/mcp") || !metadata.scopes_supported.includes("tempo:read")) throw new Error("MCP discovery");
+console.log("Packaged MCP smoke passed");
+'
 docker compose exec -T app node -e "require('node:fs').writeFileSync('/app/uploads/smoke.txt','persistent-upload')"
 docker compose exec -T app node --input-type=module -e "const r=await fetch('http://127.0.0.1:3000/api/auth/sign-in/email',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://nutrition.dimensi.dev'},body:JSON.stringify({email:'smoke@example.test',password:'Smoke-test-password-1234'})});const c=r.headers.get('set-cookie')??'';if(!r.ok||!c.includes('Secure')||!c.includes('HttpOnly')||!c.includes('SameSite=Lax'))process.exit(1)"
 docker compose restart app

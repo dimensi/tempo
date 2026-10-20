@@ -15,8 +15,11 @@ import { transformMateConnectionStatusSchema } from '@/contracts/transformmate-c
 import { workoutPlanSchema, workoutSessionSchema } from '@/contracts/workouts';
 import { measurementPrecisionIssueSchema } from '@/contracts/yazio-body';
 import { z } from 'zod';
+import { mcpClientList, mcpClientCredentials } from '@/contracts/mcp-clients';
 /** Response decoders belong to the transport layer; input validation stays with forms. */
 export const apiResults = {
+  mcpClients: (value: unknown) => mcpClientList.parse(value),
+  mcpCredentials: (value: unknown) => mcpClientCredentials.parse(value),
   replica: (value: unknown) =>
     z.object({ data: transformMateReplicaStatusSchema }).parse(value).data,
   stepsGoal: (value: unknown) => stepsGoalSchema.parse(value),

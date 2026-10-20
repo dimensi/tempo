@@ -1,0 +1,77 @@
+# Tempo MCP v1
+
+## Архитектура и данные
+
+`POST /api/mcp` — stateless Streamable HTTP, официальный `@modelcontextprotocol/server@2.3.1`, Node.js Route Handler существующего Next.js. На запрос создаётся сервер и транспорт, ответ — JSON. Подписки/SSE, MCP-сессии, prompts/resources и запись не предоставляются. GET/DELETE с авторизацией возвращают 405, без неё — 401 с discovery challenge.
+
+Адаптер вызывает существующие `getAnalytics`, `listNutritionDays`, `listWorkouts`, `listTransformMateSync` и read-only accessor цели шагов. SQL и расчёты питания/замеров не копируются. Средние, подтверждённые дни, известная часть нутриентов, неоднозначные точки и темп изменения поступают из того же сервиса, что и `/analytics`. TransformMate читается из сохранённых linked/native DTO: refresh и write engine не вызываются.
+
+В текущей модели сохраняется цель шагов, но нет отдельной цели калорий/веса или антропометрического профиля с ростом/возрастом; MCP возвращает явную недоступность этих полей. Анамнез, медицинские PDF, фотографии, видео, файлы, комментарии и credentials не входят в контракт.
+
+## Инструменты и контракт
+
+Ответ: `{version: 1, data: {...}, next_cursor: string|null}` в `structuredContent` и текстовом JSON. Discovery содержит schemas и read-only annotations.
+
+| Tool              | Summary по умолчанию                                                            | Детализация                                                                  |
+| ----------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| get_profile       | Единицы, OWNER, цель шагов и недоступность несохраняемых целей                  | Без аргументов, имени, почты и credentials                                   |
+| get_nutrition     | Итоги/средние нутриентов, макросы, покрытие                                     | daily: качество и итоги по датам; records: продукты, масса/объём, КБЖУ       |
+| get_body_metrics  | Конечные точки, разница, недельный темп, неоднозначность                        | daily/records: наблюдения, источники, единицы                                |
+| get_activity      | Сумма, среднее шагов по наблюдавшимся дням, цель, покрытие                      | daily/records: даты, шаги или null                                           |
+| get_workouts      | Постраничные LOCAL планы/сессии и linked/native TransformMate                   | records: плановые и фактические подходы отдельно, provider units/values/done |
+| get_data_coverage | Покрытие питания/замеров/шагов, количество сохранённых workout DTO каждого вида | daily/records: качество питания и наличие шагов по датам                     |
+
+Исторические аргументы: `from`, `to` включительно (YYYY-MM-DD); `timezone` (IANA, default UTC); `detail` (summary/daily/records, default summary); `limit` (1–50, default 20); `cursor`. Максимум 366 дней, для records — 31 день. Даты источников остаются календарными; timezone не переносит запись на другой день. Неизвестные поля, включая ownerId, отвергаются. Годы ограничены 1901–9998 для корректного предыдущего аналитического периода.
+
+Сводки относятся ко всему диапазону, records — к странице. Для get_workouts даже summary постраничный; остальные summary не принимают cursor. Следующая страница повторяет tool, диапазон, timezone и detail с `next_cursor`. Cursor HMAC-подписан, привязан к владельцу/запросу, живёт час. Это живое представление, не snapshot: после изменения исходных записей между страницами начните чтение заново. Не суммируйте агрегаты между страницами.
+
+КБЖУ и измерения сохраняют десятичные строки, шаги по датам — integer/null. Единицы есть в units, метриках и подходах. `null` означает неизвестное/отсутствующее, `0`/`"0"` — подтверждённый ноль. Питание различает complete/partial/empty/missing. Сохранённый пустой дневник не доказывает голодание и исключён из средних; knownTotals не заменяет полные totals. Пропуск замера не означает нулевой вес.
+
+Workouts сохраняют kind и связи planId/workoutId. LOCAL план и linked-запись могут описывать одну тренировку — их нельзя считать двумя выполненными. Status сессии, provider started/finished, plan/fact и done не взаимозаменяемы. Пустая история не доказывает отдых, полнота upstream неизвестна. Обновление источников остаётся обычной функцией Tempo.
+
+## OAuth и ограничения
+
+Better Auth OAuth Provider 1.7.7 работает в той же SQLite на текущем HTTPS-origin. Миграция 0019 аддитивно создаёт OAuth-таблицы. Регистрация пользователей и dynamic client registration отключены. Владелец в настройках создаёт конфиденциального клиента с точным HTTPS callback, PKCE S256 и явным consent.
+
+Scope данных — `tempo:read`; `offline_access` разрешает refresh, не меняя offline-кеш приложения. Code живёт 5 минут, opaque access token — 15 минут, refresh — до 30 дней с ротацией без окна повторного использования. Связанная сессия Tempo также обязательна (обычно 7 дней); после её завершения нужно переподключение. Provider хранит хеши токенов, client secret шифруется текущим BETTER_AUTH_SECRET. OAuth flow и криптография предоставлены библиотекой.
+
+На каждом запросе проверяются token, issuer, audience внешнего `/api/mcp`, scope, срок, отсутствие DPoP-binding, клиент, сессия и текущая роль OWNER. Владельца задаёт проверенный token. Сервисы повторяют проверку до/после чтения. Серверный WeakMap связывает конкретный объект Headers с read principal; входным заголовком эту привилегию создать нельзя. В MCP-ветке authorize разрешены только nutrition:read, measurements:read, workouts:read — запись, medical и export запрещены даже при ошибочном вызове другого сервиса. Browser API не начинают принимать MCP Bearer. Cookie на `/api/mcp` недостаточно.
+
+Лимиты одного Node-процесса: 120 HTTP попыток/минуту суммарно; 30 авторизованных POST/минуту; 2 одновременных запроса; body 16 KiB и 5 секунд загрузки; 50 строк и около 48 KB строк/страницу. Structured JSON — максимум 64 KB (текстовая копия может удвоить wire payload). JSON-RPC batches отвергаются. Native история ограничена 40 страницами по 50 DTO, проекции — 10 000 строками. При превышении сузьте период; слишком большая отдельная запись требует summary. Лимиты памяти сбрасываются при рестарте; volumetric DoS должен отсекаться ingress.
+
+HTTP: 401 с WWW-Authenticate для отсутствующего/недействительного token, 403 для scope/origin, 429 с Retry-After, 400 для malformed/oversize body, 415 для Content-Type. При наличии Origin разрешён только внешний origin Tempo. Безопасные tool errors: invalid_cursor, narrow_range, use_summary, access_denied, data_unavailable. Адаптер не логирует token, аргументы или аналитические ответы. На ingress также нельзя включать логирование Authorization, OAuth query и тел запросов/ответов.
+
+## Подключение ChatGPT
+
+Сверено с [официальной документацией OpenAI OAuth](https://developers.openai.com/plugins/build/auth). Приёмка конкретного аккаунта ChatGPT выполняется после публикации HTTPS endpoint; локальный тест протокола её не заменяет.
+
+1. В управлении MCP ChatGPT добавьте `https://<tempo-host>/api/mcp`, выберите OAuth с заранее зарегистрированными credentials. Скопируйте **точный callback URL** своего подключения; не угадывайте его и не используйте wildcard.
+2. В Tempo откройте **Настройки → AI-подключения · MCP** (`/settings#mcp`). Скопируйте адрес сервера, введите название и точный HTTPS Callback URL из ChatGPT. Нажмите «Создать подключение». Client ID и Client Secret появятся один раз; перенесите их в защищённые поля ChatGPT и закройте показ секрета. Секрет не сохраняется в браузерном кеше. Здесь же доступен список своих подключений и отзыв с подтверждением; TRAINER не может открыть API управления. Создание ограничено 20 клиентами за сутки и 50 активными клиентами на владельца. Список ограничен последними 100 регистрациями.
+
+3. Перенесите client_id/client_secret из файла в защищённые поля OAuth клиента: auth method `client_secret_post`, scope `tempo:read offline_access`, PKCE S256. Не помещайте credentials или access token в prompt, сообщения, Git и логи.
+4. Discovery: `/.well-known/oauth-protected-resource/api/mcp` → issuer `https://<tempo-host>/api/auth` → `/.well-known/oauth-authorization-server/api/auth`. Authorization/token/revoke: `/api/auth/oauth2/authorize`, `/api/auth/oauth2/token`, `/api/auth/oauth2/revoke`. Resource authorize/token — точный HTTPS `/api/mcp`.
+5. Подключитесь, войдите OWNER на Tempo и подтвердите чтение. TRAINER не получает доступ даже с trainer_access. После подключения проверьте шесть инструментов и короткий запрос покрытия.
+
+Если конкретная поверхность клиента требует только CIMD/DCR и не принимает provided credentials, она не совместима с закрытой registration policy v1. Не включайте открытую регистрацию как обход: используйте интерфейс с заранее зарегистрированным клиентом. End-to-end проверка именно ChatGPT остаётся отдельной приёмкой на опубликованном endpoint.
+
+Для немедленного отключения откройте Настройки → AI-подключения · MCP, выберите подключение и подтвердите «Отозвать доступ».
+
+Disabled проверяется при каждом чтении и refresh, включая после рестарта. Для нового подключения создайте новый client. AI-клиент может отзывать токены стандартным revoke endpoint. Выход из связанной сессии Tempo прекращает MCP-доступ.
+
+## Деплой и проверка
+
+Используйте [существующий Coolify/GHCR rollout](../deployment-cd.md). Новый сервис, порт, volume, внешний OAuth-provider и scheduler не нужны. Сохраните BETTER_AUTH_SECRET, BETTER_AUTH_URL, SQLite и uploads. Сделайте обычный backup БД; image entrypoint применит миграцию до Next.js. Не добавляйте второй migration command.
+
+До merge: Full `pnpm verify:merge` на чистом финальном коммите, `docker build -t nutrition-foundation .`, disposable `bash scripts/docker-smoke.sh`. Merge/deploy требуют отдельной авторизации. После разрешённого deploy проверьте revision/health, metadata 200 и анонимный MCP 401 с challenge. Затем создайте реального OAuth client. Production tokens не нужны для CI.
+
+Не заменяйте `/api/mcp` и `/.well-known` cookie-login редиректами и не удаляйте Authorization/WWW-Authenticate на ingress. Supported deployment остаётся одним процессом SQLite WAL. При смене public host создайте ресурс/client заново; старый audience не сохраняется как fallback.
+
+## Примеры запросов
+
+- «Проверь полноту данных за 1–14 октября, затем покажи средние калории и белок по подтверждённым данным».
+- «Как изменились вес и талия за 90 дней? Отметь неоднозначные точки и источники».
+- «Сравни шаги за две недели с числом наблюдавшихся дней».
+- «Покажи плановые и фактические подходы за неделю отдельно. Не считай LOCAL план и TransformMate-копию двумя тренировками».
+- «Найди частичные дневники, затем запроси продукты только за эти даты».
+
+Пример arguments: `{"from":"2026-10-01","to":"2026-10-14","detail":"summary","timezone":"Europe/Moscow"}`. Для следующей страницы повторите аргументы и передайте next_cursor как cursor.

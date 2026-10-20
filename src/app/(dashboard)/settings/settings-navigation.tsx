@@ -7,6 +7,7 @@ import { ru } from '@/config/messages';
 import { transformMateConnectionMessages } from '@/contracts/transformmate-connection';
 import classes from './settings.module.css';
 import { offlineMessages } from '@/config/offline';
+import { mcpMessages } from '@/config/mcp-messages';
 
 const sections = [
   { id: 'appearance', label: ru.appearance.title },
@@ -15,6 +16,7 @@ const sections = [
   { id: 'transformmate', label: transformMateConnectionMessages.title },
   { id: 'trainers', label: ru.trainerSettings },
   { id: 'steps-goal', label: stepsGoalMessages.title },
+  { id: 'mcp', label: mcpMessages.settingsTitle },
   { id: 'offline', label: offlineMessages.downloads.title },
 ];
 

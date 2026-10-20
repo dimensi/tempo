@@ -7,7 +7,7 @@ import { offlineDeviceMessages } from '@/lib/offline-device';
 import { Alert, Button, PasswordInput, Stack, TextInput } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useState } from 'react';
-export function LoginForm() {
+export function LoginForm({ returnTo }: { returnTo?: string } = {}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const [cleanupError, setCleanupError] = useState(false);
@@ -34,6 +34,7 @@ export function LoginForm() {
         return;
       }
       const target =
+        returnTo ??
         exerciseReturnTo(
           new URLSearchParams(location.search).get('returnTo'),
         ) ??

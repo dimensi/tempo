@@ -29,6 +29,11 @@ function read(ownerId: string) {
 export async function getStepsGoal(headers: Headers) {
   return read(await ownerScope(headers));
 }
+export async function getReadStepsGoal(headers: Headers, ownerId: string) {
+  const access = await authorize(headers, 'measurements:read', ownerId);
+  if (!access.ok) throw new StepsGoalError(access.status);
+  return read(ownerId);
+}
 export async function saveStepsGoal(headers: Headers, input: unknown) {
   const ownerId = await ownerScope(headers);
   const value = stepsGoalSchema.parse(input);

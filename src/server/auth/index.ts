@@ -5,11 +5,19 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { getDatabase } from '../db';
 import { readServerEnv } from '../env';
 import * as schema from '../db/schema';
+import * as oauthSchema from '../db/schema/oauth';
+import { oauthProvider } from '@better-auth/oauth-provider';
+import { mcpOAuthOptions, mcpTokenVerifier } from './mcp-oauth';
 let instance: ReturnType<typeof createAuth> | undefined;
 function createAuth() {
   const env = readServerEnv();
+  const oauth = mcpOAuthOptions();
   return betterAuth({
-    database: drizzleAdapter(getDatabase().db, { provider: 'sqlite', schema }),
+    database: drizzleAdapter(getDatabase().db, {
+      provider: 'sqlite',
+      schema: { ...schema, ...oauthSchema },
+    }),
+    plugins: [oauthProvider(oauth), mcpTokenVerifier(oauth)],
     baseURL: env.BETTER_AUTH_URL,
     secret:
       env.BETTER_AUTH_SECRET ??
