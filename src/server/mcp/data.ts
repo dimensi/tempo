@@ -8,8 +8,13 @@ import { listTransformMateSync } from '@/server/workouts/transformmate/service';
 import { getReadStepsGoal } from '@/server/settings/steps-goal';
 import { measurementMetrics } from '@/contracts/measurements';
 import { healthRangeDates } from '@/contracts/health';
-import type { McpHistoryInput, McpTool } from '@/contracts/mcp';
+import type {
+  McpHistoryInput,
+  McpTool,
+  McpWorkoutExecutionStatus,
+} from '@/contracts/mcp';
 import { McpReadError, pageRows, readOffset } from './pagination';
+import { providerExecutionStatus } from './workout-execution';
 
 async function check(headers: Headers, ownerId: string) {
   for (const permission of [
@@ -88,6 +93,9 @@ export async function readMcpData(
     const workoutRows: Array<{
       date: string;
       kind: string;
+      executionStatus: McpWorkoutExecutionStatus;
+      planId?: string | null;
+      workoutId?: string | null;
       id: string | number;
       [key: string]: unknown;
     }> = [
@@ -102,6 +110,7 @@ export async function readMcpData(
             date: w.date,
             title: w.title,
             coverage: 'planned_only',
+            executionStatus: 'planned' as const,
             ...(detail === 'records'
               ? {
                   exercises: w.exercises.map((e) => ({
@@ -122,7 +131,7 @@ export async function readMcpData(
           workoutId: s.plannedWorkoutId,
           date: s.date,
           title: s.title,
-          status: s.status,
+          executionStatus: s.status,
           coverage: s.status === 'completed' ? 'recorded' : 'partial',
           ...(detail === 'records'
             ? {
@@ -135,37 +144,50 @@ export async function readMcpData(
         })),
       ...remote.items
         .filter((i) => within(i.actual?.date ?? i.planSnapshot.workout.date))
-        .map((i) => ({
-          kind: 'linked',
-          source: 'TransformMate',
-          id: i.id,
-          planId: i.planId,
-          workoutId: i.workoutId,
-          date: i.actual?.date ?? i.planSnapshot.workout.date,
-          title: i.actual?.title ?? i.planSnapshot.workout.title,
-          checkedAt: i.checkedAt,
-          coverage: i.actual ? 'recorded' : 'missing',
-          ...(detail === 'records'
-            ? {
-                plannedExercises: (
-                  i.publishedSnapshot ?? i.planSnapshot
-                ).workout.exercises.map((e) => ({
-                  name: e.name,
-                  plannedSets: e.sets,
-                })),
-                actual: i.actual
-                  ? {
-                      started: i.actual.started,
-                      finished: i.actual.finished,
-                      exercises: i.actual.exercises.map((e) => ({
-                        name: e.name,
-                        actualSets: e.sets,
-                      })),
-                    }
-                  : null,
-              }
-            : {}),
-        })),
+        .map((i) => {
+          const executionStatus = providerExecutionStatus(
+            i.actual,
+            i.actual?.exercises.flatMap((e) => e.sets) ?? [],
+          );
+          return {
+            kind: 'linked',
+            source: 'TransformMate',
+            id: i.id,
+            planId: i.planId,
+            workoutId: i.workoutId,
+            date: i.actual?.date ?? i.planSnapshot.workout.date,
+            title: i.actual?.title ?? i.planSnapshot.workout.title,
+            checkedAt: i.checkedAt,
+            executionStatus,
+            coverage: !i.actual
+              ? 'missing'
+              : executionStatus === 'not_started'
+                ? 'empty'
+                : executionStatus === 'completed'
+                  ? 'recorded'
+                  : 'partial',
+            ...(detail === 'records'
+              ? {
+                  plannedExercises: (
+                    i.publishedSnapshot ?? i.planSnapshot
+                  ).workout.exercises.map((e) => ({
+                    name: e.name,
+                    plannedSets: e.sets,
+                  })),
+                  actual: i.actual
+                    ? {
+                        started: i.actual.started,
+                        finished: i.actual.finished,
+                        exercises: i.actual.exercises.map((e) => ({
+                          name: e.name,
+                          actualSets: e.sets,
+                        })),
+                      }
+                    : null,
+                }
+              : {}),
+          };
+        }),
     ];
     let nativePage = remote.nativePage;
     let pages = 0;
@@ -181,6 +203,12 @@ export async function readMcpData(
           finished: i.finished,
           progress: i.progress,
           fetchedAt: i.fetchedAt,
+          executionStatus: providerExecutionStatus(
+            i,
+            i.exercises.flatMap((e) =>
+              e.metrics.filter((m) => m.type === 'fact').flatMap((m) => m.sets),
+            ),
+          ),
           coverage: 'provider_snapshot',
           ...(detail === 'records'
             ? {
@@ -208,14 +236,33 @@ export async function readMcpData(
         a.kind.localeCompare(b.kind) ||
         String(a.id).localeCompare(String(b.id)),
     );
+    const completed = workoutRows.filter(
+      (row) => row.executionStatus === 'completed',
+    );
+    // A plan link is not a session identity: do not silently merge two confirmed facts.
+    const completionCountAmbiguous = completed.some(
+      (row) =>
+        row.kind === 'linked' &&
+        completed.some(
+          (other) =>
+            other.kind === 'session' &&
+            other.planId === row.planId &&
+            other.workoutId === row.workoutId &&
+            other.date === row.date,
+        ),
+    );
     const paged = pageRows(workoutRows, offset, limit, binding);
     data = {
       range,
       units,
       sources: ['LOCAL', 'TransformMate'],
+      summary: {
+        completedSessions: completionCountAmbiguous ? null : completed.length,
+        completionCountAmbiguous,
+      },
       coverage: {
         scope: 'locally_saved_records',
-        counts: Object.fromEntries(
+        recordCounts: Object.fromEntries(
           ['plan', 'session', 'linked', 'native'].map((kind) => [
             kind,
             workoutRows.filter((row) => row.kind === kind).length,
@@ -223,7 +270,7 @@ export async function readMcpData(
         ),
         upstreamCompleteness: 'unknown',
         noRecordsMeans: 'no_saved_workout_not_confirmed_rest',
-        linkedPlansMayAlsoAppearAsLocal: true,
+        executionStatusRequiredForCounting: true,
       },
       records: paged.records,
     };

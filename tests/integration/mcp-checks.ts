@@ -25,6 +25,8 @@ import {
   listMcpClients,
   revokeMcpClient,
 } from '@/server/mcp/clients';
+import { workoutTransformMateLinks } from '@/server/db/schema/transformmate';
+import { syncStateSchema } from '@/server/workouts/transformmate/state';
 import { workoutRepository } from '@/server/workouts/repository';
 import {
   meals,
@@ -312,6 +314,7 @@ export async function assertMcpAccess(
         records: [
           {
             kind: 'plan',
+            executionStatus: 'planned',
             exercises: [{ plannedSets: [{ reps: 8, weightKg: 40 }] }],
           },
         ],
@@ -332,11 +335,137 @@ export async function assertMcpAccess(
         records: [
           {
             kind: 'session',
+            executionStatus: 'completed',
             exercises: [{ actualSets: [{ reps: 6, weightKg: 45 }] }],
           },
         ],
       },
     });
+    // A provider fact container can be an untouched draft, not another session.
+    const linkId = randomUUID();
+    const state = syncStateSchema.parse({
+      version: 1,
+      workout: plan.workouts[0],
+      planTitle: plan.title,
+      marker: `[yazio-dashboard:${linkId}]`,
+      attempted: true,
+      status: 'synced',
+      reason: null,
+      expected: null,
+      baseline: null,
+      occurrences: [],
+      checkedAt: null,
+      actual: null,
+    });
+    connection.db
+      .insert(workoutTransformMateLinks)
+      .values({
+        id: linkId,
+        ownerId: 'owner',
+        planId: plan.id,
+        workoutId: 'mcp-squat',
+        remoteTrainingId: 123,
+        state: JSON.stringify(state),
+        createdAt: '2026-10-01T00:00:00Z',
+        updatedAt: '2026-10-01T00:00:00Z',
+      })
+      .run();
+    const actual = {
+      date: '2026-10-01',
+      title: 'Strength',
+      started: null,
+      finished: null,
+      exercises: [
+        {
+          occurrenceKey: null,
+          exerciseId: 1,
+          name: 'Squat',
+          comment: '',
+          sets: [{ order: 1, done: false, metrics: [] }],
+        },
+      ],
+    };
+    for (const evidence of [
+      {
+        actual: null,
+        executionStatus: 'unknown',
+        coverage: 'missing',
+        completedSessions: 1,
+      },
+      {
+        actual,
+        executionStatus: 'not_started',
+        coverage: 'empty',
+        completedSessions: 1,
+      },
+      {
+        actual: {
+          ...actual,
+          exercises: [
+            {
+              ...actual.exercises[0],
+              sets: [
+                {
+                  order: 1,
+                  done: false,
+                  metrics: [
+                    {
+                      name: 'Weight',
+                      unit: 'kg',
+                      type: 'straight',
+                      values: ['0'],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        executionStatus: 'in_progress',
+        coverage: 'partial',
+        completedSessions: 1,
+      },
+      {
+        actual: { ...actual, finished: '2026-10-01T12:00:00Z' },
+        executionStatus: 'completed',
+        coverage: 'recorded',
+        completedSessions: null,
+      },
+    ]) {
+      connection.db
+        .update(workoutTransformMateLinks)
+        .set({
+          state: JSON.stringify(
+            syncStateSchema.parse({ ...state, actual: evidence.actual }),
+          ),
+        })
+        .where(eq(workoutTransformMateLinks.id, linkId))
+        .run();
+      // Default compact responses must be sufficient; limit=1 must not truncate the total.
+      const result = await mcp.callTool({
+        name: 'get_workouts',
+        arguments: { ...range, limit: 1 },
+      });
+      expect(result.structuredContent).toMatchObject({
+        data: {
+          summary: {
+            completedSessions: evidence.completedSessions,
+            completionCountAmbiguous: evidence.completedSessions === null,
+          },
+          records: [
+            {
+              kind: 'linked',
+              executionStatus: evidence.executionStatus,
+              coverage: evidence.coverage,
+            },
+          ],
+        },
+      });
+    }
+    connection.db
+      .delete(workoutTransformMateLinks)
+      .where(eq(workoutTransformMateLinks.id, linkId))
+      .run();
     const analytics = await getAnalytics(headers, 'owner', range);
     const nutrition = await mcp.callTool({
       name: 'get_nutrition',
