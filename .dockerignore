@@ -21,6 +21,7 @@
 !scripts/seed.ts
 !scripts/anamnesis-pdf-smoke.ts
 !scripts/transformmate-media-smoke.ts
+!scripts/mcp-client.ts
 !scripts/pdf-runtime-smoke.mjs
 
 # Generated output and documentation stay out even inside admitted directories.
