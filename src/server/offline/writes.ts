@@ -18,6 +18,7 @@ async function owner(headers: Headers) {
     const access = await authorize(headers, permission, session.user.id);
     if (!access.ok) throw new OfflineWriteError(access.status);
     if (
+      !access.session.session ||
       access.session.user.role !== 'OWNER' ||
       new Date(access.session.session.expiresAt).getTime() <= Date.now() ||
       access.session.session.id !== session.session.id ||
