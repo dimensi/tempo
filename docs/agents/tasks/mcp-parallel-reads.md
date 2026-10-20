@@ -1,0 +1,9 @@
+# MCP parallel reads
+
+- Objective: ordinary ChatGPT multi-tool analytics must not lose sections to transport admission limits.
+- Reproduction: six concurrent calls through the connected production Tempo yielded two successful sections and rate_limited/connection errors for the rest; response contents were not logged.
+- Verification tier: **Full**, chosen before runtime changes because the shared authenticated MCP request path and limiter behavior change.
+- Owned paths: src/server/mcp/http.ts, tests/integration/mcp-checks.ts, docs/architecture/mcp.md and this task note. Follow-up adds independent persistent OAuth offline_access: auth/mcp-oauth.ts, auth/data-session.ts, the necessary null-session write guard, and Settings lifetime copy. No data-contract, dependency, schema or infrastructure changes.
+- Contract: per user follow-up, remove HTTP-attempt, tool-call-rate and concurrent-request throttles entirely. No queue. Per the explicit user request, detach offline_access from browser sessions and use a 100-year formal refresh TTL (the provider requires finite expiry), retaining short access tokens and rotation. Preserve OWNER/OAuth checks, request body bounds and date/pagination/response-size contracts.
+- Tests: extend the existing authorization case with six concurrent tool calls, more than 120 discovery calls and more than 30 actual reads, long refresh lifetime and access/refresh after browser-session deletion, with explicit client revocation still effective. Added/removed/consolidated cases: 0/0/0. Confirmed the old transport fails with rate_limited for the fan-out. Run Full on the final clean commit. No new E2E infrastructure.
+- Release scope: the user requested changes to the already connected personal production MCP (remove throttles and keep access until revoked). Carry this focused follow-up through a narrow PR and the existing authorized GitHub/Coolify release flow, then verify through the actual connected Tempo tools.

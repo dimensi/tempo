@@ -30,14 +30,6 @@ const descriptions = {
   get_data_coverage:
     'Coverage of saved nutrition, weight, circumferences and steps; unavailable is distinct from empty. daily/records: per-date nutrition/step coverage. Workout upstream completeness cannot be proven from local history.',
 };
-const budget = { started: 0, attempts: 0, reads: 0, active: 0 };
-function tick() {
-  if (Date.now() - budget.started >= 60000) {
-    budget.started = Date.now();
-    budget.attempts = 0;
-    budget.reads = 0;
-  }
-}
 async function readRpcBody(request: Request) {
   if (!request.body) throw new Error('Missing body');
   const reader = request.body.getReader();
@@ -76,7 +68,6 @@ function failure(status: number, error: string) {
               'WWW-Authenticate': `Bearer resource_metadata="${new URL('/.well-known/oauth-protected-resource/api/mcp', mcpResource()).href}", scope="tempo:read"${error === 'insufficient_scope' ? ', error="insufficient_scope"' : ''}`,
             }
           : {}),
-        ...(status === 429 ? { 'Retry-After': '60' } : {}),
       },
     },
   );
@@ -85,8 +76,6 @@ export async function handleMcp(request: Request) {
   const origin = new URL(readServerEnv().BETTER_AUTH_URL).origin;
   if (request.headers.has('origin') && request.headers.get('origin') !== origin)
     return failure(403, 'invalid_origin');
-  tick();
-  if (++budget.attempts > 120) return failure(429, 'rate_limited');
   const token = /^Bearer ([A-Za-z0-9._~+/-]+=*)$/i.exec(
     request.headers.get('authorization') ?? '',
   )?.[1];
@@ -113,11 +102,8 @@ export async function handleMcp(request: Request) {
       status: 405,
       headers: { ...noStore, Allow: 'POST' },
     });
-  if (++budget.reads > 30 || budget.active >= 2)
-    return failure(429, 'rate_limited');
   if (request.headers.get('content-type')?.split(';')[0] !== 'application/json')
     return failure(415, 'json_required');
-  budget.active++;
   const server = new McpServer(
     { name: 'tempo', version: '1.0.0' },
     {
@@ -191,10 +177,6 @@ export async function handleMcp(request: Request) {
   } catch {
     return failure(400, 'invalid_request');
   } finally {
-    try {
-      await server.close();
-    } finally {
-      budget.active--;
-    }
+    await server.close();
   }
 }

@@ -7,7 +7,11 @@ import {
 } from '@modelcontextprotocol/client';
 import { eq } from 'drizzle-orm';
 import { account, session, user } from '@/server/db/schema';
-import { oauthAccessToken, oauthClient } from '@/server/db/schema/oauth';
+import {
+  oauthAccessToken,
+  oauthClient,
+  oauthRefreshToken,
+} from '@/server/db/schema/oauth';
 import { nutritionDays } from '@/server/db/schema/nutrition';
 import { yazioDailySteps } from '@/server/db/schema/yazio-health';
 import { getAnalytics } from '@/server/analytics';
@@ -158,6 +162,17 @@ export async function assertMcpAccess(
   const tokens = await exchanged.json();
   expect(tokens.access_token).toBeTruthy();
   expect(tokens.refresh_token).toBeTruthy();
+  const persistentRefresh = connection.db
+    .select()
+    .from(oauthRefreshToken)
+    .get()!;
+  expect(persistentRefresh.sessionId).toBeNull();
+  expect(persistentRefresh.expiresAt.getTime()).toBeGreaterThan(
+    Date.now() + 99 * 365 * 86400000,
+  );
+  expect(
+    connection.db.select().from(oauthAccessToken).get()!.sessionId,
+  ).toBeNull();
   await auth.api.verifyTempoToken({ body: { token: tokens.access_token } });
   const headers = new Headers();
   bindMcpReader(headers, () =>
@@ -355,22 +370,29 @@ export async function assertMcpAccess(
         ],
       },
     });
-    for (const name of [
-      'get_profile',
-      'get_body_metrics',
-      'get_activity',
-      'get_workouts',
-      'get_data_coverage',
-    ]) {
-      const result = await mcp.callTool({
+    // ChatGPT fans out a single analytics question across all six tools.
+    const parallel = await Promise.all(
+      mcpTools.map(async (name) => ({
         name,
-        arguments: name === 'get_profile' ? {} : range,
-      });
+        result: await mcp.callTool({
+          name,
+          arguments: name === 'get_profile' ? {} : range,
+        }),
+      })),
+    );
+    for (const { name, result } of parallel) {
       expect(result.isError, name).toBeFalsy();
       expect(JSON.stringify(result)).not.toMatch(
         /secret|@example|storageKey|password/,
       );
     }
+    // Personal MCP has no HTTP, tool-call or parallelism throttle.
+    for (let i = 0; i < 121; i++)
+      expect((await mcp.listTools()).tools).toHaveLength(6);
+    for (let i = 0; i < 31; i++)
+      expect(
+        (await mcp.callTool({ name: 'get_profile', arguments: {} })).isError,
+      ).toBeFalsy();
     const activity = await readMcpData(
       'get_activity',
       headers,
@@ -566,14 +588,23 @@ export async function assertMcpAccess(
   expect((await handleMcp(request(fresh.access_token))).status).toBe(401);
   await auth.api.verifyTempoToken({ body: { token: tokens.access_token } });
   connection.db.delete(session).where(eq(session.userId, 'owner')).run();
-  await expect(
-    auth.api.verifyTempoToken({ body: { token: tokens.access_token } }),
-  ).rejects.toBeDefined();
+  await auth.api.verifyTempoToken({ body: { token: tokens.access_token } });
+  const afterLogout = await tokenRequest({
+    grant_type: 'refresh_token',
+    refresh_token: fresh.refresh_token,
+  });
+  expect(afterLogout.ok).toBe(true);
+  const independent = await afterLogout.json();
+  await auth.api.verifyTempoToken({
+    body: { token: independent.access_token },
+  });
+  await revokeMcpClient(await signIn('owner'), { clientId: client.client_id });
+  expect((await handleMcp(request(independent.access_token))).status).toBe(401);
   expect(
     (
       await tokenRequest({
         grant_type: 'refresh_token',
-        refresh_token: fresh.refresh_token,
+        refresh_token: independent.refresh_token,
       })
     ).ok,
   ).toBe(false);
@@ -587,8 +618,4 @@ export async function assertMcpAccess(
       })
     ).ok,
   ).toBe(false);
-  let lastStatus = 0;
-  for (let i = 0; i < 121 && lastStatus !== 429; i++)
-    lastStatus = (await handleMcp(request())).status;
-  expect(lastStatus).toBe(429);
 }
