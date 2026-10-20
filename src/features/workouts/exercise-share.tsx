@@ -1,13 +1,7 @@
 'use client';
 import { useState, useSyncExternalStore, type ReactNode } from 'react';
-import {
-  ActionIcon,
-  Button,
-  Group,
-  Stack,
-  Text,
-  TextInput,
-} from '@mantine/core';
+import { ActionIcon, Button, Group, Stack, TextInput } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { IconCopy, IconShare } from '@tabler/icons-react';
 import { exercisePageHref } from '@/lib/exercise-link';
 import { workoutMessages as m } from './messages';
@@ -33,28 +27,29 @@ export function ExerciseShare({
     serverSupportsShare,
   );
   const [manual, setManual] = useState('');
-  const [status, setStatus] = useState('');
   const href = () =>
     new URL(exercisePageHref(exerciseId), location.origin).href;
   async function copy() {
-    setStatus('');
     setManual('');
     const url = href();
     try {
       await navigator.clipboard.writeText(url);
-      setStatus(m.exerciseLinkCopied);
+      notifications.show({
+        message: m.exerciseLinkCopied,
+        color: 'teal',
+        autoClose: 2000,
+      });
     } catch {
       setManual(url);
     }
   }
   async function share() {
     if (!canShare) return copy();
-    setStatus('');
     try {
       await navigator.share({ title: name, url: href() });
     } catch (error) {
       if (!(error instanceof Error && error.name === 'AbortError'))
-        setStatus(m.exerciseShareFailed);
+        notifications.show({ message: m.exerciseShareFailed, color: 'red' });
     }
   }
   return (
@@ -62,7 +57,7 @@ export function ExerciseShare({
       {compact ? (
         <Group gap="xs" wrap="nowrap" justify="space-between">
           {children}
-          <Group gap={0} wrap="nowrap" style={{ flexShrink: 0 }}>
+          <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
             <ActionIcon
               size={44}
               variant="subtle"
@@ -106,11 +101,6 @@ export function ExerciseShare({
             </Button>
           )}
         </Group>
-      )}
-      {status && (
-        <Text size="sm" role="status">
-          {status}
-        </Text>
       )}
       {manual && (
         <TextInput

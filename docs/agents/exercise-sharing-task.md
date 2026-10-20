@@ -15,3 +15,5 @@
 - Replace the two large card buttons with two distinct 44px icon buttons (copy and share) beside muscle badges; retain page actions and clipboard fallback.
 - Verification tier: Isolated, bounded workout UI only. Formatting, component ESLint, typecheck, production build and existing authenticated browser smoke in a disposable checkout, leaving the live preview and local data running.
 - Cases added/removed/consolidated: 0/0/0; extend the existing smoke to exercise the compact copy control and fallback.
+
+- Follow-up: keep an 8px gap between icon buttons; show copy confirmation and share failures through the existing Mantine Notifications provider, preserving manual-copy fallback. Isolated verification; no new/removed/consolidated test cases.

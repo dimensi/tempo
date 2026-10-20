@@ -91,7 +91,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .getByRole('button', { name: 'Скопировать ссылку', exact: true })
     .click();
   await expect(
-    page.getByRole('status').filter({ hasText: 'Ссылка скопирована' }),
+    page.getByRole('alert').filter({ hasText: 'Ссылка скопирована' }),
   ).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     `${testOrigin}/workouts/catalog/501`,
