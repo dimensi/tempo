@@ -52,7 +52,10 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
   ) as {
     entries: { tag: string }[];
   };
-  const entries = journal.entries.slice(0, -2);
+  const replicaStart = journal.entries.findIndex(
+    (e) => e.tag === '0017_clean_changeling',
+  );
+  const entries = journal.entries.slice(0, replicaStart);
   if (!entries.length) throw new Error('Expected a prior migration');
   mkdirSync(join(legacy, 'meta'), { recursive: true });
   writeFileSync(
@@ -127,7 +130,7 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
     state.run('owner', 'account', 'old', 'ru', '2026-01-01T00:00:00Z', 1);
     state.run('owner', 'account', 'new', 'ru', '2026-02-01T00:00:00Z', 1);
     // Upgrade the original catalog first, then preserve a deployed replica job through stage-error migration.
-    const replicaEntries = journal.entries.slice(0, -1);
+    const replicaEntries = journal.entries.slice(0, replicaStart + 1);
     writeFileSync(
       join(legacy, 'meta/_journal.json'),
       JSON.stringify({ ...journal, entries: replicaEntries }),

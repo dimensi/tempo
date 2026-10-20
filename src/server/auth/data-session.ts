@@ -1,0 +1,20 @@
+import 'server-only';
+import { getAuth } from '@/server/auth';
+
+type Session = NonNullable<
+  Awaited<ReturnType<ReturnType<typeof getAuth>['api']['getSession']>>
+>;
+// Object identity, never a client-provided header, carries the verified MCP scope.
+const readers = new WeakMap<Headers, () => Promise<Session>>();
+export function bindMcpReader(headers: Headers, read: () => Promise<Session>) {
+  readers.set(headers, read);
+}
+export function isMcpReader(headers: Headers) {
+  return readers.has(headers);
+}
+export async function getDataSession(headers: Headers) {
+  const read = readers.get(headers);
+  return read
+    ? read().catch(() => null)
+    : getAuth().api.getSession({ headers });
+}
