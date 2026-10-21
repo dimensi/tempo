@@ -163,6 +163,60 @@ export const anamnesisCatalog: CatalogMarker[] = [
       'тиреотропный гормон (ТТГ)',
     ],
   },
+  {
+    id: 'glucose',
+    specimen: 'blood',
+    code: 'GLU',
+    name: 'Глюкоза (кровь)',
+    shortName: 'Глюкоза',
+    category: 'biochemistry',
+    description: null,
+    preferredUnit: 'ммоль/л',
+    aliases: ['Глюкоза', 'Глюкоза крови', 'Глюкоза в крови', 'glucose'],
+  },
+  {
+    id: 'creatinine',
+    specimen: 'blood',
+    code: 'CREA',
+    name: 'Креатинин (кровь)',
+    shortName: 'Креатинин',
+    category: 'biochemistry',
+    description: null,
+    preferredUnit: 'мкмоль/л',
+    aliases: [
+      'Креатинин',
+      'Креатинин крови',
+      'Креатинин в крови',
+      'creatinine',
+    ],
+  },
+  {
+    id: 'urea',
+    specimen: 'blood',
+    code: 'UREA',
+    name: 'Мочевина (кровь)',
+    shortName: 'Мочевина',
+    category: 'biochemistry',
+    description: null,
+    preferredUnit: 'ммоль/л',
+    aliases: ['Мочевина', 'Мочевина крови', 'Мочевина в крови', 'urea'],
+  },
+  {
+    id: 'uric-acid',
+    specimen: 'blood',
+    code: 'URIC',
+    name: 'Мочевая кислота (кровь)',
+    shortName: 'Мочевая кислота',
+    category: 'biochemistry',
+    description: null,
+    preferredUnit: 'мкмоль/л',
+    aliases: [
+      'Мочевая кислота',
+      'Мочевая кислота крови',
+      'Мочевая кислота в крови',
+      'uric acid',
+    ],
+  },
   ...urineMarkers,
 ];
 
@@ -218,6 +272,13 @@ export function matchMarker(
       ? index.byKey.get(anamnesisMatchKey(`${name} (моча)`))
       : undefined) ?? index.byKey.get(key);
   const definition = anamnesisCatalog.find((marker) => marker.id === markerId);
+  // The same printed name can denote different tests in blood and urine.
+  if (
+    specimen === null &&
+    definition?.specimen === 'blood' &&
+    index.byKey.has(anamnesisMatchKey(`${name} (моча)`))
+  )
+    return { markerId: null, ambiguous: true };
   if (specimen !== null && definition?.specimen !== specimen)
     return { markerId: null, ambiguous: false };
   return markerId
