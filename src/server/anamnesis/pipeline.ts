@@ -113,9 +113,9 @@ export function valueProvenance(
   value: AnamnesisObservationValue,
   rawText: string,
 ): boolean {
-  const text = rawText.replace(/,/g, '.');
   if (value.kind === 'text')
-    return text.toLowerCase().includes(value.value.trim().toLowerCase());
+    return rawText.toLowerCase().includes(value.value.trim().toLowerCase());
+  const text = rawText.replace(/,/g, '.');
   const escaped = value.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(^|[^0-9.])${escaped}($|[^0-9.])`).test(text);
 }
