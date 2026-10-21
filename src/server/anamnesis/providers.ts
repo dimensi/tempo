@@ -55,6 +55,9 @@ const SYSTEM_PROMPT = [
   'Извлекай обе колонки: для строки с текущим и прежним результатом нужны два observations.',
   'Единица в общей колонке строки относится и к текущему, и к историческому значению этой строки.',
   'Сохраняй кириллицу в названиях показателей: не заменяй русские буквы похожими латинскими.',
+  'unit — только краткое обозначение единицы измерения из документа (не более 30 символов).',
+  'Расшифровки, метод исследования и пояснения оставляй в rawText, не добавляй их в unit.',
+  'Если единица отсутствует, верни unit: null; не придумывай и не обрезай обозначение.',
   'Знак comparator относится только к самому результату: знаки из референсной колонки к нему не переносятся.',
 ].join(' ');
 
@@ -109,7 +112,7 @@ function openRouterProvider(config: {
           url: `data:image/png;base64,${page.imagePng.toString('base64')}`,
         },
       });
-    const body = JSON.stringify({
+    const request = {
       model: config.model,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -126,7 +129,7 @@ function openRouterProvider(config: {
           schema: extractionJsonSchema,
         },
       },
-    });
+    };
     let lastError: 'UPSTREAM' | 'BAD_RESPONSE' = 'UPSTREAM';
     for (let attempt = 0; attempt < 2; attempt++) {
       let response: Response;
@@ -138,7 +141,7 @@ function openRouterProvider(config: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${config.apiKey}`,
           },
-          body,
+          body: JSON.stringify(request),
           signal: AbortSignal.timeout(config.timeoutMs),
         });
         if (response.status >= 500 || response.status === 429) {
@@ -194,6 +197,24 @@ function openRouterProvider(config: {
             (item) => item.pageNumber !== page.pageNumber,
           )
         ) {
+          const issues = parsed.success
+            ? [{ path: 'observations.pageNumber', code: 'wrong_page' }]
+            : parsed.error.issues.map((issue) => ({
+                path: issue.path.join('.'),
+                code: issue.code,
+                ...('maximum' in issue ? { maximum: issue.maximum } : {}),
+                ...('minimum' in issue ? { minimum: issue.minimum } : {}),
+              }));
+          // Only schema paths and bounds: never log medical text or model output.
+          console.warn('Anamnesis extraction validation failed', {
+            pageNumber: page.pageNumber,
+            issues,
+          });
+          if (attempt === 0)
+            content.push({
+              type: 'text',
+              text: `Предыдущий ответ не прошёл проверку: ${JSON.stringify(issues)}. Повторно извлеки эту же страницу, исправив указанные поля и соблюдая minimum/maximum. Для строк это длина в символах. Не обрезай результаты и не выдумывай данные.`,
+            });
           lastError = 'BAD_RESPONSE';
           continue;
         }
