@@ -3,6 +3,7 @@ import {
   anamnesisMarkerSummarySchema,
   anamnesisOverviewSchema,
   medicalDocumentSchema,
+  medicalImportJobSchema,
   medicalMarkerSchema,
   medicalObservationSchema,
   medicalObservationSourceSchema,
@@ -125,6 +126,7 @@ export function readResponseSchema(path: string): z.ZodType | undefined {
   if (path === '/api/anamnesis/overview') return anamnesisOverviewSchema;
   if (path === '/api/anamnesis/markers')
     return z.array(anamnesisMarkerSummarySchema);
+  if (path === '/api/anamnesis/imports') return z.array(medicalImportJobSchema);
   if (path === '/api/anamnesis/documents')
     return z.array(medicalDocumentSchema);
   if (path === '/api/anamnesis/reports')

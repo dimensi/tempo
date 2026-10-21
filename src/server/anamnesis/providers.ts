@@ -4,6 +4,7 @@ import { readServerEnv } from '@/server/env';
 import {
   extractionResultSchema,
   type ExtractionResult,
+  type FailedAnamnesisPage,
 } from '@/contracts/anamnesis';
 
 export interface ExtractionRequestPage {
@@ -19,7 +20,7 @@ export interface AnamnesisExtractionProvider {
   extract(input: {
     sha256: string;
     pages: ExtractionRequestPage[];
-  }): Promise<unknown>;
+  }): Promise<{ result: unknown; failedPages: FailedAnamnesisPage[] }>;
 }
 
 // transient — временный сбой (сеть, 5xx): воркер повторит задание.
@@ -36,7 +37,9 @@ const SYSTEM_PROMPT = [
   'Ты извлекаешь результаты лабораторных исследований из страниц документа.',
   'Верни строго JSON без пояснений и без markdown-обёрток:',
   '{"laboratory": string|null, "title": string|null, "issuedAt": string|null, "observations": array}.',
-  'Каждый элемент observations: {"name": название показателя как в документе,',
+  'Каждый элемент observations: {"specimen": "urine" для мочи, "blood" для крови/сыворотки/плазмы или null,',
+  '"name": название показателя как в документе,',
+  'Материал specimen бери из строки или заголовка этой страницы; не угадывай его по единице или названию анализа.',
   '"rawText": дословный фрагмент строки результата со значением и единицей,',
   '"pageNumber": номер страницы начиная с 1, "value": значение как напечатано',
   '(например "41,2" или ">100"), "comparator": "eq"|"lt"|"lte"|"gt"|"gte",',
@@ -229,7 +232,26 @@ function openRouterProvider(config: {
     name: 'openrouter',
     async extract({ pages }) {
       const results: ExtractionResult[] = [];
-      for (const page of pages) results.push(await extractPage(page));
+      const failedPages: FailedAnamnesisPage[] = [];
+      for (const page of pages) {
+        if (!page.lines.length && !page.imagePng) {
+          failedPages.push({
+            pageNumber: page.pageNumber,
+            code: 'UNREADABLE_PAGE',
+          });
+          continue;
+        }
+        try {
+          results.push(await extractPage(page));
+        } catch (error) {
+          if (
+            !(error instanceof AnamnesisProviderError) ||
+            error.code === 'NOT_CONFIGURED'
+          )
+            throw error;
+          failedPages.push({ pageNumber: page.pageNumber, code: error.code });
+        }
+      }
       const combined = extractionResultSchema.safeParse({
         laboratory:
           results.find((result) => result.laboratory !== null)?.laboratory ??
@@ -241,7 +263,7 @@ function openRouterProvider(config: {
       });
       if (!combined.success)
         throw new AnamnesisProviderError('BAD_RESPONSE', false);
-      return combined.data;
+      return { result: combined.data, failedPages };
     },
   };
 }
@@ -264,6 +286,7 @@ export function fixtureExtractionResult(): ExtractionResult {
     issuedAt: '15.01.2027',
     observations: [
       {
+        specimen: 'blood',
         name: '25-OH Витамин D',
         rawText: '25-OH Витамин D 41,2 нг/мл',
         pageNumber: 1,
@@ -281,6 +304,7 @@ export function fixtureExtractionResult(): ExtractionResult {
         },
       },
       {
+        specimen: 'blood',
         name: '25-OH Витамин D',
         rawText: 'Витамин D 10.06.2026 28,4 нг/мл',
         pageNumber: 1,
@@ -292,6 +316,7 @@ export function fixtureExtractionResult(): ExtractionResult {
         reference: null,
       },
       {
+        specimen: 'blood',
         name: 'АЛТ',
         rawText: 'Аланинаминотрансфераза (АЛТ) 30,1 Ед/л',
         pageNumber: 2,
@@ -303,6 +328,7 @@ export function fixtureExtractionResult(): ExtractionResult {
         reference: null,
       },
       {
+        specimen: 'blood',
         name: 'АСТ',
         rawText: 'Аспартатаминотрансфераза (АСТ) 25,3 Ед/л',
         pageNumber: 2,
@@ -314,6 +340,7 @@ export function fixtureExtractionResult(): ExtractionResult {
         reference: null,
       },
       {
+        specimen: 'blood',
         name: 'Альфа-амилаза панкреатическая',
         rawText: 'Альфа-амилаза панкреатическая 52,0 Ед/л',
         pageNumber: 2,
@@ -325,6 +352,7 @@ export function fixtureExtractionResult(): ExtractionResult {
         reference: null,
       },
       {
+        specimen: 'blood',
         name: 'Билирубин общий',
         rawText: 'Билирубин общий 9,1 мкмоль/л',
         pageNumber: 2,
@@ -336,6 +364,7 @@ export function fixtureExtractionResult(): ExtractionResult {
         reference: null,
       },
       {
+        specimen: 'blood',
         name: '25-OH Витамин D',
         rawText: '25-OH Витамин D 41,2 нг/мл',
         pageNumber: 3,
@@ -372,7 +401,8 @@ export function anamnesisExtractionProvider(
   return {
     name: `${base.name}+fixture`,
     async extract(input) {
-      if (input.sha256 === fixtureSha) return fixtureExtractionResult();
+      if (input.sha256 === fixtureSha)
+        return { result: fixtureExtractionResult(), failedPages: [] };
       return base.extract(input);
     },
   };

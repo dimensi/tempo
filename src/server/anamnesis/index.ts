@@ -605,10 +605,8 @@ export async function reprocessAnamnesisDocument(
   const document = repo.findDocument(ownerId, id);
   if (!document) throw new AnamnesisError(404);
   const now = Date.now();
-  // Удаление старых результатов и постановка задания атомарны: без задания
-  // данные не должны пропадать.
+  // Существующие результаты остаются читаемыми до успешной обработки страниц.
   const job = getDatabase().sqlite.transaction(() => {
-    repo.deleteImportedObservations(id);
     return repo.insertJob({
       id: anamnesisId(),
       ownerId,

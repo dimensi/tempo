@@ -1,0 +1,1 @@
+ALTER TABLE `medical_import_jobs` ADD `failed_pages_json` text DEFAULT '[]' NOT NULL;

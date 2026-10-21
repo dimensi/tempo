@@ -2,6 +2,7 @@ import {
   anamnesisMarkerSummarySchema,
   anamnesisOverviewSchema,
   medicalDocumentSchema,
+  medicalImportJobSchema,
   medicalMarkerSchema,
   medicalObservationSchema,
 } from '@/contracts/anamnesis';
@@ -72,6 +73,7 @@ export const readResources = {
   marker: definition(medicalMarkerSchema),
   observations: definition(z.array(medicalObservationSchema)),
   documents: definition(z.array(medicalDocumentSchema)),
+  anamnesisImports: definition(z.array(medicalImportJobSchema)),
   document: definition(medicalDocumentSchema),
   documentObservations: definition(documentObservationsReadSchema),
 };
