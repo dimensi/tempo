@@ -9,7 +9,7 @@ import { useReadResource } from '@/lib/use-read-resource';
 import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import type { MedicalImportJob } from '@/contracts/anamnesis';
 import { Alert, Button, Group, Paper, Stack, Text, Title } from '@mantine/core';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
 
 // Просмотр оригинала: PDF встроен через авторизованный маршрут API,
@@ -35,6 +35,28 @@ export function DocumentViewer({
       `/api/anamnesis/documents/${documentId}/observations?${query}`,
     ),
   );
+  const importsRead = useReadResource(
+    readResources.anamnesisImports(`/api/anamnesis/imports?${query}`),
+  );
+  const job = importsRead.data?.find((item) => item.documentId === documentId);
+  const importActive = job?.status === 'queued' || job?.status === 'processing';
+  const refreshImports = importsRead.refresh;
+  const refreshDocument = documentRead.refresh;
+  const refreshObservations = observationsRead.refresh;
+  const completedImport =
+    job && ['completed', 'completed_with_warnings'].includes(job.status)
+      ? `${job.id}:${job.updatedAt}`
+      : null;
+  useEffect(() => {
+    if (!online || !importActive) return;
+    const timer = setInterval(() => void refreshImports(), 2000);
+    return () => clearInterval(timer);
+  }, [online, importActive, refreshImports]);
+  useEffect(() => {
+    if (!completedImport) return;
+    void refreshDocument();
+    void refreshObservations();
+  }, [completedImport, refreshDocument, refreshObservations]);
   const document = documentRead.data;
   const sources = (observationsRead.data ?? []).flatMap((review) =>
     review.sources
@@ -51,6 +73,7 @@ export function DocumentViewer({
         `/api/anamnesis/documents/${documentId}/reprocess?${query}`,
         { method: 'POST' },
       );
+      await importsRead.refresh();
     } catch {
       setError(m.errors.save);
     } finally {
@@ -102,7 +125,7 @@ export function DocumentViewer({
               <Button
                 variant="light"
                 mih={44}
-                disabled={!online}
+                disabled={!online || importActive}
                 loading={busy}
                 onClick={() => void reprocess()}
               >
@@ -111,6 +134,18 @@ export function DocumentViewer({
             )}
           </Group>
         </Paper>
+      )}
+      {job && (
+        <Text role="status">
+          {m.imports.status[job.status]} · {m.imports.stage[job.stage]}
+        </Text>
+      )}
+      {!!job?.failedPages.length && (
+        <Alert color="yellow" role="status">
+          {m.imports.partialPages}{' '}
+          {job.failedPages.map((page) => page.pageNumber).join(', ')}.{' '}
+          {m.imports.partialHint}
+        </Alert>
       )}
       {document && (
         <OfflineFile

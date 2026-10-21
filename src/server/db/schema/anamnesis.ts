@@ -1,4 +1,4 @@
-import { isNull } from 'drizzle-orm';
+import { isNull, sql } from 'drizzle-orm';
 import {
   sqliteTable,
   text,
@@ -24,6 +24,7 @@ import {
   type MedicalBoundingBox,
   type MedicalObservationFieldChange,
   type MedicalReferenceRange,
+  type FailedAnamnesisPage,
 } from '@/contracts/anamnesis';
 
 // Справочник канонических показателей общий для всех пользователей:
@@ -100,6 +101,10 @@ export const medicalImportJobs = sqliteTable(
     stage: text('stage', { enum: anamnesisImportStages }).notNull(),
     attempts: integer('attempts').notNull().default(0),
     lastError: text('last_error'),
+    failedPages: text('failed_pages_json', { mode: 'json' })
+      .$type<FailedAnamnesisPage[]>()
+      .notNull()
+      .default(sql`'[]'`),
     leaseUntil: integer('lease_until'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),

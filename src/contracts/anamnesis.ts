@@ -71,6 +71,7 @@ export const anamnesisImportStages = [
   'persistence',
 ] as const;
 export const anamnesisReviewReasons = [
+  'unknown_marker',
   'unknown_source_kind',
   'ambiguous_marker',
   'missing_origin',
@@ -124,6 +125,14 @@ export const medicalDocumentSchema = z
   .strict();
 export type MedicalDocument = z.infer<typeof medicalDocumentSchema>;
 
+export const failedAnamnesisPageSchema = z
+  .object({
+    pageNumber: z.number().int().min(1),
+    code: z.enum(['UPSTREAM', 'BAD_RESPONSE', 'UNREADABLE_PAGE']),
+  })
+  .strict();
+export type FailedAnamnesisPage = z.infer<typeof failedAnamnesisPageSchema>;
+
 export const medicalImportJobSchema = z
   .object({
     id,
@@ -133,6 +142,7 @@ export const medicalImportJobSchema = z
     stage: z.enum(anamnesisImportStages),
     attempts: z.number().int().min(0),
     lastError: z.string().min(1).max(500).nullable(),
+    failedPages: z.array(failedAnamnesisPageSchema).max(500),
     createdAt: epoch,
     updatedAt: epoch,
   })
@@ -417,6 +427,7 @@ export type MedicalObservationCorrection = z.infer<
 // Контракт ответа провайдера распознавания: значения как в документе.
 export const extractionCandidateSchema = z
   .object({
+    specimen: z.enum(['blood', 'urine']).nullable(),
     name: z.string().min(1).max(300),
     rawText: z.string().min(1).max(2000),
     pageNumber: z.number().int().min(1),

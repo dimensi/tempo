@@ -11,6 +11,7 @@ import type { CatalogIndex } from './markers';
 import { matchMarker } from './markers';
 
 export type ReviewReason =
+  | 'unknown_marker'
   | 'unknown_source_kind'
   | 'ambiguous_marker'
   | 'missing_origin'
@@ -47,6 +48,17 @@ const canonicalUnits: Record<string, string> = {
   'мг/дл': 'mg/dL',
   'mg/dl': 'mg/dL',
   '%': '%',
+  'мг/л': 'mg/L',
+  'mg/l': 'mg/L',
+  'кл/мкл': 'cells/μL',
+  'cells/µl': 'cells/μL',
+  'cells/μl': 'cells/μL',
+  'мг/г креатинина': 'mg/g creatinine',
+  'mg/g creatinine': 'mg/g creatinine',
+  'мкме/мл': 'μIU/mL',
+  'µiu/ml': 'μIU/mL',
+  'μiu/ml': 'μIU/mL',
+  'uiu/ml': 'μIU/mL',
 };
 
 // Канонически равные единицы: пересчёт не меняет числового значения.
@@ -239,7 +251,7 @@ export function prepareCandidate(
   index: CatalogIndex,
   preferredUnits: ReadonlyMap<string, string | null>,
 ): PreparedCandidate {
-  const marker = matchMarker(index, candidate.name);
+  const marker = matchMarker(index, candidate.name, candidate.specimen);
   const value = parseCandidateValue(candidate);
   const originalUnit = candidate.unit?.trim() || null;
   const canonical = canonicalUnit(originalUnit);
@@ -274,6 +286,7 @@ export function prepareCandidate(
   // Первое нарушенное обязательное условие становится причиной проверки.
   let reviewReason: ReviewReason | null = null;
   if (marker.ambiguous) reviewReason = 'ambiguous_marker';
+  else if (!marker.markerId) reviewReason = 'unknown_marker';
   else if (!value) reviewReason = 'value_type';
   else if (!provenance) reviewReason = 'missing_origin';
   else if (!unitKnown) reviewReason = 'unknown_unit';

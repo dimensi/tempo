@@ -3,6 +3,7 @@
 
 export interface CatalogMarker {
   id: string;
+  specimen: 'blood' | 'urine';
   code: string;
   name: string;
   shortName: string | null;
@@ -12,11 +13,75 @@ export interface CatalogMarker {
   aliases: string[];
 }
 
-// Стартовый каталог: показатели из тестового документа «Синтетическая лаборатория».
+// Материал подтверждается заголовком/строкой исходного документа, не единицей.
+const urineDefinitions: Array<[string, string, string | null, string[]]> = [
+  [
+    'albumin',
+    'Альбумин',
+    'мг/л',
+    ['Альбумин в моче (микроальбумин)', 'Микроальбумин'],
+  ],
+  [
+    'albumin-creatinine-ratio',
+    'Альбумино-креатининовое соотношение',
+    'мг/г креатинина',
+    [],
+  ],
+  ['amorphous-crystals', 'Аморфные кристаллы', null, []],
+  ['bacteria', 'Бактерии', null, []],
+  ['protein', 'Белок', 'г/л', []],
+  ['bilirubin', 'Билирубин', 'мкмоль/л', []],
+  ['hyaline-casts', 'Гиалиновые цилиндры', 'кл/мкл', []],
+  ['glucose', 'Глюкоза', 'ммоль/л', []],
+  ['yeast', 'Дрожжи', null, []],
+  ['other-salts', 'Другие соли', null, []],
+  ['granular-casts', 'Зернистые цилиндры', 'кл/мкл', []],
+  ['ketones', 'Кетоны', 'ммоль/л', ['Кетоновые тела']],
+  ['creatinine', 'Креатинин', 'мкмоль/л', []],
+  ['uric-acid-crystals', 'Кристаллы мочевой кислоты', null, []],
+  ['leukocyte-esterase', 'Лейкоцитарная эстераза', null, []],
+  ['leukocytes', 'Лейкоциты', 'кл/мкл', []],
+  ['uric-acid', 'Мочевая кислота', 'мкмоль/л', []],
+  ['urea', 'Мочевина', 'ммоль/л', []],
+  ['nitrites', 'Нитриты', null, []],
+  ['calcium-oxalate', 'Оксалаты кальция', null, []],
+  ['specific-gravity', 'Относительная плотность', null, []],
+  ['clarity', 'Прозрачность', null, []],
+  ['mucus', 'Слизь', null, []],
+  ['spermatozoa', 'Сперматозоиды', 'кл/мкл', []],
+  ['triple-phosphates', 'Трипельфосфаты', null, []],
+  ['urobilinogen', 'Уробилиноген', 'мкмоль/л', []],
+  ['color', 'Цвет мочи', null, ['Цвет']],
+  ['casts', 'Цилиндры', 'кл/мкл', []],
+  ['non-squamous-epithelium', 'Эпителий неплоский', null, []],
+  ['transitional-epithelium', 'Эпителий переходный', 'кл/мкл', []],
+  ['squamous-epithelium', 'Эпителий плоский', 'кл/мкл', []],
+  ['renal-epithelium', 'Эпителий почечный', 'кл/мкл', []],
+  ['erythrocytes', 'Эритроциты', 'кл/мкл', []],
+  ['hemoglobin', 'Эритроциты (гемоглобин, миоглобин)', null, []],
+  ['dysmorphic-erythrocytes', 'Эритроциты дисморфные', '%', []],
+  ['ph', 'рН', null, ['pH']],
+];
+const urineMarkers: CatalogMarker[] = urineDefinitions.map(
+  ([id, name, unit, aliases]) => ({
+    id: `urine-${id}`,
+    specimen: 'urine',
+    code: `URINE_${id.toUpperCase().replaceAll('-', '_')}`,
+    name: `${name} (моча)`,
+    shortName: null,
+    category: 'other',
+    description: null,
+    preferredUnit: unit,
+    aliases: [name, ...aliases].map((alias) => `${alias} (моча)`),
+  }),
+);
+
+// Канонические лабораторные показатели и явные синонимы; материал — часть идентичности.
 // Каталог глобальный; расширение — новыми записями здесь, без миграций.
 export const anamnesisCatalog: CatalogMarker[] = [
   {
     id: 'vitamin-d-25oh',
+    specimen: 'blood',
     code: 'VD25OH',
     name: 'Витамин D (25-OH)',
     shortName: 'Витамин D',
@@ -34,6 +99,7 @@ export const anamnesisCatalog: CatalogMarker[] = [
   },
   {
     id: 'alt',
+    specimen: 'blood',
     code: 'ALT',
     name: 'Аланинаминотрансфераза',
     shortName: 'АЛТ',
@@ -44,6 +110,7 @@ export const anamnesisCatalog: CatalogMarker[] = [
   },
   {
     id: 'ast',
+    specimen: 'blood',
     code: 'AST',
     name: 'Аспартатаминотрансфераза',
     shortName: 'АСТ',
@@ -54,6 +121,7 @@ export const anamnesisCatalog: CatalogMarker[] = [
   },
   {
     id: 'pancreatic-amylase',
+    specimen: 'blood',
     code: 'AMYP',
     name: 'Альфа-амилаза панкреатическая',
     shortName: 'Амилаза П',
@@ -70,19 +138,32 @@ export const anamnesisCatalog: CatalogMarker[] = [
   },
   {
     id: 'total-bilirubin',
+    specimen: 'blood',
     code: 'TBIL',
     name: 'Билирубин общий',
     shortName: 'Билирубин',
     category: 'biochemistry',
     description: 'Общий билирубин сыворотки крови.',
     preferredUnit: 'мкмоль/л',
+    aliases: ['билирубин общий', 'общий билирубин', 'total bilirubin'],
+  },
+  {
+    id: 'tsh',
+    specimen: 'blood',
+    code: 'TSH',
+    name: 'Тиреотропный гормон',
+    shortName: 'ТТГ',
+    category: 'hormones',
+    description: null,
+    preferredUnit: 'мкМЕ/мл',
     aliases: [
-      'билирубин общий',
-      'общий билирубин',
-      'билирубин',
-      'total bilirubin',
+      'ТТГ (чувствительный)',
+      'ТТГ',
+      'TSH',
+      'тиреотропный гормон (ТТГ)',
     ],
   },
+  ...urineMarkers,
 ];
 
 // Ключ сопоставления: регистр, «ё», пунктуация и пробелы не важны.
@@ -114,10 +195,12 @@ export function buildCatalogIndex(
 export function catalogSelfIndex(): CatalogIndex {
   return buildCatalogIndex(
     anamnesisCatalog.flatMap((marker) =>
-      [marker.name, ...marker.aliases].map((alias) => ({
-        markerId: marker.id,
-        alias,
-      })),
+      [marker.name, marker.code, ...marker.aliases]
+        .filter((alias): alias is string => alias !== null)
+        .map((alias) => ({
+          markerId: marker.id,
+          alias,
+        })),
     ),
   );
 }
@@ -126,11 +209,18 @@ export function catalogSelfIndex(): CatalogIndex {
 export function matchMarker(
   index: CatalogIndex,
   name: string,
+  specimen: 'blood' | 'urine' | null,
 ): { markerId: string | null; ambiguous: boolean } {
   const key = anamnesisMatchKey(name);
-  if (!key) return { markerId: null, ambiguous: true };
-  const markerId = index.byKey.get(key);
+  if (!key) return { markerId: null, ambiguous: false };
+  const markerId =
+    (specimen === 'urine'
+      ? index.byKey.get(anamnesisMatchKey(`${name} (моча)`))
+      : undefined) ?? index.byKey.get(key);
+  const definition = anamnesisCatalog.find((marker) => marker.id === markerId);
+  if (specimen !== null && definition?.specimen !== specimen)
+    return { markerId: null, ambiguous: false };
   return markerId
     ? { markerId, ambiguous: false }
-    : { markerId: null, ambiguous: true };
+    : { markerId: null, ambiguous: false };
 }

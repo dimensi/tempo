@@ -226,6 +226,13 @@ export function DocumentsPanel({
                   {m.imports.status[job.status]} · {m.imports.stage[job.stage]}
                 </Text>
               )}
+              {!!job?.failedPages.length && (
+                <Alert color="yellow" role="status">
+                  {m.imports.partialPages}{' '}
+                  {job.failedPages.map((page) => page.pageNumber).join(', ')}.{' '}
+                  {m.imports.partialHint}
+                </Alert>
+              )}
               {job?.lastError && <Alert color="red">{job.lastError}</Alert>}
               {writable && (
                 <Group>

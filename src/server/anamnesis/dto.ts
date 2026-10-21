@@ -44,6 +44,7 @@ export function jobDto(row: MedicalImportJobRow): MedicalImportJob {
     stage: row.stage,
     attempts: row.attempts,
     lastError: row.lastError,
+    failedPages: row.failedPages,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

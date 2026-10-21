@@ -69,6 +69,7 @@ export const anamnesisMessages = {
     rejected: 'Отклонено',
   },
   reviewReason: {
+    unknown_marker: 'Показатель не найден в справочнике',
     unknown_source_kind: 'Неизвестна роль результата (текущий/исторический)',
     ambiguous_marker: 'Показатель не сопоставлен однозначно',
     missing_origin: 'Значение не найдено в источнике',
@@ -106,6 +107,10 @@ export const anamnesisMessages = {
   },
   imports: {
     title: 'Импорт',
+    partialPages:
+      'Документ распознан частично. Не удалось обработать страницы:',
+    partialHint:
+      'Результаты остальных страниц сохранены. Повторите распознавание, чтобы дополнить документ.',
     empty: 'Импортов пока не было.',
     column: {
       document: 'Документ',

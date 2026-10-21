@@ -201,7 +201,12 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
       patch: Partial<
         Pick<
           MedicalImportJobRow,
-          'status' | 'stage' | 'attempts' | 'lastError' | 'leaseUntil'
+          | 'status'
+          | 'stage'
+          | 'attempts'
+          | 'lastError'
+          | 'leaseUntil'
+          | 'failedPages'
         >
       >,
     ) =>
@@ -358,7 +363,8 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
         .get(),
     // Повторная обработка: удаляются только автоматические результаты импорта,
     // все источники которых лежат внутри перерабатываемого документа.
-    deleteImportedObservations: (documentId: string) => {
+    deleteImportedObservations: (documentId: string, pageNumbers: number[]) => {
+      if (!pageNumbers.length) return 0;
       const removable = db
         .select({ id: medicalObservations.id })
         .from(medicalObservations)
@@ -369,11 +375,19 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
               select 1 from ${medicalObservationSources} source_inside
               where source_inside.observation_id = ${medicalObservations.id}
                 and source_inside.document_id = ${documentId}
+                and source_inside.page_number in (${sql.join(
+                  pageNumbers.map((page) => sql`${page}`),
+                  sql`, `,
+                )})
             )`,
             sql`not exists (
               select 1 from ${medicalObservationSources} source_outside
               where source_outside.observation_id = ${medicalObservations.id}
-                and source_outside.document_id != ${documentId}
+                and (source_outside.document_id != ${documentId}
+                  or source_outside.page_number not in (${sql.join(
+                    pageNumbers.map((page) => sql`${page}`),
+                    sql`, `,
+                  )}))
             )`,
           ),
         )

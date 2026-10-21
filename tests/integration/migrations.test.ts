@@ -174,8 +174,25 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
         'invalid_media',
         JSON.stringify(replicaData),
       );
+    database.sqlite
+      .prepare(
+        "INSERT INTO medical_documents(id,owner_id,filename,storage_key,sha256,mime_type,size_bytes,page_count,created_at,updated_at) VALUES('existing-medical-document','owner','synthetic.pdf','synthetic-medical','synthetic-sha','application/pdf',100,2,1,1)",
+      )
+      .run();
+    database.sqlite
+      .prepare(
+        "INSERT INTO medical_import_jobs(id,owner_id,document_id,status,stage,attempts,created_at,updated_at) VALUES('existing-medical-job','owner','existing-medical-document','queued','upload_validation',0,1,1)",
+      )
+      .run();
     migrate(database.db, { migrationsFolder: './drizzle' });
     migrate(database.db, { migrationsFolder: './drizzle' });
+    expect(
+      database.sqlite
+        .prepare(
+          "SELECT status, failed_pages_json FROM medical_import_jobs WHERE id='existing-medical-job'",
+        )
+        .get(),
+    ).toEqual({ status: 'queued', failed_pages_json: '[]' });
     const copied = database.sqlite
       .prepare(
         'SELECT summary,detail FROM transformmate_catalog_exercise WHERE owner_id=? AND account_scope=?',

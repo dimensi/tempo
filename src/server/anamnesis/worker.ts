@@ -24,7 +24,7 @@ import {
 } from './pipeline';
 import { normalizeSourceKinds } from './extraction-normalize';
 
-export const ANAMNESIS_EXTRACTION_VERSION = '2';
+export const ANAMNESIS_EXTRACTION_VERSION = '3';
 const LEASE_MS = 300000;
 const MAX_ATTEMPTS = 3;
 
@@ -76,16 +76,23 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
         lines: page.lines,
         imagePng: page.hasTextLayer ? null : page.imagePng,
       }));
-      const unrecognizedPages = requestPages.filter(
-        (page) => !page.lines.length && !page.imagePng,
-      ).length;
-
       repo.updateJob(jobId, { stage: 'structured_extraction' });
+      const outcome = await deps.provider.extract({
+        sha256: document.sha256,
+        pages: requestPages,
+      });
+      repo.updateJob(jobId, { failedPages: outcome.failedPages });
+      if (outcome.failedPages.length === requestPages.length) {
+        const transient = outcome.failedPages.every(
+          (page) => page.code === 'UPSTREAM',
+        );
+        throw new AnamnesisProviderError(
+          transient ? 'UPSTREAM' : 'BAD_RESPONSE',
+          transient,
+        );
+      }
       const { result: extraction, forcedReviewIndexes } = normalizeSourceKinds(
-        await deps.provider.extract({
-          sha256: document.sha256,
-          pages: requestPages,
-        }),
+        outcome.result,
       );
       if (!(await stillOurs(jobId))) return;
 
@@ -112,13 +119,27 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
 
       repo.updateJob(jobId, { stage: 'validation' });
       const groups = groupDuplicateCandidates(prepared);
-      const warnings = { reviews: 0, unrecognizedPages };
+      const warnings = {
+        reviews: 0,
+        unrecognizedPages: outcome.failedPages.length,
+      };
       const issuedAt = parseCollectedAt(extraction.issuedAt).collectedAt;
       const laboratoryName = extraction.laboratory;
 
       repo.updateJob(jobId, { stage: 'persistence' });
       const createdAt = now();
       deps.database.sqlite.transaction(() => {
+        repo.deleteImportedObservations(
+          document.id,
+          requestPages
+            .filter(
+              (page) =>
+                !outcome.failedPages.some(
+                  (failed) => failed.pageNumber === page.pageNumber,
+                ),
+            )
+            .map((page) => page.pageNumber),
+        );
         repo.replacePages(
           document.id,
           pages.map((page) => ({
@@ -249,8 +270,7 @@ export function createAnamnesisWorker(deps: AnamnesisWorkerDeps) {
         const sameValue = sameDay.filter(
           (row) =>
             row.valueJson.kind === primary.value?.kind &&
-            (row.valueJson.kind !== 'numeric' ||
-              row.valueJson.value === primary.value?.value),
+            row.valueJson.value === primary.value?.value,
         );
         if (sameDay.length > sameValue.length) reason = 'contradiction';
         else if (

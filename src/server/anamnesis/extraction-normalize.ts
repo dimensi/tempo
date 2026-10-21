@@ -9,6 +9,7 @@ import {
 } from '@/contracts/anamnesis';
 
 const lenientCandidateSchema = z.object({
+  specimen: z.enum(['blood', 'urine']).nullable(),
   name: z.string(),
   rawText: z.string(),
   pageNumber: z.number(),
@@ -42,6 +43,7 @@ export function normalizeSourceKinds(input: unknown): {
     if (!anamnesisSourceKinds.includes(candidate.sourceKind as never))
       forcedReviewIndexes.push(index);
     return {
+      specimen: candidate.specimen,
       name: candidate.name,
       rawText: candidate.rawText,
       pageNumber: candidate.pageNumber,

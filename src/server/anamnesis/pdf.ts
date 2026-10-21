@@ -31,45 +31,57 @@ export async function analyzeAnamnesisPdf(
   const pdf = await getDocumentProxy(bytes);
   const pages: PdfPageAnalysis[] = [];
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-    const page = await pdf.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1 });
-    const content = await page.getTextContent();
-    const items: PdfTextItem[] = [];
-    for (const item of content.items) {
-      if (!('str' in item) || !item.str.trim()) continue;
-      items.push({
-        text: item.str,
-        x: viewport.width ? item.transform[4]! / viewport.width : 0,
-        y: viewport.height ? 1 - item.transform[5]! / viewport.height : 0,
-        width: viewport.width ? (item.width ?? 0) / viewport.width : 0,
-        height: viewport.height ? (item.height ?? 0) / viewport.height : 0,
+    try {
+      const page = await pdf.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 1 });
+      const content = await page.getTextContent();
+      const items: PdfTextItem[] = [];
+      for (const item of content.items) {
+        if (!('str' in item) || !item.str.trim()) continue;
+        items.push({
+          text: item.str,
+          x: viewport.width ? item.transform[4]! / viewport.width : 0,
+          y: viewport.height ? 1 - item.transform[5]! / viewport.height : 0,
+          width: viewport.width ? (item.width ?? 0) / viewport.width : 0,
+          height: viewport.height ? (item.height ?? 0) / viewport.height : 0,
+        });
+      }
+      const totalChars = items.reduce(
+        (sum, item) => sum + item.text.trim().length,
+        0,
+      );
+      const hasTextLayer = totalChars >= MIN_TEXT_LAYER_CHARS;
+      const lines = buildLines(items);
+      const imagePng = hasTextLayer
+        ? null
+        : Buffer.from(
+            await renderPageAsImage(pdf, pageNumber, {
+              canvasImport: () => import('@napi-rs/canvas'),
+              scale:
+                OCR_IMAGE_MAX_DIMENSION /
+                Math.max(viewport.width, viewport.height),
+            }),
+          );
+      pages.push({
+        pageNumber,
+        width: viewport.width || null,
+        height: viewport.height || null,
+        items: hasTextLayer ? items : [],
+        lines,
+        hasTextLayer,
+        imagePng,
+      });
+    } catch {
+      pages.push({
+        pageNumber,
+        width: null,
+        height: null,
+        items: [],
+        lines: [],
+        hasTextLayer: false,
+        imagePng: null,
       });
     }
-    const totalChars = items.reduce(
-      (sum, item) => sum + item.text.trim().length,
-      0,
-    );
-    const hasTextLayer = totalChars >= MIN_TEXT_LAYER_CHARS;
-    const lines = buildLines(items);
-    const imagePng = hasTextLayer
-      ? null
-      : Buffer.from(
-          await renderPageAsImage(pdf, pageNumber, {
-            canvasImport: () => import('@napi-rs/canvas'),
-            scale:
-              OCR_IMAGE_MAX_DIMENSION /
-              Math.max(viewport.width, viewport.height),
-          }),
-        );
-    pages.push({
-      pageNumber,
-      width: viewport.width || null,
-      height: viewport.height || null,
-      items: hasTextLayer ? items : [],
-      lines,
-      hasTextLayer,
-      imagePng,
-    });
   }
   return pages;
 }
