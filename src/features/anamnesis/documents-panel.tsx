@@ -20,7 +20,6 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
 import { notifyAnamnesisChanged, useAnamnesisRevision } from './refresh';
-import { ReviewEditor } from './review-editor';
 
 export function DocumentsPanel({
   ownerId,
@@ -34,7 +33,6 @@ export function DocumentsPanel({
   const previousJobs = useRef(new Map<string, MedicalImportJob>());
   const [pending, setPending] = useState<Record<string, number>>({});
   const [jobs, setJobs] = useState<MedicalImportJob[]>([]);
-  const [reviewing, setReviewing] = useState<string>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [file, setFile] = useState<File | null>(null);
@@ -237,12 +235,10 @@ export function DocumentsPanel({
               {writable && (
                 <Group>
                   <Button
+                    component={Link}
+                    href={`/anamnesis/documents/${item.id}/review`}
                     variant="default"
-                    onClick={() =>
-                      setReviewing((old) =>
-                        old === item.id ? undefined : item.id,
-                      )
-                    }
+                    mih={44}
                   >
                     {m.reviews.title} ({pending[item.id] ?? 0})
                   </Button>
@@ -271,9 +267,6 @@ export function DocumentsPanel({
                     Отмена
                   </Button>
                 </Group>
-              )}
-              {reviewing === item.id && (
-                <ReviewEditor ownerId={ownerId} documentId={item.id} />
               )}
             </Stack>
           </Paper>

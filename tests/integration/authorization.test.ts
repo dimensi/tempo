@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { trainerAccess, user } from '@/server/db/schema';
+import { medicalMarkerSchema } from '@/contracts/anamnesis';
 
 const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
@@ -147,6 +148,8 @@ it('fails closed for generic and selective medical-PDF trainer access, including
 
 async function assertMedicalPdfGrants() {
   const repository = anamnesisRepository(database.handle!.db);
+  for (const marker of repository.listMarkers())
+    medicalMarkerSchema.parse(marker);
   const now = Date.now();
   repository.insertDocument({
     id: 'granted-document',

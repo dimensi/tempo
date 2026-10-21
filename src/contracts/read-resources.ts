@@ -3,6 +3,7 @@ import {
   anamnesisMarkerSummarySchema,
   anamnesisOverviewSchema,
   medicalDocumentSchema,
+  medicalReviewItemSchema,
   medicalImportJobSchema,
   medicalMarkerSchema,
   medicalObservationSchema,
@@ -75,6 +76,16 @@ export const transformMateReadSchema = z.object({
     nativeRefresh: transformMateNativeRefreshSchema,
   }),
 });
+export const anamnesisReviewEntriesSchema = z.array(
+  z
+    .object({
+      review: medicalReviewItemSchema,
+      observation: medicalObservationSchema,
+      sources: z.array(medicalObservationSourceSchema),
+    })
+    .strict(),
+);
+
 export const documentObservationsReadSchema = z.array(
   z.object({
     observation: medicalObservationSchema,
@@ -126,6 +137,8 @@ export function readResponseSchema(path: string): z.ZodType | undefined {
   if (path === '/api/anamnesis/overview') return anamnesisOverviewSchema;
   if (path === '/api/anamnesis/markers')
     return z.array(anamnesisMarkerSummarySchema);
+  if (path === '/api/anamnesis/catalog') return z.array(medicalMarkerSchema);
+  if (path === '/api/anamnesis/reviews') return anamnesisReviewEntriesSchema;
   if (path === '/api/anamnesis/imports') return z.array(medicalImportJobSchema);
   if (path === '/api/anamnesis/documents')
     return z.array(medicalDocumentSchema);

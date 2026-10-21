@@ -208,6 +208,13 @@ export async function listAnamnesisMarkers(
     );
 }
 
+// Полный справочник нужен владельцу при ручном сопоставлении, включая ещё не использованные показатели.
+export async function listAnamnesisCatalog(headers: Headers, ownerId: string) {
+  await check(headers, ownerId, true);
+  await ensureAnamnesisCatalog();
+  return anamnesisRepository().listMarkers();
+}
+
 export async function getAnamnesisMarker(
   headers: Headers,
   ownerId: string,

@@ -3,3 +3,8 @@
   max-width: 960px;
   min-width: 0;
 }
+
+/* A page may explicitly request a wide workspace without changing other routes. */
+.content:has([data-content-width='wide']) {
+  max-width: none;
+}
