@@ -4,7 +4,7 @@
   "src/api/products/index.ts": "9faae433013b0e2c707f6706851715b5ba74ef3f8e9579ee0b76ff42879ebe33",
   "src/api/products/search.ts": "854ea20d611f7b6973cf755ea1c41d34f80d967321c79c9202ac81f819f67a1a",
   "src/api/user/bodyvalues/weight.ts": "c8444898d34bf4570a39a9a967d489eae2a00b2a33138f8a3abd8e82c99b6424",
-  "src/api/user/consumed.ts": "6f5c0114ba0374aa097b44d6efc31c4b2df33619ac52243fe9a128644eb8c780",
+  "src/api/user/consumed.ts": "9a46465f7bf2772293c9cf1653f4a24be338044ed90d25bd6b30fdf65ed5ed4d",
   "src/api/user/diet.ts": "28b0eb9a3159d661b4c5b71450e144caaf05ce396a8ec3d8300afd674a20e44c",
   "src/api/user/exercises.ts": "57fcd6610b0652419e4e82f7e2450677b4a033fc4747b4219b3c3429b375e78c",
   "src/api/user/goals.ts": "4a90bc559a3c4ee1690c0b60dda379290e603e19fd366b1ad3f85b916d87cc2d",
@@ -20,7 +20,8 @@
   "src/types/auth.ts": "e49690a9acb83137ed39e3081bed1052133dfd39696beb0489bfed3c34fa4ab0",
   "src/types/yazio.ts": "45d0f77f5275158aecd6231c1b6a110cf90e11329c56585f7cbecda600dd9a5b",
   "src/utils/constants.ts": "1f59051dc61780d7ccf5d3aea6afee48de62ca71d0b83693a33fedb8a350ed26",
-  "src/utils/date.ts": "db2be66fd1937f0eb469f03e5f65c548ca80a3ce8f8c73d3f3b2c86b10213b2d",
+  "src/utils/date.ts": "5d9e25de97ad1ca29bc8fc7a00e10b91b01cb545ea3e0b4a9c1652b978d1f0a4",
   "src/utils/fetch.ts": "597f58d7e207a7893ff8bfa3ac6422036c1e87200ad3431a3bf7e8a7b97425a4",
+  "tests/consumed-time.test.ts": "d4a30f763d3b37306470a14db818c56bdeadd4268e48e2ebcac2510bf153d9fa",
   "tests/meal-images.test.ts": "d2c28144f765c3a56b927c73ac9b3e9b0274ca86cd44e0ace5e551d909ff30a1"
 }

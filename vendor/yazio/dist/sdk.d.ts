@@ -1822,7 +1822,7 @@ declare const AddUserConsumedItemsOptionsSchema: z.ZodUnion<
       {
         id: z.ZodString;
         product_id: z.ZodString;
-        date: z.ZodUnion<[z.ZodDate, z.ZodString]>;
+        date: z.ZodString;
         daytime: z.ZodEnum<['breakfast', 'lunch', 'dinner', 'snack']>;
         amount: z.ZodNumber;
         serving: z.ZodString;
@@ -1831,7 +1831,7 @@ declare const AddUserConsumedItemsOptionsSchema: z.ZodUnion<
       'strip',
       z.ZodTypeAny,
       {
-        date: string | Date;
+        date: string;
         serving: string;
         amount: number;
         id: string;
@@ -1840,7 +1840,7 @@ declare const AddUserConsumedItemsOptionsSchema: z.ZodUnion<
         daytime: 'breakfast' | 'lunch' | 'dinner' | 'snack';
       },
       {
-        date: string | Date;
+        date: string;
         serving: string;
         amount: number;
         id: string;
@@ -1853,7 +1853,7 @@ declare const AddUserConsumedItemsOptionsSchema: z.ZodUnion<
       {
         id: z.ZodString;
         product_id: z.ZodString;
-        date: z.ZodUnion<[z.ZodDate, z.ZodString]>;
+        date: z.ZodString;
         daytime: z.ZodEnum<['breakfast', 'lunch', 'dinner', 'snack']>;
         amount: z.ZodNumber;
         serving: z.ZodNull;
@@ -1862,7 +1862,7 @@ declare const AddUserConsumedItemsOptionsSchema: z.ZodUnion<
       'strip',
       z.ZodTypeAny,
       {
-        date: string | Date;
+        date: string;
         serving: null;
         amount: number;
         id: string;
@@ -1871,7 +1871,7 @@ declare const AddUserConsumedItemsOptionsSchema: z.ZodUnion<
         daytime: 'breakfast' | 'lunch' | 'dinner' | 'snack';
       },
       {
-        date: string | Date;
+        date: string;
         serving: null;
         amount: number;
         id: string;
