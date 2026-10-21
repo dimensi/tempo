@@ -54,6 +54,10 @@ const SYSTEM_PROMPT = [
   'Колонка «Результат» содержит текущие результаты; их дата — дата взятия биоматериала в шапке.',
   'Колонка «Пр. рез-т» содержит исторические результаты с датами, напечатанными рядом с ними.',
   'Не подменяй дату текущего результата датой из исторической колонки.',
+  'Предыдущая страница, если приложена, дана только для контекста продолжения отчёта. Не извлекай из неё результаты.',
+  'Если на целевой странице нет даты взятия биоматериала, используй дату из шапки предыдущей страницы только при явной связи: совпадает номер заявки/заказа, пациент и биоматериал; целевая страница является продолжением этого же отчёта.',
+  'Переноси такую дату только в current_result. Для historical_result нужна собственная дата рядом с прежним значением.',
+  'Дата регистрации, валидации, печати или выдачи не заменяет дату взятия биоматериала. Если связь страниц или дата не доказана, оставь collectedAt: null.',
   'Референсные значения, пороги дефицита/токсичности и пояснения не являются наблюдениями.',
   'Извлекай обе колонки: для строки с текущим и прежним результатом нужны два observations.',
   'Единица в общей колонке строки относится и к текущему, и к историческому значению этой строки.',
@@ -101,6 +105,7 @@ function openRouterProvider(config: {
 }): AnamnesisExtractionProvider {
   async function extractPage(
     page: ExtractionRequestPage,
+    previousPage: ExtractionRequestPage | undefined,
   ): Promise<ExtractionResult> {
     const content: unknown[] = [
       {
@@ -115,6 +120,19 @@ function openRouterProvider(config: {
           url: `data:image/png;base64,${page.imagePng.toString('base64')}`,
         },
       });
+    if (previousPage && (previousPage.lines.length || previousPage.imagePng)) {
+      content.push({
+        type: 'text',
+        text: `Контекст: предыдущая страница ${previousPage.pageNumber}. Используй только её шапку для даты и связи с продолжением на целевой странице ${page.pageNumber}; строки результатов с этой страницы не извлекай.\n${previousPage.lines.join('\n') || '(текстового слоя нет, смотри изображение контекста)'}`,
+      });
+      if (previousPage.imagePng)
+        content.push({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/png;base64,${previousPage.imagePng.toString('base64')}`,
+          },
+        });
+    }
     const request = {
       model: config.model,
       messages: [
@@ -242,7 +260,14 @@ function openRouterProvider(config: {
           continue;
         }
         try {
-          results.push(await extractPage(page));
+          results.push(
+            await extractPage(
+              page,
+              pages.find(
+                (previous) => previous.pageNumber === page.pageNumber - 1,
+              ),
+            ),
+          );
         } catch (error) {
           if (
             !(error instanceof AnamnesisProviderError) ||
