@@ -96,7 +96,7 @@ export const anamnesisRevisionReasons = [
 export const medicalMarkerSchema = z
   .object({
     id: anamnesisMarkerSlug,
-    code: z.string().regex(/^[A-Z0-9]{2,16}$/),
+    code: z.string().regex(/^[A-Z0-9_]{2,64}$/),
     name: z.string().min(1).max(200),
     shortName: z.string().min(1).max(100).nullable(),
     category: z.enum(anamnesisMarkerCategories),

@@ -10,6 +10,7 @@ import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import type { MedicalImportJob } from '@/contracts/anamnesis';
 import { Alert, Button, Group, Paper, Stack, Text, Title } from '@mantine/core';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { fetchAnamnesis, formatAnamnesisDate, ownerIdQuery } from './api';
 
 // Просмотр оригинала: PDF встроен через авторизованный маршрут API,
@@ -120,6 +121,15 @@ export function DocumentViewer({
                   {m.documents.download}
                 </Button>
               </a>
+            )}
+            {writable && (
+              <Button
+                component={Link}
+                href={`/anamnesis/documents/${documentId}/review`}
+                mih={44}
+              >
+                {m.reviews.title}
+              </Button>
             )}
             {writable && (
               <Button
