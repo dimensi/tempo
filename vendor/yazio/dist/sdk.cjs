@@ -374,6 +374,19 @@ var parseDate = (input) => {
   const date = typeof input === 'string' ? new Date(input) : input;
   return date.toISOString().split('T')[0];
 };
+var parseDiaryDateTime = (input) => {
+  const message =
+    'Diary date must be a valid local YYYY-MM-DD HH:mm:ss timestamp';
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(input))
+    throw new RangeError(message);
+  const validation = /* @__PURE__ */ new Date(`${input.replace(' ', 'T')}Z`);
+  if (
+    !Number.isFinite(validation.getTime()) ||
+    validation.toISOString().slice(0, 19).replace('T', ' ') !== input
+  )
+    throw new RangeError(message);
+  return input;
+};
 
 // upstream/src/api/user/consumed.ts
 var import_zod5 = require('zod');
@@ -430,7 +443,7 @@ var AddUserConsumedItemsOptionsSchema = import_zod5.z.union([
   import_zod5.z.object({
     id: import_zod5.z.string().uuid(),
     product_id: import_zod5.z.string().uuid(),
-    date: import_zod5.z.union([import_zod5.z.date(), import_zod5.z.string()]),
+    date: import_zod5.z.string(),
     daytime: DaytimeSchema,
     amount: import_zod5.z.number(),
     serving: import_zod5.z.string(),
@@ -439,7 +452,7 @@ var AddUserConsumedItemsOptionsSchema = import_zod5.z.union([
   import_zod5.z.object({
     id: import_zod5.z.string().uuid(),
     product_id: import_zod5.z.string().uuid(),
-    date: import_zod5.z.union([import_zod5.z.date(), import_zod5.z.string()]),
+    date: import_zod5.z.string(),
     daytime: DaytimeSchema,
     amount: import_zod5.z.number(),
     serving: import_zod5.z.null(),
@@ -456,7 +469,7 @@ var addUserConsumedItem = async (token, entry) =>
         {
           id: entry.id,
           product_id: entry.product_id,
-          date: parseDate(entry.date ?? /* @__PURE__ */ new Date()),
+          date: parseDiaryDateTime(entry.date),
           daytime: entry.daytime,
           amount: entry.amount,
           serving: entry.serving,

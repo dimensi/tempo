@@ -1,10 +1,10 @@
 {
   "upstreamRepository": "https://github.com/dimensi/yazio",
-  "upstreamCommit": "89386f0db1ef15bc2bb21b359805d83c9fc7bbf7",
+  "upstreamCommit": "f0013b35de5cb5c9705995612cef6465dde78efc",
   "upstreamTree": {
-    "contents": "All 23 src/**/*.ts files and tests/meal-images.test.ts only; exact git blobs, no research or runtime data",
+    "contents": "All src/**/*.ts files and the offline meal-images/consumed-time tests; exact git blobs, no runtime data",
     "archive": "upstream-source.tar.gz",
-    "archiveSha256": "4e1b2c88abd5604a79c783a1718a2de0e28aca2d6124ec07166ac80a05c2be79",
+    "archiveSha256": "42b5ec917acc6e0645a388bf4b51c774eea06b416865d89f68cd5c4c4d848b18",
     "fileSha256": "source-checksums.json"
   },
   "runtimeArtifactsSha256": "artifact-checksums.json",
@@ -29,5 +29,6 @@
     "sourceChanges": "None; generated sdk barrel adds type exports and a package-private fetchYazio export for upstream mocked header test. Public wrappers restrict original runtime export surface.",
     "generatedCommentNormalization": "Random temporary build directory prefixes in esbuild file-location comments become upstream/; runtime statements and upstream blobs are unchanged."
   },
-  "upstreamLicense": "No LICENSE or license field exists in the exact upstream commit; no new license is claimed."
+  "upstreamLicense": "No LICENSE or license field exists in the exact upstream commit; no new license is claimed.",
+  "upstreamRelease": "v2.0.0"
 }

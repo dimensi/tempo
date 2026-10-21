@@ -41,5 +41,30 @@ for (const [root, subpath, raw] of [
     return new Response('{}');
   };
   assert.deepEqual(await client.user.getMealImages({ date: '2026-10-10' }), {});
+  const entry = {
+    id: '00000000-0000-4000-8000-000000000001',
+    product_id: '00000000-0000-4000-8000-000000000002',
+    date: '2026-10-22 00:30:45',
+    daytime: 'snack',
+    amount: 100,
+    serving: null,
+    serving_quantity: null,
+  };
+  let writes = 0;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(
+      String(url),
+      'https://yzapi.yazio.com/v20/user/consumed-items',
+    );
+    assert.equal(JSON.parse(options.body).products[0].date, entry.date);
+    writes++;
+    return new Response(null, { status: 204 });
+  };
+  await client.user.addConsumedItem(entry);
+  await assert.rejects(
+    client.user.addConsumedItem({ ...entry, date: '2026-10-22' }),
+    /YYYY-MM-DD HH:mm:ss/,
+  );
+  assert.equal(writes, 1);
 }
 console.log('SDK artifact ESM/CJS/auth/api smoke passed');
