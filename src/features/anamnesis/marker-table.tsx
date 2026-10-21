@@ -7,10 +7,8 @@ import type { AnamnesisMarkerSummary } from '@/contracts/anamnesis';
 import {
   Alert,
   Badge,
-  Group,
   Paper,
   Stack,
-  Table,
   Text,
   TextInput,
   Title,
@@ -18,6 +16,7 @@ import {
 import Link from 'next/link';
 import { useState } from 'react';
 import { formatAnamnesisDate, ownerIdQuery } from './api';
+import classes from './marker-table.module.css';
 
 export function MarkerTable({ ownerId }: { ownerId: string }) {
   const [search, setSearch] = useState('');
@@ -48,56 +47,50 @@ export function MarkerTable({ ownerId }: { ownerId: string }) {
       {loading && <Text>{m.overview.empty}</Text>}
       {!loading && !items.length && <Text>{m.markers.empty}</Text>}
       {!!filtered.length && (
-        <Paper withBorder>
-          <Table.ScrollContainer minWidth={640}>
-            <Table data-testid="anamnesis-marker-table">
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>{m.markers.column.name}</Table.Th>
-                  <Table.Th>{m.markers.column.last}</Table.Th>
-                  <Table.Th>{m.markers.column.date}</Table.Th>
-                  <Table.Th>{m.markers.column.count}</Table.Th>
-                  <Table.Th>{m.markers.column.status}</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {filtered.map((item) => (
-                  <Table.Tr key={item.marker.id}>
-                    <Table.Td>
-                      <Link href={`/anamnesis/markers/${item.marker.id}`}>
-                        {item.marker.name}
-                      </Link>
-                    </Table.Td>
-                    <Table.Td>
-                      {item.lastValue === null ? (
-                        <Text c="dimmed">{m.markers.noMarkerData}</Text>
-                      ) : (
-                        <Group gap="xs">
-                          <span>{formatAnamnesisValueText(item)}</span>
-                          {item.lastUnit && (
-                            <Text size="sm" c="dimmed">
-                              {item.lastUnit}
-                            </Text>
-                          )}
-                        </Group>
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      {formatAnamnesisDate(item.lastCollectedAt)}
-                    </Table.Td>
-                    <Table.Td>{item.observationCount}</Table.Td>
-                    <Table.Td>
-                      {item.lastReferenceAssessment && (
-                        <MarkerAssessmentBadge
-                          assessment={item.lastReferenceAssessment}
-                        />
-                      )}
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
+        <Paper withBorder className={classes.container}>
+          <ul className={classes.list} aria-label={m.markers.title}>
+            {filtered.map((item) => (
+              <li key={item.marker.id} className={classes.row}>
+                <div className={classes.primary}>
+                  <Link
+                    href={`/anamnesis/markers/${item.marker.id}`}
+                    className={classes.name}
+                  >
+                    {item.marker.name}
+                  </Link>
+                  <div className={classes.result}>
+                    {item.lastValue === null ? (
+                      <Text size="sm">{m.markers.noMarkerData}</Text>
+                    ) : (
+                      <>
+                        <Text fw={600} className={classes.value}>
+                          {formatAnamnesisValueText(item)}
+                        </Text>
+                        {item.lastUnit && (
+                          <Text size="sm" className={classes.unit}>
+                            {item.lastUnit}
+                          </Text>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className={classes.meta}>
+                  <Text size="sm">
+                    {formatAnamnesisDate(item.lastCollectedAt)}
+                  </Text>
+                  <Text size="sm">
+                    {m.markers.column.count}: {item.observationCount}
+                  </Text>
+                  {item.lastReferenceAssessment && (
+                    <MarkerAssessmentBadge
+                      assessment={item.lastReferenceAssessment}
+                    />
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
         </Paper>
       )}
     </Stack>
