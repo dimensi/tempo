@@ -24,7 +24,7 @@ import {
 } from './pipeline';
 import { normalizeSourceKinds } from './extraction-normalize';
 
-export const ANAMNESIS_EXTRACTION_VERSION = '3';
+export const ANAMNESIS_EXTRACTION_VERSION = '4';
 const LEASE_MS = 300000;
 const MAX_ATTEMPTS = 3;
 
