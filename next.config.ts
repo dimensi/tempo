@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
   output: 'standalone',
+  allowedDevOrigins: ['**.dimensi.ru'],
   serverExternalPackages: [
     'better-sqlite3',
     '@napi-rs/canvas',
