@@ -12,8 +12,7 @@ export async function readWorkoutDetails(
   headers: Headers,
   ownerId: string,
   resource:
-    | { kind: 'plan'; planId: string; workoutId: string }
-    | { kind: 'session'; id: string }
+    | { kind: 'workout'; id: string }
     | { kind: 'native'; id: number }
     | { kind: 'link'; id: string },
   date: string,
@@ -37,11 +36,6 @@ export async function readWorkoutDetails(
     await access();
     return item ? { kind: 'native' as const, item } : null;
   }
-  if (resource.kind === 'session') {
-    const data = await listWorkouts(headers, ownerId);
-    const session = data.sessions.find((item) => item.id === resource.id);
-    return session ? { kind: 'session' as const, session } : null;
-  }
   const sync = await listTransformMateSync(headers, ownerId, {
     from: z.iso.date().parse(date),
     to: date,
@@ -52,19 +46,11 @@ export async function readWorkoutDetails(
     return item ? { kind: 'link' as const, item } : null;
   }
   const data = await listWorkouts(headers, ownerId);
-  const plan = data.plans.find((item) => item.id === resource.planId);
-  const workout = plan?.workouts.find((item) => item.id === resource.workoutId);
-  if (!plan || !workout) return null;
+  const workout = data.workouts.find((item) => item.id === resource.id);
+  if (!workout) return null;
   return {
-    kind: 'plan' as const,
-    plan,
+    kind: 'workout' as const,
     workout,
-    sync:
-      sync.items.find(
-        (item) => item.planId === plan.id && item.workoutId === workout.id,
-      ) ?? null,
-    sessions: data.sessions.filter(
-      (item) => item.planId === plan.id && item.plannedWorkoutId === workout.id,
-    ),
+    sync: sync.items.find((item) => item.workoutId === workout.id) ?? null,
   };
 }
