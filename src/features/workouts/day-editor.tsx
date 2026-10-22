@@ -235,6 +235,7 @@ export function DayEditor({
   const [status, setStatus] = useState('');
   const [stored, setStored] = useState(true);
   const [savedSession, setSavedSession] = useState(existing);
+  const [hasQueuedWrite, setHasQueuedWrite] = useState(false);
   const sessionRef = useRef(existing);
   const planRef = useRef(plan);
   const [hasPlan, setHasPlan] = useState(!!plan);
@@ -258,7 +259,7 @@ export function DayEditor({
   );
   const recordedSets = value.result.exercises.reduce(
     (count, exercise) =>
-      count + exercise.sets.filter((set) => set.reps !== null).length,
+      count + exercise.sets.filter((set) => set.reps !== null && set.reps > 0).length,
     0,
   );
   const persist = useCallback(
@@ -709,10 +710,10 @@ export function DayEditor({
               }
             >
               {savedSession
-                  ? m[value.result.status]
-                  : mode === 'result'
-                    ? m.in_progress
-                    : m.plannedStatus}
+                ? m[value.result.status]
+                : mode === 'result'
+                  ? m.in_progress
+                  : m.plannedStatus}
             </Text>
           </Group>
           {mode !== 'plan' && value.result.status === 'completed' && canLog && (
@@ -949,7 +950,10 @@ export function DayEditor({
             canLog={canLog}
             reordering={reordering}
             exercises={value.result.exercises}
-            planned={savedSession?.planSnapshot?.workout ?? (hasPlan ? selected : undefined)}
+            planned={
+              savedSession?.planSnapshot?.workout ??
+              (hasPlan ? selected : undefined)
+            }
             session={savedSession}
             mode={canLog ? 'result' : 'read'}
             disabled={busy}
@@ -975,7 +979,7 @@ export function DayEditor({
               {m.addExercises}
             </Button>
           )}
-          {onCancel && !savedSession && (
+          {onCancel && !savedSession && !hasQueuedWrite && (
             <Button
               variant="subtle"
               mih={44}
