@@ -4,7 +4,7 @@ import { DragDropProvider } from '@dnd-kit/react';
 import { isSortable, useSortable } from '@dnd-kit/react/sortable';
 import { ActionIcon, Group, Stack, Text } from '@mantine/core';
 import { IconGripVertical } from '@tabler/icons-react';
-import type { ResultExercise } from './result-draft';
+import type { DraftExercise } from './workout-draft';
 import { workoutMessages as m } from './messages';
 import styles from './day-workout.module.css';
 
@@ -13,7 +13,7 @@ function OrderRow({
   index,
   disabled,
 }: {
-  exercise: ResultExercise;
+  exercise: DraftExercise;
   index: number;
   disabled: boolean;
 }) {
@@ -49,9 +49,9 @@ export function ExerciseOrder({
   disabled,
   onChange,
 }: {
-  exercises: ResultExercise[];
+  exercises: DraftExercise[];
   disabled: boolean;
-  onChange: (exercises: ResultExercise[]) => void;
+  onChange: (exercises: DraftExercise[]) => void;
 }) {
   return (
     <DragDropProvider

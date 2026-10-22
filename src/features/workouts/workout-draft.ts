@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import { type PlannedWorkout } from '@/contracts/workouts';
+import type { WorkoutInput } from '@/contracts/workouts';
 
-export const resultDraftSchema = z
+export const workoutDraftSchema = z
   .object({
     title: z.string().max(160),
     date: z.string().max(10),
-    note: z.string().max(4000),
-    status: z.enum(['in_progress', 'completed', 'skipped']),
+    note: z.string().max(12000),
+    status: z.enum(['planned', 'in_progress', 'completed']),
     exercises: z
       .array(
         z
@@ -29,12 +29,11 @@ export const resultDraftSchema = z
               .array(
                 z
                   .object({
-                    reps: z.number().min(0).max(1000).nullable(),
-                    weightKg: z.number().min(0).max(2000).nullable(),
+                    reps: z.union([z.number(), z.string()]).nullable(),
+                    weightKg: z.union([z.number(), z.string()]).nullable(),
                   })
                   .strict(),
               )
-              .min(1)
               .max(50),
           })
           .strict(),
@@ -42,17 +41,17 @@ export const resultDraftSchema = z
       .max(50),
   })
   .strict();
-export type ResultDraft = z.infer<typeof resultDraftSchema>;
-export type ResultExercise = ResultDraft['exercises'][number];
-export function emptyResultDraft(
+export type WorkoutDraft = z.infer<typeof workoutDraftSchema>;
+export type DraftExercise = WorkoutDraft['exercises'][number];
+export function emptyWorkoutDraft(
   date: string,
-  workout?: PlannedWorkout,
-): ResultDraft {
+  workout?: WorkoutInput,
+): WorkoutDraft {
   return {
     title: workout?.title ?? '',
     date,
-    note: '',
-    status: 'completed',
+    note: workout?.note ?? '',
+    status: 'planned',
     exercises:
       workout?.exercises.map((exercise) => ({
         id: crypto.randomUUID(),
@@ -60,7 +59,8 @@ export function emptyResultDraft(
         ...(exercise.transformMate
           ? { transformMate: structuredClone(exercise.transformMate) }
           : {}),
-        sets: exercise.sets.map(() => ({ reps: null, weightKg: null })),
+        comment: exercise.comment,
+        sets: structuredClone(exercise.sets),
       })) ?? [],
   };
 }

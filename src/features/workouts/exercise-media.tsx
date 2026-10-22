@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Modal, SegmentedControl, Stack, Text } from '@mantine/core';
 import { useMediaQuery, useReducedMotion } from '@mantine/hooks';
-import type { WorkoutExercise, WorkoutSession } from '@/contracts/workouts';
+import type { WorkoutExercise, Workout } from '@/contracts/workouts';
 import { ExerciseDetails } from './exercise-details';
 import { ExerciseVideos } from './workout-videos';
 import { workoutMessages as m } from './messages';
@@ -18,7 +18,7 @@ export function ExerciseMedia({
   ownerId: string;
   exercise: WorkoutExercise;
   actual?: WorkoutExercise;
-  session?: WorkoutSession;
+  session?: Workout;
   canLog: boolean;
   onClose: () => void;
 }) {

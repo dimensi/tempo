@@ -1,9 +1,16 @@
 import { z } from 'zod';
+import type { Workout } from '@/contracts/workouts';
+import { workoutDraftSchema } from './workout-draft';
 
 const envelope = z
   .object({ savedAt: z.number(), requestId: z.uuid(), value: z.unknown() })
   .strict();
 const lifetime = 12 * 60 * 60 * 1000;
+const needsReview = (value: unknown) =>
+  typeof value === 'object' &&
+  value !== null &&
+  (('plan' in value && 'result' in value) ||
+    ('revision' in value && value.revision === -1));
 const prefix = 'workout-draft:';
 const validTime = (savedAt: number) =>
   savedAt <= Date.now() && Date.now() - savedAt < lifetime;
@@ -50,7 +57,10 @@ export function readWorkoutDraft<T>(
             : null;
         valid =
           storedKey.startsWith(`${prefix}${identity}:`) &&
-          Boolean(parsed?.success && validTime(parsed.data.savedAt));
+          Boolean(
+            parsed?.success &&
+            (validTime(parsed.data.savedAt) || needsReview(parsed.data.value)),
+          );
       } catch {
         /* Remove malformed entries without stopping restoration. */
       }
@@ -61,8 +71,10 @@ export function readWorkoutDraft<T>(
     const parsed = envelope
       .extend({ value: schema })
       .safeParse(JSON.parse(raw));
-    if (!parsed.success || !validTime(parsed.data.savedAt)) {
-      sessionStorage.removeItem(key);
+    if (
+      !parsed.success ||
+      (!validTime(parsed.data.savedAt) && !needsReview(parsed.data.value))
+    ) {
       return null;
     }
     return parsed.data;
@@ -82,12 +94,18 @@ export function storeWorkoutDraft(
       value,
     });
     if (serialized.length > 256_000) {
-      sessionStorage.removeItem(key);
       return false;
     }
-    const others = Object.keys(sessionStorage).filter(
-      (item) => item.startsWith(prefix) && item !== key,
-    );
+    const others = Object.keys(sessionStorage).filter((item) => {
+      if (!item.startsWith(prefix) || item === key) return false;
+      try {
+        return !needsReview(
+          envelope.parse(JSON.parse(sessionStorage.getItem(item)!)).value,
+        );
+      } catch {
+        return true;
+      }
+    });
     const age = (item: string) => {
       try {
         return envelope.parse(JSON.parse(sessionStorage.getItem(item)!))
@@ -103,4 +121,125 @@ export function storeWorkoutDraft(
   } catch {
     return false;
   }
+}
+
+/** Convert a legacy envelope once, retaining partial inputs and requiring review. */
+export function readLegacyWorkoutDraft(
+  identity: string,
+  date: string,
+  workout?: Workout,
+) {
+  try {
+    const candidates = Object.keys(sessionStorage).filter(
+      (key) =>
+        key.startsWith(`${prefix}${identity}:day:`) && key.endsWith(`:${date}`),
+    );
+    for (const key of candidates) {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = envelope.safeParse(JSON.parse(raw));
+      if (!parsed.success) continue;
+      const legacy = z
+        .object({
+          plan: z.object({
+            title: z.string(),
+            description: z.string(),
+            workouts: z.array(
+              z.object({
+                id: z.string(),
+                date: z.string(),
+                title: z.string(),
+                exercises: z.array(z.unknown()),
+              }),
+            ),
+          }),
+          result: z.unknown(),
+          planDirty: z.boolean(),
+          resultDirty: z.boolean(),
+        })
+        .safeParse(parsed.data.value);
+      if (!legacy.success) continue;
+      const old = legacy.data;
+      const sessionKey = !!workout && key.includes(`:day:${workout.id}::`);
+      const legacySource = workout?.legacySource;
+      if (
+        legacySource &&
+        !sessionKey &&
+        !key.includes(`:day:${legacySource.planId}:${legacySource.workoutId}:`)
+      )
+        continue;
+      const planned = old.plan.workouts.find(
+        (item) =>
+          item.date === date &&
+          (!workout || item.id === (legacySource?.workoutId ?? workout.id)),
+      );
+      if (workout && !planned && !sessionKey) continue;
+      const oldResult = z
+        .object({ status: z.string() })
+        .passthrough()
+        .safeParse(old.result);
+      const actual = workoutDraftSchema.safeParse(
+        oldResult.success
+          ? {
+              ...oldResult.data,
+              status:
+                workout?.status ??
+                (oldResult.data.status === 'skipped'
+                  ? 'planned'
+                  : oldResult.data.status),
+            }
+          : old.result,
+      );
+      const selected =
+        old.resultDirty && actual.success
+          ? actual.data
+          : planned
+            ? {
+                date,
+                title: planned.title || old.plan.title,
+                note: old.plan.description,
+                status: workout?.status ?? 'planned',
+                exercises: planned.exercises,
+              }
+            : actual.success
+              ? actual.data
+              : null;
+      const converted = workoutDraftSchema.safeParse(selected);
+      const alternative =
+        old.planDirty && old.resultDirty && planned
+          ? workoutDraftSchema.safeParse({
+              date,
+              title: planned.title || old.plan.title,
+              note: old.plan.description,
+              status: workout?.status ?? 'planned',
+              exercises: planned.exercises,
+            })
+          : null;
+      if (!converted.success) continue;
+      const canonicalKey = dayWorkoutDraftKey(
+        identity,
+        date,
+        workout?.id ?? 'new',
+      );
+      // A deliberately different base ensures explicit review before any autosave.
+      if (
+        storeWorkoutDraft(canonicalKey, parsed.data.requestId, {
+          revision: -1,
+          value: converted.data,
+          ...(alternative?.success ? { alternative: alternative.data } : {}),
+          legacy: parsed.data.value,
+        }) &&
+        key !== canonicalKey
+      )
+        sessionStorage.removeItem(key);
+      return {
+        value: converted.data,
+        requestId: parsed.data.requestId,
+        alternative: alternative?.success ? alternative.data : undefined,
+      };
+    }
+  } catch {
+    /* Keep the original draft for a later successful conversion. */
+  }
+  return null;
 }

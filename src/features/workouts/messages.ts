@@ -1,4 +1,17 @@
 export const workoutMessages = {
+  legacyPlanDraft: 'Изменения старого плана',
+  applyLegacyPlan: 'Использовать изменения старого плана',
+  createWorkout: 'Создать тренировку',
+  startWorkout: 'Начать',
+  completeWorkout: 'Завершить',
+  resumeWorkout: 'Продолжить',
+  draftReview:
+    'Сохранённый черновик относится к другой версии тренировки. Проверьте изменения перед сохранением.',
+  applyDraft: 'Использовать черновик',
+  keepCurrent: 'Оставить текущую версию',
+  transitionValidation:
+    'Добавьте упражнение и заполните повторения в каждом подходе. Проверьте вес и повторения.',
+
   copyExerciseLink: 'Скопировать ссылку',
   shareExercise: 'Поделиться',
   exerciseLinkCopied: 'Ссылка скопирована',
@@ -268,7 +281,7 @@ export const workoutMessages = {
   addManual: 'Ввести упражнение вручную',
   chooseExercise: 'Выбрать из каталога',
   addSet: 'Добавить подход',
-  removeWorkout: 'Удалить тренировку из плана',
+  removeWorkout: 'Удалить тренировку',
   removeExercise: 'Удалить упражнение',
   removeSet: 'Удалить подход',
   set: 'Подход',

@@ -18,19 +18,13 @@ import {
   IconPlus,
   IconX,
   IconPlayerPlay,
-  IconClipboardCopy,
 } from '@tabler/icons-react';
 import { useMediaQuery } from '@mantine/hooks';
 import { BottomSheet } from '@/components/shared/bottom-sheet';
 import { useReadOnline } from '@/lib/use-read-online';
 import { ExerciseOrder } from './exercise-order';
-import { matchExerciseGuides } from './exercise-guides';
-import type {
-  PlannedWorkout,
-  WorkoutExercise,
-  WorkoutSession,
-} from '@/contracts/workouts';
-import type { ResultExercise } from './result-draft';
+import type { WorkoutExercise, Workout } from '@/contracts/workouts';
+import type { DraftExercise } from './workout-draft';
 import { ExerciseMedia } from './exercise-media';
 import { workoutMessages as m } from './messages';
 import styles from './day-workout.module.css';
@@ -39,27 +33,27 @@ export function ExerciseRows({
   ownerId,
   canLog,
   exercises,
-  planned,
   session,
   mode,
   onChange,
   onCommit,
   disabled = false,
   reordering = false,
+  showValidation = false,
 }: {
   ownerId: string;
   canLog: boolean;
-  exercises: ResultExercise[];
-  planned?: PlannedWorkout;
-  session?: WorkoutSession;
-  mode: 'plan' | 'result' | 'read';
-  onChange?: (value: ResultExercise[]) => void;
+  exercises: DraftExercise[];
+  session?: Workout;
+  mode: 'edit' | 'read';
+  onChange?: (value: DraftExercise[]) => void;
   onCommit?: () => void;
   disabled?: boolean;
   reordering?: boolean;
+  showValidation?: boolean;
 }) {
   const [media, setMedia] = useState<{
-    exercise: ResultExercise;
+    exercise: DraftExercise;
     actual?: WorkoutExercise;
   } | null>(null);
   const mobile = useMediaQuery('(max-width: 47.99em)');
@@ -78,16 +72,10 @@ export function ExerciseRows({
     }
   }, [exercises]);
   const online = useReadOnline();
-  const guides = matchExerciseGuides(exercises, planned?.exercises ?? []);
-  const recorded =
-    mode === 'plan'
-      ? matchExerciseGuides(exercises, session?.exercises ?? [])
-      : exercises.map((exercise) =>
-          session?.exercises.find(
-            (item) => Boolean(exercise.id) && item.id === exercise.id,
-          ),
-        );
-  const update = (index: number, next: ResultExercise) =>
+  const recorded = exercises.map((exercise) =>
+    session?.exercises.find((item) => item.id === exercise.id),
+  );
+  const update = (index: number, next: DraftExercise) =>
     onChange?.(exercises.map((exercise, i) => (i === index ? next : exercise)));
   if (reordering && onChange)
     return (
@@ -102,19 +90,14 @@ export function ExerciseRows({
       {exercises.map((exercise, index) => {
         const key =
           exercise.id ?? exercise.transformMate?.occurrenceKey ?? `${index}`;
-        const guide = guides[index];
         const openMedia = () => setMedia({ exercise, actual: recorded[index] });
         const titleParts = /^(.*?)\s*(\([^)]*\))$/.exec(exercise.name);
-        const completed = exercise.sets.filter(
-          (set) => set.reps !== null && set.reps > 0,
-        ).length;
         const existingOccurrence = Boolean(
           session &&
           exercise.id &&
           session.exercises.some((item) => item.id === exercise.id),
         );
-        const lockedRemoval =
-          mode === 'result' && existingOccurrence && !online;
+        const lockedRemoval = existingOccurrence && !online;
         const options = [
           {
             label: m.techniqueAndVideo,
@@ -157,11 +140,6 @@ export function ExerciseRows({
                   <span className={styles.techniqueLink}>
                     {m.techniqueAndVideo} ›
                   </span>
-                  {mode !== 'plan' && exercise.sets.length > 0 && (
-                    <span className={styles.exerciseCount}>
-                      {completed} / {exercise.sets.length} {m.shortSets}
-                    </span>
-                  )}
                 </span>
               </UnstyledButton>
               {onChange &&
@@ -241,37 +219,8 @@ export function ExerciseRows({
                   </Menu>
                 ))}
             </Group>
-            {mode !== 'plan' && guide && (
-              <div className={styles.planSummary}>
-                <Text size="sm" fw={650} className={styles.planSummaryTitle}>
-                  {m.planGuide}
-                </Text>
-                <div className={styles.planChips}>
-                  {guide.sets.map((set, setIndex) => (
-                    <div key={setIndex} className={styles.planChip}>
-                      <span className={styles.planChipNumber}>
-                        {m.set} {setIndex + 1}:
-                      </span>
-                      <Text component="span" size="sm" fw={650}>
-                        {set.weightKg === null
-                          ? m.noWeight
-                          : `${set.weightKg} кг`}
-                      </Text>
-                      <Text component="span" size="sm" c="dimmed">
-                        × {set.reps}
-                      </Text>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {mode === 'result' && (
-              <Text size="sm" fw={600} mb={4}>
-                {m.actualSets}
-              </Text>
-            )}
             <div
-              className={`${styles.setHeading} ${mode === 'result' && onChange ? styles.withSetActions : ''}`}
+              className={`${styles.setHeading} ${onChange ? styles.withSetActions : ''}`}
               aria-hidden
             >
               <span>{m.setNumber}</span>
@@ -283,12 +232,12 @@ export function ExerciseRows({
                 <span className={styles.desktopLabel}>{m.reps}</span>
                 <span className={styles.mobileLabel}>{m.resultReps}</span>
               </span>
-              {!(mode === 'result' && onChange) && <span />}
+              {!onChange && <span />}
             </div>
             {exercise.sets.map((set, setIndex) => (
               <div
                 key={setIndex}
-                className={`${styles.setRow} ${mode === 'result' && onChange ? styles.withSetActions : ''}`}
+                className={`${styles.setRow} ${onChange ? styles.withSetActions : ''}`}
                 onBlur={(event) => {
                   if (!event.currentTarget.contains(event.relatedTarget))
                     onCommit?.();
@@ -311,6 +260,7 @@ export function ExerciseRows({
                         else weightInputs.current.delete(id);
                       }}
                       aria-label={`${exercise.name}, ${m.set} ${setIndex + 1}, ${m.weight}`}
+                      clampBehavior="none"
                       hideControls
                       inputMode="decimal"
                       placeholder={m.noWeight}
@@ -319,6 +269,14 @@ export function ExerciseRows({
                       max={2000}
                       decimalScale={2}
                       disabled={disabled}
+                      error={
+                        set.weightKg !== null &&
+                        (typeof set.weightKg !== 'number' ||
+                          set.weightKg < 0 ||
+                          set.weightKg > 2000)
+                          ? m.resultValidation
+                          : undefined
+                      }
                       onChange={(value) =>
                         update(index, {
                           ...exercise,
@@ -326,8 +284,7 @@ export function ExerciseRows({
                             i === setIndex
                               ? {
                                   ...row,
-                                  weightKg:
-                                    typeof value === 'number' ? value : null,
+                                  weightKg: value === '' ? null : value,
                                 }
                               : row,
                           ),
@@ -336,18 +293,25 @@ export function ExerciseRows({
                     />
                     <NumberInput
                       aria-label={`${exercise.name}, ${m.set} ${setIndex + 1}, ${m.reps}`}
+                      clampBehavior="none"
                       hideControls
                       inputMode="numeric"
-                      placeholder={
-                        mode === 'result'
-                          ? String(guide?.sets[setIndex]?.reps ?? '—')
-                          : '10'
-                      }
+                      placeholder="—"
                       value={set.reps ?? ''}
                       min={1}
                       max={1000}
                       allowDecimal={false}
                       disabled={disabled}
+                      error={
+                        (showValidation && set.reps === null) ||
+                        (set.reps !== null &&
+                          (typeof set.reps !== 'number' ||
+                            !Number.isInteger(set.reps) ||
+                            set.reps < 1 ||
+                            set.reps > 1000))
+                          ? m.resultValidation
+                          : undefined
+                      }
                       onChange={(value) =>
                         update(index, {
                           ...exercise,
@@ -355,8 +319,7 @@ export function ExerciseRows({
                             i === setIndex
                               ? {
                                   ...row,
-                                  reps:
-                                    typeof value === 'number' ? value : null,
+                                  reps: value === '' ? null : value,
                                 }
                               : row,
                           ),
@@ -365,30 +328,8 @@ export function ExerciseRows({
                     />
                   </>
                 )}
-                {mode === 'result' && onChange ? (
+                {onChange ? (
                   <div className={styles.setActions}>
-                    {guide?.sets[setIndex] && (
-                      <Tooltip label={m.fillFromPlan}>
-                        <ActionIcon
-                          variant="subtle"
-                          size={44}
-                          disabled={disabled}
-                          aria-label={`${m.fillFromPlan}, ${m.set} ${setIndex + 1}: ${exercise.name}`}
-                          onClick={() =>
-                            update(index, {
-                              ...exercise,
-                              sets: exercise.sets.map((row, i) =>
-                                i === setIndex
-                                  ? { ...guide.sets[setIndex]! }
-                                  : row,
-                              ),
-                            })
-                          }
-                        >
-                          <IconClipboardCopy size={20} />
-                        </ActionIcon>
-                      </Tooltip>
-                    )}
                     {exercise.sets.length > 1 && (
                       <Tooltip label={`${m.removeSet} ${setIndex + 1}`}>
                         <span className={styles.removeSet}>
@@ -452,15 +393,7 @@ export function ExerciseRows({
                   }
                   update(index, {
                     ...exercise,
-                    sets: [
-                      ...exercise.sets,
-                      mode === 'plan'
-                        ? {
-                            ...exercise.sets.at(-1)!,
-                            reps: exercise.sets.at(-1)?.reps ?? 10,
-                          }
-                        : { reps: null, weightKg: null },
-                    ],
+                    sets: [...exercise.sets, { reps: null, weightKg: null }],
                   });
                 }}
               >
@@ -496,7 +429,8 @@ export function ExerciseRows({
             ...media.exercise,
             sets: media.exercise.sets.map((set) => ({
               ...set,
-              reps: set.reps ?? 1,
+              reps: typeof set.reps === 'number' ? set.reps : 1,
+              weightKg: typeof set.weightKg === 'number' ? set.weightKg : null,
             })),
           }}
           actual={media.actual}
