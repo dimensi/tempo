@@ -73,13 +73,15 @@ export async function saveOfflineWrite(request: Request) {
     result.payload.kind === 'workout' &&
     result.payload.data.status === 'planned'
   ) {
-    const workout = workoutRepository(getDatabase().db).get(
-      identity.ownerId,
-      result.id,
-    );
-    void syncSavedWorkout(request.headers, identity.ownerId, workout).catch(
-      () => {},
-    );
+    // Publication is best-effort after commit: a replayed receipt remains valid
+    // even when another tab has since deleted the workout.
+    void (async () => {
+      const workout = workoutRepository(getDatabase().db).get(
+        identity.ownerId,
+        result.id,
+      );
+      await syncSavedWorkout(request.headers, identity.ownerId, workout);
+    })().catch(() => {});
   }
   return result;
 }

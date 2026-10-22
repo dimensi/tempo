@@ -8,6 +8,7 @@ import {
   type WriteStore,
 } from '@/lib/offline-write-queue';
 import type { WritePayload } from '@/contracts/offline-write';
+import { migrateWorkoutWrites } from '@/lib/workout-write-migration';
 
 const partition = 'a'.repeat(43);
 const payload: WritePayload = {
@@ -67,4 +68,65 @@ test('replays one accepted offline write without crossing into another account',
   expect(sent).toHaveLength(1);
   expect(state.operations[0]?.status).toBe('synced');
   expect(nextWrite(state, 'b'.repeat(43), now)).toBeUndefined();
+
+  const originalId = crypto.randomUUID();
+  const legacy = {
+    partition,
+    yazioEpoch: null,
+    records: [],
+    operations: [
+      {
+        operation: {
+          id: originalId,
+          recordId: crypto.randomUUID(),
+          partition,
+          yazioEpoch: null,
+          base: null,
+          payload: {
+            kind: 'workout',
+            data: {
+              date: '2026-10-15',
+              title: 'Gym',
+              note: 'entered',
+              status: 'completed',
+              exercises: [
+                {
+                  id: crypto.randomUUID(),
+                  name: 'Squat',
+                  sets: [{ reps: 8, weightKg: 55 }],
+                },
+              ],
+            },
+          },
+        },
+        status: 'local',
+        attempts: 0,
+        nextAttempt: 0,
+      },
+    ],
+  } as WriteState;
+  const migrated = migrateWorkoutWrites(legacy);
+  expect(
+    migrated.operations.map(
+      (item) =>
+        item.operation.payload.kind === 'workout' &&
+        item.operation.payload.data.status,
+    ),
+  ).toEqual(['planned', 'in_progress', 'completed']);
+  expect(migrated.operations[2]?.operation.id).toBe(originalId);
+  expect(migrateWorkoutWrites(migrated).operations).toHaveLength(3);
+  const uncertain = structuredClone(legacy);
+  delete uncertain.workoutVersion;
+  uncertain.operations = [
+    {
+      ...structuredClone(migrated.operations[2]!),
+      status: 'sending',
+      attempts: 1,
+    },
+  ];
+  const reviewed = migrateWorkoutWrites(uncertain);
+  expect(reviewed.operations[0]?.legacyOperation).toBeDefined();
+  expect(reviewed.operations[0]?.operation.id).toBe(originalId);
+  expect(reviewed.operations[0]?.status).toBe('review');
+  expect(nextWrite(reviewed, partition, now)).toBeUndefined();
 });

@@ -342,7 +342,7 @@ export function DayEditor({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               ownerId,
-              requestId: requestId.current,
+              requestId: prior ? requestId.current : recordId,
               ...(prior ? { revision: revision.current } : {}),
               data: parsed.data,
               ...(action ? { action } : {}),

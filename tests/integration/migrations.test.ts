@@ -184,8 +184,208 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
         "INSERT INTO medical_import_jobs(id,owner_id,document_id,status,stage,attempts,created_at,updated_at) VALUES('existing-medical-job','owner','existing-medical-document','queued','upload_validation',0,1,1)",
       )
       .run();
+    const occurrence = {
+      id: '10000000-0000-4000-8000-000000000001',
+      name: 'Squat',
+      sets: [{ reps: 8, weightKg: 55 }],
+    };
+    const planned = (id: string, title: string) => ({
+      title,
+      description: 'Keep description',
+      startsOn: '2026-10-01',
+      endsOn: '2026-10-01',
+      workouts: [
+        { id, date: '2026-10-01', title: 'Day title', exercises: [occurrence] },
+      ],
+    });
+    const insertPlan = database.sqlite.prepare(
+      'INSERT INTO workout_plans(id,owner_id,data,revision,created_at,updated_at) VALUES(?,?,?,?,?,?)',
+    );
+    for (const [id, nested] of [
+      ['plan-a', 'duplicate'],
+      ['plan-b', 'duplicate'],
+      ['linked-plan', 'linked-day'],
+    ])
+      insertPlan.run(
+        id,
+        'owner',
+        JSON.stringify(planned(nested!, id!)),
+        1,
+        '2026-10-01T00:00:00Z',
+        '2026-10-01T00:00:00Z',
+      );
+    const actual = {
+      date: '2026-10-01',
+      title: 'Actual',
+      note: 'Keep result note',
+      exercises: [occurrence],
+      status: 'completed',
+      planId: 'linked-plan',
+      plannedWorkoutId: 'linked-day',
+      planSnapshot: {
+        planTitle: 'Original parent',
+        workout: planned('linked-day', 'Original parent').workouts[0],
+      },
+    };
+    const insertSession = database.sqlite.prepare(
+      'INSERT INTO workout_sessions(id,owner_id,data,date,revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',
+    );
+    insertSession.run(
+      'legacy-fact',
+      'owner',
+      JSON.stringify(actual),
+      actual.date,
+      3,
+      '2026-10-01T00:00:00Z',
+      '2026-10-01T00:00:00Z',
+    );
+    insertSession.run(
+      'legacy-repeat',
+      'owner',
+      JSON.stringify({
+        ...actual,
+        exercises: [{ ...occurrence, sets: [] }],
+        status: 'in_progress',
+      }),
+      actual.date,
+      4,
+      '2026-10-02T00:00:00Z',
+      '2026-10-02T00:00:00Z',
+    );
+    insertSession.run(
+      'legacy-orphan',
+      'owner',
+      JSON.stringify({
+        ...actual,
+        planId: 'deleted-plan',
+        planSnapshot: { ...actual.planSnapshot, planTitle: 'Deleted parent' },
+      }),
+      actual.date,
+      2,
+      '2026-10-01T00:00:00Z',
+      '2026-10-01T00:00:00Z',
+    );
+    insertSession.run(
+      'legacy-skipped',
+      'owner',
+      JSON.stringify({
+        ...actual,
+        planId: null,
+        plannedWorkoutId: null,
+        planSnapshot: null,
+        status: 'skipped',
+      }),
+      actual.date,
+      1,
+      '2026-10-01T00:00:00Z',
+      '2026-10-01T00:00:00Z',
+    );
+    database.sqlite
+      .prepare(
+        'INSERT INTO workout_videos(id,owner_id,session_id,exercise_id,size,duration,state,parts,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        'legacy-video',
+        'owner',
+        'legacy-fact',
+        occurrence.id,
+        12,
+        1,
+        'ready',
+        '{}',
+        1,
+      );
+    database.sqlite
+      .prepare(
+        'INSERT INTO comments(id,owner_id,author_id,target_type,target_id,body,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        'legacy-comment',
+        'owner',
+        'owner',
+        'workout',
+        'legacy-fact',
+        'Keep comment',
+        1,
+        1,
+      );
+    const providerSnapshot = actual.planSnapshot;
+    const providerState = {
+      workout: providerSnapshot.workout,
+      published: providerSnapshot,
+      updateAttempt: { previous: providerSnapshot, desired: providerSnapshot },
+      marker: 'keep-marker',
+      baseline: 'keep-fingerprint',
+    };
+    database.sqlite
+      .prepare(
+        'INSERT INTO workout_transformmate_links(id,owner_id,plan_id,workout_id,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',
+      )
+      .run(
+        'legacy-link',
+        'owner',
+        'linked-plan',
+        'linked-day',
+        JSON.stringify(providerState),
+        '2026-10-01T00:00:00Z',
+        '2026-10-01T00:00:00Z',
+      );
     migrate(database.db, { migrationsFolder: './drizzle' });
     migrate(database.db, { migrationsFolder: './drizzle' });
+    const workoutRows = database.sqlite
+      .prepare('SELECT id,data FROM workouts')
+      .all() as { id: string; data: string }[];
+    expect(workoutRows).toHaveLength(6);
+    const migrated = (id: string) =>
+      JSON.parse(workoutRows.find((r) => r.id === id)!.data);
+    expect(migrated('legacy-fact').exercises).toEqual(actual.exercises);
+    expect(migrated('legacy-fact').note).toContain(actual.note);
+    expect(migrated('legacy-fact')).not.toHaveProperty('planSnapshot');
+    expect(migrated('legacy-repeat').exercises[0].sets).toEqual([]);
+    expect(migrated('legacy-orphan').note).toContain('Deleted parent');
+    expect(migrated('legacy-skipped')).toMatchObject({
+      status: 'planned',
+      note: expect.stringContaining('Была пропущена'),
+    });
+    const duplicates = workoutRows.filter(
+      (r) => JSON.parse(r.data).legacySource?.workoutId === 'duplicate',
+    );
+    expect(new Set(duplicates.map((r) => r.id)).size).toBe(2);
+    expect(
+      duplicates.every((r) =>
+        JSON.parse(r.data).note.includes(
+          JSON.parse(r.data).legacySource.planId,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      database.sqlite
+        .prepare('SELECT workout_id,exercise_id FROM workout_videos WHERE id=?')
+        .get('legacy-video'),
+    ).toEqual({ workout_id: 'legacy-fact', exercise_id: occurrence.id });
+    expect(
+      database.sqlite
+        .prepare('SELECT target_id FROM comments WHERE id=?')
+        .get('legacy-comment'),
+    ).toEqual({ target_id: 'legacy-fact' });
+    const link = database.sqlite
+      .prepare(
+        'SELECT workout_id,state FROM workout_transformmate_links WHERE id=?',
+      )
+      .get('legacy-link') as { workout_id: string; state: string };
+    const migratedState = JSON.parse(link.state);
+    expect(link.workout_id).toBe('legacy-repeat');
+    for (const snapshot of [
+      migratedState,
+      migratedState.published,
+      migratedState.updateAttempt.previous,
+      migratedState.updateAttempt.desired,
+    ])
+      expect(snapshot.workout.id).toBe('legacy-repeat');
+    expect(migratedState).toMatchObject({
+      marker: 'keep-marker',
+      baseline: 'keep-fingerprint',
+    });
     expect(
       database.sqlite
         .prepare(

@@ -180,7 +180,7 @@ export function WorkoutsDashboard({
         {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ revision: workout.revision }),
+          body: JSON.stringify({ ownerId, revision: workout.revision }),
         },
       );
       if (!response.ok)
