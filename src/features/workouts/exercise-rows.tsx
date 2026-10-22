@@ -131,7 +131,7 @@ export function ExerciseRows({
               <UnstyledButton
                 className={styles.exerciseName}
                 onClick={openMedia}
-                aria-label={`${m.technique}: ${exercise.name}${mode !== 'plan' ? `, ${completed} / ${exercise.sets.length} ${m.shortSets}` : ''}`}
+                aria-label={`${m.technique}: ${exercise.name}`}
               >
                 <span>{titleParts?.[1] || exercise.name}</span>
                 {titleParts && (
