@@ -737,6 +737,20 @@ test('real login reaches core sections, recovers a cached workout offline, purge
         : null;
     })
     .toEqual({ planId: null, planSnapshot: null, reps: 8, weight: null });
+  await expect(
+    page.getByLabel('Solo lift, Подход 1, Повторения', { exact: true }),
+  ).toBeFocused();
+  await page
+    .getByRole('button', { name: 'Добавить подход', exact: true })
+    .press('Enter');
+  await page
+    .getByLabel('Solo lift, Подход 2, Вес, кг', { exact: true })
+    .fill('25');
+  await page.goto('/diary');
+  await page.goto(`/workouts?date=${standaloneDate}`);
+  await expect(
+    page.getByLabel('Solo lift, Подход 2, Вес, кг', { exact: true }),
+  ).toHaveValue('25');
 
   await page.goto('/diary');
   const navigation = page.getByRole('button', {

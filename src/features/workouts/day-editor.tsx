@@ -265,15 +265,27 @@ export function DayEditor({
     0,
   );
   const persist = useCallback(
-    (next: typeof value) =>
-      storeWorkoutDraft(key, requestId.current, {
+    (next: typeof value) => {
+      const recordId = planRef.current?.id ?? sessionRef.current?.id;
+      const currentKey = recordId
+        ? dayWorkoutDraftKey(
+            identity,
+            date,
+            recordId,
+            planRef.current ? initial.workoutId : workout?.id,
+          )
+        : key;
+      const stored = storeWorkoutDraft(currentKey, requestId.current, {
         ...next,
         planRevision: planRef.current?.revision ?? null,
         sessionRevision: sessionRef.current?.revision ?? null,
         planDirty: planDirty.current,
         resultDirty: resultDirty.current,
-      }),
-    [key],
+      });
+      if (stored && currentKey !== key) clearWorkoutDraft(key);
+      return stored;
+    },
+    [date, identity, initial.workoutId, key, workout?.id],
   );
   useEffect(() => {
     mounted.current = true;
