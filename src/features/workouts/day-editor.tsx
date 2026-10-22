@@ -424,6 +424,7 @@ export function DayEditor({
         (item) => item.id === selected.id,
       )!;
       const nextResult = structuredClone(valueRef.current.result);
+      if (!sessionRef.current) nextResult.title = savedWorkout.title;
       const matched = new Set(
         matchExerciseGuides(nextResult.exercises, savedWorkout.exercises),
       );
