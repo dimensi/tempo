@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { user } from '@/server/db/schema';
-import type { WorkoutInput } from '@/contracts/workouts';
+import type { WorkoutInput, Workout } from '@/contracts/workouts';
 export const workouts = sqliteTable(
   'workouts',
   {
@@ -8,7 +8,9 @@ export const workouts = sqliteTable(
     ownerId: text('owner_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    data: text('data', { mode: 'json' }).$type<WorkoutInput>().notNull(),
+    data: text('data', { mode: 'json' })
+      .$type<WorkoutInput & Pick<Workout, 'legacySource'>>()
+      .notNull(),
     date: text('date').notNull(),
     revision: integer('revision').notNull().default(1),
     createdAt: text('created_at').notNull(),

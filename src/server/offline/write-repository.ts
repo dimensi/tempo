@@ -4,9 +4,9 @@ import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '@/server/db';
 import { offlineWriteReceipts } from '@/server/db/schema/offline-writes';
 import { measurements } from '@/server/db/schema/measurements';
-import { workoutSessions, workoutPlans } from '@/server/db/schema/workouts';
+import { workouts } from '@/server/db/schema/workouts';
 import { measurementInputSchema } from '@/contracts/measurements';
-import { workoutSessionInputSchema } from '@/contracts/workouts';
+import { workoutInputSchema } from '@/contracts/workouts';
 import {
   writeRecordSchema,
   type OfflineWrite,
@@ -44,10 +44,8 @@ export function offlineWriteRepository(database = getDatabase()) {
     }
     const row = db
       .select()
-      .from(workoutSessions)
-      .where(
-        and(eq(workoutSessions.ownerId, ownerId), eq(workoutSessions.id, id)),
-      )
+      .from(workouts)
+      .where(and(eq(workouts.ownerId, ownerId), eq(workouts.id, id)))
       .get();
     return row
       ? {
@@ -55,7 +53,7 @@ export function offlineWriteRepository(database = getDatabase()) {
           version: String(row.revision),
           payload: {
             kind,
-            data: workoutSessionInputSchema.parse({
+            data: workoutInputSchema.parse({
               date: row.data.date,
               title: row.data.title,
               exercises: row.data.exercises,
@@ -77,9 +75,9 @@ export function offlineWriteRepository(database = getDatabase()) {
           .all()
           .map((r) => ({ ...r, kind: 'measurement' as const })),
         ...db
-          .select({ id: workoutSessions.id })
-          .from(workoutSessions)
-          .where(eq(workoutSessions.ownerId, ownerId))
+          .select({ id: workouts.id })
+          .from(workouts)
+          .where(eq(workouts.ownerId, ownerId))
           .limit(501)
           .all()
           .map((r) => ({ ...r, kind: 'workout' as const })),
@@ -150,42 +148,20 @@ export function offlineWriteRepository(database = getDatabase()) {
               : null,
           );
         } else if (previous?.payload.kind === 'workout') {
-          // Offline result edits cannot remove occurrences that may own private videos.
-          const before = previous.payload.data.exercises
-            .map((e) => e.id)
-            .sort();
-          const after = payload.data.exercises.map((e) => e.id).sort();
+          const before = previous.payload.data.exercises.map((e) => e.id);
+          const after = payload.data.exercises.map((e) => e.id);
           if (before.some((id) => !after.includes(id)))
             throw new OfflineWriteError(422);
-          const actual = workoutSessionInputSchema.parse({
-            date: payload.data.date,
-            title: payload.data.title,
-            exercises: payload.data.exercises,
-            note: payload.data.note,
-            status: payload.data.status,
-          });
-          workoutRepository(db).updateSession(
+          workoutRepository(db).update(
             ownerId,
             recordId,
             Number(previous.version),
-            actual,
+            payload.data,
+            payload.action,
           );
         } else {
-          if (payload.data.planId) {
-            const plan = db
-              .select()
-              .from(workoutPlans)
-              .where(
-                and(
-                  eq(workoutPlans.ownerId, ownerId),
-                  eq(workoutPlans.id, payload.data.planId),
-                ),
-              )
-              .get();
-            if (!plan || plan.revision !== payload.planRevision)
-              throw new OfflineWriteError(409);
-          }
-          workoutRepository(db).createSession(ownerId, payload.data, recordId);
+          if (payload.action) throw new OfflineWriteError(409);
+          workoutRepository(db).create(ownerId, payload.data, recordId);
         }
         const result = find(ownerId, recordId, payload.kind)!;
         db.insert(offlineWriteReceipts)

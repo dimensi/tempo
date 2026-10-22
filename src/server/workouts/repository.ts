@@ -218,7 +218,12 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
             db
               .update(workouts)
               .set({
-                data,
+                data: {
+                  ...data,
+                  ...(get(ownerId, id).legacySource
+                    ? { legacySource: get(ownerId, id).legacySource }
+                    : {}),
+                },
                 date: data.date,
                 revision: revision + 1,
                 updatedAt: new Date().toISOString(),

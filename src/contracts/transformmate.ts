@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { plannedWorkoutSchema } from '@/contracts/workouts';
+import { publicationWorkoutSchema } from '@/contracts/workout-publication';
 import type {
   TransformMateNativePage,
   TransformMateNativeRefresh,
@@ -204,12 +204,12 @@ export const transformMateSyncItemSchema = z.object({
   remoteTrainingId: remoteId.nullable(),
   planSnapshot: z.object({
     planTitle: z.string().max(160),
-    workout: plannedWorkoutSchema,
+    workout: publicationWorkoutSchema,
   }),
   publishedSnapshot: z
     .object({
       planTitle: z.string().max(160),
-      workout: plannedWorkoutSchema,
+      workout: publicationWorkoutSchema,
     })
     .optional(),
   updateAttempt: z

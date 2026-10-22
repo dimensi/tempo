@@ -8,7 +8,11 @@ export const publicationWorkoutSchema = z
     id,
     date: z.iso.date(),
     title,
-    exercises: z.array(workoutExerciseSchema).min(1).max(50),
+    // Local occurrence IDs are not part of a provider publication fingerprint.
+    exercises: z
+      .array(workoutExerciseSchema.omit({ id: true }).strip())
+      .min(1)
+      .max(50),
   })
   .strict();
 export const workoutPublicationInputSchema = z

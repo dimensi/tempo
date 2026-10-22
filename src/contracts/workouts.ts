@@ -50,6 +50,13 @@ export const workoutSchema = workoutInputSchema.safeExtend({
   revision: z.number().int().positive(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+  // Identity only, for the one-time restoration of pre-migration drafts.
+  legacySource: z
+    .strictObject({
+      planId: z.string().max(128),
+      workoutId: z.string().max(128),
+    })
+    .optional(),
 });
 export const revisionSchema = z.number().int().positive();
 export const workoutMutationSchema = z.strictObject({

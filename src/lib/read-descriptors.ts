@@ -56,11 +56,7 @@ export const readResources = {
   workout: definition(workoutDetailSchema),
   context: definition(readContextSchema),
   overview: definition(overviewReadSchema),
-  workouts: definition(workoutsReadSchema, (value) => ({
-    contractVersion: 1 as const,
-    source: 'user' as const,
-    ...value.data,
-  })),
+  workouts: definition(workoutsReadSchema, (value) => value.data),
   transformMate: definition(transformMateReadSchema, (value) => value.data),
   catalog: definition(transformMateCatalogResultSchema),
   exercise: definition(exerciseReadSchema, (value) => value.data),
