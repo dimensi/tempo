@@ -478,7 +478,7 @@ export function WorkoutsDashboard({
                   setCreating({ date, mode: 'plan' });
                 }}
               >
-                {m.newWorkout}
+                {m.newPlan}
               </Button>
               {canLog && (
                 <Button
