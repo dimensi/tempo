@@ -10,6 +10,7 @@ import {
   Alert,
   Button,
   Group,
+  Progress,
   SegmentedControl,
   Stack,
   Text,
@@ -17,7 +18,7 @@ import {
   TextInput,
   Modal,
 } from '@mantine/core';
-import { IconCircleCheckFilled } from '@tabler/icons-react';
+import { IconCircleCheckFilled, IconPlus } from '@tabler/icons-react';
 import { PageActions } from '@/components/layout/page-header';
 import { useMediaQuery } from '@mantine/hooks';
 import { z } from 'zod';
@@ -148,6 +149,7 @@ export function DayEditor({
   workout,
   existing,
   canLog,
+  createMode = 'plan',
   onSaved,
   onCancel,
   renderComments,
@@ -162,6 +164,7 @@ export function DayEditor({
   workout?: PlannedWorkout;
   existing?: WorkoutSession;
   canLog: boolean;
+  createMode?: 'plan' | 'result';
   onSaved: () => Promise<void>;
   onCancel?: () => void;
   renderComments?: (id: string) => ReactNode;
@@ -213,7 +216,7 @@ export function DayEditor({
   const valueRef = useRef(value);
   const [selectedMode, setMode] = useState(
     !plan && !existing
-      ? 'plan'
+      ? createMode
       : plan && !canLog && !existing
         ? 'plan'
         : 'result',
@@ -245,6 +248,15 @@ export function DayEditor({
   const selected =
     value.plan.workouts.find((item) => item.id === initial.workoutId) ??
     value.plan.workouts[0]!;
+  const totalSets = value.result.exercises.reduce(
+    (count, exercise) => count + exercise.sets.length,
+    0,
+  );
+  const recordedSets = value.result.exercises.reduce(
+    (count, exercise) =>
+      count + exercise.sets.filter((set) => set.reps !== null).length,
+    0,
+  );
   const persist = useCallback(
     (next: typeof value) =>
       storeWorkoutDraft(key, requestId.current, {
@@ -638,10 +650,14 @@ export function DayEditor({
         {(mode === 'plan' || value.result.status !== 'completed') && (
           <Button
             mih={44}
-            variant="light"
+            variant="filled"
             aria-label={mode === 'plan' ? m.savePlan : m.finishWorkout}
             loading={busy}
-            disabled={mode === 'plan' ? !selected.exercises.length : !canLog}
+            disabled={
+              mode === 'plan'
+                ? !selected.exercises.length
+                : !canLog || !value.result.exercises.length
+            }
             onClick={() =>
               mode === 'plan' ? void savePlan() : void saveResult('completed')
             }
@@ -666,7 +682,9 @@ export function DayEditor({
             }}
           />
         ) : (
-          <Text fw={600}>{existing ? m.execution : m.startPlan}</Text>
+          <Text fw={650}>
+            {mode === 'result' ? m.execution : m.startPlan}
+          </Text>
         )}
         <Group gap="xs">
           <Group
@@ -686,7 +704,11 @@ export function DayEditor({
                 savedSession && value.result.status === 'completed' ? 600 : 400
               }
             >
-              {savedSession ? m[value.result.status] : m.plannedStatus}
+              {savedSession
+                  ? m[value.result.status]
+                  : mode === 'result'
+                    ? m.in_progress
+                    : m.plannedStatus}
             </Text>
           </Group>
           {mode !== 'plan' && value.result.status === 'completed' && canLog && (
@@ -740,12 +762,45 @@ export function DayEditor({
           {status}
         </Text>
       )}
+      {mode !== 'plan' && totalSets > 0 && (
+        <div className={styles.sessionProgress}>
+          <Group justify="space-between" gap="xs" wrap="nowrap">
+            <Text size="sm" fw={650}>
+              {m.recordedSets}
+            </Text>
+            <Text size="sm" c="dimmed" className={styles.progressCount}>
+              {recordedSets} / {totalSets}
+            </Text>
+          </Group>
+          <Progress
+            value={(recordedSets / totalSets) * 100}
+            size={5}
+            color="teal"
+            aria-label={`${m.recordedSets}: ${recordedSets} / ${totalSets}`}
+          />
+        </div>
+      )}
       {mode === 'plan' ? (
         <>
           {!selected.exercises.length && (
             <Text c="dimmed">{m.prepareHint}</Text>
           )}
           <Stack gap="sm">
+            <TextInput
+              disabled={busy}
+              label={m.planName}
+              value={value.plan.title}
+              maxLength={160}
+              onChange={(e) =>
+                change(
+                  {
+                    ...value,
+                    plan: { ...value.plan, title: e.currentTarget.value },
+                  },
+                  'plan',
+                )
+              }
+            />
             <TextInput
               disabled={busy}
               label={m.optionalTitle}
@@ -845,6 +900,23 @@ export function DayEditor({
         </>
       ) : (
         <>
+          {!hasPlan && (
+            <TextInput
+              label={m.resultTitle}
+              value={value.result.title}
+              maxLength={160}
+              disabled={!canLog}
+              onChange={(e) =>
+                change(
+                  {
+                    ...value,
+                    result: { ...value.result, title: e.currentTarget.value },
+                  },
+                  'result',
+                )
+              }
+            />
+          )}
           <Textarea
             label={m.workoutNote}
             autosize
@@ -887,6 +959,31 @@ export function DayEditor({
                 : undefined
             }
           />
+          {canLog && (
+            <Button
+              className={styles.addExercise}
+              variant="light"
+              mih={48}
+              leftSection={<IconPlus size={19} />}
+              disabled={busy || value.result.exercises.length >= 50}
+              onClick={() => setPicker(true)}
+            >
+              {m.addExercises}
+            </Button>
+          )}
+          {onCancel && !savedSession && (
+            <Button
+              variant="subtle"
+              mih={44}
+              disabled={busy}
+              onClick={() => {
+                clearWorkoutDraft(key);
+                onCancel();
+              }}
+            >
+              {m.cancel}
+            </Button>
+          )}
           {error && canLog && (
             <Button
               variant="default"
@@ -912,8 +1009,33 @@ export function DayEditor({
         {picker && (
           <ExercisePicker
             ownerId={ownerId}
-            capacity={50 - selected.exercises.length}
+            capacity={
+              50 -
+              (mode === 'plan'
+                ? selected.exercises.length
+                : value.result.exercises.length)
+            }
             onAdd={(exercises) => {
+              if (mode === 'result') {
+                change(
+                  {
+                    ...value,
+                    result: {
+                      ...value.result,
+                      exercises: [
+                        ...value.result.exercises,
+                        ...exercises.map((exercise) => ({
+                          ...exercise,
+                          sets: [{ reps: null, weightKg: null }],
+                        })),
+                      ],
+                    },
+                  },
+                  'result',
+                );
+                setPicker(false);
+                return;
+              }
               change(
                 {
                   ...value,
