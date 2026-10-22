@@ -198,7 +198,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   ).toBeVisible();
   await page.goto('/workouts');
   await page
-    .getByRole('button', { name: 'Добавить тренировку', exact: true })
+    .getByRole('button', { name: 'Составить план', exact: true })
     .click();
   const title = 'Production smoke workout';
   await expect(
