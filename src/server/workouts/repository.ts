@@ -110,14 +110,18 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
     // Resume changes only lifecycle state; completed values remain intact.
     if (
       action === 'resume' &&
-      JSON.stringify({ ...data, status: existing.status }) !==
-        JSON.stringify({
-          date: existing.date,
-          title: existing.title,
-          exercises: existing.exercises,
-          note: existing.note,
-          status: existing.status,
-        })
+      JSON.stringify(
+        workoutInputSchema.parse({ ...data, status: existing.status }),
+      ) !==
+        JSON.stringify(
+          workoutInputSchema.parse({
+            date: existing.date,
+            title: existing.title,
+            exercises: existing.exercises,
+            note: existing.note,
+            status: existing.status,
+          }),
+        )
     )
       throw new WorkoutError(409);
     if (data.exercises.some((e) => !e.id)) throw new WorkoutError(409);
@@ -175,7 +179,7 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
           db
             .insert(workouts)
             .values({
-              id: randomUUID(),
+              id: requestId ?? randomUUID(),
               ownerId,
               date: data.date,
               data: {
