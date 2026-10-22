@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { user } from '@/server/db/schema';
-import { workoutSessions } from './workouts';
+import { workouts } from './workouts';
 export const workoutVideos = sqliteTable(
   'workout_videos',
   {
@@ -8,9 +8,9 @@ export const workoutVideos = sqliteTable(
     ownerId: text('owner_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    sessionId: text('session_id')
+    workoutId: text('workout_id')
       .notNull()
-      .references(() => workoutSessions.id, { onDelete: 'cascade' }),
+      .references(() => workouts.id, { onDelete: 'cascade' }),
     exerciseId: text('exercise_id').notNull(),
     size: integer('size').notNull(),
     duration: integer('duration').notNull(),
@@ -20,5 +20,5 @@ export const workoutVideos = sqliteTable(
       .notNull(),
     createdAt: integer('created_at').notNull(),
   },
-  (t) => [index('workout_videos_session_idx').on(t.ownerId, t.sessionId)],
+  (t) => [index('workout_videos_workout_idx').on(t.ownerId, t.workoutId)],
 );
