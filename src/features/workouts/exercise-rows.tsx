@@ -250,7 +250,7 @@ export function ExerciseRows({
                   {guide.sets.map((set, setIndex) => (
                     <div key={setIndex} className={styles.planChip}>
                       <span className={styles.planChipNumber}>
-                        {setIndex + 1}
+                        {m.set} {setIndex + 1}:
                       </span>
                       <Text component="span" size="sm" fw={650}>
                         {set.weightKg === null
