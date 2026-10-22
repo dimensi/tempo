@@ -623,7 +623,8 @@ export function DayEditor({
       dirty.current = planDirty.current || resultDirty.current;
       setStored(persist(valueRef.current));
       setStatus(resultDirty.current ? m.unsaved : queued ? m.queued : m.saved);
-      await onSaved();
+      if (queued) setHasQueuedWrite(true);
+      else await onSaved();
     } catch (cause) {
       if (mounted.current && generation === sessionGeneration()) {
         setError(cause instanceof Error ? cause.message : m.error);
