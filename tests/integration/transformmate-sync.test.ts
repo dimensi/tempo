@@ -11,7 +11,7 @@ import { user } from '@/server/db/schema';
 import { workoutRepository } from '@/server/workouts/repository';
 import { syncEngine } from '@/server/workouts/transformmate/engine';
 import { syncRepository } from '@/server/workouts/transformmate/repository';
-import { workoutPlanInputSchema } from '@/contracts/workouts';
+import { workoutInputSchema } from '@/contracts/workouts';
 import { exerciseDetailFixture } from '../fixtures/transformmate-exercise';
 import {
   trainingDetailFixture,
@@ -47,24 +47,17 @@ const raw = <T>(body: T): RawResponse<T> => ({
   contentType: 'application/json',
 });
 const input = () =>
-  workoutPlanInputSchema.parse({
-    title: 'Synthetic recovery plan',
-    description: '',
-    startsOn: '2026-01-01',
-    endsOn: '2026-01-01',
-    workouts: [
+  workoutInputSchema.parse({
+    title: 'Demo training',
+    note: '',
+    status: 'planned',
+    date: '2026-01-01',
+    exercises: [
       {
-        id: 'workout',
-        date: '2026-01-01',
-        title: 'Demo training',
-        exercises: [
-          {
-            name: 'Demo exercise',
-            transformMate: { exerciseId: 501, occurrenceKey: randomUUID() },
-            comment: 'Demo comment',
-            sets: [{ reps: 8, weightKg: 10 }],
-          },
-        ],
+        name: 'Demo exercise',
+        transformMate: { exerciseId: 501, occurrenceKey: randomUUID() },
+        comment: 'Demo comment',
+        sets: [{ reps: 8, weightKg: 10 }],
       },
     ],
   });
@@ -86,7 +79,7 @@ it('recovers a committed TransformMate create after restart without duplicating 
         updatedAt: new Date(),
       })
       .run();
-    workoutRepository(database.db).createPlan('owner', input(), randomUUID());
+    workoutRepository(database.db).create('owner', input(), randomUUID());
     database.sqlite.close();
     database = openDatabase(url);
     const links = syncRepository(database.db);
@@ -124,7 +117,7 @@ it('recovers a committed TransformMate create after restart without duplicating 
         repository: syncRepository(database.db),
         client,
         access: async () => {},
-        plans: () => workoutRepository(database.db).list('owner').plans,
+        workouts: () => workoutRepository(database.db).list('owner').workouts,
       });
     await engine().process(link);
     expect(posts).toBe(1);

@@ -267,29 +267,41 @@ export async function assertMcpAccess(
     .run();
 
   const workouts = workoutRepository(connection.db);
-  const plan = workouts.createPlan('owner', {
-    title: 'Synthetic plan',
-    description: '',
-    startsOn: '2026-10-01',
-    endsOn: '2026-10-04',
-    workouts: [
-      {
-        id: 'mcp-squat',
-        date: '2026-10-01',
-        title: 'Strength',
-        exercises: [{ name: 'Squat', sets: [{ reps: 8, weightKg: 40 }] }],
-      },
-    ],
-  });
-  workouts.createSession('owner', {
-    planId: plan.id,
-    plannedWorkoutId: 'mcp-squat',
+  const planned = workouts.create('owner', {
     date: '2026-10-01',
     title: 'Strength',
-    status: 'completed',
+    status: 'planned',
     note: '',
-    exercises: [{ name: 'Squat', sets: [{ reps: 6, weightKg: 45 }] }],
+    exercises: [{ name: 'Squat', sets: [{ reps: 8, weightKg: 40 }] }],
   });
+  const started = workouts.update(
+    'owner',
+    planned.id,
+    planned.revision,
+    {
+      date: planned.date,
+      title: planned.title,
+      status: 'in_progress',
+      note: '',
+      exercises: planned.exercises,
+    },
+    'start',
+  );
+  const completed = workouts.update(
+    'owner',
+    started.id,
+    started.revision,
+    {
+      date: started.date,
+      title: started.title,
+      status: 'completed',
+      note: '',
+      exercises: [
+        { ...started.exercises[0]!, sets: [{ reps: 6, weightKg: 45 }] },
+      ],
+    },
+    'complete',
+  );
   const mcp = new Client({ name: 'tempo-integration', version: '1.0.0' });
   const transport = new StreamableHTTPClientTransport(new URL(resource), {
     authProvider: { token: async () => tokens.access_token },
@@ -310,43 +322,31 @@ export async function assertMcpAccess(
       ).structuredContent,
     );
     expect(firstWorkout).toMatchObject({
-      data: {
-        records: [
-          {
-            kind: 'plan',
-            executionStatus: 'planned',
-            exercises: [{ plannedSets: [{ reps: 8, weightKg: 40 }] }],
-          },
-        ],
-      },
-    });
-    const nextWorkout = await mcp.callTool({
-      name: 'get_workouts',
-      arguments: {
-        ...range,
-        limit: 1,
-        detail: 'records',
-        cursor: firstWorkout.next_cursor,
-      },
-    });
-    expect(nextWorkout.structuredContent).toMatchObject({
       next_cursor: null,
       data: {
+        coverage: { recordCounts: { workout: 1, linked: 0, native: 0 } },
         records: [
           {
-            kind: 'session',
+            kind: 'workout',
+            id: completed.id,
             executionStatus: 'completed',
             exercises: [{ actualSets: [{ reps: 6, weightKg: 45 }] }],
           },
         ],
       },
     });
+    expect(firstWorkout.data.records).toHaveLength(1);
     // A provider fact container can be an untouched draft, not another session.
     const linkId = randomUUID();
     const state = syncStateSchema.parse({
       version: 1,
-      workout: plan.workouts[0],
-      planTitle: plan.title,
+      workout: {
+        id: planned.id,
+        date: planned.date,
+        title: planned.title,
+        exercises: planned.exercises,
+      },
+      planTitle: planned.title,
       marker: `[yazio-dashboard:${linkId}]`,
       attempted: true,
       status: 'synced',
@@ -362,8 +362,8 @@ export async function assertMcpAccess(
       .values({
         id: linkId,
         ownerId: 'owner',
-        planId: plan.id,
-        workoutId: 'mcp-squat',
+        planId: planned.id,
+        workoutId: planned.id,
         remoteTrainingId: 123,
         state: JSON.stringify(state),
         createdAt: '2026-10-01T00:00:00Z',
