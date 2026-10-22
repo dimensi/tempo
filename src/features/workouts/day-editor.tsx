@@ -165,7 +165,7 @@ export function DayEditor({
   existing?: WorkoutSession;
   canLog: boolean;
   createMode?: 'plan' | 'result';
-  onSaved: () => Promise<void>;
+  onSaved: (background: boolean) => Promise<void>;
   onCancel?: () => void;
   renderComments?: (id: string) => ReactNode;
   onDirtyChange?: (dirty: boolean) => void;
@@ -247,6 +247,7 @@ export function DayEditor({
   const mounted = useRef(false);
   const requestId = useRef('');
   const pending = useRef(false);
+  const pendingCommit = useRef<(() => void) | null>(null);
   const lastSaved = useRef('');
   const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobile = useMediaQuery('(max-width: 48em)');
@@ -354,26 +355,33 @@ export function DayEditor({
     else resultDirty.current = true;
     setStored(persist(next));
     setStatus(m.unsaved);
-    if (kind === 'result' && canLog) {
-      if (autoTimer.current) clearTimeout(autoTimer.current);
-      autoTimer.current = setTimeout(
-        () => void saveResult(undefined, false),
-        800,
-      );
-    }
+    scheduleAutoSave();
   };
+  function scheduleAutoSave() {
+    if (autoTimer.current) clearTimeout(autoTimer.current);
+    autoTimer.current = setTimeout(() => {
+      if (planDirty.current) void savePlan(false);
+      else if (resultDirty.current && canLog) void saveResult(undefined, false);
+    }, 1200);
+  }
+
   useEffect(() => {
     onDirtyChange?.(dirty.current);
   }, [value, status, busy, onDirtyChange]);
-  async function savePlan() {
-    if (pending.current || staleDraft.current) return;
-    const parsed = workoutPlanInputSchema.safeParse(valueRef.current.plan);
+  async function savePlan(explicit = true) {
+    const snapshot = valueRef.current;
+    if (staleDraft.current) return;
+    if (pending.current) {
+      if (explicit) pendingCommit.current = () => void savePlan();
+      return;
+    }
+    const parsed = workoutPlanInputSchema.safeParse(snapshot.plan);
     if (!parsed.success) {
-      setError(m.validation);
+      if (explicit) setError(m.validation);
       return;
     }
     pending.current = true;
-    setBusy(true);
+    if (explicit) setBusy(true);
     setError(null);
     const generation = sessionGeneration();
     try {
@@ -399,7 +407,7 @@ export function DayEditor({
       if (!mounted.current || generation !== sessionGeneration()) return;
       planRef.current = saved;
       setHasPlan(true);
-      planDirty.current = false;
+      planDirty.current = valueRef.current.plan !== snapshot.plan;
       const savedWorkout = saved.workouts.find(
         (item) => item.id === selected.id,
       )!;
@@ -407,7 +415,7 @@ export function DayEditor({
       const matched = new Set(
         matchExerciseGuides(nextResult.exercises, savedWorkout.exercises),
       );
-      for (const exercise of savedWorkout.exercises) {
+      for (const exercise of planDirty.current ? [] : savedWorkout.exercises) {
         if (!matched.has(exercise))
           nextResult.exercises.push({
             ...structuredClone(exercise),
@@ -418,11 +426,10 @@ export function DayEditor({
       const next = { plan: valueRef.current.plan, result: nextResult };
       valueRef.current = next;
       setValue(next);
-      dirty.current = resultDirty.current;
-      if (!plan && !existing) clearWorkoutDraft(key);
-      else setStored(persist(next));
-      setStatus(resultDirty.current ? m.unsaved : m.planSaved);
-      await onSaved();
+      dirty.current = planDirty.current || resultDirty.current;
+      setStored(persist(next));
+      setStatus(dirty.current ? m.unsaved : m.planSaved);
+      await onSaved(!explicit);
     } catch (cause) {
       if (mounted.current && generation === sessionGeneration())
         setError(cause instanceof Error ? cause.message : m.error);
@@ -430,16 +437,15 @@ export function DayEditor({
       pending.current = false;
       if (mounted.current) {
         setBusy(false);
-        if (
+        const commit = pendingCommit.current;
+        pendingCommit.current = null;
+        if (generation === sessionGeneration() && commit) commit();
+        else if (
           generation === sessionGeneration() &&
-          canLog &&
-          resultDirty.current
+          (valueRef.current.plan !== snapshot.plan ||
+            (!planDirty.current && resultDirty.current && canLog))
         ) {
-          if (autoTimer.current) clearTimeout(autoTimer.current);
-          autoTimer.current = setTimeout(
-            () => void saveResult(undefined, false),
-            250,
-          );
+          scheduleAutoSave();
         }
       }
     }
@@ -450,12 +456,18 @@ export function DayEditor({
     allowRemoval = false,
     statusOnly = false,
   ) {
-    if (!canLog || pending.current || staleDraft.current) return;
+    if (!canLog || staleDraft.current) return;
+    if (pending.current) {
+      if (explicit)
+        pendingCommit.current = () =>
+          void saveResult(nextStatus, explicit, allowRemoval, statusOnly);
+      return;
+    }
     pending.current = true;
     const generation = sessionGeneration();
     const snapshot = valueRef.current;
     if (statusOnly && autoTimer.current) clearTimeout(autoTimer.current);
-    setBusy(true);
+    if (explicit) setBusy(true);
     try {
       const prior = sessionRef.current;
       let expectedBase = prior ? String(prior.revision) : undefined;
@@ -625,7 +637,7 @@ export function DayEditor({
       setStored(persist(valueRef.current));
       setStatus(resultDirty.current ? m.unsaved : queued ? m.queued : m.saved);
       if (queued) setHasQueuedWrite(true);
-      else await onSaved();
+      else await onSaved(!explicit);
     } catch (cause) {
       if (mounted.current && generation === sessionGeneration()) {
         setError(cause instanceof Error ? cause.message : m.error);
@@ -635,17 +647,17 @@ export function DayEditor({
       pending.current = false;
       if (mounted.current) {
         setBusy(false);
-        if (
+        const commit = pendingCommit.current;
+        pendingCommit.current = null;
+        if (generation === sessionGeneration() && commit) commit();
+        else if (
           generation === sessionGeneration() &&
-          !statusOnly &&
-          valueRef.current.result !== snapshot.result &&
-          resultDirty.current
+          (planDirty.current ||
+            (!statusOnly &&
+              valueRef.current.result !== snapshot.result &&
+              resultDirty.current))
         ) {
-          if (autoTimer.current) clearTimeout(autoTimer.current);
-          autoTimer.current = setTimeout(
-            () => void saveResult(undefined, false),
-            250,
-          );
+          scheduleAutoSave();
         }
       }
     }
@@ -689,9 +701,7 @@ export function DayEditor({
             }}
           />
         ) : (
-          <Text fw={650}>
-            {mode === 'result' ? m.execution : m.startPlan}
-          </Text>
+          <Text fw={650}>{mode === 'result' ? m.execution : m.startPlan}</Text>
         )}
         <Group gap="xs">
           <Group
@@ -764,11 +774,9 @@ export function DayEditor({
           </Button>
         </Group>
       )}
-      {status && (
-        <Text className={styles.status} role="status">
-          {status}
-        </Text>
-      )}
+      <Text className={styles.status} role="status" aria-live="polite">
+        {status || '\u00a0'}
+      </Text>
       {mode !== 'plan' && totalSets > 0 && (
         <div className={styles.sessionProgress}>
           <Group justify="space-between" gap="xs" wrap="nowrap">
@@ -942,11 +950,9 @@ export function DayEditor({
               )
             }
           />
-          {!savedSession && (
-            <Text size="sm" c="dimmed">
-              {m.noResultYet}
-            </Text>
-          )}
+          <Text size="sm" c="dimmed">
+            {m.noResultYet}
+          </Text>
           <ExerciseRows
             ownerId={ownerId}
             canLog={canLog}

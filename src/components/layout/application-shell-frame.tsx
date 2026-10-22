@@ -112,7 +112,7 @@ export function ApplicationShellFrame({
               <Group
                 h="100%"
                 px="md"
-                gap={4}
+                gap="md"
                 justify="space-between"
                 wrap="nowrap"
               >

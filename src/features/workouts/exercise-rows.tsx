@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   ActionIcon,
   Button,
@@ -65,6 +65,18 @@ export function ExerciseRows({
   const mobile = useMediaQuery('(max-width: 47.99em)');
   const [actions, setActions] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const pendingFocus = useRef<{ exercise: number; set: number } | null>(null);
+  const weightInputs = useRef(new Map<string, HTMLInputElement>());
+  useLayoutEffect(() => {
+    const target = pendingFocus.current;
+    if (!target) return;
+    const input = weightInputs.current.get(`${target.exercise}:${target.set}`);
+    if (input) {
+      input.focus();
+      input.select();
+      pendingFocus.current = null;
+    }
+  }, [exercises]);
   const online = useReadOnline();
   const guides = matchExerciseGuides(exercises, planned?.exercises ?? []);
   const recorded =
@@ -98,8 +110,8 @@ export function ExerciseRows({
         ).length;
         const existingOccurrence = Boolean(
           session &&
-            exercise.id &&
-            session.exercises.some((item) => item.id === exercise.id),
+          exercise.id &&
+          session.exercises.some((item) => item.id === exercise.id),
         );
         const lockedRemoval =
           mode === 'result' && existingOccurrence && !online;
@@ -293,6 +305,11 @@ export function ExerciseRows({
                 ) : (
                   <>
                     <NumberInput
+                      ref={(input) => {
+                        const id = `${index}:${setIndex}`;
+                        if (input) weightInputs.current.set(id, input);
+                        else weightInputs.current.delete(id);
+                      }}
                       aria-label={`${exercise.name}, ${m.set} ${setIndex + 1}, ${m.weight}`}
                       hideControls
                       inputMode="decimal"
@@ -426,7 +443,13 @@ export function ExerciseRows({
                 mt={8}
                 leftSection={<IconPlus size={15} />}
                 disabled={disabled || exercise.sets.length >= 50}
-                onClick={() =>
+                onClick={(event) => {
+                  if (event.detail === 0) {
+                    pendingFocus.current = {
+                      exercise: index,
+                      set: exercise.sets.length,
+                    };
+                  }
                   update(index, {
                     ...exercise,
                     sets: [
@@ -438,8 +461,8 @@ export function ExerciseRows({
                           }
                         : { reps: null, weightKg: null },
                     ],
-                  })
-                }
+                  });
+                }}
               >
                 {m.addSet}
               </Button>

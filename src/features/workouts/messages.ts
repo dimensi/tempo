@@ -36,7 +36,6 @@ export const workoutMessages = {
   capacityReached: 'Больше упражнений в эту тренировку добавить нельзя.',
   library: 'Упражнения',
   addExercises: 'Добавить упражнения',
-  newPlan: 'Составить план',
   newResult: 'Записать тренировку',
   planName: 'Название плана',
   resultTitle: 'Название тренировки',

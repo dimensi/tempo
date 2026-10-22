@@ -205,9 +205,9 @@ export function WorkoutsDashboard({
     entry?.remote?.actual,
   ]);
   const create = creating?.date === date;
-  const done = async () => {
+  const done = async (background = false) => {
     await resource.refresh();
-    if (create) setCreating(null);
+    if (create && !background) setCreating(null);
   };
   async function remove() {
     if (
@@ -530,26 +530,28 @@ export function WorkoutsDashboard({
         />
       )}
       {!create && entry && (
-        <DownloadWorkoutButton
-          key={`${entry.id}:${downloadSignature}`}
-          ownerId={ownerId}
-          blocked={draftDirty}
-          workoutKey={`${ownerId}:${entry.id}`}
-          signature={downloadSignature}
-          resources={[
-            readResources.workouts(
-              `/api/workouts?ownerId=${encodeURIComponent(ownerId)}`,
-            ),
-            ...(entry.native || entry.remote
-              ? [
-                  readResources.transformMate(
-                    `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20' })}`,
-                  ),
-                ]
-              : []),
-          ]}
-          exercises={downloadExercises}
-        />
+        <div hidden>
+          <DownloadWorkoutButton
+            key={`${entry.id}:${downloadSignature}`}
+            ownerId={ownerId}
+            blocked={draftDirty}
+            workoutKey={`${ownerId}:${entry.id}`}
+            signature={downloadSignature}
+            resources={[
+              readResources.workouts(
+                `/api/workouts?ownerId=${encodeURIComponent(ownerId)}`,
+              ),
+              ...(entry.native || entry.remote
+                ? [
+                    readResources.transformMate(
+                      `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20' })}`,
+                    ),
+                  ]
+                : []),
+            ]}
+            exercises={downloadExercises}
+          />
+        </div>
       )}
       {!create && entry && (entry.plan || entry.session) && (
         <DayEditor

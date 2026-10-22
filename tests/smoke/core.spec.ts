@@ -197,9 +197,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     page.getByRole('heading', { name: 'Дневник питания', exact: true }),
   ).toBeVisible();
   await page.goto('/workouts');
-  await page
-    .getByRole('button', { name: 'Составить план', exact: true })
-    .click();
+  await page.getByRole('button', { name: 'Создать план', exact: true }).click();
   const title = 'Production smoke workout';
   await expect(
     page.getByRole('textbox', { name: 'Описание', exact: true }),
@@ -368,7 +366,10 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   // An incomplete actual set must survive acknowledging an unrelated plan edit.
   await page
     .getByRole('button', { name: 'Добавить подход', exact: true })
-    .click();
+    .press('Enter');
+  await expect(
+    page.getByLabel('Smoke squat, Подход 2, Вес, кг', { exact: true }),
+  ).toBeFocused();
   await page
     .getByLabel('Smoke squat, Подход 2, Вес, кг', { exact: true })
     .fill('25');
@@ -382,10 +383,14 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       response.request().method() === 'PUT' &&
       response.status() === 200,
   );
-  await page
-    .getByRole('button', { name: 'Сохранить план', exact: true })
-    .click();
+  const planDescription = page.getByRole('textbox', {
+    name: 'Описание',
+    exact: true,
+  });
+  await planDescription.fill('Automatically saved plan');
   await planUpdate;
+  await expect(planDescription).toBeFocused();
+  await expect(planDescription).toHaveValue('Automatically saved plan');
   await expect(
     page.getByRole('button', { name: 'Сохранить план', exact: true }),
   ).toBeEnabled();
@@ -418,11 +423,20 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .getByLabel('Заметка к тренировке', { exact: true })
     .fill('First note');
   await sending.promise;
+  await expect(
+    page.getByLabel('Заметка к тренировке', { exact: true }),
+  ).toBeFocused();
+  await expect(
+    page.getByLabel('Заметка к тренировке', { exact: true }),
+  ).toBeEnabled();
+  const noteTop = await page
+    .getByLabel('Заметка к тренировке', { exact: true })
+    .evaluate((element) => element.getBoundingClientRect().top);
   await page
     .getByLabel('Заметка к тренировке', { exact: true })
     .fill('Final note');
   // Intentionally cross the input debounce while the first write is held.
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1300);
   releaseWrite.resolve();
   await expect
     .poll(async () => {
@@ -434,6 +448,14 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       )?.note;
     })
     .toBe('Final note');
+  await expect(
+    page.getByLabel('Заметка к тренировке', { exact: true }),
+  ).toBeFocused();
+  expect(
+    await page
+      .getByLabel('Заметка к тренировке', { exact: true })
+      .evaluate((element) => element.getBoundingClientRect().top),
+  ).toBe(noteTop);
   await page.unroute('**/api/offline/writes');
 
   // Reverting to the accepted value clears dirty state without another write.
@@ -588,6 +610,9 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect(
     repeatedRows.nth(1).getByLabel('Repeated manual, Подход 2, Повторения'),
   ).toHaveAttribute('placeholder', '12');
+  await expect(
+    page.getByRole('button', { name: 'Скачать тренировку', exact: true }),
+  ).toHaveCount(0);
   // A comment is a result even before any sets are recorded for that occurrence.
   await repeatedRows
     .nth(1)
@@ -664,31 +689,6 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect(
     repeatedRows.nth(0).getByLabel('Repeated manual, Подход 1, Повторения'),
   ).toHaveValue('');
-  await page
-    .getByRole('button', { name: 'Скачать тренировку', exact: true })
-    .click();
-  await expect(
-    page.getByRole('status').filter({ hasText: 'Скачана для зала' }),
-  ).toBeVisible();
-  await page.reload();
-  await expect(
-    page.getByRole('status').filter({ hasText: 'Скачана для зала' }),
-  ).toBeVisible();
-  await context.setOffline(true);
-  await page
-    .getByRole('button', { name: 'Техника: Downloaded technique', exact: true })
-    .click();
-  await expect(
-    page.getByText('Synthetic technique instructions', { exact: true }),
-  ).toBeVisible();
-  const media = page.locator('video');
-  await expect(media).toHaveAttribute('src', /^blob:/);
-  await page.getByRole('button', { name: 'Play Video', exact: true }).click();
-  await expect
-    .poll(() => media.evaluate((video: HTMLVideoElement) => video.readyState))
-    .toBeGreaterThan(1);
-  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await context.setOffline(false);
   await page.goto(dayUrl);
 
   await context.setOffline(true);
