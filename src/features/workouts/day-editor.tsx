@@ -196,7 +196,11 @@ export function DayEditor({
             endsOn: date,
             workouts: [structuredClone(selected)],
           },
-      result: initialResult(date, selected, existing),
+      result: initialResult(
+        date,
+        existing?.planSnapshot?.workout ?? selected,
+        existing,
+      ),
       workoutId: selected.id,
     };
   });
@@ -945,7 +949,7 @@ export function DayEditor({
             canLog={canLog}
             reordering={reordering}
             exercises={value.result.exercises}
-            planned={selected}
+            planned={savedSession?.planSnapshot?.workout ?? (hasPlan ? selected : undefined)}
             session={savedSession}
             mode={canLog ? 'result' : 'read'}
             disabled={busy}
