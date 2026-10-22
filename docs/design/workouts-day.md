@@ -87,3 +87,24 @@ The exercise picker and standalone catalogue append the next page automatically 
 This bounded interaction refinement preserves the existing card grid, inline playback, Mantine teal controls and shared read cache. It introduces no visual-system tokens, storage contracts or additional navigation.
 
 Verification tier: Isolated, because only the workout catalogue presentation changes. Prettier, scoped ESLint, typecheck, the existing unit suite (3 cases), production build and existing browser smoke (1 case) passed. Add/remove/consolidate cases: 0/0/0. Manual browser checks with synthetic catalogue responses confirmed 12 → 24 → 30 appended cards, retained selection, retry after a failed page request and search reset. Finish review: ship, with no requested fixes, against desktop, 662px and 390px captures in `.impeccable/review/`.
+
+## Mobile-first recording refinement (22 October 2026)
+
+The existing day workspace and Mantine/teal identity remain authoritative. Instead of adding a second hierarchy of training pages, the empty day now reveals two distinct owner actions: **«Составить план»** and **«Записать тренировку»**. Trainers see only planning. A result created without a plan is still saved as a real session; its title is editable and its sets are entered with the usual durable queue. New exercises can be appended directly to either an existing or an independent result, initialized with missing values rather than copying planned repetitions.
+
+### Phone first
+
+- At 320–767 px, the shared date ribbon sits on a quiet neutral surface, the plan/result control owns one full row, and a slim entered/total set summary appears only when there are sets. It is not a gamified score: a set counts as entered only with positive repetitions. Saving remains automatic for results and manual for plans.
+- Each exercise has one full-width technique/name target, a brief entered-set count, a compact reference row for planned weight × repetitions, then the actual numeric inputs. Headings shorten to «кг» and «повт.» at phone widths, while accessible input names stay fully descriptive. Frequent set actions stay immediately beside inputs, 44 px or larger. The reference row wraps rather than scrolling horizontally.
+- The final action inside the exercise adds a new set. Adding an exercise is a separate explicit action at the end of the editable result or plan. The existing full-screen phone picker, media dialog, comment flow and confirmation remain unchanged. A saved exercise cannot be removed without a network connection; the control names why. New, unsaved exercise occurrences remain removable.
+- On an empty day, the two primary tasks appear as clear choices, followed by optional TransformMate refresh. Loading, provider errors, offline queues and download progress remain inline and never masquerade as the session's success state.
+
+### Desktop from the same model
+
+At 768 px and wider, the exact same task/order is retained, not a separate dashboard. The page stays within the established 860 px workspace, plan/reference groups use horizontal room and number fields remain bounded for rapid keyboard entry. The mode/status toolbar sits on one row; date selection uses the existing desktop calendar. Exercise targets, media, set actions, permission checks and data models are shared. There is no alternative client-side router or duplicate editor state.
+
+### Data integrity and edge cases
+
+Recorded sessions render their frozen `planSnapshot` as the comparison reference, even when the source plan has since changed. An unlinked result is not shown a fictional plan. An offline queued independent result keeps its editor and pending draft visible, preventing an empty-day flash. Cancel is hidden once a queued create exists; logout continues to clear account-scoped reads, drafts and downloads under the existing flows. A saved exercise with possible personal-video attachments cannot be removed offline. These are UX guards; backend revisions, authorization, video locking and queue idempotency stay authoritative.
+
+**Verification:** source changes are provided as a reviewable branch. Full browser captures, `pnpm verify:merge`, and real-iOS/desktop visual checks still require a runnable authenticated Tempo environment; no successful runtime verification is claimed here.
