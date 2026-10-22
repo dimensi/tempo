@@ -93,7 +93,9 @@ export function ExerciseRows({
         const guide = guides[index];
         const openMedia = () => setMedia({ exercise, actual: recorded[index] });
         const titleParts = /^(.*?)\s*(\([^)]*\))$/.exec(exercise.name);
-        const completed = exercise.sets.filter((set) => set.reps !== null).length;
+        const completed = exercise.sets.filter(
+          (set) => set.reps !== null && set.reps > 0,
+        ).length;
         const existingOccurrence = Boolean(
           session &&
             exercise.id &&
