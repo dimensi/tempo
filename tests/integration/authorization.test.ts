@@ -118,7 +118,7 @@ it('fails closed for generic and selective medical-PDF trainer access, including
   const workoutService = await import('@/server/workouts');
   const { workoutRepository } = await import('@/server/workouts/repository');
   const workoutData = {
-    date: '2026-10-01',
+    date: '2026-09-01',
     title: 'Trainer plan',
     note: '',
     status: 'planned' as const,
