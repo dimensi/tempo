@@ -418,11 +418,11 @@ export function WorkoutsDashboard({
       <div className={classes.dateCard}>
         <DateNavigation
           date={date}
-        onSelect={(value) => {
-          setActive(null);
-          setReorderTarget(null);
-          router.push(`/workouts?date=${value}`, { scroll: false });
-        }}
+          onSelect={(value) => {
+            setActive(null);
+            setReorderTarget(null);
+            router.push(`/workouts?date=${value}`, { scroll: false });
+          }}
           labels={m.dateNavigation}
         />
       </div>
