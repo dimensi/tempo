@@ -259,7 +259,8 @@ export function DayEditor({
   );
   const recordedSets = value.result.exercises.reduce(
     (count, exercise) =>
-      count + exercise.sets.filter((set) => set.reps !== null && set.reps > 0).length,
+      count +
+      exercise.sets.filter((set) => set.reps !== null && set.reps > 0).length,
     0,
   );
   const persist = useCallback(
