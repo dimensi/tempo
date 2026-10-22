@@ -89,55 +89,38 @@ export async function readMcpData(
       limit: 50,
     });
     const within = (date: string) => date >= from && date <= to;
-    // Plans, local sessions and provider facts remain separate, with explicit relationships.
+    // Each local workout occurs once; status determines plan versus execution semantics.
     const workoutRows: Array<{
       date: string;
       kind: string;
       executionStatus: McpWorkoutExecutionStatus;
-      planId?: string | null;
       workoutId?: string | null;
       id: string | number;
       [key: string]: unknown;
     }> = [
-      ...local.plans.flatMap((p) =>
-        p.workouts
-          .filter((w) => within(w.date))
-          .map((w) => ({
-            kind: 'plan',
-            source: 'LOCAL',
-            id: w.id,
-            planId: p.id,
-            date: w.date,
-            title: w.title,
-            coverage: 'planned_only',
-            executionStatus: 'planned' as const,
-            ...(detail === 'records'
-              ? {
-                  exercises: w.exercises.map((e) => ({
-                    name: e.name,
-                    plannedSets: e.sets,
-                  })),
-                }
-              : {}),
-          })),
-      ),
-      ...local.sessions
-        .filter((s) => within(s.date))
-        .map((s) => ({
-          kind: 'session',
+      ...local.workouts
+        .filter((w) => within(w.date))
+        .map((w) => ({
+          kind: 'workout',
           source: 'LOCAL',
-          id: s.id,
-          planId: s.planId,
-          workoutId: s.plannedWorkoutId,
-          date: s.date,
-          title: s.title,
-          executionStatus: s.status,
-          coverage: s.status === 'completed' ? 'recorded' : 'partial',
+          id: w.id,
+          workoutId: w.id,
+          date: w.date,
+          title: w.title,
+          executionStatus: w.status,
+          coverage:
+            w.status === 'planned'
+              ? 'planned_only'
+              : w.status === 'completed'
+                ? 'recorded'
+                : 'partial',
           ...(detail === 'records'
             ? {
-                exercises: s.exercises.map((e) => ({
+                exercises: w.exercises.map((e) => ({
                   name: e.name,
-                  actualSets: e.sets,
+                  ...(w.status === 'planned'
+                    ? { plannedSets: e.sets }
+                    : { actualSets: e.sets }),
                 })),
               }
             : {}),
@@ -239,14 +222,13 @@ export async function readMcpData(
     const completed = workoutRows.filter(
       (row) => row.executionStatus === 'completed',
     );
-    // A plan link is not a session identity: do not silently merge two confirmed facts.
+    // Provider facts stay read-only; flag overlap with the canonical local execution.
     const completionCountAmbiguous = completed.some(
       (row) =>
         row.kind === 'linked' &&
         completed.some(
           (other) =>
-            other.kind === 'session' &&
-            other.planId === row.planId &&
+            other.kind === 'workout' &&
             other.workoutId === row.workoutId &&
             other.date === row.date,
         ),
@@ -263,7 +245,7 @@ export async function readMcpData(
       coverage: {
         scope: 'locally_saved_records',
         recordCounts: Object.fromEntries(
-          ['plan', 'session', 'linked', 'native'].map((kind) => [
+          ['workout', 'linked', 'native'].map((kind) => [
             kind,
             workoutRows.filter((row) => row.kind === kind).length,
           ]),

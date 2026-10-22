@@ -80,12 +80,12 @@ export async function getOverview(
   // Project existing persisted workout DTOs to title/date only, with scope and LIMIT in SQL.
   const planned = sqlite
     .prepare(
-      `SELECT json_extract(w.value, '$.title') as title, json_extract(w.value, '$.date') as date FROM workout_plans p, json_each(p.data, '$.workouts') w WHERE p.owner_id = ? AND json_extract(w.value, '$.date') >= ? AND NOT EXISTS (SELECT 1 FROM workout_sessions s WHERE s.owner_id = p.owner_id AND json_extract(s.data, '$.planId') = p.id AND json_extract(s.data, '$.plannedWorkoutId') = json_extract(w.value, '$.id') AND json_extract(s.data, '$.status') IN ('completed','skipped')) ORDER BY date, p.id LIMIT 1`,
+      `SELECT json_extract(data, '$.title') as title, date FROM workouts WHERE owner_id = ? AND date >= ? AND json_extract(data, '$.status') = 'planned' ORDER BY date, id LIMIT 1`,
     )
     .get(ownerId, today) as { title: string; date: string } | undefined;
   const completed = sqlite
     .prepare(
-      `SELECT json_extract(data, '$.title') as title, date FROM workout_sessions WHERE owner_id = ? AND date <= ? AND json_extract(data, '$.status') = 'completed' ORDER BY date DESC, updated_at DESC, id DESC LIMIT 1`,
+      `SELECT json_extract(data, '$.title') as title, date FROM workouts WHERE owner_id = ? AND date <= ? AND json_extract(data, '$.status') = 'completed' ORDER BY date DESC, updated_at DESC, id DESC LIMIT 1`,
     )
     .get(ownerId, today) as { title: string; date: string } | undefined;
   const data: OverviewData = {

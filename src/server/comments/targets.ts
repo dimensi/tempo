@@ -4,7 +4,7 @@ import { CollaborationError } from '@/server/access/http';
 import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '@/server/db';
 import { measurements } from '@/server/db/schema/measurements';
-import { workoutSessions } from '@/server/db/schema/workouts';
+import { workouts } from '@/server/db/schema/workouts';
 import { nutritionDayExists } from '@/server/nutrition';
 import { diaryDateSchema } from '@/contracts/nutrition';
 export type CommentTargetResolver = (
@@ -26,7 +26,7 @@ export function resolveCommentTarget(
     return diaryDateSchema.safeParse(target.id).success
       ? nutritionDayExists(headers, ownerId, target.id)
       : false;
-  const table = target.type === 'measurement' ? measurements : workoutSessions;
+  const table = target.type === 'measurement' ? measurements : workouts;
   return !!getDatabase()
     .db.select({ id: table.id })
     .from(table)

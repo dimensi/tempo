@@ -3,7 +3,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getDatabase } from '@/server/db';
 import { getObjectStorage } from '@/server/storage';
-import { workoutPlanInputSchema } from '@/contracts/workouts';
+import { workoutInputSchema } from '@/contracts/workouts';
 import { getTransformMateConnectionFence } from './runtime';
 import { catalogStore } from './catalog-store';
 import {
@@ -267,12 +267,12 @@ export function startTransformMateReplicaWorker() {
           }
           if (Date.now() - plansCheckedAt >= 60000) {
             const plans = getDatabase()
-              .sqlite.prepare('SELECT data FROM workout_plans WHERE owner_id=?')
+              .sqlite.prepare('SELECT data FROM workouts WHERE owner_id=?')
               .all(owner.id) as { data: string }[];
             for (const plan of plans)
-              for (const workout of workoutPlanInputSchema.parse(
-                JSON.parse(plan.data),
-              ).workouts)
+              for (const workout of [
+                workoutInputSchema.parse(JSON.parse(plan.data)),
+              ])
                 for (const exercise of workout.exercises)
                   if (exercise.transformMate)
                     store.enqueue(

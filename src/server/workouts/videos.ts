@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { authorize } from '@/server/auth/guards';
 import { getDatabase } from '@/server/db';
-import { workoutSessions } from '@/server/db/schema/workouts';
+import { workouts } from '@/server/db/schema/workouts';
 import { workoutVideos } from '@/server/db/schema/workout-videos';
 import { getObjectStorage } from '@/server/storage';
 import {
@@ -42,7 +42,7 @@ async function serializeVideoWrite<T>(
   action: () => Promise<T>,
 ) {
   const row = await rowFor(request, id, true);
-  return withSessionVideoLock(row.ownerId, row.sessionId, () =>
+  return withSessionVideoLock(row.ownerId, row.workoutId, () =>
     serialize(id, action),
   );
 }
@@ -50,7 +50,12 @@ type Row = typeof workoutVideos.$inferSelect;
 const key = (row: Row, part?: number) =>
   `workout-videos/${row.id}/${part === undefined ? 'video.mp4' : `part-${part}`}`;
 const dto = (row: Row): WorkoutVideo => ({
-  ...row,
+  id: row.id,
+  sessionId: row.workoutId,
+  exerciseId: row.exerciseId,
+  size: row.size,
+  duration: row.duration,
+  state: row.state,
   parts: Object.keys(row.parts).map(Number),
 });
 async function access(request: Request, write: boolean) {
@@ -67,13 +72,8 @@ async function access(request: Request, write: boolean) {
 function target(ownerId: string, sessionId: string, exerciseId?: string) {
   const session = getDatabase()
     .db.select()
-    .from(workoutSessions)
-    .where(
-      and(
-        eq(workoutSessions.ownerId, ownerId),
-        eq(workoutSessions.id, sessionId),
-      ),
-    )
+    .from(workouts)
+    .where(and(eq(workouts.ownerId, ownerId), eq(workouts.id, sessionId)))
     .get();
   if (
     !session ||
@@ -91,7 +91,7 @@ async function rowFor(request: Request, id: string, write: boolean) {
     .where(and(eq(workoutVideos.id, id), eq(workoutVideos.ownerId, ownerId)))
     .get();
   if (!row) throw new WorkoutError(404);
-  target(ownerId, row.sessionId, row.exerciseId);
+  target(ownerId, row.workoutId, row.exerciseId);
   return row;
 }
 export async function listVideos(request: Request) {
@@ -104,7 +104,7 @@ export async function listVideos(request: Request) {
     .where(
       and(
         eq(workoutVideos.ownerId, ownerId),
-        eq(workoutVideos.sessionId, sessionId),
+        eq(workoutVideos.workoutId, sessionId),
       ),
     )
     .all()
@@ -133,7 +133,7 @@ export async function createVideo(request: Request) {
     if (existing) {
       if (
         existing.ownerId !== ownerId ||
-        existing.sessionId !== input.sessionId ||
+        existing.workoutId !== input.sessionId ||
         existing.exerciseId !== input.exerciseId ||
         existing.size !== input.size ||
         existing.duration !== Math.ceil(input.duration)
@@ -163,7 +163,7 @@ export async function createVideo(request: Request) {
       currentRows.filter((row) => row.state === 'uploading').length >= 10 ||
       currentRows.filter(
         (row) =>
-          row.sessionId === input.sessionId &&
+          row.workoutId === input.sessionId &&
           row.exerciseId === input.exerciseId,
       ).length >= 8
     )
@@ -172,7 +172,9 @@ export async function createVideo(request: Request) {
       getDatabase()
         .db.insert(workoutVideos)
         .values({
-          ...input,
+          workoutId: input.sessionId,
+          exerciseId: input.exerciseId,
+          size: input.size,
           id,
           ownerId,
           duration: Math.ceil(input.duration),
@@ -365,7 +367,7 @@ export function sessionVideoRows(ownerId: string, sessionId: string) {
     .where(
       and(
         eq(workoutVideos.ownerId, ownerId),
-        eq(workoutVideos.sessionId, sessionId),
+        eq(workoutVideos.workoutId, sessionId),
       ),
     )
     .all();
