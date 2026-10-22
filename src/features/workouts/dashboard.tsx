@@ -18,7 +18,9 @@ import {
 import { useMediaQuery } from '@mantine/hooks';
 import {
   IconArrowsSort,
+  IconCalendarPlus,
   IconDots,
+  IconPlus,
   IconRefresh,
   IconTrash,
 } from '@tabler/icons-react';
@@ -76,7 +78,10 @@ export function WorkoutsDashboard({
   const mobile = useMediaQuery('(max-width: 47.99em)');
   const [dayActions, setDayActions] = useState(false);
   const [reorderTarget, setReorderTarget] = useState<string | null>(null);
-  const [creating, setCreating] = useState<string | null>(null);
+  const [creating, setCreating] = useState<{
+    date: string;
+    mode: 'plan' | 'result';
+  } | null>(null);
   const [copied, setCopied] = useState<{
     date: string;
     workout: PlannedWorkout;
@@ -199,7 +204,7 @@ export function WorkoutsDashboard({
     entry?.native,
     entry?.remote?.actual,
   ]);
-  const create = creating === date;
+  const create = creating?.date === date;
   const done = async () => {
     await resource.refresh();
     if (create) setCreating(null);
@@ -268,9 +273,20 @@ export function WorkoutsDashboard({
       label: m.anotherWorkout,
       run: () => {
         setCopied(null);
-        setCreating(date);
+        setCreating({ date, mode: 'plan' });
       },
     },
+    ...(canLog
+      ? [
+          {
+            label: m.newResult,
+            run: () => {
+              setCopied(null);
+              setCreating({ date, mode: 'result' });
+            },
+          },
+        ]
+      : []),
     ...(entry?.workout
       ? [
           {
@@ -399,15 +415,17 @@ export function WorkoutsDashboard({
       >
         {m.title}
       </PageHeader>
-      <DateNavigation
-        date={date}
+      <div className={classes.dateCard}>
+        <DateNavigation
+          date={date}
         onSelect={(value) => {
           setActive(null);
           setReorderTarget(null);
           router.push(`/workouts?date=${value}`, { scroll: false });
         }}
-        labels={m.dateNavigation}
-      />
+          labels={m.dateNavigation}
+        />
+      </div>
       {syncRequested === date && (
         <Text size="sm" c={sync.error ? 'orange' : 'dimmed'} role="status">
           {sync.busy
@@ -448,16 +466,34 @@ export function WorkoutsDashboard({
             <Title order={2} size="h3">
               {m.emptyDay}
             </Title>
-            <Text c="dimmed">{m.prepareHint}</Text>
-            <Button
-              mih={44}
-              onClick={() => {
-                setCopied(null);
-                setCreating(date);
-              }}
-            >
-              {m.newWorkout}
-            </Button>
+            <Text c="dimmed" ta="center" maw={420}>
+              {m.emptyDayHint}
+            </Text>
+            <div className={classes.emptyActions}>
+              <Button
+                mih={48}
+                leftSection={<IconCalendarPlus size={20} />}
+                onClick={() => {
+                  setCopied(null);
+                  setCreating({ date, mode: 'plan' });
+                }}
+              >
+                {m.newWorkout}
+              </Button>
+              {canLog && (
+                <Button
+                  mih={48}
+                  variant="default"
+                  leftSection={<IconPlus size={20} />}
+                  onClick={() => {
+                    setCopied(null);
+                    setCreating({ date, mode: 'result' });
+                  }}
+                >
+                  {m.newResult}
+                </Button>
+              )}
+            </div>
             <Button
               variant="subtle"
               mih={44}
@@ -480,12 +516,13 @@ export function WorkoutsDashboard({
       )}
       {data && create && (
         <DayEditor
-          key={`new:${ownerId}:${date}:${copied?.workout.id ?? ''}`}
+          key={`new:${ownerId}:${date}:${creating?.mode}:${copied?.workout.id ?? ''}`}
           ownerId={ownerId}
           userId={userId}
           date={date}
           workout={copied?.date === date ? copied.workout : undefined}
           canLog={canLog}
+          createMode={creating?.mode}
           onSaved={done}
           reordering={reordering}
           onReorderDone={() => setReorderTarget(null)}
@@ -583,7 +620,7 @@ export function WorkoutsDashboard({
                 copyDate,
               );
               setCopied({ date: copyDate, workout: next.workouts[0]! });
-              setCreating(copyDate);
+              setCreating({ date: copyDate, mode: 'plan' });
               setCopyOpen(false);
               router.push(`/workouts?date=${copyDate}`, { scroll: false });
             }}
