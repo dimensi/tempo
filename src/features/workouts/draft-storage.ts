@@ -96,16 +96,18 @@ export function storeWorkoutDraft(
     if (serialized.length > 256_000) {
       return false;
     }
-    const others = Object.keys(sessionStorage).filter((item) => {
-      if (!item.startsWith(prefix) || item === key) return false;
+    const others = Object.keys(sessionStorage).filter(
+      (item) => item.startsWith(prefix) && item !== key,
+    );
+    const protectedDraft = (item: string) => {
       try {
-        return !needsReview(
+        return needsReview(
           envelope.parse(JSON.parse(sessionStorage.getItem(item)!)).value,
         );
       } catch {
-        return true;
+        return false;
       }
-    });
+    };
     const age = (item: string) => {
       try {
         return envelope.parse(JSON.parse(sessionStorage.getItem(item)!))
@@ -115,7 +117,12 @@ export function storeWorkoutDraft(
       }
     };
     others.sort((a, b) => age(a) - age(b));
-    while (others.length >= 8) sessionStorage.removeItem(others.shift()!);
+    while (others.length >= 8) {
+      const disposable = others.findIndex((item) => !protectedDraft(item));
+      // Keep unresolved alternatives, but never grow the bounded draft store.
+      if (disposable === -1) return false;
+      sessionStorage.removeItem(others.splice(disposable, 1)[0]!);
+    }
     sessionStorage.setItem(key, serialized);
     return true;
   } catch {
@@ -204,10 +211,30 @@ export function readLegacyWorkoutDraft(
             : actual.success
               ? actual.data
               : null;
-      const converted = workoutDraftSchema.safeParse(selected);
+      const identify = (value: unknown) => {
+        const draft = workoutDraftSchema.safeParse(value);
+        if (!draft.success) return draft;
+        return workoutDraftSchema.safeParse({
+          ...draft.data,
+          exercises: draft.data.exercises.map((exercise) => ({
+            ...exercise,
+            id:
+              exercise.id ??
+              (exercise.transformMate
+                ? workout?.exercises.find(
+                    (existing) =>
+                      existing.transformMate?.occurrenceKey ===
+                      exercise.transformMate?.occurrenceKey,
+                  )?.id
+                : undefined) ??
+              crypto.randomUUID(),
+          })),
+        });
+      };
+      const converted = identify(selected);
       const alternative =
         old.planDirty && old.resultDirty && planned
-          ? workoutDraftSchema.safeParse({
+          ? identify({
               date,
               title: planned.title || old.plan.title,
               note: old.plan.description,
