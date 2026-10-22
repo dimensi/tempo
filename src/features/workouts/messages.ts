@@ -56,7 +56,7 @@ export const workoutMessages = {
   selected: 'Выбрано',
   manualName: 'Название упражнения',
   dayMenu: 'Действия с тренировкой',
-  anotherWorkout: 'Добавить ещё тренировку',
+  anotherWorkout: 'Добавить плановую тренировку',
   dayWorkout: 'Тренировка дня',
   chooseWorkout: 'Тренировка этого дня',
   execution: 'Выполнение',
