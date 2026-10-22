@@ -697,6 +697,47 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   ).toBeVisible();
   await context.setOffline(false);
 
+  // A result without a plan is a first-class workout, not a phantom plan.
+  const standaloneDate = '2026-02-16';
+  const standaloneTitle = 'Standalone smoke workout';
+  await page.goto(`/workouts?date=${standaloneDate}`);
+  await page
+    .getByRole('button', { name: 'Записать тренировку', exact: true })
+    .click();
+  await page
+    .getByRole('textbox', { name: 'Название тренировки', exact: true })
+    .fill(standaloneTitle);
+  await page
+    .getByRole('button', { name: 'Добавить упражнения', exact: true })
+    .click();
+  await page
+    .getByRole('textbox', { name: 'Поиск по названию', exact: true })
+    .fill('Solo lift');
+  await page
+    .getByRole('button', { name: 'Добавить вручную: Solo lift', exact: true })
+    .click();
+  await page
+    .getByLabel('Solo lift, Подход 1, Повторения', { exact: true })
+    .fill('8');
+  await expect
+    .poll(async () => {
+      const workouts = (
+        await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json()
+      ).data;
+      const actual = workouts.sessions.find(
+        (item: { title: string }) => item.title === standaloneTitle,
+      );
+      return actual
+        ? {
+            planId: actual.planId,
+            planSnapshot: actual.planSnapshot,
+            reps: actual.exercises[0]?.sets[0]?.reps,
+            weight: actual.exercises[0]?.sets[0]?.weightKg,
+          }
+        : null;
+    })
+    .toEqual({ planId: null, planSnapshot: null, reps: 8, weight: null });
+
   await page.goto('/diary');
   const navigation = page.getByRole('button', {
     name: 'Навигация',
