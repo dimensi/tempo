@@ -115,6 +115,77 @@ it('fails closed for generic and selective medical-PDF trainer access, including
     ok: false,
     status: 403,
   });
+  const workoutService = await import('@/server/workouts');
+  const { workoutRepository } = await import('@/server/workouts/repository');
+  const workoutData = {
+    date: '2026-10-01',
+    title: 'Trainer plan',
+    note: '',
+    status: 'planned' as const,
+    exercises: [],
+  };
+  const trainerPlan = await workoutService.createWorkout(
+    headers(),
+    ownerId,
+    workoutData,
+    crypto.randomUUID(),
+  );
+  const trainerEdited = await workoutService.updateWorkout(
+    headers(),
+    ownerId,
+    trainerPlan.id,
+    trainerPlan.revision,
+    { ...workoutData, note: 'Trainer edit' },
+    undefined,
+    crypto.randomUUID(),
+  );
+  expect(trainerEdited.note).toBe('Trainer edit');
+  await expect(
+    workoutService.updateWorkout(
+      headers(),
+      ownerId,
+      trainerEdited.id,
+      trainerEdited.revision,
+      { ...workoutData, status: 'in_progress' },
+      'start',
+      crypto.randomUUID(),
+    ),
+  ).rejects.toMatchObject({ status: 403 });
+  const repository = workoutRepository(connection.db);
+  const activeData = {
+    ...workoutData,
+    exercises: [
+      {
+        id: crypto.randomUUID(),
+        name: 'Squat',
+        sets: [{ reps: 8, weightKg: 55 }],
+      },
+    ],
+  };
+  const activePlan = repository.create(
+    ownerId,
+    activeData,
+    crypto.randomUUID(),
+  );
+  const activeWorkout = repository.update(
+    ownerId,
+    activePlan.id,
+    activePlan.revision,
+    { ...activeData, status: 'in_progress' },
+    'start',
+  );
+  await expect(
+    workoutService.updateWorkout(
+      headers(),
+      ownerId,
+      activeWorkout.id,
+      activeWorkout.revision,
+      { ...activeData, status: 'in_progress', note: 'Not permitted' },
+      undefined,
+      crypto.randomUUID(),
+    ),
+  ).rejects.toMatchObject({ status: 403 });
+  expect(repository.get(ownerId, activeWorkout.id).note).toBe('');
   await expect(
     requireCatalogAccess(headers(), ownerId),
   ).resolves.toBeUndefined();
