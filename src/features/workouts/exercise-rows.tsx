@@ -22,6 +22,7 @@ import {
 } from '@tabler/icons-react';
 import { useMediaQuery } from '@mantine/hooks';
 import { BottomSheet } from '@/components/shared/bottom-sheet';
+import { useReadOnline } from '@/lib/use-read-online';
 import { ExerciseOrder } from './exercise-order';
 import { matchExerciseGuides } from './exercise-guides';
 import type {
@@ -64,6 +65,7 @@ export function ExerciseRows({
   const mobile = useMediaQuery('(max-width: 47.99em)');
   const [actions, setActions] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const online = useReadOnline();
   const guides = matchExerciseGuides(exercises, planned?.exercises ?? []);
   const recorded =
     mode === 'plan'
@@ -91,20 +93,31 @@ export function ExerciseRows({
         const guide = guides[index];
         const openMedia = () => setMedia({ exercise, actual: recorded[index] });
         const titleParts = /^(.*?)\s*(\([^)]*\))$/.exec(exercise.name);
+        const completed = exercise.sets.filter((set) => set.reps !== null).length;
+        const existingOccurrence = Boolean(
+          session &&
+            exercise.id &&
+            session.exercises.some((item) => item.id === exercise.id),
+        );
+        const lockedRemoval =
+          mode === 'result' && existingOccurrence && !online;
         const options = [
           {
             label: m.techniqueAndVideo,
             icon: <IconPlayerPlay size={20} />,
+            disabled,
             run: openMedia,
           },
           {
             label: m.exerciseComment,
+            disabled,
             run: () => setNote(note === key ? null : key),
           },
           {
             label: m.removeExercise,
             color: 'red',
             icon: <IconTrash size={20} />,
+            disabled: disabled || lockedRemoval,
             run: () => onChange?.(exercises.filter((_, i) => i !== index)),
           },
         ];
@@ -118,7 +131,7 @@ export function ExerciseRows({
               <UnstyledButton
                 className={styles.exerciseName}
                 onClick={openMedia}
-                aria-label={`${m.technique}: ${exercise.name}`}
+                aria-label={`${m.technique}: ${exercise.name}${mode !== 'plan' ? `, ${completed} / ${exercise.sets.length} ${m.shortSets}` : ''}`}
               >
                 <span>{titleParts?.[1] || exercise.name}</span>
                 {titleParts && (
@@ -126,8 +139,15 @@ export function ExerciseRows({
                     {titleParts[2]}
                   </span>
                 )}
-                <span className={styles.techniqueLink}>
-                  {m.techniqueAndVideo} ›
+                <span className={styles.exerciseAssist}>
+                  <span className={styles.techniqueLink}>
+                    {m.techniqueAndVideo} ›
+                  </span>
+                  {mode !== 'plan' && exercise.sets.length > 0 && (
+                    <span className={styles.exerciseCount}>
+                      {completed} / {exercise.sets.length} {m.shortSets}
+                    </span>
+                  )}
                 </span>
               </UnstyledButton>
               {onChange &&
@@ -159,7 +179,7 @@ export function ExerciseRows({
                             c={option.color ? 'red.7' : undefined}
                             justify="start"
                             mih={52}
-                            disabled={disabled}
+                            disabled={option.disabled}
                             onClick={() => {
                               setActions(null);
                               option.run();
@@ -168,6 +188,11 @@ export function ExerciseRows({
                             {option.label}
                           </Button>
                         ))}
+                        {lockedRemoval && (
+                          <Text size="sm" c="dimmed">
+                            {m.removeExerciseOffline}
+                          </Text>
+                        )}
                       </Stack>
                     </BottomSheet>
                   </>
@@ -189,49 +214,38 @@ export function ExerciseRows({
                         <Menu.Item
                           key={option.label}
                           color={option.color}
-                          disabled={disabled}
+                          disabled={option.disabled}
                           onClick={option.run}
                         >
                           {option.label}
                         </Menu.Item>
                       ))}
+                      {lockedRemoval && (
+                        <Menu.Label>{m.removeExerciseOffline}</Menu.Label>
+                      )}
                     </Menu.Dropdown>
                   </Menu>
                 ))}
             </Group>
             {mode !== 'plan' && guide && (
               <div className={styles.planSummary}>
-                <Text size="sm" fw={600}>
-                  {m.prepare}
+                <Text size="sm" fw={650} className={styles.planSummaryTitle}>
+                  {m.planGuide}
                 </Text>
-                <div className={styles.planSets}>
+                <div className={styles.planChips}>
                   {guide.sets.map((set, setIndex) => (
-                    <div key={setIndex} className={styles.planSet}>
-                      {guide.sets.length > 1 && (
-                        <Text
-                          size="sm"
-                          c="dimmed"
-                          className={styles.planSetIndex}
-                        >
-                          {m.set} {setIndex + 1}
-                        </Text>
-                      )}
-                      <Stack gap={0}>
-                        <Text size="sm" c="dimmed">
-                          {m.reps}
-                        </Text>
-                        <Text size="md" fw={600}>
-                          {set.reps}
-                        </Text>
-                      </Stack>
-                      <Stack gap={0}>
-                        <Text size="sm" c="dimmed">
-                          {m.weight}
-                        </Text>
-                        <Text size="md" fw={600}>
-                          {set.weightKg === null ? m.noWeight : set.weightKg}
-                        </Text>
-                      </Stack>
+                    <div key={setIndex} className={styles.planChip}>
+                      <span className={styles.planChipNumber}>
+                        {setIndex + 1}
+                      </span>
+                      <Text component="span" size="sm" fw={650}>
+                        {set.weightKg === null
+                          ? m.noWeight
+                          : `${set.weightKg} кг`}
+                      </Text>
+                      <Text component="span" size="sm" c="dimmed">
+                        × {set.reps}
+                      </Text>
                     </div>
                   ))}
                 </div>
@@ -247,8 +261,14 @@ export function ExerciseRows({
               aria-hidden
             >
               <span>{m.setNumber}</span>
-              <span>{m.weight}</span>
-              <span>{m.reps}</span>
+              <span>
+                <span className={styles.desktopLabel}>{m.weight}</span>
+                <span className={styles.mobileLabel}>{m.resultWeight}</span>
+              </span>
+              <span>
+                <span className={styles.desktopLabel}>{m.reps}</span>
+                <span className={styles.mobileLabel}>{m.resultReps}</span>
+              </span>
               {!(mode === 'result' && onChange) && <span />}
             </div>
             {exercise.sets.map((set, setIndex) => (
