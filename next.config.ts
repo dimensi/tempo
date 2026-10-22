@@ -18,6 +18,7 @@ const config: NextConfig = {
     ],
   },
   experimental: {
+    agentUpgrade: 'security',
     optimizePackageImports: [
       '@mantine/core',
       '@mantine/hooks',
