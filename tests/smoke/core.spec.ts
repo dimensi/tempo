@@ -220,35 +220,82 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       (item) => item.title === title,
     );
   };
-  await titleInput.fill(title);
-  await note.fill('Planned note');
-  await page
-    .getByRole('button', { name: 'Добавить упражнения', exact: true })
-    .click();
-  await page
-    .getByRole('textbox', { name: 'Поиск по названию', exact: true })
-    .fill('Smoke squat');
-  await page
-    .getByRole('button', { name: 'Добавить вручную: Smoke squat', exact: true })
-    .click();
-  await firstWeight.fill('20');
-  await firstReps.fill('10');
-  await expect
-    .poll(async () => {
-      const workout = await readWorkout();
-      return (
-        workout && {
-          status: workout.status,
-          note: workout.note,
-          sets: workout.exercises[0]?.sets,
-        }
-      );
-    })
-    .toEqual({
-      status: 'planned',
-      note: 'Planned note',
-      sets: [{ weightKg: 20, reps: 10 }],
+  const fillPlan = async () => {
+    await titleInput.fill(title);
+    await note.fill('Planned note');
+    await page
+      .getByRole('button', { name: 'Добавить упражнения', exact: true })
+      .click();
+    await page
+      .getByRole('textbox', { name: 'Поиск по названию', exact: true })
+      .fill('Smoke squat');
+    await page
+      .getByRole('button', {
+        name: 'Добавить вручную: Smoke squat',
+        exact: true,
+      })
+      .click();
+    await firstWeight.fill('20');
+    await firstReps.fill('10');
+    await expect
+      .poll(async () => {
+        const workout = await readWorkout();
+        return (
+          workout && {
+            status: workout.status,
+            note: workout.note,
+            sets: workout.exercises[0]?.sets,
+          }
+        );
+      })
+      .toEqual({
+        status: 'planned',
+        note: 'Planned note',
+        sets: [{ weightKg: 20, reps: 10 }],
+      });
+  };
+  await fillPlan();
+  // Delete directly from the still-mounted creation editor. A delayed/stale
+  // list response must not keep the deleted editor visible until date navigation.
+  const oldList = await (
+    await page.request.get(`/api/workouts?ownerId=${owner}`)
+  ).json();
+  const releaseDeleteRefresh = Promise.withResolvers<void>();
+  await page.route('**/api/workouts?*', async (route) => {
+    await releaseDeleteRefresh.promise;
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(oldList),
     });
+  });
+  try {
+    await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Действия с тренировкой', exact: true })
+      .click();
+    await page
+      .getByRole('menuitem', { name: 'Удалить тренировку', exact: true })
+      .click();
+    await page
+      .getByRole('dialog', { name: 'Подтвердить удаление', exact: true })
+      .getByRole('button', { name: 'Удалить', exact: true })
+      .click();
+    await expect(
+      page.getByRole('heading', {
+        name: 'На этот день тренировок нет',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(titleInput).toHaveCount(0);
+    expect(await readWorkout()).toBeUndefined();
+  } finally {
+    releaseDeleteRefresh.resolve();
+    await page.unroute('**/api/workouts?*');
+  }
+  await page
+    .getByRole('button', { name: 'Создать тренировку', exact: true })
+    .click();
+  await fillPlan();
   const planned = (await readWorkout())!;
   await expect(
     page.getByRole('radiogroup', { name: 'Тренировка дня' }),

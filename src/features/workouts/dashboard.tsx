@@ -91,6 +91,9 @@ export function WorkoutsDashboard({
   const [busy, setBusy] = useState(false);
   const [draftDirty, setDraftDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletedIds, setDeletedIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const entries: {
     id: string;
     label: string;
@@ -98,7 +101,7 @@ export function WorkoutsDashboard({
     native?: (typeof sync.nativePage.items)[number];
     remote?: (typeof sync.items)[number];
   }[] = (data?.workouts ?? [])
-    .filter((item) => item.date === date)
+    .filter((item) => item.date === date && !deletedIds.has(item.id))
     .map((workout) => ({
       id: workout.id,
       label: workoutTitle(workout.title, workout.date),
@@ -188,10 +191,15 @@ export function WorkoutsDashboard({
       clearWorkoutDraft(
         dayWorkoutDraftKey(`${userId}:${ownerId}`, date, workout.id),
       );
-      await resource.refresh();
+      setDeletedIds((previous) => new Set([...previous, workout.id]));
+      setCreating(null);
+      setCopied(null);
+      setActive(null);
+      setReorderTarget(null);
       setEditorVersion((version) => version + 1);
       setDraftDirty(false);
       setDeletion(null);
+      void resource.refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.error);
     } finally {
@@ -427,6 +435,7 @@ export function WorkoutsDashboard({
           copy={copied?.date === date ? copied.workout : undefined}
           canLog={canLog}
           onSaved={done}
+          onDirtyChange={setDraftDirty}
           reordering={reordering}
           onReorderDone={() => setReorderTarget(null)}
           onCancel={() => setCreating(null)}
