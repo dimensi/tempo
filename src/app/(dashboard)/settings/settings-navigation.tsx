@@ -12,10 +12,10 @@ import { mcpMessages } from '@/config/mcp-messages';
 const sections = [
   { id: 'appearance', label: ru.appearance.title },
   { id: 'connection', label: ru.yazioSettings },
+  { id: 'goals', label: goalMessages.settingsTitle },
   { id: 'sync', label: ru.settings.syncTitle },
   { id: 'transformmate', label: transformMateConnectionMessages.title },
   { id: 'trainers', label: ru.trainerSettings },
-  { id: 'goals', label: goalMessages.settingsTitle },
   { id: 'mcp', label: mcpMessages.settingsTitle },
   { id: 'offline', label: offlineMessages.downloads.title },
 ];

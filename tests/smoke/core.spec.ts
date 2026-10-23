@@ -206,6 +206,48 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   ])
     expect((await page.goto(route))?.ok()).toBe(true);
 
+  const chartErrors: string[] = [];
+  const captureChartError = (error: Error) => chartErrors.push(error.message);
+  page.on('pageerror', captureChartError);
+  const measurement = await page.request.post(
+    `/api/measurements?ownerId=${owner}`,
+    {
+      headers: { Origin: testOrigin },
+      data: {
+        measuredAt: '2026-10-01',
+        note: 'Synthetic chart smoke',
+        values: [
+          { metric: 'weight', value: '75', unit: 'kg' },
+          { metric: 'waist', value: '80', unit: 'cm' },
+        ],
+      },
+    },
+  );
+  expect(measurement.status()).toBe(201);
+  await page.goto('/measurements');
+  const chart = page.getByTestId('measurement-trend-chart');
+  await expect(chart).toBeVisible();
+  for (const metric of ['Вес', 'Талия']) {
+    await page.getByRole('combobox', { name: 'Динамика', exact: true }).click();
+    await page.getByRole('option', { name: metric, exact: true }).click();
+    await chart.hover({ position: { x: 150, y: 120 } });
+    await expect(chart.locator('.recharts-tooltip-wrapper')).toBeVisible();
+    await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText(
+      '2026',
+    );
+    await expect(chart.locator('.recharts-tooltip-wrapper')).not.toContainText(
+      '1970',
+    );
+    await page
+      .getByRole('heading', { name: 'История замеров', exact: true })
+      .hover();
+    await expect(chart).toBeVisible();
+  }
+  expect(
+    chartErrors.filter((message) => message.includes('Invalid time value')),
+  ).toEqual([]);
+  page.off('pageerror', captureChartError);
+
   await page.goto('/diary');
   await expect(
     page.getByRole('heading', { name: 'Дневник питания', exact: true }),
