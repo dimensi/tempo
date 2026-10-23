@@ -21,6 +21,8 @@ import {
   mcpClientCredentials,
   mcpClientInput,
   mcpClientList,
+  mcpClientPermissions,
+  mcpClientRow,
 } from '@/contracts/mcp-clients';
 import { apiFetch } from '@/lib/api-client';
 import { apiResults } from '@/lib/api-results';
@@ -50,6 +52,82 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ClientPermissions({
+  client,
+  online,
+  pending,
+  saved,
+  onSave,
+}: {
+  client: z.infer<typeof mcpClientRow>;
+  online: boolean;
+  pending: boolean;
+  saved: boolean;
+  onSave: (value: z.infer<typeof mcpClientPermissions>) => Promise<void>;
+}) {
+  const [workouts, setWorkouts] = useState(
+    client.scopes.includes('tempo:workouts:write'),
+  );
+  const [measurements, setMeasurements] = useState(
+    client.scopes.includes('tempo:measurements:write'),
+  );
+  const dirty =
+    workouts !== client.scopes.includes('tempo:workouts:write') ||
+    measurements !== client.scopes.includes('tempo:measurements:write');
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onSave({
+          clientId: client.clientId,
+          writeWorkouts: workouts,
+          writeMeasurements: measurements,
+        });
+      }}
+    >
+      <Stack gap="xs">
+        <Checkbox
+          label={m.writeWorkouts}
+          checked={workouts}
+          disabled={pending}
+          onChange={(event) => setWorkouts(event.currentTarget.checked)}
+          styles={{
+            body: { alignItems: 'center' },
+            label: { paddingBlock: 12 },
+          }}
+        />
+        <Checkbox
+          label={m.writeMeasurements}
+          checked={measurements}
+          disabled={pending}
+          onChange={(event) => setMeasurements(event.currentTarget.checked)}
+          styles={{
+            body: { alignItems: 'center' },
+            label: { paddingBlock: 12 },
+          }}
+        />
+        <Text size="sm" c="dimmed">
+          {m.permissionsHelp}
+        </Text>
+        <Button
+          type="submit"
+          variant="light"
+          loading={pending}
+          disabled={!online || !dirty}
+          style={{ alignSelf: 'flex-start' }}
+        >
+          {m.savePermissions}
+        </Button>
+        {saved && !dirty && (
+          <Text size="sm" role="status">
+            {m.permissionsSaved}
+          </Text>
+        )}
+      </Stack>
+    </form>
+  );
+}
+
 export function McpSettings() {
   const online = useReadOnline();
   const [data, setData] = useState<z.infer<typeof mcpClientList> | null>(null);
@@ -62,6 +140,7 @@ export function McpSettings() {
   const [writeMeasurements, setWriteMeasurements] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [savedClientId, setSavedClientId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
@@ -83,7 +162,7 @@ export function McpSettings() {
       });
     return () => controller.abort();
   }, [revision]);
-  async function mutate(method: 'POST' | 'DELETE', body: unknown) {
+  async function mutate(method: 'POST' | 'PATCH' | 'DELETE', body: unknown) {
     setPending(true);
     setError(null);
     try {
@@ -99,6 +178,10 @@ export function McpSettings() {
       }
       if (method === 'POST')
         setCredentials(apiResults.mcpCredentials(await response.json()));
+      if (method === 'PATCH') {
+        setData(apiResults.mcpClients(await response.json()));
+        setSavedClientId(mcpClientPermissions.parse(body).clientId);
+      }
       setConfirm(null);
       setRevision((value) => value + 1);
     } catch {
@@ -260,6 +343,15 @@ export function McpSettings() {
                     ? m.writeMeasurements
                     : m.readOnlyMeasurements}
                 </Text>
+                {!client.disabled && (
+                  <ClientPermissions
+                    client={client}
+                    online={online}
+                    pending={pending}
+                    saved={savedClientId === client.clientId}
+                    onSave={(value) => mutate('PATCH', value)}
+                  />
+                )}
                 {!client.disabled && (
                   <Group>
                     {confirm === client.clientId ? (

@@ -28,6 +28,15 @@ const toolScopes = {
   create_measurement: 'tempo:measurements:write',
   update_measurement: 'tempo:measurements:write',
 } as const;
+export class McpScopeError extends Error {
+  constructor(
+    public readonly scope: string,
+    public readonly enabled: boolean,
+    public readonly requestedScopes: string[],
+  ) {
+    super('MCP scope required');
+  }
+}
 export const mcpToolScope = (name: McpExtraTool) => toolScopes[name];
 export async function executeMcpTool(
   name: McpExtraTool,
@@ -35,12 +44,14 @@ export async function executeMcpTool(
   raw: unknown,
 ) {
   const principal = await getDataSession(headers);
-  if (
-    !principal ||
-    !('scopes' in principal) ||
-    !principal.scopes.includes(mcpToolScope(name))
-  )
-    throw new MeasurementError(403);
+  if (!principal || !('scopes' in principal)) throw new MeasurementError(403);
+  const requiredScope = mcpToolScope(name);
+  if (!principal.scopes.includes(requiredScope))
+    throw new McpScopeError(
+      requiredScope,
+      principal.allowedScopes.includes(requiredScope),
+      [...new Set([...principal.scopes, requiredScope])],
+    );
   const ownerId = principal.user.id;
   const namespace = `mcp:${principal.clientId}`;
   let data: Record<string, unknown>;

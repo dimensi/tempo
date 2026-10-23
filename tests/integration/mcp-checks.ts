@@ -320,7 +320,7 @@ export async function assertMcpAccess(
     expect((await mcp.listTools()).tools.map((t) => t.name).sort()).toEqual(
       [...mcpTools, ...Object.keys(mcpExtraSchemas)].sort(),
     );
-    await assertMcpWrites(auth, connection, ownerHeaders, mcp);
+    await assertMcpWrites(auth, connection, ownerHeaders, mcp, trainerHeaders);
     const range = { from: '2026-10-01', to: '2026-10-04' };
     const firstWorkout = mcpOutput.parse(
       (

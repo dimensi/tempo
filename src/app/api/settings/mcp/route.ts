@@ -4,13 +4,14 @@ import {
   createMcpClient,
   listMcpClients,
   revokeMcpClient,
+  updateMcpClientPermissions,
   McpClientError,
 } from '@/server/mcp/clients';
 import { ZodError } from 'zod';
 
 export const runtime = 'nodejs';
 const headers = { 'Cache-Control': 'private, no-store', Pragma: 'no-cache' };
-function handler(method: 'GET' | 'POST' | 'DELETE') {
+function handler(method: 'GET' | 'POST' | 'PATCH' | 'DELETE') {
   return withApiErrors(async (request: Request) => {
     try {
       if (new URL(request.url).search) throw new McpClientError(400);
@@ -30,7 +31,9 @@ function handler(method: 'GET' | 'POST' | 'DELETE') {
       return Response.json(
         await (method === 'POST'
           ? createMcpClient(request.headers, value)
-          : revokeMcpClient(request.headers, value)),
+          : method === 'PATCH'
+            ? updateMcpClientPermissions(request.headers, value)
+            : revokeMcpClient(request.headers, value)),
         { headers, status: method === 'POST' ? 201 : 200 },
       );
     } catch (error) {
@@ -50,3 +53,5 @@ function handler(method: 'GET' | 'POST' | 'DELETE') {
 export const GET = handler('GET');
 export const POST = handler('POST');
 export const DELETE = handler('DELETE');
+
+export const PATCH = handler('PATCH');

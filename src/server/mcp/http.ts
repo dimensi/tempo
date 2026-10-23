@@ -5,7 +5,7 @@ import {
 } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { mcpExtraSchemas } from '@/contracts/mcp-writes';
-import { executeMcpTool, mcpToolScope } from './mutations';
+import { executeMcpTool, mcpToolScope, McpScopeError } from './mutations';
 import { getAuth } from '@/server/auth';
 import { bindMcpPrincipal } from '@/server/auth/data-session';
 import { mcpResource } from '@/server/auth/mcp-oauth';
@@ -261,6 +261,28 @@ export async function handleMcp(request: Request) {
               content: [{ type: 'text' as const, text: json }],
             };
           } catch (error) {
+            if (error instanceof McpScopeError) {
+              return {
+                isError: true,
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: error.enabled
+                      ? 'reauthorization_required'
+                      : 'scope_not_enabled: enable this permission for the existing connection in Tempo settings',
+                  },
+                ],
+                ...(error.enabled
+                  ? {
+                      _meta: {
+                        'mcp/www_authenticate': [
+                          `Bearer resource_metadata="${new URL('/.well-known/oauth-protected-resource/api/mcp', mcpResource()).href}", error="insufficient_scope", error_description="Authorize the additional Tempo permission", scope="${error.requestedScopes.join(' ')}"`,
+                        ],
+                      },
+                    }
+                  : {}),
+              };
+            }
             const status =
               error && typeof error === 'object' && 'status' in error
                 ? error.status

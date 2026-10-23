@@ -9,6 +9,7 @@ import {
   createMcpClient,
   listMcpClients,
   revokeMcpClient,
+  updateMcpClientPermissions,
 } from '@/server/mcp/clients';
 import { completeMcpConsent, validMcpQuery } from '@/server/mcp/consent';
 import { handleMcp } from '@/server/mcp/http';
@@ -23,6 +24,7 @@ import { bindMcpPrincipal } from '@/server/auth/data-session';
 import { authorize } from '@/server/auth/guards';
 import { nutritionSchedule } from '@/server/db/schema/nutrition-schedule';
 import { yazioBodyOutbox } from '@/server/db/schema/yazio-body';
+import { PATCH as patchClient } from '@/app/api/settings/mcp/route';
 import { oauthClient, oauthAccessToken } from '@/server/db/schema/oauth';
 
 export async function assertMcpWrites(
@@ -32,6 +34,7 @@ export async function assertMcpWrites(
   >,
   ownerHeaders: Headers,
   readonlyClient: Client,
+  trainerHeaders: Headers,
 ) {
   const previousSchedule = connection.db
     .select()
@@ -44,58 +47,185 @@ export async function assertMcpWrites(
   const client = await createMcpClient(ownerHeaders, {
     name: 'Synthetic writer',
     callback,
+  });
+  const verifier = 'w'.repeat(64);
+  async function grant(scope: string) {
+    const query = new URLSearchParams({
+      client_id: client.client_id,
+      redirect_uri: callback,
+      response_type: 'code',
+      scope,
+      state: randomUUID(),
+      resource,
+      code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+      code_challenge_method: 'S256',
+      prompt: 'consent',
+    });
+    const consent = await auth.handler(
+      new Request(`${base}/api/auth/oauth2/authorize?${query}`, {
+        headers: ownerHeaders,
+      }),
+    );
+    const location =
+      consent.headers.get('location') ?? (await consent.json()).url;
+    const signed = new URL(location, base).search.slice(1);
+    expect(await validMcpQuery(signed)).toBe(true);
+    const target = await completeMcpConsent(ownerHeaders, signed, true);
+    const response = await auth.handler(
+      new Request(`${base}/api/auth/oauth2/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: client.client_id,
+          client_secret: client.client_secret,
+          grant_type: 'authorization_code',
+          code: new URL(target).searchParams.get('code')!,
+          code_verifier: verifier,
+          redirect_uri: callback,
+          resource,
+        }),
+      }),
+    );
+    expect(response.ok, await response.clone().text()).toBe(true);
+    return response.json();
+  }
+  const initial = await grant('tempo:read offline_access');
+  const originalClient = connection.db
+    .select()
+    .from(oauthClient)
+    .where(eq(oauthClient.clientId, client.client_id))
+    .get()!;
+  const permissions = {
+    clientId: client.client_id,
     writeWorkouts: true,
     writeMeasurements: true,
+  };
+  await expect(
+    updateMcpClientPermissions(trainerHeaders, permissions),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(
+    updateMcpClientPermissions(ownerHeaders, {
+      ...permissions,
+      clientId: 'someone-elses-client',
+    }),
+  ).rejects.toMatchObject({ status: 404 });
+  const patch = (value: unknown, origin = base) =>
+    patchClient(
+      new Request(`${base}/api/settings/mcp`, {
+        method: 'PATCH',
+        headers: new Headers({
+          ...Object.fromEntries(ownerHeaders),
+          origin,
+          'content-type': 'application/json',
+        }),
+        body: JSON.stringify(value),
+      }),
+    );
+  expect(
+    (await patch(permissions, 'https://foreign.example.test')).status,
+  ).toBe(403);
+  expect(
+    (await patch({ ...permissions, callback: 'https://foreign.example.test' }))
+      .status,
+  ).toBe(400);
+  expect((await patch(permissions)).status).toBe(200);
+  const upgradedClient = connection.db
+    .select()
+    .from(oauthClient)
+    .where(eq(oauthClient.clientId, client.client_id))
+    .get()!;
+  expect(upgradedClient).toMatchObject({
+    id: originalClient.id,
+    clientId: originalClient.clientId,
+    clientSecret: originalClient.clientSecret,
+    redirectUris: originalClient.redirectUris,
+    disabled: false,
   });
-  const row = (await listMcpClients(ownerHeaders)).clients.find(
-    (row) => row.clientId === client.client_id,
-  )!;
-  expect(row.scopes).toEqual(
+  expect(
+    (await listMcpClients(ownerHeaders)).clients.find(
+      (row) => row.clientId === client.client_id,
+    )?.scopes,
+  ).toEqual(
     expect.arrayContaining([
       'tempo:workouts:write',
       'tempo:measurements:write',
     ]),
   );
-  const verifier = 'w'.repeat(64);
-  const query = new URLSearchParams({
-    client_id: client.client_id,
-    redirect_uri: callback,
-    response_type: 'code',
-    scope:
-      'tempo:read offline_access tempo:workouts:write tempo:measurements:write',
-    state: randomUUID(),
-    resource,
-    code_challenge: createHash('sha256').update(verifier).digest('base64url'),
-    code_challenge_method: 'S256',
-    prompt: 'consent',
-  });
-  const consent = await auth.handler(
-    new Request(`${base}/api/auth/oauth2/authorize?${query}`, {
-      headers: ownerHeaders,
-    }),
-  );
-  const location =
-    consent.headers.get('location') ?? (await consent.json()).url;
-  const signed = new URL(location, base).search.slice(1);
-  expect(await validMcpQuery(signed)).toBe(true);
-  const target = await completeMcpConsent(ownerHeaders, signed, true);
-  const response = await auth.handler(
-    new Request(`${base}/api/auth/oauth2/token`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: client.client_id,
-        client_secret: client.client_secret,
-        grant_type: 'authorization_code',
-        code: new URL(target).searchParams.get('code')!,
-        code_verifier: verifier,
-        redirect_uri: callback,
-        resource,
+  expect(
+    (await auth.api.verifyTempoToken({ body: { token: initial.access_token } }))
+      .scopes,
+  ).toEqual(['tempo:read', 'offline_access']);
+  const refresh = (scope?: string) =>
+    auth.handler(
+      new Request(`${base}/api/auth/oauth2/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: client.client_id,
+          client_secret: client.client_secret,
+          grant_type: 'refresh_token',
+          refresh_token: initial.refresh_token,
+          resource,
+          ...(scope ? { scope } : {}),
+        }),
       }),
+    );
+  expect(
+    (await refresh('tempo:read offline_access tempo:workouts:write')).ok,
+  ).toBe(false);
+  const renewed = await refresh();
+  expect(renewed.ok).toBe(true);
+  const renewedTokens = await renewed.json();
+  expect(
+    (
+      await auth.api.verifyTempoToken({
+        body: { token: renewedTokens.access_token },
+      })
+    ).scopes,
+  ).toEqual(['tempo:read', 'offline_access']);
+  const oldConnection = new Client({
+    name: 'before-scope-upgrade',
+    version: '1',
+  });
+  await oldConnection.connect(
+    new StreamableHTTPClientTransport(new URL(resource), {
+      authProvider: { token: async () => renewedTokens.access_token },
+      fetch: async (url, options) => handleMcp(new Request(url, options)),
     }),
   );
-  expect(response.ok, await response.clone().text()).toBe(true);
-  const tokens = await response.json();
+  try {
+    const count = measurementRepository(connection.db).list('owner').length;
+    const challenge = await oldConnection.callTool({
+      name: 'create_measurement',
+      arguments: {
+        requestId: randomUUID(),
+        data: {
+          measuredAt: '2026-07-13',
+          values: [{ metric: 'weight', value: '70', unit: 'kg' }],
+          note: null,
+        },
+      },
+    });
+    expect(challenge).toMatchObject({
+      isError: true,
+      _meta: {
+        'mcp/www_authenticate': [
+          expect.stringContaining(
+            'scope="tempo:read offline_access tempo:measurements:write"',
+          ),
+        ],
+      },
+    });
+    expect(measurementRepository(connection.db).list('owner')).toHaveLength(
+      count,
+    );
+  } finally {
+    await oldConnection.close();
+  }
+  // Fresh consent uses the same client ID and secret; only the grant changes.
+  const tokens = await grant(
+    'tempo:read offline_access tempo:workouts:write tempo:measurements:write',
+  );
   const headers = new Headers();
   bindMcpPrincipal(headers, () =>
     auth.api.verifyTempoToken({ body: { token: tokens.access_token } }),
@@ -557,7 +687,8 @@ export async function assertMcpWrites(
       .select()
       .from(oauthAccessToken)
       .where(eq(oauthAccessToken.clientId, client.client_id))
-      .get()!;
+      .all()
+      .find((token) => token.scopes.includes('tempo:workouts:write'))!;
     connection.db
       .update(oauthAccessToken)
       .set({ scopes: ['tempo:read', 'tempo:measurements:write'] })
@@ -594,6 +725,22 @@ export async function assertMcpWrites(
       .set({ scopes: issued.scopes })
       .where(eq(oauthAccessToken.id, issued.id))
       .run();
+    await updateMcpClientPermissions(ownerHeaders, {
+      clientId: client.client_id,
+      writeWorkouts: false,
+      writeMeasurements: true,
+    });
+    expect((await authorize(headers, 'workouts:log', 'owner')).ok).toBe(false);
+    expect((await authorize(headers, 'measurements:write', 'owner')).ok).toBe(
+      true,
+    );
+    const disabled = await call('create_workout', {
+      ...input,
+      requestId: randomUUID(),
+    });
+    expect(disabled.isError).toBe(true);
+    expect(disabled._meta?.['mcp/www_authenticate']).toBeUndefined();
+    expect((await authorize(headers, 'workouts:read', 'owner')).ok).toBe(true);
     connection.db
       .update(oauthClient)
       .set({ disabled: true })

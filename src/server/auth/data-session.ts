@@ -8,6 +8,7 @@ export type McpPrincipal = {
   user: Session['user'];
   session: null;
   scopes: string[];
+  allowedScopes: string[];
   clientId: string;
 };
 // Object identity, never a client-provided header, carries the verified MCP scope.
