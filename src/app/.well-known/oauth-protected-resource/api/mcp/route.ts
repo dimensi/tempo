@@ -1,4 +1,5 @@
 import { mcpResource } from '@/server/auth/mcp-oauth';
+import { mcpScopes } from '@/contracts/mcp-scopes';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export function GET() {
@@ -7,7 +8,7 @@ export function GET() {
     {
       resource,
       authorization_servers: [new URL('/api/auth', resource).href],
-      scopes_supported: ['tempo:read', 'offline_access'],
+      scopes_supported: [...mcpScopes],
       bearer_methods_supported: ['header'],
       resource_name: 'Tempo',
     },

@@ -56,6 +56,22 @@ export default async function McpConsent({
         ) : (
           <>
             <Text>{messages.description}</Text>
+            <Text>
+              {new URLSearchParams(query)
+                .get('scope')
+                ?.split(' ')
+                .includes('tempo:workouts:write')
+                ? messages.writeWorkouts
+                : messages.readOnlyWorkouts}
+            </Text>
+            <Text>
+              {new URLSearchParams(query)
+                .get('scope')
+                ?.split(' ')
+                .includes('tempo:measurements:write')
+                ? messages.writeMeasurements
+                : messages.readOnlyMeasurements}
+            </Text>
             <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
               {clientId}
             </Text>

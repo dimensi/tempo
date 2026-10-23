@@ -7,7 +7,7 @@ import { getAuth } from './index';
 import { getDatabase } from '../db';
 import { trainerAccess } from '../db/schema';
 import { hasPermission, type Permission } from '@/contracts/permissions';
-import { getDataSession, isMcpReader } from './data-session';
+import { getDataSession, isMcpPrincipal } from './data-session';
 export async function requireSession() {
   const requestHeaders = await headers();
   const session = await getAuth().api.getSession({ headers: requestHeaders });
@@ -29,11 +29,21 @@ export async function authorize(
   const session = await getDataSession(requestHeaders);
   if (!session) return { ok: false as const, status: 401 };
   if (
-    isMcpReader(requestHeaders) &&
+    isMcpPrincipal(requestHeaders) &&
     (!ownerId ||
       session.user.role !== 'OWNER' ||
-      !['nutrition:read', 'measurements:read', 'workouts:read'].includes(
-        permission,
+      !(
+        (['nutrition:read', 'measurements:read', 'workouts:read'].includes(
+          permission,
+        ) &&
+          'scopes' in session &&
+          session.scopes.includes('tempo:read')) ||
+        (['workouts:plan', 'workouts:log'].includes(permission) &&
+          'scopes' in session &&
+          session.scopes.includes('tempo:workouts:write')) ||
+        (permission === 'measurements:write' &&
+          'scopes' in session &&
+          session.scopes.includes('tempo:measurements:write'))
       ))
   )
     return { ok: false as const, status: 403 };

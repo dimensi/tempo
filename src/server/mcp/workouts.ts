@@ -41,6 +41,10 @@ type SetData = {
 };
 type Exercise = {
   name: string;
+  exerciseId?: string;
+  comment?: string;
+  fatigue?: number | null;
+  failure?: string | null;
   occurrenceId: string;
   phase: 'plan' | 'actual';
   historyRef: McpExerciseRef | null;
@@ -53,6 +57,9 @@ type Workout = {
   title: string;
   executionStatus: McpWorkoutExecutionStatus;
   workoutId?: string;
+  revision?: number;
+  note?: string;
+  editable?: boolean;
   planBasis?: 'saved_plan' | 'published_snapshot';
   freshness: {
     lastSavedAt: string | null;
@@ -73,6 +80,10 @@ function localExercises(
 ): Exercise[] {
   return exercises.map((e, index) => ({
     name: e.name,
+    exerciseId: e.id,
+    comment: e.comment,
+    fatigue: e.fatigue ?? null,
+    failure: e.failure ?? null,
     occurrenceId: `${phase}:${e.id ?? e.transformMate?.occurrenceKey ?? index + 1}`,
     phase,
     historyRef: exerciseHistoryRef(e.transformMate?.exerciseId),
@@ -91,6 +102,9 @@ function localView(workout: LocalWorkout): Workout {
     title: workout.title,
     executionStatus: workout.status,
     workoutId: workout.id,
+    revision: workout.revision,
+    note: workout.note,
+    editable: true,
     freshness: {
       lastSavedAt: workout.updatedAt,
       lastFetchedAt: null,
@@ -110,6 +124,7 @@ function linkedView(item: TransformMateSyncItem): Workout {
   return {
     workoutRef: { kind: 'linked', id: item.id, date },
     source: 'TransformMate',
+    editable: false,
     date,
     title: actual?.title ?? plan.title,
     workoutId: item.workoutId,
@@ -150,6 +165,7 @@ function nativeView(item: TransformMateNativeItem): Workout {
   return {
     workoutRef: { kind: 'native', id: item.remoteTrainingId, date: item.date },
     source: 'TransformMate',
+    editable: false,
     date: item.date,
     title: item.title,
     executionStatus: providerExecutionStatus(
@@ -193,6 +209,10 @@ function* exerciseRows(
       continue;
     const identity = {
       name: e.name,
+      exerciseId: e.exerciseId,
+      comment: e.comment,
+      fatigue: e.fatigue,
+      failure: e.failure,
       occurrenceId: e.occurrenceId,
       phase: e.phase,
       historyRef: e.historyRef,

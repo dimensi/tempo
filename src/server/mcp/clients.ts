@@ -33,6 +33,7 @@ export async function listMcpClients(headers: Headers) {
       name: oauthClient.name,
       redirectUris: oauthClient.redirectUris,
       disabled: oauthClient.disabled,
+      scopes: oauthClient.scopes,
       createdAt: oauthClient.createdAt,
     })
     .from(oauthClient)
@@ -51,6 +52,9 @@ export async function listMcpClients(headers: Headers) {
           .array(z.string())
           .parse(JSON.parse(z.string().parse(row.redirectUris)))[0] ?? '',
       disabled: row.disabled === true,
+      scopes: z
+        .array(z.string())
+        .parse(JSON.parse(z.string().parse(row.scopes))),
       createdAt: row.createdAt?.toISOString() ?? null,
     })),
   };
@@ -82,7 +86,12 @@ export async function createMcpClient(headers: Headers, input: unknown) {
     body: {
       client_name: value.name,
       redirect_uris: [value.callback],
-      scope: 'tempo:read offline_access',
+      scope: [
+        'tempo:read',
+        'offline_access',
+        ...(value.writeWorkouts ? ['tempo:workouts:write'] : []),
+        ...(value.writeMeasurements ? ['tempo:measurements:write'] : []),
+      ].join(' '),
       token_endpoint_auth_method: 'client_secret_post',
       application_type: 'web',
       grant_types: ['authorization_code', 'refresh_token'],

@@ -293,3 +293,38 @@ export async function catalogResponse(
     );
   }
 }
+
+/** Saved catalog only: MCP discovery never performs upstream refresh or exposes media. */
+export async function searchSavedExercises(
+  headers: Headers,
+  ownerId: string,
+  query: string,
+) {
+  const scope = await catalogScope(headers, ownerId);
+  const state = catalogStore().state(scope);
+  const saved = catalogStore().records(scope, true);
+  const unknownAliasCount = saved.filter((row) => !row.detail).length;
+  const records = saved
+    .filter((row) =>
+      [row.summary.name, ...(row.detail?.other_names ?? [])].some((name) =>
+        name.toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru')),
+      ),
+    )
+    .map((row) => ({
+      exerciseId: row.id,
+      name: row.summary.name,
+      aliases: row.detail?.other_names ?? [],
+      fetchedAt: row.fetchedAt,
+    }));
+  await scope.assertCurrent();
+  return {
+    records,
+    coverage: state?.full_catalog_fetched_at
+      ? unknownAliasCount
+        ? 'partial'
+        : 'complete'
+      : 'unknown',
+    unknownAliasCount,
+    fetchedAt: state?.full_catalog_fetched_at ?? null,
+  };
+}

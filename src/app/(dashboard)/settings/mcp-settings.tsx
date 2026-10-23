@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   CopyButton,
+  Checkbox,
   Group,
   List,
   Paper,
@@ -57,6 +58,8 @@ export function McpSettings() {
   > | null>(null);
   const [name, setName] = useState('ChatGPT');
   const [callback, setCallback] = useState('');
+  const [writeWorkouts, setWriteWorkouts] = useState(false);
+  const [writeMeasurements, setWriteMeasurements] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [confirm, setConfirm] = useState<string | null>(null);
@@ -152,7 +155,12 @@ export function McpSettings() {
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              const parsed = mcpClientInput.safeParse({ name, callback });
+              const parsed = mcpClientInput.safeParse({
+                name,
+                callback,
+                writeWorkouts,
+                writeMeasurements,
+              });
               if (!parsed.success) {
                 setError(m.operationError);
                 return;
@@ -179,6 +187,42 @@ export function McpSettings() {
                 disabled={pending}
                 onChange={(event) => setCallback(event.currentTarget.value)}
               />
+              <Checkbox
+                styles={{
+                  body: { alignItems: 'center' },
+                  label: { paddingBlock: 12 },
+                }}
+                label={m.writeWorkouts}
+                checked={writeWorkouts}
+                disabled={pending}
+                onChange={(event) =>
+                  setWriteWorkouts(event.currentTarget.checked)
+                }
+              />
+              <Checkbox
+                styles={{
+                  body: { alignItems: 'center' },
+                  label: { paddingBlock: 12 },
+                }}
+                label={m.writeMeasurements}
+                checked={writeMeasurements}
+                disabled={pending}
+                onChange={(event) =>
+                  setWriteMeasurements(event.currentTarget.checked)
+                }
+              />
+              <Text size="sm" c="dimmed">
+                {m.writeHelp}
+              </Text>
+              <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+                {m.scopes}:{' '}
+                {[
+                  'tempo:read',
+                  'offline_access',
+                  ...(writeWorkouts ? ['tempo:workouts:write'] : []),
+                  ...(writeMeasurements ? ['tempo:measurements:write'] : []),
+                ].join(' ')}
+              </Text>
               <Button
                 type="submit"
                 loading={pending}
@@ -206,6 +250,15 @@ export function McpSettings() {
                 </Text>
                 <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
                   {m.clientId}: {client.clientId}
+                </Text>
+                <Text size="sm">
+                  {client.scopes.includes('tempo:workouts:write')
+                    ? m.writeWorkouts
+                    : m.readOnlyWorkouts}
+                  ;{' '}
+                  {client.scopes.includes('tempo:measurements:write')
+                    ? m.writeMeasurements
+                    : m.readOnlyMeasurements}
                 </Text>
                 {!client.disabled && (
                   <Group>

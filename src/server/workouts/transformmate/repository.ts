@@ -157,6 +157,19 @@ export function syncRepository(
         checkedAt: null,
       });
     },
+    markHistoricalTimeUnknown(ownerId: string, workoutId: string) {
+      const link = repository
+        .list(ownerId)
+        .find((link) => link.workoutId === workoutId);
+      if (!link?.state.lifecycle) throw new Error('Missing workout lifecycle');
+      if (
+        !repository.cas(link, {
+          ...link.state,
+          lifecycle: { ...link.state.lifecycle, historicalTimeUnknown: true },
+        })
+      )
+        throw new Error('Workout lifecycle changed');
+    },
     ensure(ownerId: string, saved: Workout) {
       if (saved.ownerId !== ownerId) throw new Error('Invalid workout owner');
       if (!canPublish(saved)) return;
