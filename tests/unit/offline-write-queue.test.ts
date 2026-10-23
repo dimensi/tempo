@@ -105,6 +105,26 @@ test('replays one accepted offline write without crossing into another account',
       },
     ],
   } as WriteState;
+  const linked = structuredClone(legacy);
+  const linkedPayload = linked.operations[0]!.operation.payload;
+  if (linkedPayload.kind !== 'workout') throw new Error('Expected workout');
+  Object.assign(linkedPayload.data, {
+    planId: 'old-plan',
+    plannedWorkoutId: 'old-workout',
+  });
+  const linkedReview = migrateWorkoutWrites(linked);
+  expect(linkedReview.operations).toHaveLength(1);
+  expect(linkedReview.operations[0]).toMatchObject({
+    status: 'review',
+    reason: 'conflict',
+    legacyOperation: {
+      payload: {
+        data: { planId: 'old-plan', plannedWorkoutId: 'old-workout' },
+      },
+    },
+  });
+  expect(nextWrite(linkedReview, partition, now)).toBeUndefined();
+  expect(migrateWorkoutWrites(linkedReview).operations).toHaveLength(1);
   const migrated = migrateWorkoutWrites(legacy);
   expect(
     migrated.operations.map(

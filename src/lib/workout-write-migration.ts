@@ -41,8 +41,11 @@ export function migrateWorkoutWrites(state: WriteState): WriteState {
       migrated.push(item);
       continue;
     }
-    if (item.attempts > 0 || item.operation.base !== null) {
-      // The server may already have accepted the old fingerprint or locked a completed workout.
+    const oldData = original.payload.data as unknown as Record<string, unknown>;
+    const linked = oldData.planId != null || oldData.plannedWorkoutId != null;
+    if (linked || item.attempts > 0 || item.operation.base !== null) {
+      // A linked session may map to a different migrated workout ID. Preserve its identity
+      // for review; sent commands may also have an accepted old fingerprint.
       item.legacyOperation = original;
       item.status = 'review';
       item.reason = 'conflict';
