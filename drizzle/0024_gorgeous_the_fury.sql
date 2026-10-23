@@ -1,0 +1,1 @@
+ALTER TABLE `yazio_daily_goals` ADD `weight` text;

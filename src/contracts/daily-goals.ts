@@ -3,6 +3,7 @@ import { nonnegativeDecimalSchema } from './nutrition';
 export const dailyGoalsSchema = z.strictObject({
   date: z.iso.date(),
   calories: nonnegativeDecimalSchema.nullable(),
+  weight: nonnegativeDecimalSchema.nullable(),
   steps: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable(),
   fetchedAt: z.iso.datetime().nullable(),
 });
@@ -12,6 +13,8 @@ export const goalMessages = {
   stepsTitle: 'Шаги',
   calories: 'Цель калорий',
   steps: 'Цель шагов',
+  weight: 'Целевой вес',
+  kg: 'кг',
   missing: 'Не установлена',
   actual: 'Факт',
   goal: 'Цель',

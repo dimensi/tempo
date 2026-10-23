@@ -169,6 +169,13 @@
       "when": 1792791848777,
       "tag": "0023_flawless_lester",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1792796095507,
+      "tag": "0024_gorgeous_the_fury",
+      "breakpoints": true
     }
   ]
 }

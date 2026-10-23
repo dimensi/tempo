@@ -12,3 +12,5 @@ The chart retains all fetched local observations, including records older than t
 Offline projections use the same policy and a cache-generation marker `owner-confirmed-kg/v1`; their coordinated owner updates those paths separately. If the application's owner/account is replaced or this confirmation ceases to hold, the assumption must be reviewed before applying it to that account.
 
 Verification uses synthetic records and real local authentication only: unchanged raw storage and repeated UUID updates, kg projection without conversion, same-day source conflicts, zero/null chart values, current grant checks and desktop/mobile UI geometry. No provider probe, upstream mutation or production-data copy is performed.
+
+Dated YAZIO goals also retain `bodyvalue.weight` as a decimal string without conversion, under the same owner's kilogram confirmation. Settings and MCP `get_profile` show the saved target weight for the requested/current date; old goal rows remain null until that date is synchronized again. No target-weight history is inferred or backfilled.

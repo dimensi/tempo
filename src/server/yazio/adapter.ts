@@ -94,7 +94,7 @@ export interface NutritionDayUpstream {
   recipe(id: string): Promise<Recipe | null>;
 }
 export interface NutritionUpstream extends NutritionDayUpstream {
-  goals(date: string): Promise<Pick<DailyGoals, 'date' | 'calories' | 'steps'>>;
+  goals(date: string): Promise<Pick<DailyGoals, 'date' | 'calories' | 'steps' | 'weight'>>;
   healthSummary(
     date: string,
   ): Promise<ReturnType<typeof normalizeHealthSummary>>;
@@ -154,6 +154,7 @@ export async function nutritionUpstream(
         z.iso.date().parse(date);
         const value = z
           .object({
+            'bodyvalue.weight': z.number().finite().nonnegative().nullish(),
             'energy.energy': z.number().finite().nonnegative().nullish(),
             'activity.step': z
               .number()
@@ -172,6 +173,10 @@ export async function nutritionUpstream(
             ? new Decimal(value['energy.energy']).toFixed()
             : null,
           steps: value['activity.step'] || null,
+          // The single OWNER confirmed kilograms; preserve the provider decimal.
+          weight: value['bodyvalue.weight'] == null
+            ? null
+            : new Decimal(value['bodyvalue.weight']).toFixed(),
         };
       }),
     healthSummary: async (date) =>
