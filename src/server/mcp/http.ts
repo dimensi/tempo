@@ -28,7 +28,7 @@ const descriptions = {
   get_workouts:
     'Paginated saved LOCAL plans/sessions and TransformMate linked/native workouts. Summary/daily: compact workout rows; records: planned and actual sets (max 31 days). Use summary.completedSessions for the whole range (never sum across pages). Count only executionStatus=completed; coverage and recordCounts do not indicate execution. Empty fact placeholders are not_started; missing facts are unknown. If completionCountAmbiguous is true, completedSessions is null: LOCAL and linked completed facts may overlap; planId/workoutId alone cannot prove session identity. No upstream refresh. Provider completeness is unknown.',
   get_data_coverage:
-    'Coverage of saved nutrition, weight, circumferences and steps; unavailable is distinct from empty. daily/records: per-date nutrition/step coverage. Workout upstream completeness cannot be proven from local history.',
+    'Coverage of saved nutrition, weight, circumferences and steps; unavailable is distinct from empty. daily/records: per-date nutrition/step coverage. freshness separates latest saved record date, fetch/check timestamps and saved sync status. Run status is global, not proof the requested range was refreshed. unknown is not success; LOCAL measurement dates are not fetch times; photo failures do not mean missing food. No refresh is triggered. Workout upstream completeness cannot be proven from local history.',
 };
 async function readRpcBody(request: Request) {
   if (!request.body) throw new Error('Missing body');

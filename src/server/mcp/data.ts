@@ -1,6 +1,12 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
 import { getAnalytics } from '@/server/analytics';
+import {
+  getSavedDataFreshness,
+  summarizeSavedSource,
+  unavailableSavedSource,
+} from '@/server/analytics/freshness';
+import { savedWorkoutFreshnessSchema } from '@/contracts/data-freshness';
 import { authorize } from '@/server/auth/guards';
 import { listNutritionDays } from '@/server/nutrition';
 import { listWorkouts } from '@/server/workouts';
@@ -96,6 +102,8 @@ export async function readMcpData(
       executionStatus: McpWorkoutExecutionStatus;
       planId?: string | null;
       workoutId?: string | null;
+      fetchedAt?: string;
+      checkedAt?: string | null;
       id: string | number;
       [key: string]: unknown;
     }> = [
@@ -272,6 +280,23 @@ export async function readMcpData(
         noRecordsMeans: 'no_saved_workout_not_confirmed_rest',
         executionStatusRequiredForCounting: true,
       },
+      freshness: {
+        transformmateLinked: summarizeSavedSource(
+          'TransformMate',
+          workoutRows
+            .filter((r) => r.kind === 'linked')
+            .map((r) => ({
+              date: r.date,
+              checkedAt: r.checkedAt,
+            })),
+        ),
+        transformmateNative: summarizeSavedSource(
+          'TransformMate',
+          workoutRows
+            .filter((r) => r.kind === 'native')
+            .map((r) => ({ date: r.date, fetchedAt: r.fetchedAt })),
+        ),
+      },
       records: paged.records,
     };
     next_cursor = paged.next_cursor;
@@ -389,15 +414,26 @@ export async function readMcpData(
       if (detail !== 'summary') rows = a.data.summary.days;
     } else {
       let workoutCoverage: unknown;
+      let workoutFreshness = {
+        transformmateLinked: unavailableSavedSource('TransformMate'),
+        transformmateNative: unavailableSavedSource('TransformMate'),
+      };
       try {
-        workoutCoverage = (
-          await readMcpData('get_workouts', headers, ownerId, {
+        const workoutResult = await readMcpData(
+          'get_workouts',
+          headers,
+          ownerId,
+          {
             ...query,
             detail: 'summary',
             cursor: undefined,
             limit: 1,
-          })
-        ).data.coverage;
+          },
+        );
+        workoutCoverage = workoutResult.data.coverage;
+        workoutFreshness = savedWorkoutFreshnessSchema.parse(
+          workoutResult.data.freshness,
+        );
       } catch (error) {
         if (error instanceof McpReadError && error.code === 'access_denied')
           throw error;
@@ -410,6 +446,12 @@ export async function readMcpData(
         body: bodyCoverage,
         activity: activityCoverage,
         workouts: workoutCoverage,
+        freshness: {
+          recordScope: 'requested_range',
+          syncScope: 'latest_saved_status_not_range_verification',
+          ...(await getSavedDataFreshness(headers, ownerId, range)),
+          ...workoutFreshness,
+        },
         semantics: {
           null: 'unknown_or_missing',
           zero: 'recorded_zero',
