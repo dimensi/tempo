@@ -677,6 +677,24 @@ export async function assertMcpAccess(
         },
       },
     });
+    repository.saveStatus('owner', {
+      ...failedSync,
+      startedAt: 'invalid-start',
+      finishedAt: 'invalid-finish',
+    });
+    const malformedTimes = await mcp.callTool({
+      name: 'get_data_coverage',
+      arguments: range,
+    });
+    expect(malformedTimes.structuredContent).toMatchObject({
+      data: {
+        nutrition: { complete: 1, partial: 1, empty: 1, missing: 1 },
+        freshness: {
+          nutrition: { state: 'unavailable' },
+          steps: { state: 'ready' },
+        },
+      },
+    });
     repository.saveStatus('owner', failedSync);
     const analytics = await getAnalytics(headers, 'owner', range);
     const nutrition = await mcp.callTool({

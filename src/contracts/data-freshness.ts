@@ -16,8 +16,8 @@ export const savedSourceFreshnessSchema = z.strictObject({
   ]),
   lastRun: z
     .strictObject({
-      startedAt: z.string().nullable(),
-      finishedAt: z.string().nullable(),
+      startedAt: z.iso.datetime({ offset: true }).nullable(),
+      finishedAt: z.iso.datetime({ offset: true }).nullable(),
       failedDates: z.array(z.iso.date()),
     })
     .optional(),
