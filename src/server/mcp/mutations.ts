@@ -80,6 +80,7 @@ export async function executeMcpTool(
       data = {
         source: 'TransformMate',
         coverage: saved.coverage,
+        unknownAliasCount: saved.unknownAliasCount,
         fetchedAt: saved.fetchedAt,
       };
     }
@@ -126,12 +127,27 @@ export async function executeMcpTool(
       namespace,
       command,
     );
-    const workout = withoutOwner(result.workout);
+    const { id, date, title, revision, status, updatedAt, exercises } =
+      result.workout;
+    // Mutation success must fit even when an existing workout is larger than a read page.
+    const workout = {
+      id,
+      date,
+      title,
+      revision,
+      status,
+      updatedAt,
+      exerciseCount: exercises.length,
+    };
     data = {
       source: 'LOCAL',
       workout,
       sync: result.sync,
       syncScope: 'saved_state_at_commit',
+      details: {
+        tool: 'get_workout',
+        arguments: { workoutRef: { kind: 'workout', id, date }, limit: 1 },
+      },
     };
   }
   if (!data) throw new McpReadError('not_found');

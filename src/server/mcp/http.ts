@@ -30,13 +30,13 @@ const extraDescriptions = {
   search_exercises:
     'Search the saved TransformMate catalog by name or alias; returns genuine numeric exerciseId. No refresh, media or files. Coverage may be unknown. Manual workouts may omit provider mapping.',
   create_workout:
-    'Create one LOCAL planned or completed workout atomically. Completed requires nonempty exercises and sets; fatigue/failure are local only. Optional exercise UUIDs are retained, otherwise generated. Normal TransformMate synchronization runs after commit; no intermediate plan is published. Mandatory unique requestId, reuse only for identical retries.',
+    'Create one LOCAL planned or completed workout atomically. Completed requires nonempty exercises and sets; fatigue/failure are local only. Optional exercise UUIDs are retained, otherwise generated. Normal TransformMate synchronization runs after commit; no intermediate plan is published. Returns a bounded acknowledgement (id/revision/status and get_workout details arguments). Mandatory unique requestId, reuse only for identical retries.',
   update_workout:
-    'Patch supplied fields of one LOCAL workout at expected revision. Exercise patches merge by existing UUID, omit UUID to add; omitted fields/exercises remain. No deletion. Completed results require transition_workout resume first. Mandatory requestId.',
+    'Patch supplied fields of one LOCAL workout at expected revision. Exercise patches merge by existing UUID, omit UUID to add; omitted fields/exercises remain. No deletion. Completed results require transition_workout resume first. Returns a bounded acknowledgement with details arguments. Mandatory requestId.',
   transition_workout:
-    'Start, complete or resume one LOCAL workout at expected revision. Resume preserves completed values. Mandatory requestId.',
+    'Start, complete or resume one LOCAL workout at expected revision. Resume preserves completed values. Returns a bounded acknowledgement with details arguments. Mandatory requestId.',
   update_exercise_feedback:
-    'Set/clear fatigue (1..10/null) and failure (full/partial/none/null) on one existing LOCAL exercise at expected revision, including completed workouts without resume. No TransformMate publication. Mandatory requestId.',
+    'Set/clear fatigue (1..10/null) and failure (full/partial/none/null) on one existing LOCAL exercise at expected revision, including completed workouts without resume. No TransformMate publication. Returns a bounded acknowledgement with details arguments. Mandatory requestId.',
   create_measurement:
     'Create LOCAL measurement and enqueue normal YAZIO synchronization atomically. Values are decimal strings with kg for weight, cm for circumferences. Mandatory requestId; identical retries return saved result.',
   update_measurement:

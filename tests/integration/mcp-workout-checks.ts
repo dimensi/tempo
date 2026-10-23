@@ -267,9 +267,15 @@ export async function assertWorkoutTools(
     expect(search).toMatchObject({
       data: {
         source: 'TransformMate',
-        coverage: 'complete',
+        coverage: 'partial',
+        unknownAliasCount: 2,
         records: [{ exerciseId: 501, name: 'Saved press' }],
       },
+    });
+    expect(
+      await call('search_exercises', { query: 'alias not yet loaded' }),
+    ).toMatchObject({
+      data: { coverage: 'partial', unknownAliasCount: 2, records: [] },
     });
     expect(search.next_cursor).toBeTypeOf('string');
     const searchNext = await call('search_exercises', {

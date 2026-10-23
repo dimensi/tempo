@@ -302,8 +302,9 @@ export async function searchSavedExercises(
 ) {
   const scope = await catalogScope(headers, ownerId);
   const state = catalogStore().state(scope);
-  const records = catalogStore()
-    .records(scope, true)
+  const saved = catalogStore().records(scope, true);
+  const unknownAliasCount = saved.filter((row) => !row.detail).length;
+  const records = saved
     .filter((row) =>
       [row.summary.name, ...(row.detail?.other_names ?? [])].some((name) =>
         name.toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru')),
@@ -318,7 +319,12 @@ export async function searchSavedExercises(
   await scope.assertCurrent();
   return {
     records,
-    coverage: state?.full_catalog_fetched_at ? 'complete' : 'unknown',
+    coverage: state?.full_catalog_fetched_at
+      ? unknownAliasCount
+        ? 'partial'
+        : 'complete'
+      : 'unknown',
+    unknownAliasCount,
     fetchedAt: state?.full_catalog_fetched_at ?? null,
   };
 }

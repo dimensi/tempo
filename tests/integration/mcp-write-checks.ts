@@ -181,7 +181,6 @@ export async function assertMcpWrites(
       id: string;
       revision: number;
       date: string;
-      exercises: { id: string; fatigue: number }[];
     };
     const foreign = workoutRepository(connection.db).create('trainer', {
       ...input.data,
@@ -207,7 +206,7 @@ export async function assertMcpWrites(
     expect(workout).toMatchObject({
       revision: 3,
       status: 'completed',
-      exercises: [{ id: exerciseId, fatigue: 10, failure: 'full' }],
+      exerciseCount: 1,
     });
     expect(await ok('create_workout', input)).toEqual(created);
     expect(
@@ -311,21 +310,23 @@ export async function assertMcpWrites(
     };
     const updated = await ok('update_workout', patch);
     expect(updated).toMatchObject({
-      workout: {
-        revision: 6,
-        note: 'Historical completed',
-        exercises: [
-          {
-            id: exerciseId,
-            name: 'Manual press',
-            comment: 'Preserve',
-            fatigue: 8,
-            failure: 'partial',
-            sets: [{ reps: 12, weightKg: 25 }],
-          },
-          { name: 'Added' },
-        ],
-      },
+      workout: { revision: 6, exerciseCount: 2 },
+    });
+    expect(
+      workoutRepository(connection.db).get('owner', workout.id),
+    ).toMatchObject({
+      note: 'Historical completed',
+      exercises: [
+        {
+          id: exerciseId,
+          name: 'Manual press',
+          comment: 'Preserve',
+          fatigue: 8,
+          failure: 'partial',
+          sets: [{ reps: 12, weightKg: 25 }],
+        },
+        { name: 'Added' },
+      ],
     });
     expect(await ok('update_workout', patch)).toEqual(updated);
     expect(
@@ -367,6 +368,90 @@ export async function assertMcpWrites(
         set: { enabled: true },
       })
       .run();
+    // A valid existing workout can exceed the HTTP response limit. Writes still acknowledge and replay successfully.
+    const repository = workoutRepository(connection.db);
+    let large = repository.create('owner', {
+      ...input.data,
+      status: 'planned',
+      exercises: Array.from({ length: 20 }, (_, i) => ({
+        name: `Large exercise ${i}`,
+        comment: 'x'.repeat(4000),
+        sets: [{ reps: 10, weightKg: 25 }],
+      })),
+    });
+    large = repository.update(
+      'owner',
+      large.id,
+      large.revision,
+      {
+        date: large.date,
+        title: large.title,
+        note: large.note,
+        status: 'in_progress',
+        exercises: large.exercises,
+      },
+      'start',
+    );
+    large = repository.update(
+      'owner',
+      large.id,
+      large.revision,
+      {
+        date: large.date,
+        title: large.title,
+        note: large.note,
+        status: 'completed',
+        exercises: large.exercises,
+      },
+      'complete',
+    );
+    expect(Buffer.byteLength(JSON.stringify(large))).toBeGreaterThan(64000);
+    const largeFeedback = {
+      requestId: randomUUID(),
+      id: large.id,
+      revision: large.revision,
+      feedback: {
+        exerciseId: large.exercises[0]!.id!,
+        fatigue: 7,
+        failure: 'none',
+      },
+    };
+    const acknowledgement = await ok('update_exercise_feedback', largeFeedback);
+    expect(acknowledgement).toMatchObject({
+      workout: {
+        id: large.id,
+        revision: 4,
+        status: 'completed',
+        exerciseCount: 20,
+      },
+      details: { tool: 'get_workout' },
+    });
+    expect(Buffer.byteLength(JSON.stringify(acknowledgement))).toBeLessThan(
+      2048,
+    );
+    expect(await ok('update_exercise_feedback', largeFeedback)).toEqual(
+      acknowledgement,
+    );
+    const readback = acknowledgement.details as {
+      arguments: Record<string, unknown>;
+    };
+    expect(await ok('get_workout', readback.arguments)).toMatchObject({
+      revision: 4,
+      records: [
+        { exerciseId: large.exercises[0]!.id!, fatigue: 7, failure: 'none' },
+      ],
+    });
+    const resumeLarge = {
+      requestId: randomUUID(),
+      id: large.id,
+      revision: 4,
+      action: 'resume',
+    };
+    const resumed = await ok('transition_workout', resumeLarge);
+    expect(resumed).toMatchObject({
+      workout: { revision: 5, status: 'in_progress' },
+    });
+    expect(await ok('transition_workout', resumeLarge)).toEqual(resumed);
     const measurementInput = {
       requestId: randomUUID(),
       data: {
