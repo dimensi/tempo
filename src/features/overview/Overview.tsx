@@ -1,8 +1,7 @@
 'use client';
 import { GoalComparison } from '@/components/shared/goal-comparison';
 import { goalMessages } from '@/contracts/daily-goals';
-import { apiResults } from '@/lib/api-results';
-import { apiFetch } from '@/lib/api-client';
+import { requestOverviewRefresh } from '@/lib/api-client';
 import { revalidateVisibleReads } from '@/lib/client-read';
 import { PageHeader } from '@/components/layout/page-header';
 import type { OverviewData } from '@/contracts/overview';
@@ -108,20 +107,12 @@ export function Overview({
     if (!owner || !syncTimezone) return;
     let inFlight = false;
     function sync() {
-      if (inFlight || document.visibilityState !== 'visible') return;
+      if (!syncTimezone || inFlight || document.visibilityState !== 'visible')
+        return;
       inFlight = true;
       setAutomaticPending(true);
-      void apiFetch('/api/yazio/overview-refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ timezone: syncTimezone }),
-      })
-        .then(async (response) => {
-          if (response.ok) {
-            apiResults.overviewRefresh(await response.json());
-            revalidateVisibleReads();
-          }
-        })
+      void requestOverviewRefresh(syncTimezone)
+        .then(() => revalidateVisibleReads())
         .catch(() => {})
         .finally(() => {
           inFlight = false;
