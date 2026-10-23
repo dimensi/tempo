@@ -1,4 +1,12 @@
 export const workoutMessages = {
+  fatigue: 'Утомляемость, 1–10',
+  failure: 'Был отказ?',
+  notSpecified: 'Не указано',
+  failureFull: 'Полный',
+  failurePartial: 'Частично',
+  failureNone: 'Нет',
+  feedbackNeedsNetwork:
+    'Оценки сохранены в черновике. Для отправки тренером подключитесь к интернету и нажмите «Сохранить».',
   legacyPlanDraft: 'Изменения старого плана',
   applyLegacyPlan: 'Использовать изменения старого плана',
   createWorkout: 'Создать тренировку',
@@ -319,7 +327,8 @@ export const workoutMessages = {
   confirmText:
     'Удаление нельзя отменить. История результатов сохранится при удалении плана.',
   noWeight: 'Без веса',
-  trainerHint: 'Вы можете редактировать планы. Результаты записывает владелец.',
+  trainerHint:
+    'Вы можете редактировать планы и оценки упражнений. Вес и повторения записывает владелец.',
   planned: 'План',
   actual: 'Факт',
   actualDetails: 'Все сохранённые результаты',

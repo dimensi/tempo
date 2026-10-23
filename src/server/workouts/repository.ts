@@ -5,6 +5,8 @@ import type { getDatabase } from '@/server/db';
 import { workouts } from '@/server/db/schema/workouts';
 import { offlineWriteReceipts } from '@/server/db/schema/offline-writes';
 import {
+  exerciseFeedbackSchema,
+  type ExerciseFeedback,
   workoutSchema,
   workoutInputSchema,
   type Workout,
@@ -86,6 +88,11 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
     data: WorkoutInput,
     action?: WorkoutAction,
   ) {
+    if (
+      data.status === 'planned' &&
+      data.exercises.some((e) => e.fatigue != null || e.failure != null)
+    )
+      throw new WorkoutError(400);
     const existing = get(ownerId, id);
     assertRevision(ownerId, id, revision);
     const expected =
@@ -154,6 +161,67 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
   }
   return {
     get,
+    updateFeedback(
+      ownerId: string,
+      id: string,
+      revision: number,
+      input: ExerciseFeedback,
+      requestId?: string,
+    ) {
+      const feedback = exerciseFeedbackSchema.parse(input);
+      return receipt(
+        ownerId,
+        requestId,
+        { kind: 'feedback', id, revision, feedback },
+        () => {
+          const existing = get(ownerId, id);
+          assertRevision(ownerId, id, revision);
+          if (existing.status === 'planned') throw new WorkoutError(409);
+          if (
+            !existing.exercises.some(
+              (exercise) => exercise.id === feedback.exerciseId,
+            )
+          )
+            throw new WorkoutError(404);
+          const data = {
+            ...workoutInputSchema.parse({
+              date: existing.date,
+              title: existing.title,
+              note: existing.note,
+              status: existing.status,
+              exercises: existing.exercises,
+            }),
+            ...(existing.legacySource
+              ? { legacySource: existing.legacySource }
+              : {}),
+          };
+          const row = db
+            .update(workouts)
+            .set({
+              data: {
+                ...data,
+                exercises: data.exercises.map((exercise) =>
+                  exercise.id === feedback.exerciseId
+                    ? {
+                        ...exercise,
+                        fatigue: feedback.fatigue,
+                        failure: feedback.failure,
+                      }
+                    : exercise,
+                ),
+              },
+              revision: revision + 1,
+              updatedAt: new Date().toISOString(),
+            })
+            .where(and(scope(ownerId, id), eq(workouts.revision, revision)))
+            .returning()
+            .get();
+          if (!row) throw new WorkoutError(409);
+          // Feedback is local execution data: never reconcile or publish the provider plan.
+          return dto(row);
+        },
+      );
+    },
     assertRevision,
     validateUpdate,
     replayUpdate,
@@ -174,6 +242,8 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
       const data = workoutInputSchema.parse(input);
       return receipt(ownerId, requestId, { kind: 'create', data }, () => {
         if (data.status !== 'planned') throw new WorkoutError(409);
+        if (data.exercises.some((e) => e.fatigue != null || e.failure != null))
+          throw new WorkoutError(400);
         const now = new Date().toISOString();
         const saved = dto(
           db

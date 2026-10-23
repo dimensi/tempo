@@ -27,7 +27,14 @@ export function publicationFor(workout: Workout): WorkoutPublication {
         id: workout.id,
         date: workout.date,
         title: workout.title,
-        exercises: workout.exercises,
+        exercises: workout.exercises.map(
+          ({ name, comment, transformMate, sets }) => ({
+            name,
+            comment,
+            transformMate,
+            sets,
+          }),
+        ),
       },
     ],
   };

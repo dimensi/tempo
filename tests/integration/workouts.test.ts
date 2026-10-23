@@ -3,7 +3,11 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { openDatabase } from '@/server/db/connection';
 import { user } from '@/server/db/schema';
 import { workoutRepository } from '@/server/workouts/repository';
-import type { Workout, WorkoutInput } from '@/contracts/workouts';
+import {
+  exerciseFeedbackSchema,
+  type Workout,
+  type WorkoutInput,
+} from '@/contracts/workouts';
 import { copyWorkoutToDate } from '@/features/workouts/copy-workout';
 import { workoutDraftSchema } from '@/features/workouts/workout-draft';
 
@@ -70,10 +74,38 @@ it('retains one workout identity and its edited values through guarded lifecycle
   );
   expect(started.id).toBe(created.id);
   expect(started.exercises).toEqual(planned.exercises);
+  for (const fatigue of [0, 11, 1.5])
+    expect(
+      exerciseFeedbackSchema.safeParse({
+        exerciseId: started.exercises[0]!.id,
+        fatigue,
+        failure: null,
+      }).success,
+    ).toBe(false);
+  expect(
+    exerciseFeedbackSchema.safeParse({
+      exerciseId: started.exercises[0]!.id,
+      fatigue: null,
+      failure: 'unknown',
+    }).success,
+  ).toBe(false);
+  const feedback = {
+    exerciseId: started.exercises[0]!.id!,
+    fatigue: 8,
+    failure: 'partial' as const,
+  };
+  const rated = repository.updateFeedback(
+    'owner',
+    started.id,
+    started.revision,
+    feedback,
+    crypto.randomUUID(),
+  );
+  expect(rated.exercises[0]).toMatchObject({ fatigue: 8, failure: 'partial' });
   const completedData: WorkoutInput = {
-    ...data(started),
+    ...data(rated),
     status: 'completed',
-    exercises: started.exercises.map((e) => ({
+    exercises: rated.exercises.map((e) => ({
       ...e,
       sets: [{ reps: 8, weightKg: 55 }],
     })),
@@ -82,7 +114,7 @@ it('retains one workout identity and its edited values through guarded lifecycle
   const completed = repository.update(
     'owner',
     started.id,
-    started.revision,
+    rated.revision,
     completedData,
     'complete',
     requestId,
@@ -100,11 +132,17 @@ it('retains one workout identity and its edited values through guarded lifecycle
   });
   expect(copied.exercises[0]?.id).not.toBe(completed.exercises[0]?.id);
   expect(copied.exercises[0]?.sets).toEqual(completed.exercises[0]?.sets);
+  expect(copied.exercises[0]?.fatigue).toBeUndefined();
+  expect(copied.exercises[0]?.failure).toBeUndefined();
+  expect(workoutDraftSchema.parse(completedData).exercises[0]).toMatchObject({
+    fatigue: 8,
+    failure: 'partial',
+  });
   expect(
     repository.update(
       'owner',
       started.id,
-      started.revision,
+      rated.revision,
       completedData,
       'complete',
       requestId,
@@ -133,6 +171,10 @@ it('retains one workout identity and its edited values through guarded lifecycle
     'resume',
   );
   expect(resumed.exercises[0]?.sets).toEqual([{ reps: 8, weightKg: 55 }]);
+  expect(resumed.exercises[0]).toMatchObject({
+    fatigue: 8,
+    failure: 'partial',
+  });
   expect(repository.list('owner').workouts).toHaveLength(1);
   expect(repository.list('another-owner').workouts).toEqual([]);
   expect(() => repository.get('another-owner', created.id)).toThrow();

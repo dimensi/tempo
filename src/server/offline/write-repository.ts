@@ -148,19 +148,29 @@ export function offlineWriteRepository(database = getDatabase()) {
               : null,
           );
         } else if (previous?.payload.kind === 'workout') {
-          const before = previous.payload.data.exercises.map((e) => e.id);
-          const after = payload.data.exercises.map((e) => e.id);
-          if (before.some((id) => !after.includes(id)))
-            throw new OfflineWriteError(422);
-          workoutRepository(db).update(
-            ownerId,
-            recordId,
-            Number(previous.version),
-            payload.data,
-            payload.action,
-          );
+          if (payload.feedback) {
+            workoutRepository(db).updateFeedback(
+              ownerId,
+              recordId,
+              Number(previous.version),
+              payload.feedback,
+            );
+          } else {
+            const before = previous.payload.data.exercises.map((e) => e.id);
+            const after = payload.data.exercises.map((e) => e.id);
+            if (before.some((id) => !after.includes(id)))
+              throw new OfflineWriteError(422);
+            workoutRepository(db).update(
+              ownerId,
+              recordId,
+              Number(previous.version),
+              payload.data,
+              payload.action,
+            );
+          }
         } else {
-          if (payload.action) throw new OfflineWriteError(409);
+          if (payload.action || payload.feedback)
+            throw new OfflineWriteError(409);
           workoutRepository(db).create(ownerId, payload.data, recordId);
         }
         const result = find(ownerId, recordId, payload.kind)!;

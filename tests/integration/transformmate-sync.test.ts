@@ -11,6 +11,8 @@ import { user } from '@/server/db/schema';
 import { workoutRepository } from '@/server/workouts/repository';
 import { syncEngine } from '@/server/workouts/transformmate/engine';
 import { syncRepository } from '@/server/workouts/transformmate/repository';
+import { publicationFor } from '@/server/workouts/transformmate/publication';
+import { publicationWorkoutSchema } from '@/contracts/workout-publication';
 import { workoutInputSchema } from '@/contracts/workouts';
 import { exerciseDetailFixture } from '../fixtures/transformmate-exercise';
 import {
@@ -131,6 +133,68 @@ it('recovers a committed TransformMate create after restart without duplicating 
     expect(syncRepository(database.db).list('owner')[0]?.remoteTrainingId).toBe(
       101,
     );
+    const workouts = workoutRepository(database.db);
+    const planned = workouts.get('owner', resumed.planId);
+    const values = {
+      date: planned.date,
+      title: planned.title,
+      note: planned.note,
+      exercises: planned.exercises,
+    };
+    const started = workouts.update(
+      'owner',
+      planned.id,
+      planned.revision,
+      { ...values, status: 'in_progress' },
+      'start',
+    );
+    const linkBeforeFeedback = syncRepository(database.db).list('owner');
+    const feedback = {
+      exerciseId: started.exercises[0]!.id!,
+      fatigue: 9,
+      failure: 'full' as const,
+    };
+    const rated = workouts.updateFeedback(
+      'owner',
+      started.id,
+      started.revision,
+      feedback,
+      randomUUID(),
+    );
+    const projection = publicationWorkoutSchema.parse(
+      publicationFor(rated).workouts[0],
+    );
+    expect(projection.exercises[0]).not.toHaveProperty('fatigue');
+    expect(projection.exercises[0]).not.toHaveProperty('failure');
+    const completed = workouts.update(
+      'owner',
+      rated.id,
+      rated.revision,
+      { ...values, exercises: rated.exercises, status: 'completed' },
+      'complete',
+    );
+    const corrected = workouts.updateFeedback(
+      'owner',
+      completed.id,
+      completed.revision,
+      { ...feedback, fatigue: 10 },
+      randomUUID(),
+    );
+    expect(syncRepository(database.db).list('owner')).toEqual(
+      linkBeforeFeedback,
+    );
+    await engine().process(syncRepository(database.db).list('owner')[0]!);
+    expect(syncRepository(database.db).list('owner')[0]!.state.workout).toEqual(
+      linkBeforeFeedback[0]!.state.workout,
+    );
+    expect(
+      syncRepository(database.db).list('owner')[0]!.state.published,
+    ).toEqual(linkBeforeFeedback[0]!.state.published);
+    expect(workouts.get('owner', corrected.id).exercises[0]).toMatchObject({
+      fatigue: 10,
+      failure: 'full',
+    });
+    expect(posts).toBe(1);
     await assertReplicaRecovery(database, url, directory);
   } finally {
     replicaTest.database = null;

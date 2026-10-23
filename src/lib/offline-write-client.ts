@@ -4,6 +4,7 @@ import {
   writeRecordSchema,
   type OfflineWrite,
   type WritePayload,
+  type WriteRecord,
 } from '@/contracts/offline-write';
 import { withOfflineCacheLock } from '@/lib/offline-device';
 import { apiFetch } from './api-client';
@@ -173,9 +174,37 @@ export async function resolveDeviceWrite(recordId: string, keepLocal: boolean) {
   await withOfflineCacheLock(async () =>
     withWriteLock(async () => {
       const partition = await eligible();
+      const stored = await writeStore.read();
+      const related = stored.operations.filter(
+        (item) =>
+          item.operation.recordId === recordId && item.status !== 'synced',
+      );
+      let serverRecord: WriteRecord | undefined;
+      if (
+        keepLocal &&
+        related.length &&
+        related.every(
+          (item) => item.reason === 'conflict' || item.status === 'local',
+        ) &&
+        related.every(
+          (item) =>
+            item.operation.payload.kind === 'workout' &&
+            item.operation.payload.feedback,
+        )
+      ) {
+        const response = await apiFetch('/api/offline/writes', {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!response.ok) throw new Error('Storage unavailable');
+        const catalog = writeCatalogSchema.parse(await response.json());
+        if (catalog.partition !== partition || (await eligible()) !== partition)
+          throw new Error('Account changed');
+        serverRecord = catalog.records.find((item) => item.id === recordId);
+      }
       await writeStore.update((state) => {
         if (state.partition !== partition) throw new Error('Account changed');
-        resolveWrite(state, partition, recordId, keepLocal);
+        resolveWrite(state, partition, recordId, keepLocal, serverRecord);
       });
     }),
   );

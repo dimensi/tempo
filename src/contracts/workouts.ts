@@ -5,10 +5,22 @@ export const workoutSetSchema = z.strictObject({
   reps: z.number().int().min(1).max(1000),
   weightKg: z.number().min(0).max(2000).nullable(),
 });
+export const workoutFatigueSchema = z.number().int().min(1).max(10).nullable();
+export const workoutFailureSchema = z
+  .enum(['full', 'partial', 'none'])
+  .nullable();
+export const exerciseFeedbackSchema = z.strictObject({
+  exerciseId: z.uuid(),
+  fatigue: workoutFatigueSchema,
+  failure: workoutFailureSchema,
+});
+export type ExerciseFeedback = z.infer<typeof exerciseFeedbackSchema>;
 export const workoutExerciseSchema = z.strictObject({
   id: z.uuid().optional(),
   name: z.string().trim().min(1).max(160),
   comment: z.string().trim().max(4000).optional(),
+  fatigue: workoutFatigueSchema.optional(),
+  failure: workoutFailureSchema.optional(),
   transformMate: z
     .strictObject({
       exerciseId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authorize } from '@/server/auth/guards';
 import { getDatabase } from '@/server/db';
 import {
+  exerciseFeedbackSchema,
   workoutInputSchema,
   workoutActionSchema,
   revisionSchema,
@@ -99,6 +100,25 @@ export async function updateWorkout(
       return repository.update(ownerId, id, expected, data, transition, key);
     });
   });
+}
+export async function updateExerciseFeedback(
+  headers: Headers,
+  ownerId: string,
+  id: string,
+  revision: unknown,
+  input: unknown,
+  requestId: unknown,
+) {
+  // workouts:plan already includes an explicit owner/grant check for trainers.
+  const { repository, role } = await access(headers, ownerId, 'workouts:plan');
+  if (role === 'OWNER') await access(headers, ownerId, 'workouts:log');
+  return repository.updateFeedback(
+    ownerId,
+    idSchema.parse(id),
+    revisionSchema.parse(revision),
+    exerciseFeedbackSchema.parse(input),
+    z.uuid().parse(requestId),
+  );
 }
 export async function deleteWorkout(
   headers: Headers,
