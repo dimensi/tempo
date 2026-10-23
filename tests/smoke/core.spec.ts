@@ -297,6 +297,36 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       { timeout: 10000 },
     )
     .toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          Object.keys(sessionStorage).filter(
+            (key) =>
+              key.startsWith('workout-draft:') && key.includes(':day:new:'),
+          ).length,
+      ),
+    )
+    .toBe(0);
+  const queued = (
+    (await (await page.request.get(`/api/workouts?ownerId=${owner}`)).json())
+      .data.workouts as Workout[]
+  ).find((item) => item.title === 'Queued new workout')!;
+  await page.goto('/diary');
+  expect(
+    (
+      await page.request.delete(`/api/workouts/${queued.id}`, {
+        headers: { Origin: testOrigin },
+        data: { ownerId: owner, revision: queued.revision },
+      })
+    ).ok(),
+  ).toBe(true);
+  await page.goto('/workouts');
+  await page
+    .getByRole('button', { name: 'Создать тренировку', exact: true })
+    .click();
+  await expect(titleInput).toHaveValue('');
+  await expect(note).toHaveValue('');
   await fillPlan();
   // Delete directly from the still-mounted creation editor. A delayed/stale
   // list response must not keep the deleted editor visible until date navigation.
@@ -360,6 +390,23 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     status: 'in_progress',
     exercises: planned.exercises,
   });
+
+  const feedbackWrite = page.waitForRequest(
+    (request) =>
+      request.url().endsWith('/api/offline/writes') &&
+      request.method() === 'POST' &&
+      request.postDataJSON().payload.feedback?.fatigue === 6,
+  );
+  await page
+    .getByLabel('Smoke squat, Утомляемость, 1–10', { exact: true })
+    .selectOption('6');
+  expect((await feedbackWrite).postDataJSON().payload.feedback).toMatchObject({
+    fatigue: 6,
+    failure: null,
+  });
+  await expect
+    .poll(async () => (await readWorkout())?.exercises[0]?.fatigue)
+    .toBe(6);
 
   // Acknowledging an older save must preserve a newer live input and its position.
   const releaseWrite = Promise.withResolvers<void>();

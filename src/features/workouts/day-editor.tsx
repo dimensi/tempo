@@ -43,6 +43,7 @@ import {
   workoutDraftSchema,
   rememberValidSets,
   projectWorkoutDraft,
+  isFeedbackOnlyChange,
   type WorkoutDraft,
 } from './workout-draft';
 import { ExerciseRows } from './exercise-rows';
@@ -212,11 +213,52 @@ export function DayEditor({
     mounted.current = true;
     const generation = sessionGeneration();
     requestId.current = crypto.randomUUID();
-    const restored = readWorkoutDraft(key, identity, envelopeSchema);
+    let restored = readWorkoutDraft(key, identity, envelopeSchema);
     const legacy = restored
       ? null
       : readLegacyWorkoutDraft(identity, date, initialWorkout.current);
-    queueMicrotask(() => {
+    queueMicrotask(async () => {
+      if (!mounted.current || generation !== sessionGeneration()) return;
+      // A background send can finish while the creation editor is unmounted.
+      // Reopening Create starts a fresh record instead of restoring that old UUID.
+      if (restored && !initialWorkout.current && canLog) {
+        try {
+          const writes = await readDeviceWrites();
+          if (!mounted.current || generation !== sessionGeneration()) return;
+          const id = restored.value.recordId;
+          const local = writes.records.find((item) => item.id === id);
+          const settled =
+            writes.operations.some(
+              (item) =>
+                item.operation.recordId === id && item.status === 'synced',
+            ) &&
+            !writes.operations.some(
+              (item) =>
+                item.operation.recordId === id && item.status !== 'synced',
+            );
+          if (id && local?.payload.kind === 'workout' && settled) {
+            const draft = workoutInputSchema.safeParse(
+              projectWorkoutDraft(restored.value.value, false),
+            );
+            const matches =
+              draft.success &&
+              JSON.stringify(draft.data) === JSON.stringify(local.payload.data);
+            if (
+              matches ||
+              storeWorkoutDraft(
+                dayWorkoutDraftKey(identity, date, id),
+                restored.requestId,
+                restored.value,
+              )
+            ) {
+              clearWorkoutDraft(key);
+              restored = null;
+            }
+          }
+        } catch {
+          /* Retain the recoverable new draft when storage is unavailable. */
+        }
+      }
       if (!mounted.current || generation !== sessionGeneration()) return;
       if (restored) {
         requestId.current = restored.requestId;
@@ -278,10 +320,11 @@ export function DayEditor({
           };
           if (matches(initialWorkout.current)) finishRestore(true);
           else if (canLog) {
+            const restoredDraft = restored;
             void readDeviceWrites()
               .then((writes) => {
                 const id =
-                  restored.value.recordId ?? initialWorkout.current?.id;
+                  restoredDraft.value.recordId ?? initialWorkout.current?.id;
                 const local = writes.records.find((item) => item.id === id);
                 finishRestore(
                   local?.payload.kind === 'workout' &&
@@ -318,6 +361,72 @@ export function DayEditor({
       if (timer.current) clearTimeout(timer.current);
     };
   }, [identity, key, date, canLog, onDirtyChange]);
+  useEffect(() => {
+    if (!ready || workout || !canLog) return;
+    let disposed = false;
+    const refresh = async () => {
+      const generation = sessionGeneration();
+      const serial = sequence.current;
+      const writes = await readDeviceWrites();
+      if (
+        disposed ||
+        !mounted.current ||
+        generation !== sessionGeneration() ||
+        serial !== sequence.current ||
+        dirty.current ||
+        pending.current ||
+        acknowledged.current
+      )
+        return;
+      const local = writes.records.find((item) => item.id === recordId);
+      const settled =
+        writes.operations.some(
+          (item) =>
+            item.operation.recordId === recordId && item.status === 'synced',
+        ) &&
+        !writes.operations.some(
+          (item) =>
+            item.operation.recordId === recordId && item.status !== 'synced',
+        );
+      if (local?.payload.kind !== 'workout' || !settled) return;
+      const projected = workoutInputSchema.safeParse(
+        projectWorkoutDraft(current.current, false),
+      );
+      if (
+        !projected.success ||
+        JSON.stringify(projected.data) !== JSON.stringify(local.payload.data)
+      )
+        return;
+      const ok = storeWorkoutDraft(
+        dayWorkoutDraftKey(identity, date, recordId),
+        requestId.current,
+        { revision: Number(local.version), value: current.current, recordId },
+      );
+      if (!ok) return;
+      clearWorkoutDraft(key);
+      acknowledged.current = true;
+      revision.current = Number(local.version);
+      const confirmed: Workout = {
+        ...local.payload.data,
+        id: recordId,
+        ownerId,
+        revision: revision.current,
+        createdAt: saved.current?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      saved.current = confirmed;
+      setSavedWorkout(confirmed);
+    };
+    const changed = () => {
+      void refresh().catch(() => {});
+    };
+    changed();
+    window.addEventListener('offline-writes-changed', changed);
+    return () => {
+      disposed = true;
+      window.removeEventListener('offline-writes-changed', changed);
+    };
+  }, [ready, workout, canLog, recordId, ownerId, identity, date, key]);
   // Refresh clean forms together with their revision; never attach a fresh revision to stale values.
   useEffect(() => {
     if (
@@ -518,7 +627,13 @@ export function DayEditor({
       await commitFeedback();
       if (dirty.current) return;
     }
-    if (!action && !editable) {
+    if (
+      !action &&
+      (!editable ||
+        (feedbackEditable &&
+          saved.current &&
+          isFeedbackOnlyChange(current.current, saved.current)))
+    ) {
       await commitFeedback();
       return;
     }

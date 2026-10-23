@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   workoutSetSchema,
+  workoutInputSchema,
   workoutFatigueSchema,
   workoutFailureSchema,
   type WorkoutInput,
@@ -120,4 +121,33 @@ export function emptyWorkoutDraft(
         sets: structuredClone(exercise.sets),
       })) ?? [],
   };
+}
+
+/** Distinguish assessment-only input from changed sets, text, order or lifecycle. */
+export function isFeedbackOnlyChange(
+  draft: WorkoutDraft,
+  baseline: WorkoutInput,
+) {
+  const parsed = workoutInputSchema.safeParse(
+    projectWorkoutDraft(draft, false),
+  );
+  if (!parsed.success) return false;
+  const content = (value: WorkoutInput) => ({
+    date: value.date,
+    title: value.title,
+    note: value.note,
+    status: value.status,
+    exercises: value.exercises.map(
+      ({ id, name, comment, transformMate, sets }) => ({
+        id,
+        name,
+        comment,
+        transformMate,
+        sets,
+      }),
+    ),
+  });
+  return (
+    JSON.stringify(content(parsed.data)) === JSON.stringify(content(baseline))
+  );
 }
