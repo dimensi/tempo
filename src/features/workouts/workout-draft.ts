@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { WorkoutInput } from '@/contracts/workouts';
+import { workoutSetSchema, type WorkoutInput } from '@/contracts/workouts';
 
 export const workoutDraftSchema = z
   .object({
@@ -31,6 +31,7 @@ export const workoutDraftSchema = z
                   .object({
                     reps: z.union([z.number(), z.string()]).nullable(),
                     weightKg: z.union([z.number(), z.string()]).nullable(),
+                    lastValid: workoutSetSchema.nullable().optional(),
                   })
                   .strict(),
               )
@@ -43,6 +44,55 @@ export const workoutDraftSchema = z
   .strict();
 export type WorkoutDraft = z.infer<typeof workoutDraftSchema>;
 export type DraftExercise = WorkoutDraft['exercises'][number];
+export function rememberValidSets(draft: WorkoutDraft): WorkoutDraft {
+  return {
+    ...draft,
+    exercises: draft.exercises.map((exercise) => ({
+      ...exercise,
+      sets: exercise.sets.map((set) => {
+        const parsed = workoutSetSchema.safeParse({
+          reps: set.reps,
+          weightKg: set.weightKg,
+        });
+        return parsed.success ? { ...set, lastValid: parsed.data } : set;
+      }),
+    })),
+  };
+}
+export function projectWorkoutDraft(
+  draft: WorkoutDraft,
+  partial: boolean,
+  baseline?: WorkoutInput,
+) {
+  return {
+    ...draft,
+    exercises: draft.exercises.map((exercise) => {
+      const prior = baseline?.exercises.find((item) => item.id === exercise.id);
+      const legacyPartial =
+        partial &&
+        prior &&
+        exercise.sets.some(
+          (set) =>
+            set.lastValid === undefined &&
+            !workoutSetSchema.safeParse({
+              reps: set.reps,
+              weightKg: set.weightKg,
+            }).success,
+        );
+      return {
+        ...exercise,
+        sets: legacyPartial
+          ? prior.sets
+          : exercise.sets.flatMap((set) => {
+              const value = { reps: set.reps, weightKg: set.weightKg };
+              const parsed = workoutSetSchema.safeParse(value);
+              if (parsed.success) return [parsed.data];
+              return partial ? (set.lastValid ? [set.lastValid] : []) : [value];
+            }),
+      };
+    }),
+  };
+}
 export function emptyWorkoutDraft(
   date: string,
   workout?: WorkoutInput,

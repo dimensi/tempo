@@ -396,16 +396,33 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   });
   await expect(secondWeight).toBeFocused();
   await secondWeight.fill('25');
+  await firstReps.fill('');
+  await note.fill('Note with unfinished sets');
+  await expect
+    .poll(async () => (await readWorkout())?.note)
+    .toBe('Note with unfinished sets');
+  expect((await readWorkout())?.exercises[0]?.sets).toEqual([
+    { weightKg: 20, reps: 10 },
+  ]);
+  await expect(firstReps).toHaveValue('');
+  await expect(firstReps).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(secondReps).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
+  await expect(
+    page.getByText('Есть незаконченный ввод', { exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Завершить', exact: true }).click();
-  await expect(page.getByRole('main').getByRole('alert')).toContainText(
-    'Добавьте упражнение',
-  );
+  await expect(firstReps).toHaveAttribute('aria-invalid', 'true');
+  await expect(secondReps).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
   expect((await readWorkout())?.status).toBe('in_progress');
   const dayUrl = page.url();
   await page.goto('/diary');
   await page.goto(dayUrl);
   await expect(secondWeight).toHaveValue('25');
   await expect(secondReps).toHaveValue('');
+  await expect(firstReps).toHaveValue('');
+  await firstReps.fill('10');
   await secondReps.fill('8');
   await expect
     .poll(async () => (await readWorkout())?.exercises[0]?.sets[1])

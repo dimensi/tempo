@@ -40,6 +40,8 @@ import {
 import {
   emptyWorkoutDraft,
   workoutDraftSchema,
+  rememberValidSets,
+  projectWorkoutDraft,
   type WorkoutDraft,
 } from './workout-draft';
 import { ExerciseRows } from './exercise-rows';
@@ -107,16 +109,18 @@ export function DayEditor({
     dayWorkoutDraftKey(identity, date, workout?.id ?? 'new'),
   );
   const [value, setValue] = useState<WorkoutDraft>(() =>
-    workoutDraftSchema.parse(
-      workout
-        ? {
-            date: workout.date,
-            title: workout.title,
-            note: workout.note,
-            status: workout.status,
-            exercises: workout.exercises,
-          }
-        : (copy ?? emptyWorkoutDraft(date)),
+    rememberValidSets(
+      workoutDraftSchema.parse(
+        workout
+          ? {
+              date: workout.date,
+              title: workout.title,
+              note: workout.note,
+              status: workout.status,
+              exercises: workout.exercises,
+            }
+          : (copy ?? emptyWorkoutDraft(date)),
+      ),
     ),
   );
   const current = useRef(value);
@@ -141,7 +145,11 @@ export function DayEditor({
   const requestId = useRef('');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const commitRef = useRef<
-    (action?: WorkoutAction, allowRemoval?: boolean) => Promise<void>
+    (
+      action?: WorkoutAction,
+      allowRemoval?: boolean,
+      interactive?: boolean,
+    ) => Promise<void>
   >(async () => {});
   const mobile = useMediaQuery('(max-width: 48em)');
   const editable =
@@ -162,9 +170,14 @@ export function DayEditor({
   }
   function schedule() {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void commitRef.current(), 1200);
+    timer.current = setTimeout(
+      () => void commitRef.current(undefined, false, false),
+      1200,
+    );
   }
   function change(next: WorkoutDraft) {
+    next = rememberValidSets(next);
+    setShowValidation(false);
     current.current = next;
     setValue(next);
     sequence.current++;
@@ -192,7 +205,7 @@ export function DayEditor({
         )
           setReview(restored.value.value);
         else {
-          current.current = restored.value.value;
+          current.current = rememberValidSets(restored.value.value);
           setValue(current.current);
           dirty.current = true;
           schedule();
@@ -231,7 +244,11 @@ export function DayEditor({
       revision.current = workout.revision;
     }
   }, [workout, recordId]);
-  async function commit(action?: WorkoutAction, allowRemoval = false) {
+  async function commit(
+    action?: WorkoutAction,
+    allowRemoval = false,
+    interactive = true,
+  ) {
     if (pending.current) {
       if (action) pendingAction.current = action;
       return;
@@ -244,6 +261,8 @@ export function DayEditor({
     )
       return;
     const snapshot = current.current;
+    const completeDraft = projectWorkoutDraft(snapshot, false);
+    const unfinished = !workoutInputSchema.safeParse(completeDraft).success;
     const generation = sessionGeneration();
     const serial = sequence.current;
     const target =
@@ -253,7 +272,7 @@ export function DayEditor({
           ? 'completed'
           : snapshot.status;
     const parsed = workoutInputSchema.safeParse({
-      ...snapshot,
+      ...projectWorkoutDraft(snapshot, !interactive, saved.current),
       status: target,
     });
     if (
@@ -262,8 +281,11 @@ export function DayEditor({
         (!parsed.data.exercises.length ||
           parsed.data.exercises.some((e) => !e.sets.length)))
     ) {
-      setShowValidation(true);
-      setError(action ? m.transitionValidation : m.resultValidation);
+      if (interactive) {
+        setShowValidation(true);
+        setError(null);
+      }
+      setStatus(m.unfinishedInput);
       return;
     }
     const removed = !!saved.current?.exercises.some(
@@ -362,15 +384,23 @@ export function DayEditor({
       if (sequence.current === serial) {
         current.current = { ...snapshot, status: target };
         setValue(current.current);
-        dirty.current = false;
-        onDirtyChange?.(false);
+        dirty.current = unfinished;
+        onDirtyChange?.(unfinished);
       } else if (action) {
         current.current = { ...current.current, status: target };
         setValue(current.current);
       }
       requestId.current = crypto.randomUUID();
       persist(current.current);
-      setStatus(dirty.current ? m.unsaved : queued ? m.queued : m.saved);
+      setStatus(
+        unfinished
+          ? m.unfinishedInput
+          : dirty.current
+            ? m.unsaved
+            : queued
+              ? m.queued
+              : m.saved,
+      );
       if (!queued) await onSaved(true);
     } catch (cause) {
       if (mounted.current && generation === sessionGeneration()) {
@@ -528,6 +558,14 @@ export function DayEditor({
           {m.addExercises}
         </Button>
       )}
+      {editable &&
+        showValidation &&
+        (!value.exercises.length ||
+          value.exercises.some((exercise) => !exercise.sets.length)) && (
+          <Text size="sm" c="red">
+            {m.transitionValidation}
+          </Text>
+        )}
       {editable && error && (
         <Button variant="default" onClick={() => void commit()}>
           {m.save}

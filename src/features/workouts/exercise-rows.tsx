@@ -270,11 +270,12 @@ export function ExerciseRows({
                       decimalScale={2}
                       disabled={disabled}
                       error={
+                        showValidation &&
                         set.weightKg !== null &&
                         (typeof set.weightKg !== 'number' ||
                           set.weightKg < 0 ||
                           set.weightKg > 2000)
-                          ? m.resultValidation
+                          ? m.invalidWeight
                           : undefined
                       }
                       onChange={(value) =>
@@ -303,13 +304,14 @@ export function ExerciseRows({
                       allowDecimal={false}
                       disabled={disabled}
                       error={
-                        (showValidation && set.reps === null) ||
-                        (set.reps !== null &&
-                          (typeof set.reps !== 'number' ||
-                            !Number.isInteger(set.reps) ||
-                            set.reps < 1 ||
-                            set.reps > 1000))
-                          ? m.resultValidation
+                        showValidation &&
+                        (set.reps === null ||
+                          (set.reps !== null &&
+                            (typeof set.reps !== 'number' ||
+                              !Number.isInteger(set.reps) ||
+                              set.reps < 1 ||
+                              set.reps > 1000)))
+                          ? m.invalidReps
                           : undefined
                       }
                       onChange={(value) =>
@@ -393,7 +395,10 @@ export function ExerciseRows({
                   }
                   update(index, {
                     ...exercise,
-                    sets: [...exercise.sets, { reps: null, weightKg: null }],
+                    sets: [
+                      ...exercise.sets,
+                      { reps: null, weightKg: null, lastValid: null },
+                    ],
                   });
                 }}
               >
@@ -428,7 +433,6 @@ export function ExerciseRows({
           exercise={{
             ...media.exercise,
             sets: media.exercise.sets.map((set) => ({
-              ...set,
               reps: typeof set.reps === 'number' ? set.reps : 1,
               weightKg: typeof set.weightKg === 'number' ? set.weightKg : null,
             })),
