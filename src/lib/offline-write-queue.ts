@@ -177,6 +177,7 @@ export function resolveWrite(
   partition: string,
   recordId: string,
   keepLocal: boolean,
+  serverRecord?: WriteRecord,
 ) {
   if (state.partition !== partition) throw new Error('Account changed');
   const related = state.operations.filter(
@@ -199,6 +200,70 @@ export function resolveWrite(
     else throw new Error('Uncertain result');
     return;
   }
+  // Explicitly reapply only feedback on the latest server workout; never copy or
+  // overwrite somebody else's sets just to resolve an assessment conflict.
+  if (
+    keepLocal &&
+    related.length &&
+    related.every(
+      (item) =>
+        item.operation.payload.kind === 'workout' &&
+        item.operation.payload.feedback,
+    )
+  ) {
+    if (
+      !serverRecord ||
+      serverRecord.id !== recordId ||
+      serverRecord.payload.kind !== 'workout' ||
+      serverRecord.payload.data.status === 'planned'
+    )
+      throw new Error('Workout unavailable');
+    let data = serverRecord.payload.data;
+    for (const item of related) {
+      const payload = item.operation.payload;
+      if (
+        payload.kind !== 'workout' ||
+        !payload.feedback ||
+        !data.exercises.some(
+          (exercise) => exercise.id === payload.feedback!.exerciseId,
+        )
+      )
+        throw new Error('Exercise unavailable');
+    }
+    state.operations = state.operations.filter(
+      (item) => !related.includes(item),
+    );
+    state.records = [
+      ...state.records.filter((item) => item.id !== recordId),
+      serverRecord,
+    ];
+    for (const item of related) {
+      const payload = item.operation.payload;
+      if (payload.kind !== 'workout' || !payload.feedback) continue;
+      const feedback = payload.feedback;
+      data = {
+        ...data,
+        exercises: data.exercises.map((exercise) =>
+          exercise.id === feedback.exerciseId
+            ? {
+                ...exercise,
+                fatigue: feedback.fatigue,
+                failure: feedback.failure,
+              }
+            : exercise,
+        ),
+      };
+      enqueueWrite(
+        state,
+        partition,
+        { kind: 'workout', data, feedback },
+        recordId,
+        undefined,
+        serverRecord.version,
+      );
+    }
+    return;
+  }
   const record = state.records.find((item) => item.id === recordId);
   state.operations = state.operations.filter(
     (item) => item.operation.recordId !== recordId,
@@ -213,7 +278,11 @@ export function resolveWrite(
             data: {
               date: record.payload.data.date,
               title: record.payload.data.title,
-              exercises: record.payload.data.exercises,
+              exercises: record.payload.data.exercises.map((exercise) => ({
+                ...exercise,
+                fatigue: undefined,
+                failure: undefined,
+              })),
               note: record.payload.data.note,
               status: 'planned',
             },
@@ -227,7 +296,11 @@ export function resolveWrite(
           partition,
           {
             ...payload,
-            data: { ...payload.data, status: 'in_progress' },
+            data: {
+              ...payload.data,
+              exercises: record.payload.data.exercises,
+              status: 'in_progress',
+            },
             action: 'start',
           },
           saved.recordId,
@@ -238,7 +311,11 @@ export function resolveWrite(
           partition,
           {
             ...payload,
-            data: { ...payload.data, status: 'completed' },
+            data: {
+              ...payload.data,
+              exercises: record.payload.data.exercises,
+              status: 'completed',
+            },
             action: 'complete',
           },
           saved.recordId,

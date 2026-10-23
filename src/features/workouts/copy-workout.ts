@@ -11,6 +11,8 @@ export function copyWorkoutToDate(
     exercises: workout.exercises.map((exercise) => ({
       ...structuredClone(exercise),
       id: crypto.randomUUID(),
+      fatigue: undefined,
+      failure: undefined,
       ...(exercise.transformMate
         ? {
             transformMate: {

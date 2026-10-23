@@ -70,6 +70,8 @@ export async function saveOfflineWrite(request: Request) {
   if (parsed.data.payload.kind === 'measurement')
     void runBodySync(identity.ownerId).catch(() => {});
   else if (
+    parsed.data.payload.kind === 'workout' &&
+    !parsed.data.payload.feedback &&
     result.payload.kind === 'workout' &&
     result.payload.data.status === 'planned'
   ) {

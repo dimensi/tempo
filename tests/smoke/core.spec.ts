@@ -375,6 +375,16 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect(
     page.getByRole('button', { name: 'Техника: Smoke squat', exact: true }),
   ).toBeVisible();
+  const fatigue = page.getByLabel('Smoke squat, Утомляемость, 1–10', {
+    exact: true,
+  });
+  const failure = page.getByLabel('Smoke squat, Был отказ?', { exact: true });
+  await fatigue.selectOption('8');
+  await failure.selectOption('partial');
+  await expect
+    .poll(async () => (await readWorkout())?.exercises[0]?.fatigue)
+    .toBe(8);
+  expect((await readWorkout())?.exercises[0]?.failure).toBe('partial');
   const completed = (await readWorkout())!;
   expect(completed.status).toBe('completed');
   await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
@@ -496,6 +506,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       exact: true,
     })
     .click();
+  await fatigue.selectOption('7');
   await note.fill('Saved while offline');
   await expect(
     page.getByText(
@@ -571,6 +582,8 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect
     .poll(async () => (await readWorkout())?.note)
     .toBe('Saved while offline');
+  expect((await readWorkout())?.exercises[0]?.fatigue).toBe(7);
+  expect((await readWorkout())?.exercises[0]?.failure).toBe('partial');
   // The background acknowledgement supplies the revision for the next edit.
   await note.fill('Saved after reconnect');
   await expect

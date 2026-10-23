@@ -10,7 +10,11 @@ export const publicationWorkoutSchema = z
     title,
     // Local occurrence IDs are not part of a provider publication fingerprint.
     exercises: z
-      .array(workoutExerciseSchema.omit({ id: true }).strip())
+      .array(
+        workoutExerciseSchema
+          .omit({ id: true, fatigue: true, failure: true })
+          .strip(),
+      )
       .min(1)
       .max(50),
   })

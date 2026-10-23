@@ -6,6 +6,7 @@ import {
   Group,
   Menu,
   NumberInput,
+  NativeSelect,
   Stack,
   Text,
   Textarea,
@@ -23,7 +24,11 @@ import { useMediaQuery } from '@mantine/hooks';
 import { BottomSheet } from '@/components/shared/bottom-sheet';
 import { useReadOnline } from '@/lib/use-read-online';
 import { ExerciseOrder } from './exercise-order';
-import type { WorkoutExercise, Workout } from '@/contracts/workouts';
+import type {
+  ExerciseFeedback,
+  WorkoutExercise,
+  Workout,
+} from '@/contracts/workouts';
 import type { DraftExercise } from './workout-draft';
 import { ExerciseMedia } from './exercise-media';
 import { workoutMessages as m } from './messages';
@@ -37,6 +42,7 @@ export function ExerciseRows({
   mode,
   onChange,
   onCommit,
+  onFeedbackChange,
   disabled = false,
   reordering = false,
   showValidation = false,
@@ -49,6 +55,7 @@ export function ExerciseRows({
   mode: 'edit' | 'read';
   onChange?: (value: DraftExercise[]) => void;
   onCommit?: () => void;
+  onFeedbackChange?: (feedback: ExerciseFeedback) => void;
   disabled?: boolean;
   reordering?: boolean;
   showValidation?: boolean;
@@ -416,6 +423,53 @@ export function ExerciseRows({
               >
                 {m.addSet}
               </Button>
+            )}
+            {(onFeedbackChange ||
+              (session && session.status !== 'planned')) && (
+              <div className={styles.feedback}>
+                <NativeSelect
+                  label={m.fatigue}
+                  aria-label={`${exercise.name}, ${m.fatigue}`}
+                  value={exercise.fatigue ?? ''}
+                  disabled={disabled || !onFeedbackChange || !exercise.id}
+                  data={[
+                    { value: '', label: m.notSpecified },
+                    ...Array.from({ length: 10 }, (_, i) => ({
+                      value: String(i + 1),
+                      label: String(i + 1),
+                    })),
+                  ]}
+                  onChange={(event) =>
+                    onFeedbackChange?.({
+                      exerciseId: exercise.id!,
+                      fatigue: event.currentTarget.value
+                        ? Number(event.currentTarget.value)
+                        : null,
+                      failure: exercise.failure ?? null,
+                    })
+                  }
+                />
+                <NativeSelect
+                  label={m.failure}
+                  aria-label={`${exercise.name}, ${m.failure}`}
+                  value={exercise.failure ?? ''}
+                  disabled={disabled || !onFeedbackChange || !exercise.id}
+                  data={[
+                    { value: '', label: m.notSpecified },
+                    { value: 'full', label: m.failureFull },
+                    { value: 'partial', label: m.failurePartial },
+                    { value: 'none', label: m.failureNone },
+                  ]}
+                  onChange={(event) =>
+                    onFeedbackChange?.({
+                      exerciseId: exercise.id!,
+                      fatigue: exercise.fatigue ?? null,
+                      failure: (event.currentTarget.value ||
+                        null) as ExerciseFeedback['failure'],
+                    })
+                  }
+                />
+              </div>
             )}
             {note === key ? (
               <Textarea

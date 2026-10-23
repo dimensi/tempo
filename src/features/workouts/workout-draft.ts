@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { workoutSetSchema, type WorkoutInput } from '@/contracts/workouts';
+import {
+  workoutSetSchema,
+  workoutFatigueSchema,
+  workoutFailureSchema,
+  type WorkoutInput,
+} from '@/contracts/workouts';
 
 export const workoutDraftSchema = z
   .object({
@@ -14,6 +19,8 @@ export const workoutDraftSchema = z
             id: z.uuid().optional(),
             name: z.string().max(160),
             comment: z.string().max(4000).optional(),
+            fatigue: workoutFatigueSchema.optional(),
+            failure: workoutFailureSchema.optional(),
             transformMate: z
               .object({
                 exerciseId: z

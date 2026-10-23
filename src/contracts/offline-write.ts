@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { measurementInputSchema } from './measurements';
-import { workoutInputSchema, workoutActionSchema } from './workouts';
+import {
+  workoutInputSchema,
+  workoutActionSchema,
+  exerciseFeedbackSchema,
+} from './workouts';
 const payload = z.discriminatedUnion('kind', [
   z
     .object({ kind: z.literal('measurement'), data: measurementInputSchema })
@@ -10,8 +14,10 @@ const payload = z.discriminatedUnion('kind', [
       kind: z.literal('workout'),
       data: workoutInputSchema,
       action: workoutActionSchema.optional(),
+      feedback: exerciseFeedbackSchema.optional(),
     })
-    .strict(),
+    .strict()
+    .refine((value) => !(value.action && value.feedback)),
 ]);
 export const offlineWriteSchema = z
   .object({

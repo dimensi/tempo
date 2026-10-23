@@ -393,6 +393,16 @@ export function OfflineWrites({
             const operations = state.operations.filter(
               (item) => item.operation.recordId === record.id,
             );
+            const outstanding = operations.filter(
+              (item) => item.status !== 'synced',
+            );
+            const feedbackOnly =
+              outstanding.length > 0 &&
+              outstanding.every(
+                (item) =>
+                  item.operation.payload.kind === 'workout' &&
+                  item.operation.payload.feedback,
+              );
             const uncertain = operations.some(
               (item) => item.status === 'review' && item.reason !== 'conflict',
             );
@@ -417,14 +427,16 @@ export function OfflineWrites({
                       : record.payload.data.exercises
                           .map(
                             (e) =>
-                              `${e.name}: ${e.sets.map((s) => `${s.weightKg ?? '—'} × ${s.reps ?? '—'}`).join(', ')}`,
+                              `${e.name}: ${e.sets.map((s) => `${s.weightKg ?? '—'} × ${s.reps ?? '—'}`).join(', ')}${feedbackOnly || e.fatigue != null || e.failure != null ? `; ${m.fatigue}: ${e.fatigue ?? '—'}; ${m.failure}: ${e.failure === 'full' ? m.failureFull : e.failure === 'partial' ? m.failurePartial : e.failure === 'none' ? m.failureNone : '—'}` : ''}`,
                           )
                           .join('; ')}
                   </Text>
                   <Text role="status">{m[status]}</Text>
                   {status === 'review' ? (
                     <>
-                      <Alert>{m.conflict}</Alert>
+                      <Alert>
+                        {feedbackOnly ? m.feedbackConflict : m.conflict}
+                      </Alert>
                       <Group>
                         {(uncertain ? [true] : [false, true]).map((keep) => (
                           <Button
@@ -442,7 +454,9 @@ export function OfflineWrites({
                             {uncertain
                               ? m.recheck
                               : keep
-                                ? m.keepLocal
+                                ? feedbackOnly
+                                  ? m.reapplyFeedback
+                                  : m.keepLocal
                                 : m.keepServer}
                           </Button>
                         ))}

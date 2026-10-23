@@ -4,6 +4,8 @@ import {
   emptyWriteState,
   enqueueWrite,
   nextWrite,
+  resolveWrite,
+  settleWrite,
   type WriteState,
   type WriteStore,
 } from '@/lib/offline-write-queue';
@@ -68,6 +70,71 @@ test('replays one accepted offline write without crossing into another account',
   expect(sent).toHaveLength(1);
   expect(state.operations[0]?.status).toBe('synced');
   expect(nextWrite(state, 'b'.repeat(43), now)).toBeUndefined();
+
+  const exerciseId = crypto.randomUUID();
+  const workoutId = crypto.randomUUID();
+  const feedbackPayload: WritePayload = {
+    kind: 'workout',
+    data: {
+      date: '2026-10-23',
+      title: 'Gym',
+      note: '',
+      status: 'completed',
+      exercises: [
+        {
+          id: exerciseId,
+          name: 'Squat',
+          sets: [{ reps: 8, weightKg: 55 }],
+          fatigue: 8,
+          failure: 'partial',
+        },
+      ],
+    },
+    feedback: { exerciseId, fatigue: 8, failure: 'partial' },
+  };
+  const feedbackWrite = enqueueWrite(
+    state,
+    partition,
+    feedbackPayload,
+    workoutId,
+    undefined,
+    '2',
+  );
+  settleWrite(state, feedbackWrite.id, { status: 409 }, now);
+  resolveWrite(state, partition, workoutId, true, {
+    id: workoutId,
+    version: '3',
+    payload: {
+      kind: 'workout',
+      data: {
+        ...feedbackPayload.data,
+        note: 'Trainer note',
+        exercises: [
+          { id: exerciseId, name: 'Squat', sets: [{ reps: 10, weightKg: 60 }] },
+        ],
+      },
+    },
+  });
+  const reapplied = nextWrite(state, partition, now)!.operation;
+  expect(reapplied).toMatchObject({
+    recordId: workoutId,
+    base: '3',
+    payload: {
+      kind: 'workout',
+      data: {
+        note: 'Trainer note',
+        exercises: [
+          {
+            sets: [{ reps: 10, weightKg: 60 }],
+            fatigue: 8,
+            failure: 'partial',
+          },
+        ],
+      },
+      feedback: feedbackPayload.feedback,
+    },
+  });
+  expect(reapplied.id).not.toBe(feedbackWrite.id);
 
   const originalId = crypto.randomUUID();
   const legacy = {

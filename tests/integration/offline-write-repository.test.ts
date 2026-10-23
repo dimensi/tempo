@@ -122,6 +122,66 @@ it('commits an offline receipt with its record and replays it without cross-owne
   expect(
     retained.payload.kind === 'workout' && retained.payload.data.exercises[0],
   ).toEqual({ ...exercise, sets: [] });
+  let active = repository.apply(
+    'owner',
+    offlineWriteSchema.parse({
+      ...next,
+      id: crypto.randomUUID(),
+      base: retained.version,
+      payload: {
+        kind: 'workout',
+        data: { ...next.payload.data, status: 'in_progress' },
+        action: 'start',
+      },
+    }),
+  );
+  if (active.payload.kind !== 'workout') throw new Error('Expected workout');
+  const completion = offlineWriteSchema.parse({
+    ...next,
+    id: crypto.randomUUID(),
+    base: active.version,
+    payload: {
+      kind: 'workout',
+      data: { ...active.payload.data, status: 'completed' },
+      action: 'complete',
+    },
+  });
+  active = repository.apply('owner', completion);
+  if (active.payload.kind !== 'workout') throw new Error('Expected workout');
+  const feedbackOperation = offlineWriteSchema.parse({
+    ...next,
+    id: crypto.randomUUID(),
+    base: active.version,
+    payload: {
+      kind: 'workout',
+      data: {
+        ...active.payload.data,
+        note: 'must not overwrite',
+        exercises: [],
+      },
+      feedback: { exerciseId: exercise.id, fatigue: 9, failure: 'full' },
+    },
+  });
+  const rated = repository.apply('owner', feedbackOperation);
+  expect(repository.apply('owner', feedbackOperation)).toEqual(rated);
+  expect(rated.payload).toMatchObject({
+    kind: 'workout',
+    data: {
+      status: 'completed',
+      note: '',
+      exercises: [
+        { ...exercise, fatigue: 9, failure: 'full' },
+        next.payload.data.exercises[1],
+      ],
+    },
+  });
+  expect(() =>
+    repository.apply('owner', {
+      ...feedbackOperation,
+      id: crypto.randomUUID(),
+      base: active.version,
+    }),
+  ).toThrow();
   const removal = offlineWriteSchema.parse({
     ...next,
     id: crypto.randomUUID(),
@@ -133,5 +193,5 @@ it('commits an offline receipt with its record and replays it without cross-owne
     repository
       .catalog('owner')
       .find((record) => record.id === workout.recordId),
-  ).toEqual(retained);
+  ).toEqual(rated);
 });

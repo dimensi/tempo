@@ -1,5 +1,6 @@
 import 'server-only';
 import { z, ZodError } from 'zod';
+import { exerciseFeedbackSchema, revisionSchema } from '@/contracts/workouts';
 import { WorkoutAccessError, WorkoutError } from './index';
 import { workoutMessages as m } from '@/features/workouts';
 import { hasTrustedOrigin } from '@/server/auth/origin';
@@ -13,6 +14,11 @@ export const workoutUpdateBody = z
     data: z.unknown(),
   })
   .strict();
+export const workoutFeedbackBody = exerciseFeedbackSchema.extend({
+  ownerId: z.string().min(1).max(128),
+  revision: revisionSchema,
+  requestId: z.uuid(),
+});
 export const workoutDeleteBody = z
   .object({ ownerId: z.string(), revision: z.unknown() })
   .strict();

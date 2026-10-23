@@ -244,6 +244,112 @@ it('fails closed for generic and selective medical-PDF trainer access, including
     ),
   ).rejects.toMatchObject({ status: 403 });
   expect(repository.get(ownerId, activeWorkout.id).note).toBe('');
+  const feedback = {
+    exerciseId: activeWorkout.exercises[0]!.id!,
+    fatigue: 8,
+    failure: 'partial' as const,
+  };
+  await expect(
+    workoutService.updateExerciseFeedback(
+      headers(),
+      ownerId,
+      trainerEdited.id,
+      trainerEdited.revision,
+      feedback,
+      crypto.randomUUID(),
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+  const feedbackRequest = crypto.randomUUID();
+  const rated = await workoutService.updateExerciseFeedback(
+    headers(),
+    ownerId,
+    activeWorkout.id,
+    activeWorkout.revision,
+    feedback,
+    feedbackRequest,
+  );
+  expect(rated.exercises[0]).toMatchObject({
+    fatigue: 8,
+    failure: 'partial',
+    sets: activeWorkout.exercises[0]!.sets,
+  });
+  expect(
+    await workoutService.updateExerciseFeedback(
+      headers(),
+      ownerId,
+      activeWorkout.id,
+      activeWorkout.revision,
+      feedback,
+      feedbackRequest,
+    ),
+  ).toEqual(rated);
+  await expect(
+    workoutService.updateExerciseFeedback(
+      headers(),
+      ownerId,
+      activeWorkout.id,
+      activeWorkout.revision,
+      { ...feedback, fatigue: 9 },
+      crypto.randomUUID(),
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+  await expect(
+    workoutService.updateExerciseFeedback(
+      headers(),
+      ownerId,
+      activeWorkout.id,
+      rated.revision,
+      { ...feedback, sets: [] },
+      crypto.randomUUID(),
+    ),
+  ).rejects.toThrow();
+  const completed = repository.update(
+    ownerId,
+    rated.id,
+    rated.revision,
+    {
+      date: rated.date,
+      title: rated.title,
+      note: rated.note,
+      status: 'completed',
+      exercises: rated.exercises,
+    },
+    'complete',
+  );
+  const trainerCorrection = await workoutService.updateExerciseFeedback(
+    headers(),
+    ownerId,
+    completed.id,
+    completed.revision,
+    { ...feedback, fatigue: 10, failure: 'full' },
+    crypto.randomUUID(),
+  );
+  expect(trainerCorrection.status).toBe('completed');
+  expect(trainerCorrection.exercises[0]).toMatchObject({
+    fatigue: 10,
+    failure: 'full',
+  });
+  state.session = { user: { id: ownerId, role: 'OWNER' } };
+  const cleared = await workoutService.updateExerciseFeedback(
+    headers(),
+    ownerId,
+    completed.id,
+    trainerCorrection.revision,
+    { ...feedback, fatigue: null, failure: null },
+    crypto.randomUUID(),
+  );
+  expect(cleared.exercises[0]).toMatchObject({ fatigue: null, failure: null });
+  await expect(
+    workoutService.updateExerciseFeedback(
+      headers(),
+      trainerId,
+      completed.id,
+      cleared.revision,
+      feedback,
+      crypto.randomUUID(),
+    ),
+  ).rejects.toMatchObject({ status: 403 });
+  state.session = { user: { id: trainerId, role: 'TRAINER' } };
   await expect(
     requireCatalogAccess(headers(), ownerId),
   ).resolves.toBeUndefined();
@@ -251,6 +357,16 @@ it('fails closed for generic and selective medical-PDF trainer access, including
     status: 403,
   });
   connection.db.delete(trainerAccess).run();
+  await expect(
+    workoutService.updateExerciseFeedback(
+      headers(),
+      ownerId,
+      completed.id,
+      cleared.revision,
+      feedback,
+      crypto.randomUUID(),
+    ),
+  ).rejects.toMatchObject({ status: 403 });
   await expect(getOverview(headers(), 'UTC')).rejects.toMatchObject({
     status: 403,
   });
