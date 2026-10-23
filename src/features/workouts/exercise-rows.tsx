@@ -397,7 +397,11 @@ export function ExerciseRows({
                     ...exercise,
                     sets: [
                       ...exercise.sets,
-                      { reps: null, weightKg: null, lastValid: null },
+                      {
+                        reps: exercise.sets.at(-1)?.reps ?? null,
+                        weightKg: exercise.sets.at(-1)?.weightKg ?? null,
+                        lastValid: null,
+                      },
                     ],
                   });
                 }}

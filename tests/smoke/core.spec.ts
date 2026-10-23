@@ -395,6 +395,9 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     exact: true,
   });
   await expect(secondWeight).toBeFocused();
+  await expect(secondWeight).toHaveValue('20');
+  await expect(secondReps).toHaveValue('10');
+  await secondReps.fill('');
   await secondWeight.fill('25');
   await firstReps.fill('');
   await note.fill('Note with unfinished sets');
@@ -402,6 +405,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .poll(async () => (await readWorkout())?.note)
     .toBe('Note with unfinished sets');
   expect((await readWorkout())?.exercises[0]?.sets).toEqual([
+    { weightKg: 20, reps: 10 },
     { weightKg: 20, reps: 10 },
   ]);
   await expect(firstReps).toHaveValue('');
@@ -427,6 +431,20 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect
     .poll(async () => (await readWorkout())?.exercises[0]?.sets[1])
     .toEqual({ reps: 8, weightKg: 25 });
+  await page
+    .getByRole('button', { name: 'Добавить подход', exact: true })
+    .press('Enter');
+  const thirdWeight = page.getByLabel('Smoke squat, Подход 3, Вес, кг', {
+    exact: true,
+  });
+  await expect(thirdWeight).toBeFocused();
+  await expect(thirdWeight).toHaveValue('25');
+  await expect(
+    page.getByLabel('Smoke squat, Подход 3, Повторения', { exact: true }),
+  ).toHaveValue('8');
+  await page
+    .getByRole('button', { name: 'Удалить подход 3: Smoke squat', exact: true })
+    .click();
 
   // A loaded resource renders immediately while a refresh is stalled.
   await expect
