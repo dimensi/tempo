@@ -445,11 +445,18 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await page
     .getByRole('button', { name: 'Удалить подход 3: Smoke squat', exact: true })
     .click();
+  await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
+  const acknowledgedRevision = (await readWorkout())!.revision;
 
   // A loaded resource renders immediately while a refresh is stalled.
   await expect
-    .poll(() => cachedReadBody(page, title).catch(() => ''))
-    .toContain(title);
+    .poll(async () => {
+      const body = JSON.parse(await cachedReadBody(page, title));
+      return (body.data.workouts as Workout[]).find(
+        (item) => item.title === title,
+      )?.revision;
+    })
+    .toBe(acknowledgedRevision);
   const cachedWorkout = await cachedReadBody(page, title);
   const releaseRead = Promise.withResolvers<void>();
   let readStarted = false;
@@ -471,6 +478,9 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   releaseRead.resolve();
   await readFinished.promise;
   await page.unroute('**/api/workouts?*');
+  // Returning to an acknowledged draft must not enqueue an unchanged update.
+  await page.waitForTimeout(1400);
+  expect((await readWorkout())?.revision).toBe(acknowledgedRevision);
 
   // Pending writes survive a logout attempt until the owner chooses what to do.
   await context.setOffline(true);

@@ -178,6 +178,7 @@ export function DayEditor({
   function change(next: WorkoutDraft) {
     next = rememberValidSets(next);
     setShowValidation(false);
+    setStatus(m.unsaved);
     current.current = next;
     setValue(next);
     sequence.current++;
@@ -188,13 +189,14 @@ export function DayEditor({
   }
   useEffect(() => {
     mounted.current = true;
+    const generation = sessionGeneration();
     requestId.current = crypto.randomUUID();
     const restored = readWorkoutDraft(key, identity, envelopeSchema);
     const legacy = restored
       ? null
       : readLegacyWorkoutDraft(identity, date, initialWorkout.current);
     queueMicrotask(() => {
-      if (!mounted.current) return;
+      if (!mounted.current || generation !== sessionGeneration()) return;
       if (restored) {
         requestId.current = restored.requestId;
         if (restored.value.recordId) setRecordId(restored.value.recordId);
@@ -208,7 +210,70 @@ export function DayEditor({
           current.current = rememberValidSets(restored.value.value);
           setValue(current.current);
           dirty.current = true;
-          schedule();
+          const serial = sequence.current;
+          const restoredValue = current.current;
+          const projected = workoutInputSchema.safeParse(
+            projectWorkoutDraft(current.current, true, initialWorkout.current),
+          );
+          const unfinished = !workoutInputSchema.safeParse(
+            projectWorkoutDraft(current.current, false),
+          ).success;
+          const matches = (candidate?: WorkoutInput) => {
+            if (!candidate || !projected.success) return false;
+            const { date, title, note, status, exercises } = candidate;
+            const parsed = workoutInputSchema.safeParse({
+              date,
+              title,
+              note,
+              status,
+              exercises,
+            });
+            return (
+              parsed.success &&
+              JSON.stringify(parsed.data) === JSON.stringify(projected.data)
+            );
+          };
+          const finishRestore = (acknowledged: boolean, queued = false) => {
+            if (
+              !mounted.current ||
+              generation !== sessionGeneration() ||
+              pending.current ||
+              current.current !== restoredValue ||
+              sequence.current !== serial
+            )
+              return;
+            dirty.current = !acknowledged || unfinished;
+            onDirtyChange?.(dirty.current);
+            setStatus(
+              unfinished
+                ? m.unfinishedInput
+                : queued
+                  ? m.queued
+                  : acknowledged
+                    ? m.saved
+                    : m.unsaved,
+            );
+            if (!acknowledged) schedule();
+          };
+          if (matches(initialWorkout.current)) finishRestore(true);
+          else if (canLog) {
+            void readDeviceWrites()
+              .then((writes) => {
+                const id =
+                  restored.value.recordId ?? initialWorkout.current?.id;
+                const local = writes.records.find((item) => item.id === id);
+                finishRestore(
+                  local?.payload.kind === 'workout' &&
+                    matches(local.payload.data),
+                  writes.operations.some(
+                    (item) =>
+                      item.operation.recordId === id &&
+                      item.status !== 'synced',
+                  ),
+                );
+              })
+              .catch(() => finishRestore(false));
+          } else finishRestore(false);
         }
       } else if (legacy) {
         setReview(legacy.value);
@@ -468,6 +533,7 @@ export function DayEditor({
             <Group>
               <Button
                 onClick={() => {
+                  requestId.current = crypto.randomUUID();
                   setReview(null);
                   change({ ...review, status: current.current.status });
                 }}
@@ -480,6 +546,7 @@ export function DayEditor({
                   disabled={!editable}
                   variant="default"
                   onClick={() => {
+                    requestId.current = crypto.randomUUID();
                     setReview(null);
                     setAlternative(null);
                     change({ ...alternative, status: current.current.status });
@@ -491,6 +558,7 @@ export function DayEditor({
               <Button
                 variant="default"
                 onClick={() => {
+                  requestId.current = crypto.randomUUID();
                   setReview(null);
                   persist(current.current);
                 }}
