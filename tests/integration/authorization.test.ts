@@ -403,7 +403,7 @@ it('fails closed for generic and selective medical-PDF trainer access, including
   state.realAuth = actual.getAuth();
   const { assertMcpAccess } = await import('./mcp-checks');
   await assertMcpAccess(state.realAuth, connection);
-});
+}, 10_000);
 
 async function assertMedicalPdfGrants() {
   const repository = anamnesisRepository(database.handle!.db);

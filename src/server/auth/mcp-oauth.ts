@@ -12,7 +12,11 @@ import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDatabase } from '@/server/db';
 import { user } from '@/server/db/schema';
-import { oauthAccessToken, oauthRefreshToken } from '@/server/db/schema/oauth';
+import {
+  oauthAccessToken,
+  oauthRefreshToken,
+  oauthClient,
+} from '@/server/db/schema/oauth';
 import { readServerEnv } from '@/server/env';
 import { mcpScopes } from '@/contracts/mcp-scopes';
 
@@ -133,10 +137,25 @@ export function mcpTokenVerifier(options: OAuthOptions<string[]>) {
             throw new APIError('UNAUTHORIZED');
           if (typeof claims.client_id !== 'string')
             throw new APIError('UNAUTHORIZED');
+          const client = getDatabase()
+            .db.select()
+            .from(oauthClient)
+            .where(eq(oauthClient.clientId, claims.client_id))
+            .get();
+          if (!client || client.disabled) throw new APIError('UNAUTHORIZED');
+          const allowedScopes = z
+            .array(z.string())
+            .parse(JSON.parse(z.string().parse(client.scopes)));
+          const scopes = claims.scope
+            .split(' ')
+            .filter((scope) => allowedScopes.includes(scope));
+          if (!scopes.includes('tempo:read'))
+            throw new APIError('FORBIDDEN', { error: 'insufficient_scope' });
           return {
             user: owner,
             session: null,
-            scopes: claims.scope.split(' '),
+            scopes,
+            allowedScopes,
             clientId: claims.client_id,
           };
         },

@@ -10,6 +10,7 @@ import {
   mcpClientInput,
   mcpClientCredentials,
   mcpClientRevoke,
+  mcpClientPermissions,
 } from '@/contracts/mcp-clients';
 
 export class McpClientError extends Error {
@@ -86,12 +87,7 @@ export async function createMcpClient(headers: Headers, input: unknown) {
     body: {
       client_name: value.name,
       redirect_uris: [value.callback],
-      scope: [
-        'tempo:read',
-        'offline_access',
-        ...(value.writeWorkouts ? ['tempo:workouts:write'] : []),
-        ...(value.writeMeasurements ? ['tempo:measurements:write'] : []),
-      ].join(' '),
+      scope: clientScopes(value),
       token_endpoint_auth_method: 'client_secret_post',
       application_type: 'web',
       grant_types: ['authorization_code', 'refresh_token'],
@@ -112,4 +108,41 @@ export async function revokeMcpClient(headers: Headers, input: unknown) {
     .run();
   if (!result.changes) throw new McpClientError(404);
   return { ok: true };
+}
+
+function clientScopes(value: {
+  writeWorkouts: boolean;
+  writeMeasurements: boolean;
+}) {
+  return [
+    'tempo:read',
+    'offline_access',
+    ...(value.writeWorkouts ? ['tempo:workouts:write'] : []),
+    ...(value.writeMeasurements ? ['tempo:measurements:write'] : []),
+  ].join(' ');
+}
+export async function updateMcpClientPermissions(
+  headers: Headers,
+  input: unknown,
+) {
+  const ownerId = await ownerScope(headers);
+  const value = mcpClientPermissions.parse(input);
+  const client = getDatabase()
+    .db.select()
+    .from(oauthClient)
+    .where(
+      and(
+        eq(oauthClient.clientId, value.clientId),
+        eq(oauthClient.userId, ownerId),
+      ),
+    )
+    .get();
+  if (!client || client.disabled) throw new McpClientError(404);
+  // Native provider update retains the client identity, callback and encrypted secret.
+  // Issued token/refresh scopes are never expanded by changing this permission ceiling.
+  await getAuth().api.updateOAuthClient({
+    headers,
+    body: { client_id: value.clientId, update: { scope: clientScopes(value) } },
+  });
+  return listMcpClients(headers);
 }

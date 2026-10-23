@@ -33,3 +33,9 @@ export const mcpClientCredentials = z.object({
 export const mcpClientRevoke = z.strictObject({
   clientId: z.string().min(1).max(256),
 });
+
+export const mcpClientPermissions = z.strictObject({
+  clientId: z.string().min(1).max(256),
+  writeWorkouts: z.boolean(),
+  writeMeasurements: z.boolean(),
+});

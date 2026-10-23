@@ -69,7 +69,7 @@ pnpm verify:merge
 
 ## Устройство проекта
 
-Read-only доступ владельца к AI-клиентам: [MCP, OAuth, подключение ChatGPT и деплой](docs/architecture/mcp.md). Endpoint — `/api/mcp`; доступ без токена и для TRAINER запрещён.
+Доступ владельца к AI-клиентам с отдельными правами записи тренировок и замеров: [MCP, OAuth, подключение ChatGPT и деплой](docs/architecture/mcp.md). Endpoint — `/api/mcp`; доступ без токена и для TRAINER запрещён.
 
 Next.js App Router, React, Mantine, Better Auth, Drizzle и SQLite. Актуальные версии закреплены в `package.json` и `pnpm-lock.yaml`.
 
