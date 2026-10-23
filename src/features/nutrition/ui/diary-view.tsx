@@ -1,4 +1,6 @@
 'use client';
+import { GoalComparison } from '@/components/shared/goal-comparison';
+import type { DailyGoals } from '@/contracts/daily-goals';
 import { PageHeader } from '@/components/layout/page-header';
 
 import { useState, type ReactNode } from 'react';
@@ -40,6 +42,7 @@ export interface DiaryPhoto extends SafeMealPhotoView {
 export interface DiaryViewProps {
   date: string;
   day: NutritionDay | null;
+  goals?: DailyGoals;
   photos?: DiaryPhoto[];
   source?: 'demo';
   commentsSlot?: ReactNode;
@@ -91,15 +94,26 @@ function Totals({
 }
 
 function Summary({
+  goal,
+  withGoal = false,
   totals,
   showSource = false,
 }: {
   totals: NutritionTotals;
+  goal?: string | null;
+  withGoal?: boolean;
   showSource?: boolean;
 }) {
   return (
     <Stack gap="xs">
       <Totals totals={totals} label={m.totals} />
+      {withGoal && (
+        <GoalComparison
+          actual={totals.calories}
+          goal={goal ?? null}
+          unit="ккал"
+        />
+      )}
       <MacroEnergyPie
         totals={totals}
         labels={m.nutrients}
@@ -120,6 +134,7 @@ function Summary({
 export function DiaryView({
   date,
   day,
+  goals,
   photos = [],
   source,
   commentsSlot,
@@ -176,8 +191,15 @@ export function DiaryView({
           component="section"
           aria-label={m.daySummary}
         >
-          <Summary {...day} showSource />
+          <Summary {...day} goal={goals?.calories} withGoal showSource />
         </Card>
+      )}
+      {!day && (
+        <GoalComparison
+          actual={null}
+          goal={goals?.calories ?? null}
+          unit="ккал"
+        />
       )}
       {day && mealSections.length === 0 && !photosPendingSlot && (
         <Alert>{m.emptyDay}</Alert>

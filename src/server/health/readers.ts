@@ -1,4 +1,5 @@
 import 'server-only';
+import { dailyGoalsRepository } from '@/server/yazio/goals';
 import { summarizeSteps } from '@/lib/steps-summary';
 import { getAuth } from '@/server/auth';
 import { authorize } from '@/server/auth/guards';
@@ -39,7 +40,11 @@ export async function getStepsSummary(headers: Headers, input: unknown) {
   const { ownerId, range } = await selectScope(headers, input);
   const records = yazioHealthRepository().steps(ownerId, range);
   await check(headers, ownerId);
-  return summarizeSteps(range, records);
+  return summarizeSteps(
+    range,
+    records,
+    dailyGoalsRepository().list(ownerId, range),
+  );
 }
 export async function getWeightHistory(headers: Headers, input: unknown) {
   const { ownerId, range } = await selectScope(headers, input);

@@ -44,13 +44,13 @@ const extraDescriptions = {
 };
 const descriptions = {
   get_profile:
-    'Read saved owner profile units and daily step goal. No contact details. Unstored goals are null.',
+    'Read saved owner profile units and dated YAZIO base calorie and step goals. No contact details. Unstored goals are null.',
   get_nutrition:
     'YAZIO nutrition, using Tempo analytics exactly. Summary excludes saved empty diaries from means. daily: totals and quality including missing dates. records: food entries (max 31 days). Never infer fasting from empty/missing.',
   get_body_metrics:
     'Weight and circumference analytics from LOCAL and YAZIO. Summary: endpoints, change, weekly rate and ambiguity. daily/records: observations. Missing dates are not zero.',
   get_activity:
-    'YAZIO steps and local daily goal. Summary uses observed-day averages. daily/records includes missing days as null and recorded zeros as 0.',
+    'Saved YAZIO steps and dated step goals. Profile includes saved dated YAZIO base calorie and step goals. Summary uses observed-day averages. daily/records includes missing days as null and recorded zeros as 0.',
   get_workouts:
     'Paginated saved LOCAL workouts and TransformMate linked/native workouts. Summary/daily: compact workout rows; records: planned and actual sets (max 31 days). Use summary.completedSessions for the whole range (never sum across pages). Each LOCAL workout appears once; planned rows carry planned sets and in_progress/completed rows carry execution sets. Count only executionStatus=completed; coverage and recordCounts do not indicate execution. Empty fact placeholders are not_started; missing facts are unknown. If completionCountAmbiguous is true, completedSessions is null: LOCAL and linked completed facts may overlap; matching workoutId identifies the local workout but does not prove identical provider execution. No upstream refresh. Provider completeness is unknown.',
   get_workout:

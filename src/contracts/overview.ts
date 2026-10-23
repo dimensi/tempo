@@ -1,5 +1,8 @@
 import type { NutritionTotals } from '@/contracts/nutrition';
+import type { DailyGoals } from './daily-goals';
 export interface OverviewData {
+  goals: DailyGoals;
+  steps: number | null;
   today: string;
   timezone: string;
   nutrition: {

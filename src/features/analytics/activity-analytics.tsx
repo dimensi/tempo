@@ -1,5 +1,6 @@
 'use client';
-import { BarChart } from '@mantine/charts';
+import { goalMessages as gm } from '@/contracts/daily-goals';
+import { CompositeChart } from '@mantine/charts';
 import { Badge, Group, Paper, Stack, Table, Text, Title } from '@mantine/core';
 import type { AnalyticsData } from '@/contracts/analytics';
 import { analyticsMessages as m } from './messages';
@@ -29,6 +30,11 @@ export function ActivityAnalytics({
       </Paper>
     );
   const { summary, updatedAt } = block.data;
+  const paired = summary.days.filter(
+    (day) =>
+      day.date < context.today && day.steps !== null && day.goal !== null,
+  );
+  const achieved = paired.filter((day) => day.steps! >= day.goal!).length;
   return (
     <Paper
       withBorder
@@ -62,14 +68,28 @@ export function ActivityAnalytics({
             {m.stepDays(summary.observedDays, summary.days.length)}
           </Text>
         </Stack>
+        <Text size="sm">
+          {gm.achievement}: {achieved} / {paired.length} {gm.days}
+        </Text>
         {summary.observedDays === 0 ? (
           <Text>{m.emptySteps}</Text>
         ) : (
-          <BarChart
+          <CompositeChart
             h={240}
             data={summary.days}
             dataKey="date"
-            series={[{ name: 'steps', label: m.steps, color: 'teal.7' }]}
+            series={[
+              { name: 'steps', label: m.steps, color: 'teal.7', type: 'bar' },
+              {
+                name: 'goal',
+                label: gm.goal,
+                color: 'gray.7',
+                type: 'line',
+                strokeDasharray: '5 5',
+              },
+            ]}
+            connectNulls={false}
+            withLegend
             maxBarWidth={32}
             barProps={{ isAnimationActive: false }}
             yAxisProps={{ domain: [0, 'auto'] }}

@@ -15,14 +15,13 @@ export type NutritionScheduleInput = z.infer<
 >;
 export const nutritionScheduleStatusSchema = z.object({
   enabled: z.boolean(),
-  schedulerActive: z.boolean(),
+  automaticAvailable: z.boolean(),
   timezone: nutritionTimezoneSchema,
   initialFrom: diaryDateSchema.nullable(),
   lastSuccess: z.iso.datetime().nullable(),
   lastError: z
     .enum(['NOT_CONFIGURED', 'SYNC_FAILED', 'PHOTO_INCOMPLETE', 'LEASE_LOST'])
     .nullable(),
-  nextRunAt: z.iso.datetime().nullable(),
   attempt: z.number().int().min(0).max(3),
   running: z.boolean(),
 });

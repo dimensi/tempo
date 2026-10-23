@@ -25,7 +25,7 @@
 
 .nutrition {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-template-columns: minmax(0, 1fr) 160px;
   gap: 24px;
   align-items: center;
 }
@@ -52,4 +52,11 @@
   .today {
     padding: 16px;
   }
+}
+
+.stepsValue {
+  font-size: 40px;
+  font-weight: 600;
+  margin-block: 20px;
+  font-variant-numeric: tabular-nums;
 }

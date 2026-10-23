@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { syncStatusSchema, yazioAccountSchema } from './nutrition-sync';
 import { nutritionScheduleStatusSchema } from './nutrition-schedule';
 import { transformMateConnectionStatusSchema } from './transformmate-connection';
-import { stepsGoalSchema } from './steps-goal';
+import { dailyGoalsSchema } from './daily-goals';
 export const readSettingsSchema = z.strictObject({
   yazio: z.object({
     configured: z.boolean(),
@@ -20,7 +20,7 @@ export const readSettingsSchema = z.strictObject({
       granted: z.boolean(),
     }),
   ),
-  stepsGoal: stepsGoalSchema,
+  goals: dailyGoalsSchema,
 });
 
 export type ReadSettings = z.infer<typeof readSettingsSchema>;

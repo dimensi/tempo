@@ -1,4 +1,5 @@
 import 'server-only';
+import { dailyGoalsRepository } from '@/server/yazio/goals';
 import type { NutritionDay } from '@/contracts/nutrition';
 import type { Measurement } from '@/contracts/measurements';
 import type { StepsSummary, WeightHistory } from '@/contracts/health';
@@ -137,6 +138,7 @@ export async function loadAnalytics(
       value: String(calendarDays - activity.value.summary.observedDays),
     });
   return {
+    goals: dailyGoalsRepository().list(ownerId, range),
     range,
     previousRange: previous,
     today: dateInTimezone(now, timezone.data),

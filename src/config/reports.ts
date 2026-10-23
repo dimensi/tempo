@@ -63,7 +63,7 @@ export const reportMessages = {
   entryCount: 'Записей',
   steps: 'Шаги',
   averageSteps: 'Шаги в среднем за день',
-  currentStepsGoal: 'Текущая цель',
+  currentStepsGoal: 'Цель на день',
   goalProgress: 'от цели',
   stepsCoverage: (known: number, total: number) =>
     `Данных за ${known} из ${total} дней`,

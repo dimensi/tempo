@@ -20,6 +20,7 @@ export const stepsSummarySchema = z
               .max(Number.MAX_SAFE_INTEGER)
               .nullable(),
             source: z.literal('YAZIO').nullable(),
+            goal: z.number().int().positive().nullable(),
           })
           .strict(),
       )

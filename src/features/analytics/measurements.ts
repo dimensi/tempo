@@ -18,45 +18,28 @@ export function measurementsInRange(
 }
 
 export function bodyChart(observations: BodyObservation[]) {
-  const byDate = new Map<
-    string,
-    { local: BodyObservation[]; yazio: BodyObservation[] }
-  >();
-  observations.forEach((record) => {
-    const row = byDate.get(record.date) ?? { local: [], yazio: [] };
-    row[record.source === 'LOCAL' ? 'local' : 'yazio'].push(record);
-    byDate.set(record.date, row);
-  });
-  const rows: Array<{
-    date: string;
-    time: number;
-    local: number | null;
-    yazio: number | null;
-  }> = [];
+  const rows: Array<{ date: string; time: number; value: number | null }> = [];
   let previous: string | null = null;
-  [...byDate.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .forEach(([date, values]) => {
-      if (previous && (Date.parse(date) - Date.parse(previous)) / 86400000 > 7)
-        rows.push({
-          date: new Date(Date.parse(previous) + 86400000)
-            .toISOString()
-            .slice(0, 10),
-          time: Date.parse(previous) + 86400000,
-          local: null,
-          yazio: null,
-        });
-      Array.from(
-        { length: Math.max(values.local.length, values.yazio.length) },
-        (_, index) =>
-          rows.push({
-            date,
-            time: Date.parse(date),
-            local: toChartNumber(values.local[index]?.value ?? null),
-            yazio: toChartNumber(values.yazio[index]?.value ?? null),
-          }),
-      );
-      previous = date;
+  for (const record of [...observations].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
+  )) {
+    if (
+      previous &&
+      (Date.parse(record.date) - Date.parse(previous)) / 86400000 > 7
+    )
+      rows.push({
+        date: new Date(Date.parse(previous) + 86400000)
+          .toISOString()
+          .slice(0, 10),
+        time: Date.parse(previous) + 86400000,
+        value: null,
+      });
+    rows.push({
+      date: record.date,
+      time: Date.parse(record.date),
+      value: toChartNumber(record.value),
     });
+    previous = record.date;
+  }
   return rows;
 }

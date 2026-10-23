@@ -22,8 +22,10 @@ Steps are daily bars with observed zeroes and missing gaps. Means exclude missin
 
 `src/server/analytics` authorizes nutrition and measurement reads against the requested owner before loading and again afterward. Failures of nutrition, body or steps have independent block states. Failure of previous-period reads keeps current data visible but removes comparison. Authorization failures remain full denials, including a trainer grant revoked during loading. DTOs omit notes, owner IDs and upstream secrets. `/analytics/data` returns the same new composition with private no-store caching; it replaces the old response directly.
 
-Highlights use deterministic rules (at most four lines), never goal-free good/bad judgments. Tables and calculation explanations are disclosed on demand. No expenditure, deficit, medical assessment, goals, correlation, forecast, workout analytics or rolling average is included.
+Highlights use deterministic rules (at most four lines), never goal-free good/bad judgments. Tables and calculation explanations are disclosed on demand. Dated YAZIO base calorie and steps goals are reference lines with gaps for unknown dates. Paired-day calorie deviation and steps achievement exclude today. No expenditure, deficit, medical assessment, correlation, forecast, workout analytics or rolling average is included.
 
 Verification covers cohort semantics, precision, equal-length date ranges, source ambiguity, actual observation rate, zero denominators, independent failure/recovery, access revocation, URL navigation and desktop/mobile rendering in both themes. Fixtures are synthetic and confined to disposable test databases.
 
 The production browser harness excludes offline tests from the general family. The rolling-calendar offline fixture now uses the browser timezone consistently and a fixed instant near midnight, tested in both UTC and Europe/Moscow. Analytics fixtures use real sessions on the isolated HTTPS gateway and keep service workers blocked to test server reads and access revocation.
+
+Measurement charts have one neutral series per metric. Distinct same-day observations retain separate points; only already-linked imports are excluded upstream. Existing float32 projection, gaps and ambiguous endpoint safeguards remain.

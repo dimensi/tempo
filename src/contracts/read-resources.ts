@@ -22,7 +22,7 @@ import { analyticsDataSchema } from './read-analytics';
 import { readContextSchema } from './read-context';
 import { readSettingsSchema } from './read-settings';
 import { workoutDetailSchema } from './read-workout';
-import { stepsGoalSchema } from './steps-goal';
+import { dailyGoalsSchema } from './daily-goals';
 import {
   transformMateCatalogResultSchema,
   transformMateExerciseInfoSchema,
@@ -52,6 +52,8 @@ export const overviewReadSchema: z.ZodType<OverviewData> = z.object({
     confirmedDays: z.number(),
     partialDays: z.number(),
   }),
+  goals: dailyGoalsSchema,
+  steps: z.number().nullable(),
   weight: z.object({
     latest: z.object({ date: z.string(), value: z.string() }).nullable(),
     points: z.array(weightPoint),
@@ -126,7 +128,7 @@ export function readResponseSchema(path: string): z.ZodType | undefined {
   if (path === '/api/measurements') return z.array(measurementSchema);
   if (path === '/api/health/weight') return weightHistorySchema;
   if (path === '/api/health/steps') return stepsSummarySchema;
-  if (path === '/api/settings/steps-goal') return stepsGoalSchema;
+  if (path === '/api/health/goals') return dailyGoalsSchema;
   if (path === '/api/nutrition/days') return z.array(nutritionDaySchema);
   if (/^\/api\/nutrition\/days\/\d{4}-\d{2}-\d{2}$/.test(path))
     return nutritionDaySchema;

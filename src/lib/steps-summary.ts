@@ -8,11 +8,13 @@ const HealthDecimal = Decimal.clone({ precision: 40 });
 export function summarizeSteps(
   range: HealthRange,
   records: { date: string; steps: number | null }[],
+  goals: { date: string; steps: number | null }[] = [],
 ) {
   const byDate = new Map(records.map((record) => [record.date, record]));
   const days = healthRangeDates(range).map((date) => ({
     date,
     steps: byDate.get(date)?.steps ?? null,
+    goal: goals.find((goal) => goal.date === date)?.steps ?? null,
     source: byDate.has(date) ? ('YAZIO' as const) : null,
   }));
   const observed = days.filter((day) => day.steps !== null);

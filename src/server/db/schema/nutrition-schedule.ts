@@ -19,6 +19,9 @@ export const nutritionSchedule = sqliteTable(
     initialFrom: text('initial_from'),
     epoch: integer('epoch').notNull().default(0),
     lastSuccess: integer('last_success'),
+    automaticAttemptAt: integer('automatic_attempt_at'),
+    recentSuccessAt: integer('recent_success_at'),
+    recentSuccessDate: text('recent_success_date'),
     lastError: text('last_error', {
       enum: ['NOT_CONFIGURED', 'SYNC_FAILED', 'PHOTO_INCOMPLETE', 'LEASE_LOST'],
     }),

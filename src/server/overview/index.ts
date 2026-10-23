@@ -1,4 +1,6 @@
 import 'server-only';
+import { dailyGoalsRepository } from '@/server/yazio/goals';
+import { yazioHealthRepository } from '@/server/yazio/health-repository';
 import {
   dateInTimezone,
   shiftDate,
@@ -101,6 +103,10 @@ export async function getOverview(
   const data: OverviewData = {
     today,
     timezone: timezone.data,
+    goals: dailyGoalsRepository().day(ownerId, today),
+    steps:
+      yazioHealthRepository().steps(ownerId, { from: today, to: today })[0]
+        ?.steps ?? null,
     nutrition: {
       today: days.find((day) => day.date === today)?.totals ?? null,
       meanCalories: summary.nutrients.calories.mean,
@@ -122,7 +128,7 @@ export async function getOverview(
     const schedule = getNutritionSchedule(ownerId);
     const sync = nutritionRepository().status(ownerId);
     data.sync = {
-      running: schedule.running || sync.state === 'running',
+      running: schedule.running,
       lastSuccess:
         schedule.lastSuccess ??
         (sync.state === 'completed' ? sync.finishedAt : null),

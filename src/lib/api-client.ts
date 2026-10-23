@@ -3,6 +3,7 @@ import {
   readResponseSchema,
 } from '@/contracts/read-resources';
 import { reportNetworkResult } from './network-state';
+import { apiResults } from './api-results';
 import { sessionGeneration } from './session-state';
 let ending: Promise<void> | undefined;
 async function performApiFetch(input: RequestInfo | URL, init?: RequestInit) {
@@ -128,4 +129,14 @@ export async function apiFetch(
       ])
     : flight);
   return response.clone();
+}
+
+export async function requestOverviewRefresh(timezone: string) {
+  const response = await apiFetch('/api/yazio/overview-refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timezone }),
+  });
+  if (!response.ok) throw new Error('Overview refresh unavailable');
+  return apiResults.overviewRefresh(await response.json());
 }

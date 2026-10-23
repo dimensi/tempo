@@ -3,7 +3,9 @@ import { authorize } from '@/server/auth/guards';
 import { getYazioStatus } from '@/server/yazio/settings';
 import { getTransformMateStatus } from '@/server/transformmate/connection';
 import { listTrainers } from '@/server/access/trainers';
-import { getStepsGoal } from '@/server/settings/steps-goal';
+import { getDailyGoals } from '@/server/settings/daily-goals';
+import { dateInTimezone } from '@/contracts/nutrition-sync-dates';
+import { getNutritionSchedule } from '@/server/jobs/nutrition-scheduler';
 import { readSettingsSchema } from '@/contracts/read-settings';
 export class ReadSettingsError extends Error {
   constructor(public status: number) {
@@ -16,17 +18,21 @@ export async function readSettings(headers: Headers, ownerId: string) {
     if (!access.ok) throw new ReadSettingsError(access.status);
   };
   await check();
-  const [yazio, transformMate, trainers, stepsGoal] = await Promise.all([
+  const [yazio, transformMate, trainers, goals] = await Promise.all([
     getYazioStatus(headers),
     getTransformMateStatus(headers),
     listTrainers(headers, ownerId),
-    getStepsGoal(headers),
+    getDailyGoals(
+      headers,
+      ownerId,
+      dateInTimezone(new Date(), getNutritionSchedule(ownerId).timezone),
+    ),
   ]);
   await check();
   return readSettingsSchema.parse({
     yazio,
     transformMate,
     trainers,
-    stepsGoal,
+    goals,
   });
 }

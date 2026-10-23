@@ -520,7 +520,7 @@ export function YazioSettingsForm({
             <Text size="sm">
               {!status.schedule.enabled
                 ? messages.scheduleDisabled
-                : status.schedule.schedulerActive
+                : status.schedule.automaticAvailable
                   ? messages.automatic
                   : messages.schedulerInactive}
             </Text>
@@ -537,16 +537,6 @@ export function YazioSettingsForm({
                     },
                   )
                 : messages.noRuns}
-            </Text>
-            <Text size="sm">
-              {messages.nextRun}:{' '}
-              {ready &&
-              status.schedule.schedulerActive &&
-              status.schedule.nextRunAt
-                ? new Date(status.schedule.nextRunAt).toLocaleString('ru-RU', {
-                    timeZone: timezone,
-                  })
-                : messages.pendingRun}
             </Text>
             {status.schedule.lastError && (
               <Alert color="yellow" role="status">

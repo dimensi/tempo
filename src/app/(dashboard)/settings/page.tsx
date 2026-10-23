@@ -11,7 +11,7 @@ import { Skeleton, Stack, Text } from '@mantine/core';
 import { useState } from 'react';
 import { AppearanceSettings } from './appearance';
 import { SettingsNavigation } from './settings-navigation';
-import { StepsGoalForm } from './steps-goal-form';
+import { DailyGoals } from './daily-goals';
 import { TransformMateSettingsForm } from './transformmate/settings-form';
 import { YazioSettingsForm } from './yazio/settings-form';
 import { McpSettings } from './mcp-settings';
@@ -69,7 +69,7 @@ export default function Page() {
                   <AccessPanel ownerId={ownerId} />
                 </Stack>
               </section>
-              <StepsGoalForm initial={data.stepsGoal} />
+              <DailyGoals goals={data.goals} />
               <McpSettings />
               <OfflineSettings />
             </>

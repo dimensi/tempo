@@ -31,49 +31,24 @@ export function groupPrecisionIssues(issues: MeasurementPrecisionIssue[]) {
   return [...groups.values()];
 }
 
-// Pair source observations by date without averaging, selecting a last value,
-// or collapsing same-day records. Distinct observations retain distinct slots.
+// Keep every observation without averaging or selecting a source. The chart
+// places distinct same-day values at the same calendar-time coordinate.
 export function weightTrendChart(history: WeightHistory) {
-  const byDate = new Map<
-    string,
-    { local: (number | null)[]; yazio: (number | null)[] }
-  >();
-  const add = (
-    date: string,
-    source: 'local' | 'yazio',
-    value: string | null,
-  ) => {
-    const row = byDate.get(date) ?? { local: [], yazio: [] };
-    row[source].push(
-      value === null
-        ? null
-        : Number(
-            source === 'yazio'
-              ? (canonicalYazioBodyValue(value) ?? value)
-              : value,
-          ),
-    );
-    byDate.set(date, row);
-  };
-  history.local.forEach((record) =>
-    add(record.measuredAt, 'local', record.value),
-  );
-  history.imported.forEach((record) =>
-    add(record.measuredAt, 'yazio', record.rawValue),
-  );
-  return [...byDate.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .flatMap(([date, values]) =>
-      Array.from(
-        { length: Math.max(values.local.length, values.yazio.length) },
-        (_, index) => ({
-          date,
-          local: values.local[index] ?? null,
-          yazio: values.yazio[index] ?? null,
-        }),
-      ),
-    );
+  return [
+    ...history.local.map((record) => ({
+      date: record.measuredAt,
+      value: Number(record.value),
+    })),
+    ...history.imported.map((record) => ({
+      date: record.measuredAt,
+      value:
+        record.rawValue === null
+          ? null
+          : Number(canonicalYazioBodyValue(record.rawValue) ?? record.rawValue),
+    })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
 }
+
 export function measurementChange(
   items: Measurement[],
   item: Measurement,

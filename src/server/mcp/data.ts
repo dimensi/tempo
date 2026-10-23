@@ -11,7 +11,9 @@ import { authorize } from '@/server/auth/guards';
 import { listNutritionDays } from '@/server/nutrition';
 import { listSavedWorkouts } from '@/server/workouts/saved-read';
 import { exerciseHistoryRef } from './workouts';
-import { getReadStepsGoal } from '@/server/settings/steps-goal';
+import { getDailyGoals } from '@/server/settings/daily-goals';
+import { getNutritionSchedule } from '@/server/jobs/nutrition-scheduler';
+import { dateInTimezone } from '@/contracts/nutrition-sync-dates';
 import { measurementMetrics } from '@/contracts/measurements';
 import { healthRangeDates } from '@/contracts/health';
 import type {
@@ -53,7 +55,11 @@ export async function readMcpData(
 ) {
   await check(headers, ownerId);
   if (tool === 'get_profile') {
-    const goal = await getReadStepsGoal(headers, ownerId);
+    const goal = await getDailyGoals(
+      headers,
+      ownerId,
+      dateInTimezone(new Date(), getNutritionSchedule(ownerId).timezone),
+    );
     await check(headers, ownerId);
     return {
       version: 1 as const,
@@ -62,13 +68,15 @@ export async function readMcpData(
         role: 'OWNER',
         units,
         goals: {
-          dailySteps: goal.dailyStepsGoal,
-          nutrition: null,
+          date: goal.date,
+          fetchedAt: goal.fetchedAt,
+          dailySteps: goal.steps,
+          nutrition: goal.calories,
           weight: null,
         },
         coverage: {
-          dailySteps: goal.dailyStepsGoal === null ? 'missing' : 'recorded',
-          nutrition: 'not_stored',
+          dailySteps: goal.steps === null ? 'missing' : 'recorded',
+          nutrition: goal.calories === null ? 'missing' : 'recorded',
           weight: 'not_stored',
         },
         dates: 'YYYY-MM-DD; diary/provider calendar dates, not UTC instants',
@@ -399,8 +407,10 @@ export async function readMcpData(
         coverage: activityCoverage,
         totalSteps: a.data.summary.totalSteps,
         averageSteps: a.data.summary.averageSteps,
-        dailyStepsGoal: (await getReadStepsGoal(headers, ownerId))
-          .dailyStepsGoal,
+        dailyGoals: a.data.summary.days.map(({ date, goal }) => ({
+          date,
+          steps: goal,
+        })),
       };
       if (detail !== 'summary') rows = a.data.summary.days;
     } else {

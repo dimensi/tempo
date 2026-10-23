@@ -107,13 +107,12 @@ export async function getSavedDataFreshness(
         },
         automatic: {
           enabled: schedule.enabled,
-          active: schedule.schedulerActive,
+          active: schedule.automaticAvailable,
           lastSuccessAt: schedule.lastSuccess,
           lastErrorCode:
             schedule.lastError === 'PHOTO_INCOMPLETE'
               ? null
               : schedule.lastError,
-          nextRunAt: schedule.nextRunAt,
         },
       });
     }),

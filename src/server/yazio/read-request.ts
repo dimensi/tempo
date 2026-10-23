@@ -7,7 +7,14 @@ import {
 
 type ReadContext = {
   operation:
-    'items' | 'summary' | 'photos' | 'product' | 'recipe' | 'weight' | 'body';
+    | 'items'
+    | 'summary'
+    | 'photos'
+    | 'product'
+    | 'recipe'
+    | 'weight'
+    | 'body'
+    | 'goals';
   date?: string;
 };
 

@@ -29,7 +29,6 @@ export const savedSourceFreshnessSchema = z.strictObject({
       lastErrorCode: z
         .enum(['NOT_CONFIGURED', 'SYNC_FAILED', 'LEASE_LOST'])
         .nullable(),
-      nextRunAt: z.iso.datetime().nullable(),
     })
     .optional(),
 });

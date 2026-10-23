@@ -1,4 +1,8 @@
 'use client';
+import { GoalComparison } from '@/components/shared/goal-comparison';
+import { goalMessages } from '@/contracts/daily-goals';
+import { requestOverviewRefresh } from '@/lib/api-client';
+import { revalidateVisibleReads } from '@/lib/client-read';
 import { PageHeader } from '@/components/layout/page-header';
 import type { OverviewData } from '@/contracts/overview';
 import { shiftDate } from '@/contracts/nutrition-sync-dates';
@@ -21,7 +25,13 @@ import {
   Title,
 } from '@mantine/core';
 import Link from 'next/link';
-import { createElement, useEffect, useState, type ElementType } from 'react';
+import {
+  createElement,
+  useEffect,
+  useState,
+  useRef,
+  type ElementType,
+} from 'react';
 import { localCalendar, nextMidnightDelay } from './calendar';
 import { overviewMessages as m } from './messages';
 import classes from './overview.module.css';
@@ -89,6 +99,62 @@ export function Overview({
     data.timezone === calendar.timezone
       ? data
       : null);
+  const [automaticPending, setAutomaticPending] = useState(false);
+  const owner = !saved && !!current?.sync;
+  const syncTimezone = calendar?.timezone;
+  const syncToday = calendar?.today;
+  useEffect(() => {
+    if (!owner || !syncTimezone) return;
+    let inFlight = false;
+    function sync() {
+      if (!syncTimezone || inFlight || document.visibilityState !== 'visible')
+        return;
+      inFlight = true;
+      setAutomaticPending(true);
+      void requestOverviewRefresh(syncTimezone)
+        .then(() => revalidateVisibleReads())
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false;
+          setAutomaticPending(false);
+        });
+    }
+    sync();
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('focus', sync);
+    return () => {
+      document.removeEventListener('visibilitychange', sync);
+      window.removeEventListener('focus', sync);
+    };
+  }, [owner, syncToday, syncTimezone]);
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    const running = !!current?.sync?.running;
+    if (wasRunning.current && !running) revalidateVisibleReads();
+    wasRunning.current = running;
+  }, [current?.sync?.running]);
+  useEffect(() => {
+    if (!current?.sync?.running && !automaticPending) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      await refreshResource();
+      if (!disposed && document.visibilityState === 'visible')
+        timer = setTimeout(() => void poll(), 2000);
+    }
+    function visible() {
+      clearTimeout(timer);
+      if (document.visibilityState === 'visible')
+        timer = setTimeout(() => void poll(), 2000);
+    }
+    visible();
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [current?.sync?.running, automaticPending, refreshResource]);
   return (
     <Stack gap={32} className={classes.surface}>
       <Stack gap={4}>
@@ -132,7 +198,27 @@ export function Overview({
                 {m.diary}
               </Anchor>
             </Group>
-            <TodayNutrition totals={current.nutrition.today} />
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl">
+              <Stack>
+                <TodayNutrition totals={current.nutrition.today} />
+                <GoalComparison
+                  actual={current.nutrition.today?.calories ?? null}
+                  goal={current.goals.calories}
+                  unit={m.kcal}
+                />
+              </Stack>
+              <Stack gap="md">
+                <Title order={3}>{goalMessages.stepsTitle}</Title>
+                <Text className={classes.stepsValue}>
+                  {formatDecimal(current.steps) ?? m.empty}
+                </Text>
+                <GoalComparison
+                  actual={current.steps}
+                  goal={current.goals.steps}
+                  unit={goalMessages.stepsUnit}
+                />
+              </Stack>
+            </SimpleGrid>
           </section>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={40}>
             <section aria-labelledby="workouts-heading">
