@@ -12,9 +12,14 @@ import {
   mcpProfileInput,
   mcpOutput,
   mcpTools,
+  mcpWorkoutInput,
+  mcpExerciseHistoryInput,
 } from '@/contracts/mcp';
 import { readMcpData } from './data';
 import { McpReadError } from './pagination';
+import { readMcpWorkout, readMcpExerciseHistory } from './workouts';
+import { SavedWorkoutRangeError } from '@/server/workouts/saved-read';
+import { WorkoutAccessError } from '@/server/workouts';
 
 const descriptions = {
   get_profile:
@@ -27,6 +32,10 @@ const descriptions = {
     'YAZIO steps and local daily goal. Summary uses observed-day averages. daily/records includes missing days as null and recorded zeros as 0.',
   get_workouts:
     'Paginated saved LOCAL plans/sessions and TransformMate linked/native workouts. Summary/daily: compact workout rows; records: planned and actual sets (max 31 days). Use summary.completedSessions for the whole range (never sum across pages). Count only executionStatus=completed; coverage and recordCounts do not indicate execution. Empty fact placeholders are not_started; missing facts are unknown. If completionCountAmbiguous is true, completedSessions is null: LOCAL and linked completed facts may overlap; planId/workoutId alone cannot prove session identity. No upstream refresh. Provider completeness is unknown.',
+  get_workout:
+    'Read one saved workout by workoutRef from get_workouts. Summary: paginated exercise occurrences with historyRef and set counts. records: paginated planned/actual set rows; empty provider sets have recorded=false. related_workout rows are references, not additional completed workouts. No refresh, files or media.',
+  get_exercise_history:
+    'Read saved actual sets by exact TransformMate exerciseRef over at most 366 days, including explicitly mapped LOCAL sets. Never match names or occurrence UUIDs. Includes in-progress and completed records with status; excludes skipped sessions, plans and empty fact placeholders. Default records: one set per row; summary: occurrence counts. possibleOverlap means sources may describe the same session; never sum or auto-deduplicate them. Unknown upstream completeness. No refresh.',
   get_data_coverage:
     'Coverage of saved nutrition, weight, circumferences and steps; unavailable is distinct from empty. daily/records: per-date nutrition/step coverage. freshness separates latest saved record date, fetch/check timestamps and saved sync status. Run status is global, not proof the requested range was refreshed. unknown is not success; LOCAL measurement dates are not fetch times; photo failures do not mean missing food. No refresh is triggered. Workout upstream completeness cannot be proven from local history.',
 };
@@ -124,7 +133,13 @@ export async function handleMcp(request: Request) {
         {
           description: descriptions[name],
           inputSchema:
-            name === 'get_profile' ? mcpProfileInput : mcpHistoryInput,
+            name === 'get_profile'
+              ? mcpProfileInput
+              : name === 'get_workout'
+                ? mcpWorkoutInput
+                : name === 'get_exercise_history'
+                  ? mcpExerciseHistoryInput
+                  : mcpHistoryInput,
           outputSchema: mcpOutput,
           annotations: {
             readOnlyHint: true,
@@ -138,10 +153,27 @@ export async function handleMcp(request: Request) {
         },
         async (input) => {
           try {
-            const args =
-              name === 'get_profile' ? undefined : mcpHistoryInput.parse(input);
             const result = mcpOutput.parse(
-              await readMcpData(name, headers, principal.user.id, args),
+              name === 'get_workout'
+                ? await readMcpWorkout(
+                    headers,
+                    principal.user.id,
+                    mcpWorkoutInput.parse(input),
+                  )
+                : name === 'get_exercise_history'
+                  ? await readMcpExerciseHistory(
+                      headers,
+                      principal.user.id,
+                      mcpExerciseHistoryInput.parse(input),
+                    )
+                  : await readMcpData(
+                      name,
+                      headers,
+                      principal.user.id,
+                      name === 'get_profile'
+                        ? undefined
+                        : mcpHistoryInput.parse(input),
+                    ),
             );
             const json = JSON.stringify(result);
             if (Buffer.byteLength(json) > 64000)
@@ -152,7 +184,14 @@ export async function handleMcp(request: Request) {
             };
           } catch (error) {
             const code =
-              error instanceof McpReadError ? error.code : 'data_unavailable';
+              error instanceof McpReadError
+                ? error.code
+                : error instanceof SavedWorkoutRangeError
+                  ? 'narrow_range'
+                  : error instanceof WorkoutAccessError &&
+                      [401, 403].includes(error.status)
+                    ? 'access_denied'
+                    : 'data_unavailable';
             return {
               isError: true,
               content: [{ type: 'text' as const, text: code }],
