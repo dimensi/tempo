@@ -206,6 +206,9 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     page.getByRole('heading', { name: 'Дневник питания', exact: true }),
   ).toBeVisible();
   await page.goto('/workouts');
+  await page.route('**/api/offline/writes', (route) =>
+    route.request().method() === 'POST' ? route.abort() : route.continue(),
+  );
   await page
     .getByRole('button', { name: 'Создать тренировку', exact: true })
     .click();
@@ -263,6 +266,37 @@ test('real login reaches core sections, recovers a cached workout offline, purge
         sets: [{ weightKg: 20, reps: 10 }],
       });
   };
+  // An unacknowledged new workout must remain recoverable through the create flow.
+  await titleInput.fill('Queued new workout');
+  await note.fill('Unacknowledged draft');
+  await expect(
+    page.getByText(
+      'Результаты сохранены на устройстве и отправятся при подключении.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.goto('/diary');
+  await page.goto('/workouts');
+  await page
+    .getByRole('button', { name: 'Создать тренировку', exact: true })
+    .click();
+  await expect(titleInput).toHaveValue('Queued new workout');
+  await expect(note).toHaveValue('Unacknowledged draft');
+  await page.unroute('**/api/offline/writes');
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => window.dispatchEvent(new Event('online')));
+        const response = await page.request.get(
+          `/api/workouts?ownerId=${owner}`,
+        );
+        return ((await response.json()).data.workouts as Workout[]).some(
+          (item) => item.title === 'Queued new workout',
+        );
+      },
+      { timeout: 10000 },
+    )
+    .toBe(true);
   await fillPlan();
   // Delete directly from the still-mounted creation editor. A delayed/stale
   // list response must not keep the deleted editor visible until date navigation.

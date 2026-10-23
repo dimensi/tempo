@@ -141,6 +141,7 @@ export function DayEditor({
   );
   const current = useRef(value);
   const saved = useRef(workout);
+  const acknowledged = useRef(Boolean(workout));
   const [savedWorkout, setSavedWorkout] = useState(workout);
   const pendingAction = useRef<WorkoutAction | undefined>(undefined);
   const revision = useRef(workout?.revision);
@@ -176,9 +177,10 @@ export function DayEditor({
     value.status !== 'completed' &&
     (canLog || value.status === 'planned');
   function persist(next: WorkoutDraft) {
-    const currentKey = saved.current
-      ? dayWorkoutDraftKey(identity, date, saved.current.id)
-      : key;
+    const currentKey =
+      saved.current && acknowledged.current
+        ? dayWorkoutDraftKey(identity, date, saved.current.id)
+        : key;
     const ok = storeWorkoutDraft(currentKey, requestId.current, {
       revision: revision.current ?? null,
       value: next,
@@ -443,7 +445,10 @@ export function DayEditor({
           );
           const result = await synchronizeDeviceWrite(operation);
           queued ||= !result;
-          if (result) revision.current = Number(result.version);
+          if (result) {
+            acknowledged.current = true;
+            revision.current = Number(result.version);
+          }
           next = {
             ...prior,
             ...data,
@@ -618,7 +623,10 @@ export function DayEditor({
         );
         const result = await synchronizeDeviceWrite(operation);
         queued = !result;
-        if (result) revision.current = Number(result.version);
+        if (result) {
+          acknowledged.current = true;
+          revision.current = Number(result.version);
+        }
         next = {
           ...parsed.data,
           id: recordId,
@@ -660,6 +668,7 @@ export function DayEditor({
         if (!response.ok)
           throw new Error(response.status === 409 ? m.conflict : m.error);
         next = workoutSchema.parse((await response.json()).data);
+        acknowledged.current = true;
         revision.current = next.revision;
       }
       if (!mounted.current || generation !== sessionGeneration()) return;
