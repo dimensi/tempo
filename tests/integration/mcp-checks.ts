@@ -343,8 +343,7 @@ export async function assertMcpAccess(
     expect(firstWorkout.data.records).toHaveLength(1);
     // A provider fact container can be an untouched draft, not another session.
     const linkId = randomUUID();
-    const state = syncStateSchema.parse({
-      version: 1,
+    const providerPlan = {
       workout: {
         id: planned.id,
         date: planned.date,
@@ -352,6 +351,10 @@ export async function assertMcpAccess(
         exercises: planned.exercises,
       },
       planTitle: planned.title,
+    };
+    const state = syncStateSchema.parse({
+      version: 1,
+      ...providerPlan,
       marker: `[yazio-dashboard:${linkId}]`,
       attempted: true,
       status: 'synced',
@@ -363,8 +366,8 @@ export async function assertMcpAccess(
       updateAttempt: {
         id: randomUUID(),
         phase: 'conflict',
-        previous: { workout: plan.workouts[0], planTitle: plan.title },
-        desired: { workout: plan.workouts[0], planTitle: plan.title },
+        previous: providerPlan,
+        desired: providerPlan,
         previousFingerprint: '0'.repeat(64),
         expectedFingerprint: null,
         connectionId: null,
