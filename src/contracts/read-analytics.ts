@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { dailyGoalsSchema } from './daily-goals';
 import { analyticsRangeSchema, type AnalyticsData } from './analytics';
 import { measurementSchema, measurementMetrics } from './measurements';
 import { stepsSummarySchema } from './health';
@@ -50,6 +51,7 @@ const block = <T extends z.ZodType>(data: T) =>
     z.object({ state: z.literal('error') }),
   ]);
 export const analyticsDataSchema: z.ZodType<AnalyticsData> = z.object({
+  goals: z.array(dailyGoalsSchema),
   range: analyticsRangeSchema,
   previousRange: analyticsRangeSchema,
   today: z.iso.date(),

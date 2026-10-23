@@ -59,6 +59,7 @@ export function TodayNutrition({ totals }: { totals: NutritionTotals | null }) {
             title={m.macroChart}
             unavailable={m.macroUnavailable}
             zero={m.zeroEnergy}
+            compact
           />
         </Stack>
       )}

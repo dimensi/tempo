@@ -19,6 +19,7 @@ export function AnalyticsDashboard({
   navigationSlot: ReactNode;
 }) {
   const context = {
+    goals: data.goals,
     today: data.today,
     timezone: data.timezone,
     canSync: data.canSync,

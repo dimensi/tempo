@@ -28,6 +28,7 @@ import { readSettingsSchema } from '@/contracts/read-settings';
 import { workoutDetailSchema } from '@/contracts/read-workout';
 import { transformMateCatalogResultSchema } from '@/contracts/transformmate';
 import { z } from 'zod';
+import { dailyGoalsSchema } from '@/contracts/daily-goals';
 import { reconcileRead } from './reconcile-read';
 export interface ReadDescriptor<T> {
   href: string | undefined;
@@ -46,6 +47,7 @@ function definition<S extends z.ZodType, T = z.output<S>>(
   });
 }
 export const readResources = {
+  goals: definition(dailyGoalsSchema),
   diary: definition(z.array(nutritionDaySchema)),
   photos: definition(z.array(safeMealPhotoViewSchema)),
   weight: definition(weightHistorySchema),

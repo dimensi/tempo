@@ -1,6 +1,8 @@
 'use client';
 import { useId } from 'react';
-import { BarChart } from '@mantine/charts';
+import Decimal from 'decimal.js';
+import { goalMessages as gm } from '@/contracts/daily-goals';
+import { CompositeChart } from '@mantine/charts';
 import { Box, Group, Paper, Stack, Table, Text, Title } from '@mantine/core';
 import type {
   AnalyticsBlock,
@@ -20,6 +22,7 @@ import {
   Freshness,
 } from './shared';
 import classes from './analytics.module.css';
+const Exact = Decimal.clone({ precision: 80 });
 const qualityLabel: Record<DayQuality, string> = {
   complete: m.complete,
   partial: m.incomplete,
@@ -98,7 +101,7 @@ export function NutritionAnalytics({
   context,
 }: {
   block: AnalyticsBlock<NutritionAnalysis>;
-  context: Pick<AnalyticsData, 'timezone' | 'today' | 'canSync'>;
+  context: Pick<AnalyticsData, 'timezone' | 'today' | 'canSync' | 'goals'>;
 }) {
   const patternId = `partial-${useId().replaceAll(':', '')}`;
   if (block.state === 'error')
@@ -111,7 +114,28 @@ export function NutritionAnalytics({
       </Paper>
     );
   const data = block.data;
-  const chart = nutritionChart(data.days);
+  const chart = nutritionChart(data.days).map((day) => ({
+    ...day,
+    goal: toChartNumber(
+      context.goals.find((goal) => goal.date === day.date)?.calories ?? null,
+    ),
+  }));
+  const paired = data.days.flatMap((day) => {
+    const goal = context.goals.find((goal) => goal.date === day.date)?.calories;
+    return day.date < context.today &&
+      day.quality !== 'empty' &&
+      day.quality !== 'missing' &&
+      day.totals.calories !== null &&
+      goal != null
+      ? [new Exact(day.totals.calories).minus(goal)]
+      : [];
+  });
+  const deviation = paired.length
+    ? paired
+        .reduce((sum, value) => sum.plus(value), new Exact(0))
+        .div(paired.length)
+        .toFixed()
+    : null;
   const mean = toChartNumber(data.calorieMean);
   return (
     <Paper
@@ -139,6 +163,10 @@ export function NutritionAnalytics({
               unit={m.kcal}
               failed={block.comparisonUnavailable}
             />
+            <Text size="sm">
+              {gm.deviation}: {display(deviation)} {m.kcal} · {paired.length}{' '}
+              {gm.days}
+            </Text>
             <Text size="sm" c="dimmed">
               {m.meanDays(data.calorieDays)}
             </Text>
@@ -153,18 +181,32 @@ export function NutritionAnalytics({
             {data.calorieDays + data.partialDays === 0 ? (
               <Text>{m.empty}</Text>
             ) : (
-              <BarChart
+              <CompositeChart
                 h={280}
                 data={chart}
                 dataKey="date"
-                type="stacked"
+                connectNulls={false}
+                withLegend
                 maxBarWidth={32}
                 series={[
-                  { name: 'complete', label: m.calories, color: 'teal.7' },
                   {
+                    name: 'complete',
+                    label: m.calories,
+                    color: 'teal.7',
+                    type: 'bar',
+                  },
+                  {
+                    type: 'bar',
                     name: 'partial',
                     label: m.known,
                     color: `url(#${patternId})`,
+                  },
+                  {
+                    name: 'goal',
+                    label: gm.goal,
+                    color: 'gray.7',
+                    type: 'line',
+                    strokeDasharray: '5 5',
                   },
                 ]}
                 barProps={{ isAnimationActive: false }}
@@ -224,7 +266,7 @@ export function NutritionAnalytics({
                     />
                   </pattern>
                 </defs>
-              </BarChart>
+              </CompositeChart>
             )}
             <Text size="sm" c="dimmed">
               {m.complete} — {m.calories.toLowerCase()};{' '}

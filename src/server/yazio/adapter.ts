@@ -1,5 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
+import Decimal from 'decimal.js';
+import type { DailyGoals } from '@/contracts/daily-goals';
 import { yazioHealthUpstream } from './health-adapter';
 import { normalizeHealthSummary } from './health-normalize';
 import { mealKindSchema, diaryDateTimeSchema } from '@/contracts/nutrition';
@@ -16,6 +18,7 @@ import {
   getProduct,
   getRecipe,
   getUserWeight,
+  getUserGoals,
 } from '@dimensi/yazio/api';
 import type { Token } from '@dimensi/yazio/auth';
 import { retryYazioRead } from '@/server/yazio/read-request';
@@ -91,6 +94,7 @@ export interface NutritionDayUpstream {
   recipe(id: string): Promise<Recipe | null>;
 }
 export interface NutritionUpstream extends NutritionDayUpstream {
+  goals(date: string): Promise<Pick<DailyGoals, 'date' | 'calories' | 'steps'>>;
   healthSummary(
     date: string,
   ): Promise<ReturnType<typeof normalizeHealthSummary>>;
@@ -145,6 +149,31 @@ export async function nutritionUpstream(
     return pending;
   };
   return {
+    goals: (date) =>
+      projectRead(async () => {
+        z.iso.date().parse(date);
+        const value = z
+          .object({
+            'energy.energy': z.number().finite().nonnegative().nullish(),
+            'activity.step': z
+              .number()
+              .int()
+              .nonnegative()
+              .max(Number.MAX_SAFE_INTEGER)
+              .nullish(),
+          })
+          .parse(
+            await read('goals', date, (token) => getUserGoals(token, { date })),
+          );
+        // The unmodified endpoint uses the same kcal energy key as food nutrients.
+        return {
+          date,
+          calories: value['energy.energy']
+            ? new Decimal(value['energy.energy']).toFixed()
+            : null,
+          steps: value['activity.step'] || null,
+        };
+      }),
     healthSummary: async (date) =>
       normalizeHealthSummary(await rawSummary(date), date),
     weight: health.weight,

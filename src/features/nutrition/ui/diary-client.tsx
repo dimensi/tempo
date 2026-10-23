@@ -4,6 +4,8 @@ import { browserToday } from '@/components/shared/date-navigation-dates';
 import { diaryDateSchema, type SafeMealPhotoView } from '@/contracts/nutrition';
 import { revalidateVisibleReads } from '@/lib/client-read';
 import { useReadOnline } from '@/lib/use-read-online';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
 import { Stack } from '@mantine/core';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
@@ -29,6 +31,9 @@ export function DiaryClient({
   loading = false,
   ...props
 }: DiaryClientProps) {
+  const goals = useReadResource(
+    readResources.goals(`/api/health/goals?date=${props.date}`),
+  );
   const router = useRouter();
   const online = useReadOnline();
   const params = useSearchParams();
@@ -47,6 +52,7 @@ export function DiaryClient({
     <DiaryView
       {...props}
       day={props.day}
+      goals={goals.data}
       navigationSlot={
         <Stack gap="sm">
           <DayNavigation key={props.date} date={props.date} pending={loading} />

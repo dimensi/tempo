@@ -139,6 +139,11 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
     for (const { tag } of replicaEntries)
       cpSync(`drizzle/${tag}.sql`, join(legacy, `${tag}.sql`));
     migrate(database.db, { migrationsFolder: legacy });
+    database.sqlite
+      .prepare(
+        'INSERT INTO owner_settings(owner_id,daily_steps_goal) VALUES (?,?)',
+      )
+      .run('owner', 12345);
     const replicaData = {
       detailAt: 0,
       imageAt: 0,
@@ -368,6 +373,19 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
     migrate(database.db, { migrationsFolder: unified });
     expect(() => workoutRepository(database.db).list('owner')).toThrow();
     migrate(database.db, { migrationsFolder: './drizzle' });
+    expect(
+      database.sqlite
+        .prepare(
+          'SELECT daily_steps_goal FROM owner_settings WHERE owner_id = ?',
+        )
+        .get('owner'),
+    ).toEqual({ daily_steps_goal: 12345 });
+    expect(
+      database.sqlite
+        .prepare('SELECT count(*) AS count FROM yazio_daily_goals')
+        .get(),
+    ).toEqual({ count: 0 });
+
     migrate(database.db, { migrationsFolder: './drizzle' });
     const workoutRows = database.sqlite
       .prepare('SELECT id,data FROM workouts')

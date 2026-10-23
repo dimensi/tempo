@@ -117,16 +117,9 @@ export function BodyAnalytics({
             h={280}
             data={chart}
             dataKey="time"
-            series={
-              metric === 'weight'
-                ? [
-                    { name: 'local', label: m.local, color: 'teal.7' },
-                    { name: 'yazio', label: 'YAZIO', color: 'blue.7' },
-                  ]
-                : [{ name: 'local', label: m.local, color: 'teal.7' }]
-            }
+            series={[{ name: 'value', label: m[metric], color: 'gray.7' }]}
             withDots
-            withLegend
+            withLegend={false}
             dotProps={{ r: 4 }}
             curveType="linear"
             connectNulls={false}
@@ -154,7 +147,6 @@ export function BodyAnalytics({
                         date={dateLabel(record.date)}
                         value={record.value}
                         unit={unit}
-                        source={record.source === 'LOCAL' ? m.local : 'YAZIO'}
                       />
                     ))}
                   </Stack>

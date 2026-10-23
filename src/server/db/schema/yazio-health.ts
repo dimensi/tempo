@@ -78,3 +78,23 @@ export const yazioDailySteps = sqliteTable(
     ),
   ],
 );
+
+export const yazioDailyGoals = sqliteTable(
+  'yazio_daily_goals',
+  {
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    date: text('date').notNull(),
+    calories: text('calories'),
+    steps: integer('steps'),
+    fetchedAt: text('fetched_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.ownerId, t.date] }),
+    check(
+      'yazio_goals_steps_check',
+      sql`${t.steps} is null or (typeof(${t.steps}) = 'integer' and ${t.steps} between 1 and 9007199254740991)`,
+    ),
+  ],
+);

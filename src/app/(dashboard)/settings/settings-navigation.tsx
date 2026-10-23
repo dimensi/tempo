@@ -2,7 +2,7 @@
 
 import { type ReactNode } from 'react';
 import { SectionNavigation } from '@/components/shared/section-navigation';
-import { stepsGoalMessages } from '@/contracts/steps-goal';
+import { goalMessages } from '@/contracts/daily-goals';
 import { ru } from '@/config/messages';
 import { transformMateConnectionMessages } from '@/contracts/transformmate-connection';
 import classes from './settings.module.css';
@@ -15,7 +15,7 @@ const sections = [
   { id: 'sync', label: ru.settings.syncTitle },
   { id: 'transformmate', label: transformMateConnectionMessages.title },
   { id: 'trainers', label: ru.trainerSettings },
-  { id: 'steps-goal', label: stepsGoalMessages.title },
+  { id: 'goals', label: goalMessages.settingsTitle },
   { id: 'mcp', label: mcpMessages.settingsTitle },
   { id: 'offline', label: offlineMessages.downloads.title },
 ];

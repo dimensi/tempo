@@ -87,6 +87,7 @@ export interface AnalyticsHighlight {
   value: string;
 }
 export interface AnalyticsData {
+  goals: import('./daily-goals').DailyGoals[];
   range: AnalyticsRange;
   previousRange: AnalyticsRange;
   today: string;

@@ -379,19 +379,14 @@ export function MeasurementsPanel({
           h={260}
           data={chart}
           dataKey="date"
-          withLegend={metric === 'weight'}
-          connectNulls
+          withLegend={false}
+          connectNulls={false}
           valueFormatter={(value) =>
             `${formatDecimal(value)} ${m.units[metric === 'weight' ? 'kg' : 'cm']}`
           }
-          series={
-            metric === 'weight'
-              ? [
-                  { name: 'local', label: m.localSource, color: 'blue.6' },
-                  { name: 'yazio', label: m.yazioSource, color: 'orange.6' },
-                ]
-              : [{ name: 'value', label: m.metrics[metric], color: 'blue.6' }]
-          }
+          series={[
+            { name: 'value', label: m.metrics[metric], color: 'gray.7' },
+          ]}
         />
       ) : (
         <Text>{m.empty}</Text>

@@ -45,7 +45,6 @@ export function periodDates(start: string, end: string): string[] {
 export type ReportDataset = {
   days: import('./nutrition').NutritionDay[];
   steps: import('./health').StepsSummary['days'];
-  dailyStepsGoal: number | null;
   photos: Array<
     import('./nutrition').SafeMealPhotoView & { dataUri: string | null }
   >;

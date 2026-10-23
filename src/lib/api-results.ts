@@ -1,7 +1,6 @@
 import { transformMateReplicaStatusSchema } from '@/contracts/transformmate-replica';
 import { syncStatusSchema } from '@/contracts/nutrition-sync';
 import { transformMateReadSchema } from '@/contracts/read-resources';
-import { stepsGoalSchema } from '@/contracts/steps-goal';
 import {
   acceptInviteErrorSchema,
   acceptInviteResponseSchema,
@@ -22,7 +21,8 @@ export const apiResults = {
   mcpCredentials: (value: unknown) => mcpClientCredentials.parse(value),
   replica: (value: unknown) =>
     z.object({ data: transformMateReplicaStatusSchema }).parse(value).data,
-  stepsGoal: (value: unknown) => stepsGoalSchema.parse(value),
+  overviewRefresh: (value: unknown) =>
+    z.strictObject({ started: z.boolean() }).parse(value),
   dayRefresh: (value: unknown) => syncStatusSchema.parse(value),
   measurementIssues: (value: unknown) =>
     z.array(measurementPrecisionIssueSchema).parse(value),
