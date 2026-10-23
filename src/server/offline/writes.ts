@@ -76,7 +76,7 @@ export async function saveOfflineWrite(request: Request) {
   ) {
     // Publication is best-effort after commit: a replayed receipt remains valid
     // even when another tab has since deleted the workout.
-    void (async () => {
+    await (async () => {
       const workout = workoutRepository(getDatabase().db).get(
         identity.ownerId,
         result.id,
