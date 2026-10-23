@@ -42,6 +42,14 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { measurementChange, weightTrendChart } from './history';
 import { measurementMessages as m } from './messages';
 import { MeasurementPrecisionWarnings } from './precision-warnings';
+function chartDate(time: number) {
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(time));
+}
 function responseError(status: number) {
   return status === 401
     ? m.sessionExpired
@@ -367,20 +375,25 @@ export function MeasurementsPanel({
           if (v) setMetric(v as MeasurementMetric);
         }}
       />
-      {metric === 'weight' && (
-        <Text size="sm">
-          {m.localWholeHistory} {m.yazioRange}: {weightHistory.range.from} —{' '}
-          {weightHistory.range.to}.
-        </Text>
-      )}
       {chart.length ? (
         <LineChart
           data-testid="measurement-trend-chart"
           h={260}
-          data={chart}
-          dataKey="date"
+          data={chart.map((point) => ({
+            ...point,
+            time: Date.parse(point.date),
+          }))}
+          dataKey="time"
+          xAxisProps={{
+            type: 'number',
+            scale: 'time',
+            domain: ['dataMin', 'dataMax'],
+            tickFormatter: (value: number) => chartDate(value),
+            minTickGap: 24,
+          }}
+          tooltipProps={{ labelFormatter: (value) => chartDate(Number(value)) }}
           withLegend={false}
-          connectNulls={false}
+          connectNulls
           valueFormatter={(value) =>
             `${formatDecimal(value)} ${m.units[metric === 'weight' ? 'kg' : 'cm']}`
           }

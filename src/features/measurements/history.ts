@@ -31,8 +31,8 @@ export function groupPrecisionIssues(issues: MeasurementPrecisionIssue[]) {
   return [...groups.values()];
 }
 
-// Pair source observations by date without averaging, selecting a last value,
-// or collapsing same-day records. Distinct observations retain distinct slots.
+// Keep every observation without averaging or selecting a source. The chart
+// places distinct same-day values at the same calendar-time coordinate.
 export function weightTrendChart(history: WeightHistory) {
   return [
     ...history.local.map((record) => ({
