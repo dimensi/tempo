@@ -16,9 +16,14 @@ async function cachedReadBody(page: Page, expectedTitle: string) {
           .objectStore('resources')
           .getAll();
         read.onsuccess = () => {
-          const body = read.result.find((row) =>
-            String(row.record?.body).includes(title),
-          )?.record?.body;
+          const body = read.result.find((row) => {
+            if (typeof row.record?.body !== 'string') return false;
+            const data = JSON.parse(row.record.body).data;
+            return (
+              Array.isArray(data?.workouts) &&
+              data.workouts.some((item: Workout) => item.title === title)
+            );
+          })?.record?.body;
           if (typeof body === 'string') resolve(body);
           else reject(new Error('Cached workout is missing'));
         };
