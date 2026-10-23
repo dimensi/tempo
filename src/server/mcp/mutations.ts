@@ -32,6 +32,7 @@ export class McpScopeError extends Error {
   constructor(
     public readonly scope: string,
     public readonly enabled: boolean,
+    public readonly requestedScopes: string[],
   ) {
     super('MCP scope required');
   }
@@ -49,6 +50,7 @@ export async function executeMcpTool(
     throw new McpScopeError(
       requiredScope,
       principal.allowedScopes.includes(requiredScope),
+      [...new Set([...principal.scopes, requiredScope])],
     );
   const ownerId = principal.user.id;
   const namespace = `mcp:${principal.clientId}`;

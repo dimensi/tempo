@@ -276,7 +276,7 @@ export async function handleMcp(request: Request) {
                   ? {
                       _meta: {
                         'mcp/www_authenticate': [
-                          `Bearer resource_metadata="${new URL('/.well-known/oauth-protected-resource/api/mcp', mcpResource()).href}", error="insufficient_scope", error_description="Authorize the additional Tempo permission", scope="tempo:read ${error.scope}"`,
+                          `Bearer resource_metadata="${new URL('/.well-known/oauth-protected-resource/api/mcp', mcpResource()).href}", error="insufficient_scope", error_description="Authorize the additional Tempo permission", scope="${error.requestedScopes.join(' ')}"`,
                         ],
                       },
                     }

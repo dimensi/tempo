@@ -211,7 +211,7 @@ export async function assertMcpWrites(
       _meta: {
         'mcp/www_authenticate': [
           expect.stringContaining(
-            'scope="tempo:read tempo:measurements:write"',
+            'scope="tempo:read offline_access tempo:measurements:write"',
           ),
         ],
       },
