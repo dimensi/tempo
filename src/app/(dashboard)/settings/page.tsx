@@ -50,7 +50,11 @@ export default function Page() {
             <Skeleton height={180} />
           ) : (
             <>
-              <YazioSettingsForm initial={data.yazio} embedded />
+              <YazioSettingsForm
+                initial={data.yazio}
+                embedded
+                goalsSlot={<DailyGoals goals={data.goals} />}
+              />
               <TransformMateSettingsForm
                 initial={data.transformMate}
                 embedded
@@ -69,7 +73,6 @@ export default function Page() {
                   <AccessPanel ownerId={ownerId} />
                 </Stack>
               </section>
-              <DailyGoals goals={data.goals} />
               <McpSettings />
               <OfflineSettings />
             </>

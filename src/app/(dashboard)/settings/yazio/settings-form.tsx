@@ -28,7 +28,12 @@ import {
   Textarea,
   Title,
 } from '@mantine/core';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 const subscribeToHydration = () => () => {};
 const clientReady = () => true;
 const serverReady = () => false;
@@ -36,7 +41,9 @@ const serverReady = () => false;
 export function YazioSettingsForm({
   initial,
   embedded = false,
+  goalsSlot,
 }: {
+  goalsSlot?: ReactNode;
   embedded?: boolean;
   initial: {
     configured: boolean;
@@ -381,6 +388,7 @@ export function YazioSettingsForm({
             </Button>
           </Card>
         )}
+        {goalsSlot}
         <Modal
           opened={disconnectOpen}
           onClose={() => setDisconnectOpen(false)}

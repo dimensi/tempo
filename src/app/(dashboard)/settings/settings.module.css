@@ -4,7 +4,6 @@
 
 .content :global([id='sync']),
 .content :global([id='trainers']),
-.content :global([id='goals']),
 .content :global([id='offline']) {
   border-top: 1px solid var(--mantine-color-default-border);
   padding-top: 32px;

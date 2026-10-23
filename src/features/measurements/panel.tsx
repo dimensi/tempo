@@ -42,13 +42,17 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { measurementChange, weightTrendChart } from './history';
 import { measurementMessages as m } from './messages';
 import { MeasurementPrecisionWarnings } from './precision-warnings';
-function chartDate(time: number) {
+function chartDate(value: unknown) {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim()))
+    return '';
+  const date = new Date(Number(value));
+  if (!Number.isFinite(date.getTime())) return '';
   return new Intl.DateTimeFormat('ru-RU', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
     timeZone: 'UTC',
-  }).format(new Date(time));
+  }).format(date);
 }
 function responseError(status: number) {
   return status === 401
@@ -391,7 +395,7 @@ export function MeasurementsPanel({
             tickFormatter: (value: number) => chartDate(value),
             minTickGap: 24,
           }}
-          tooltipProps={{ labelFormatter: (value) => chartDate(Number(value)) }}
+          tooltipProps={{ labelFormatter: chartDate }}
           withLegend={false}
           connectNulls
           valueFormatter={(value) =>
