@@ -158,6 +158,15 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .getByRole('link', { name: 'Каталог упражнений', exact: true })
     .click();
   await expect(page).toHaveURL('/workouts/catalog');
+  const sidebar = page
+    .getByRole('navigation', { name: 'Навигация', exact: true })
+    .first();
+  await expect(
+    sidebar.getByRole('link', { name: 'Каталог упражнений', exact: true }),
+  ).toHaveAttribute('data-active', 'true');
+  await expect(
+    sidebar.getByRole('link', { name: 'Тренировки', exact: true }),
+  ).not.toHaveAttribute('data-active', 'true');
   await expect(
     page.getByRole('link', { name: 'Downloaded technique', exact: true }),
   ).toBeVisible();

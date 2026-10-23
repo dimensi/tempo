@@ -164,15 +164,10 @@ export function ApplicationShellFrame({
                           href={section.href}
                           label={section.title}
                           leftSection={<Icon size={20} />}
-                          active={
-                            pathname === section.href ||
-                            (section.href !== '/' &&
-                              pathname.startsWith(`${section.href}/`))
-                          }
+                          active={isSectionActive(pathname, section.href)}
                           aria-current={
                             pathname === section.href ? 'page' : undefined
                           }
-
                           py="sm"
                           mb={4}
                           style={{ borderRadius: 'var(--mantine-radius-md)' }}
@@ -185,12 +180,10 @@ export function ApplicationShellFrame({
                             leftSection={
                               <exerciseCatalogSection.icon size={18} />
                             }
-                            active={
-                              pathname === exerciseCatalogSection.href ||
-                              pathname.startsWith(
-                                `${exerciseCatalogSection.href}/`,
-                              )
-                            }
+                            active={isSectionActive(
+                              pathname,
+                              exerciseCatalogSection.href,
+                            )}
                             aria-current={
                               pathname === exerciseCatalogSection.href
                                 ? 'page'
