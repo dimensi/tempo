@@ -129,6 +129,7 @@ it('fails closed for generic and selective medical-PDF trainer access, including
   for (const [externalId, subject, date, rawValue] of [
     [importedId, ownerId, '2026-09-02', '74.5999984741211'],
     [linkedId, ownerId, '2026-09-01', '99'],
+    [crypto.randomUUID(), ownerId, '2026-09-01', '75.5'],
     [crypto.randomUUID(), trainerId, '2026-09-03', '200'],
   ])
     connection.db
@@ -164,6 +165,7 @@ it('fails closed for generic and selective medical-PDF trainer access, including
   expect(
     overview.weight.points.filter((point) => point.value !== null),
   ).toEqual([
+    { date: '2026-09-01', value: '75.5' },
     { date: '2026-09-01', value: '75' },
     { date: '2026-09-02', value: '74.6' },
   ]);

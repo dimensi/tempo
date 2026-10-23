@@ -80,16 +80,13 @@ export async function getOverview(
     .get({ ownerId, to: today }) as WeightRow | undefined;
   const weight = (row: WeightRow) =>
     row.local ? row.value : (canonicalYazioBodyValue(row.value) ?? row.value);
-  const byDate = new Map(
-    weightRows.flatMap((row) => {
-      const value = weight(row);
-      return value === null ? [] : [[row.date, value] as const];
-    }),
-  );
   const points = Array.from({ length: 30 }, (_, i) => {
     const date = shiftDate(today, i - 29);
-    return { date, value: byDate.get(date) ?? null };
-  });
+    const observations = weightRows.filter((row) => row.date === date);
+    return observations.length
+      ? observations.map((row) => ({ date, value: weight(row) }))
+      : [{ date, value: null }];
+  }).flat();
   // Project existing persisted workout DTOs to title/date only, with scope and LIMIT in SQL.
   const planned = sqlite
     .prepare(
