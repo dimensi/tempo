@@ -221,6 +221,12 @@ export async function refreshTransformMateSync(
   return serializeOwner(ownerId, async () => {
     const contextValue = context(headers, ownerId);
     await contextValue.access('workouts:read');
+    if ((await authorize(headers, 'workouts:plan', ownerId)).ok) {
+      for (const workout of contextValue.workouts()) {
+        await contextValue.access('workouts:plan');
+        contextValue.repository.ensure(ownerId, workout);
+      }
+    }
     const engine = syncEngine(await loadEngine(contextValue, ownerId));
     for (const link of contextValue.repository.list(ownerId))
       await engine.process(link);
