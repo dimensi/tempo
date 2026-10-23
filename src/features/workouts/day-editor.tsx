@@ -296,7 +296,7 @@ export function DayEditor({
       unsubscribe();
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [identity, key, date]);
+  }, [identity, key, date, canLog, onDirtyChange]);
   // Refresh only the revision for unchanged mounted forms; never replace live inputs.
   useEffect(() => {
     if (
