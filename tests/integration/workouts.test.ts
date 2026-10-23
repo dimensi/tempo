@@ -4,6 +4,8 @@ import { openDatabase } from '@/server/db/connection';
 import { user } from '@/server/db/schema';
 import { workoutRepository } from '@/server/workouts/repository';
 import type { Workout, WorkoutInput } from '@/contracts/workouts';
+import { copyWorkoutToDate } from '@/features/workouts/copy-workout';
+import { workoutDraftSchema } from '@/features/workouts/workout-draft';
 
 vi.mock('server-only', () => ({}));
 const connections: ReturnType<typeof openDatabase>[] = [];
@@ -85,6 +87,19 @@ it('retains one workout identity and its edited values through guarded lifecycle
     'complete',
     requestId,
   );
+  const copySource: Workout = {
+    ...completed,
+    legacySource: { planId: 'old-plan', workoutId: 'old-workout' },
+  };
+  const copied = copyWorkoutToDate(copySource, '2026-10-12');
+  expect(workoutDraftSchema.parse(copied)).toMatchObject({
+    date: '2026-10-12',
+    title: completed.title,
+    note: completed.note,
+    status: 'planned',
+  });
+  expect(copied.exercises[0]?.id).not.toBe(completed.exercises[0]?.id);
+  expect(copied.exercises[0]?.sets).toEqual(completed.exercises[0]?.sets);
   expect(
     repository.update(
       'owner',

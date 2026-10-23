@@ -4,8 +4,9 @@ export function copyWorkoutToDate(
   date: string,
 ): WorkoutInput {
   return {
-    ...structuredClone(workout),
     date,
+    title: workout.title,
+    note: workout.note,
     status: 'planned',
     exercises: workout.exercises.map((exercise) => ({
       ...structuredClone(exercise),
