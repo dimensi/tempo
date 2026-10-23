@@ -21,6 +21,7 @@ import { measurementRepository } from '@/server/measurements/repository';
 import { yazioHealthRepository } from '@/server/yazio/health-repository';
 import { getSavedDataFreshness } from '@/server/analytics/freshness';
 import { nutritionDays, nutritionSyncRuns } from '@/server/db/schema/nutrition';
+import { dailyGoalsRepository } from '@/server/yazio/goals';
 import { yazioDailySteps } from '@/server/db/schema/yazio-health';
 import { getAnalytics } from '@/server/analytics';
 import { bindMcpPrincipal } from '@/server/auth/data-session';
@@ -794,13 +795,41 @@ export async function assertMcpAccess(
         /secret|@example|storageKey|password/,
       );
     }
+    expect(
+      parallel.find(({ name }) => name === 'get_profile')?.result
+        .structuredContent,
+    ).toMatchObject({
+      data: { goals: { weight: null }, coverage: { weight: 'missing' } },
+    });
+    const profileDate = (
+      parallel.find(({ name }) => name === 'get_profile')?.result
+        .structuredContent as { data: { goals: { date: string } } }
+    ).data.goals.date;
+    dailyGoalsRepository(connection).save('owner', {
+      date: profileDate,
+      calories: null,
+      steps: null,
+      weight: '72.5',
+      fetchedAt: new Date().toISOString(),
+    });
     // Personal MCP has no HTTP, tool-call or parallelism throttle.
     for (let i = 0; i < 121; i++)
       expect((await mcp.listTools()).tools).toHaveLength(16);
-    for (let i = 0; i < 31; i++)
-      expect(
-        (await mcp.callTool({ name: 'get_profile', arguments: {} })).isError,
-      ).toBeFalsy();
+    for (let i = 0; i < 31; i++) {
+      const profile = await mcp.callTool({
+        name: 'get_profile',
+        arguments: {},
+      });
+      expect(profile.isError).toBeFalsy();
+      if (i === 0)
+        expect(profile.structuredContent).toMatchObject({
+          data: {
+            units: { weight: 'kg' },
+            goals: { weight: '72.5' },
+            coverage: { weight: 'recorded' },
+          },
+        });
+    }
     const activity = await readMcpData(
       'get_activity',
       headers,

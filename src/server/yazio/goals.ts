@@ -55,11 +55,17 @@ export function dailyGoalsRepository(database = getDatabase()) {
           ? {
               date: row.date,
               calories: row.calories,
-            weight: row.weight,
+              weight: row.weight,
               steps: row.steps,
               fetchedAt: row.fetchedAt,
             }
-          : { date, calories: null, weight: null, steps: null, fetchedAt: null },
+          : {
+              date,
+              calories: null,
+              weight: null,
+              steps: null,
+              fetchedAt: null,
+            },
       );
     },
   };

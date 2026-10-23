@@ -94,7 +94,9 @@ export interface NutritionDayUpstream {
   recipe(id: string): Promise<Recipe | null>;
 }
 export interface NutritionUpstream extends NutritionDayUpstream {
-  goals(date: string): Promise<Pick<DailyGoals, 'date' | 'calories' | 'steps' | 'weight'>>;
+  goals(
+    date: string,
+  ): Promise<Pick<DailyGoals, 'date' | 'calories' | 'steps' | 'weight'>>;
   healthSummary(
     date: string,
   ): Promise<ReturnType<typeof normalizeHealthSummary>>;
@@ -174,9 +176,9 @@ export async function nutritionUpstream(
             : null,
           steps: value['activity.step'] || null,
           // The single OWNER confirmed kilograms; preserve the provider decimal.
-          weight: value['bodyvalue.weight'] == null
-            ? null
-            : new Decimal(value['bodyvalue.weight']).toFixed(),
+          weight: value['bodyvalue.weight']
+            ? new Decimal(value['bodyvalue.weight']).toFixed()
+            : null,
         };
       }),
     healthSummary: async (date) =>
