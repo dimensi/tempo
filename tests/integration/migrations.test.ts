@@ -15,6 +15,7 @@ import { projectDetail } from '@/server/transformmate/catalog-projection';
 vi.mock('server-only', () => ({}));
 import { openDatabase } from '@/server/db/connection';
 import { trainerAccess, user } from '@/server/db/schema';
+import { workoutRepository } from '@/server/workouts/repository';
 
 it('applies fresh and upgrade migrations without losing durable access data', () => {
   const directory = mkdtempSync(join(tmpdir(), 'yazio-migration-'));
@@ -205,15 +206,22 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
       ['plan-a', 'duplicate'],
       ['plan-b', 'duplicate'],
       ['linked-plan', 'linked-day'],
-    ])
+    ]) {
+      const legacyPlan = planned(nested!, id!);
+      if (id === 'plan-a')
+        legacyPlan.workouts[0]!.exercises.push({
+          ...occurrence,
+          name: 'Duplicate identity',
+        });
       insertPlan.run(
         id,
         'owner',
-        JSON.stringify(planned(nested!, id!)),
+        JSON.stringify(legacyPlan),
         1,
         '2026-10-01T00:00:00Z',
         '2026-10-01T00:00:00Z',
       );
+    }
     const actual = {
       date: '2026-10-01',
       title: 'Actual',
@@ -244,7 +252,19 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
       'owner',
       JSON.stringify({
         ...actual,
-        exercises: [{ ...occurrence, sets: [] }],
+        exercises: [
+          {
+            ...occurrence,
+            sets: [],
+            transformMate: { exerciseId: 501, occurrenceKey: occurrence.id },
+          },
+          {
+            ...occurrence,
+            id: '10000000-0000-4000-8000-000000000002',
+            sets: [],
+            transformMate: { exerciseId: 501, occurrenceKey: occurrence.id },
+          },
+        ],
         status: 'in_progress',
       }),
       actual.date,
@@ -330,6 +350,23 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
         '2026-10-01T00:00:00Z',
         '2026-10-01T00:00:00Z',
       );
+    // Rehearse an installation that has already applied the unified-workout migration.
+    const unified = join(directory, 'unified');
+    const unifiedEntries = journal.entries.slice(
+      0,
+      journal.entries.findIndex(
+        (e) => e.tag === '0021_rapid_carmella_unuscione',
+      ) + 1,
+    );
+    mkdirSync(join(unified, 'meta'), { recursive: true });
+    writeFileSync(
+      join(unified, 'meta/_journal.json'),
+      JSON.stringify({ ...journal, entries: unifiedEntries }),
+    );
+    for (const { tag } of unifiedEntries)
+      cpSync(`drizzle/${tag}.sql`, join(unified, `${tag}.sql`));
+    migrate(database.db, { migrationsFolder: unified });
+    expect(() => workoutRepository(database.db).list('owner')).toThrow();
     migrate(database.db, { migrationsFolder: './drizzle' });
     migrate(database.db, { migrationsFolder: './drizzle' });
     const workoutRows = database.sqlite
@@ -351,6 +388,34 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
       (r) => JSON.parse(r.data).legacySource?.workoutId === 'duplicate',
     );
     expect(new Set(duplicates.map((r) => r.id)).size).toBe(2);
+    const canonical = workoutRepository(database.db).list('owner').workouts;
+    expect(canonical).toHaveLength(6);
+    const normalizedPlan = canonical.find(
+      (workout) => workout.legacySource?.planId === 'plan-a',
+    )!;
+    expect(normalizedPlan.exercises.map((exercise) => exercise.name)).toEqual([
+      'Squat',
+      'Duplicate identity',
+    ]);
+    expect(normalizedPlan.exercises[0]?.id).toBe(occurrence.id);
+    expect(
+      new Set(normalizedPlan.exercises.map((exercise) => exercise.id)).size,
+    ).toBe(2);
+    const normalizedSession = canonical.find(
+      (workout) => workout.id === 'legacy-repeat',
+    )!;
+    expect(normalizedSession.exercises.map((exercise) => exercise.id)).toEqual([
+      occurrence.id,
+      '10000000-0000-4000-8000-000000000002',
+    ]);
+    expect(
+      new Set(
+        normalizedSession.exercises.map(
+          (exercise) => exercise.transformMate?.occurrenceKey,
+        ),
+      ).size,
+    ).toBe(2);
+    expect(normalizedSession.revision).toBe(5);
     expect(
       duplicates.every((r) =>
         JSON.parse(r.data).note.includes(
