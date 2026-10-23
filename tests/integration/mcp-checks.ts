@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import { assertWorkoutTools } from './mcp-workout-checks';
 import { createHash, randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import {
@@ -286,7 +287,7 @@ export async function assertMcpAccess(
       },
     ],
   });
-  workouts.createSession('owner', {
+  const originalSession = workouts.createSession('owner', {
     planId: plan.id,
     plannedWorkoutId: 'mcp-squat',
     date: '2026-10-01',
@@ -346,6 +347,7 @@ export async function assertMcpAccess(
         ],
       },
     });
+    await assertWorkoutTools(mcp, connection, headers, trainerHeaders);
     // A provider fact container can be an untouched draft, not another session.
     const linkId = randomUUID();
     const state = syncStateSchema.parse({
@@ -741,13 +743,29 @@ export async function assertMcpAccess(
         ],
       },
     });
-    // ChatGPT fans out a single analytics question across all six tools.
+    // ChatGPT fans out a single analytics question across all eight tools.
     const parallel = await Promise.all(
       mcpTools.map(async (name) => ({
         name,
         result: await mcp.callTool({
           name,
-          arguments: name === 'get_profile' ? {} : range,
+          arguments:
+            name === 'get_profile'
+              ? {}
+              : name === 'get_workout'
+                ? {
+                    workoutRef: {
+                      kind: 'session',
+                      id: originalSession.id,
+                      date: originalSession.date,
+                    },
+                  }
+                : name === 'get_exercise_history'
+                  ? {
+                      ...range,
+                      exerciseRef: { source: 'TransformMate', exerciseId: 501 },
+                    }
+                  : range,
         }),
       })),
     );
@@ -759,7 +777,7 @@ export async function assertMcpAccess(
     }
     // Personal MCP has no HTTP, tool-call or parallelism throttle.
     for (let i = 0; i < 121; i++)
-      expect((await mcp.listTools()).tools).toHaveLength(6);
+      expect((await mcp.listTools()).tools).toHaveLength(8);
     for (let i = 0; i < 31; i++)
       expect(
         (await mcp.callTool({ name: 'get_profile', arguments: {} })).isError,

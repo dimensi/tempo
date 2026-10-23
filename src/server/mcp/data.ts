@@ -9,8 +9,8 @@ import {
 import { savedWorkoutFreshnessSchema } from '@/contracts/data-freshness';
 import { authorize } from '@/server/auth/guards';
 import { listNutritionDays } from '@/server/nutrition';
-import { listWorkouts } from '@/server/workouts';
-import { listTransformMateSync } from '@/server/workouts/transformmate/service';
+import { listSavedWorkouts } from '@/server/workouts/saved-read';
+import { exerciseHistoryRef } from './workouts';
 import { getReadStepsGoal } from '@/server/settings/steps-goal';
 import { measurementMetrics } from '@/contracts/measurements';
 import { healthRangeDates } from '@/contracts/health';
@@ -46,7 +46,7 @@ const units = {
 };
 
 export async function readMcpData(
-  tool: McpTool,
+  tool: Exclude<McpTool, 'get_workout' | 'get_exercise_history'>,
   headers: Headers,
   ownerId: string,
   query?: McpHistoryInput,
@@ -89,11 +89,11 @@ export async function readMcpData(
   let rows: unknown[] = [];
   let next_cursor: string | null = null;
   if (tool === 'get_workouts') {
-    const local = await listWorkouts(headers, ownerId);
-    const remote = await listTransformMateSync(headers, ownerId, {
-      ...range,
-      limit: 50,
-    });
+    const { local, linked, native } = await listSavedWorkouts(
+      headers,
+      ownerId,
+      range,
+    );
     const within = (date: string) => date >= from && date <= to;
     // Plans, local sessions and provider facts remain separate, with explicit relationships.
     const workoutRows: Array<{
@@ -112,6 +112,12 @@ export async function readMcpData(
           .filter((w) => within(w.date))
           .map((w) => ({
             kind: 'plan',
+            workoutRef: {
+              kind: 'plan',
+              planId: p.id,
+              workoutId: w.id,
+              date: w.date,
+            },
             source: 'LOCAL',
             id: w.id,
             planId: p.id,
@@ -123,6 +129,7 @@ export async function readMcpData(
               ? {
                   exercises: w.exercises.map((e) => ({
                     name: e.name,
+                    historyRef: exerciseHistoryRef(e.transformMate?.exerciseId),
                     plannedSets: e.sets,
                   })),
                 }
@@ -133,6 +140,7 @@ export async function readMcpData(
         .filter((s) => within(s.date))
         .map((s) => ({
           kind: 'session',
+          workoutRef: { kind: 'session', id: s.id, date: s.date },
           source: 'LOCAL',
           id: s.id,
           planId: s.planId,
@@ -145,12 +153,13 @@ export async function readMcpData(
             ? {
                 exercises: s.exercises.map((e) => ({
                   name: e.name,
+                  historyRef: exerciseHistoryRef(e.transformMate?.exerciseId),
                   actualSets: e.sets,
                 })),
               }
             : {}),
         })),
-      ...remote.items
+      ...linked
         .filter((i) => within(i.actual?.date ?? i.planSnapshot.workout.date))
         .map((i) => {
           const executionStatus = providerExecutionStatus(
@@ -159,6 +168,11 @@ export async function readMcpData(
           );
           return {
             kind: 'linked',
+            workoutRef: {
+              kind: 'linked',
+              id: i.id,
+              date: i.actual?.date ?? i.planSnapshot.workout.date,
+            },
             source: 'TransformMate',
             id: i.id,
             planId: i.planId,
@@ -184,6 +198,7 @@ export async function readMcpData(
                     i.publishedSnapshot ?? i.planSnapshot
                   ).workout.exercises.map((e) => ({
                     name: e.name,
+                    historyRef: exerciseHistoryRef(e.transformMate?.exerciseId),
                     plannedSets: e.sets,
                   })),
                   actual: i.actual
@@ -192,6 +207,7 @@ export async function readMcpData(
                         finished: i.actual.finished,
                         exercises: i.actual.exercises.map((e) => ({
                           name: e.name,
+                          historyRef: exerciseHistoryRef(e.exerciseId),
                           actualSets: e.sets,
                         })),
                       }
@@ -201,47 +217,36 @@ export async function readMcpData(
           };
         }),
     ];
-    let nativePage = remote.nativePage;
-    let pages = 0;
-    while (true) {
-      workoutRows.push(
-        ...nativePage.items.map((i) => ({
-          kind: 'native',
-          source: 'TransformMate',
-          id: i.remoteTrainingId,
-          date: i.date,
-          title: i.title,
-          started: i.started,
-          finished: i.finished,
-          progress: i.progress,
-          fetchedAt: i.fetchedAt,
-          executionStatus: providerExecutionStatus(
-            i,
-            i.exercises.flatMap((e) =>
-              e.metrics.filter((m) => m.type === 'fact').flatMap((m) => m.sets),
-            ),
+    workoutRows.push(
+      ...native.map((i) => ({
+        kind: 'native',
+        workoutRef: { kind: 'native', id: i.remoteTrainingId, date: i.date },
+        source: 'TransformMate',
+        id: i.remoteTrainingId,
+        date: i.date,
+        title: i.title,
+        started: i.started,
+        finished: i.finished,
+        progress: i.progress,
+        fetchedAt: i.fetchedAt,
+        executionStatus: providerExecutionStatus(
+          i,
+          i.exercises.flatMap((e) =>
+            e.metrics.filter((m) => m.type === 'fact').flatMap((m) => m.sets),
           ),
-          coverage: 'provider_snapshot',
-          ...(detail === 'records'
-            ? {
-                exercises: i.exercises.map((e) => ({
-                  name: e.name,
-                  metrics: e.metrics,
-                })),
-              }
-            : {}),
-        })),
-      );
-      if (!nativePage.nextCursor) break;
-      if (++pages >= 40) throw new McpReadError('narrow_range');
-      nativePage = (
-        await listTransformMateSync(headers, ownerId, {
-          ...range,
-          limit: 50,
-          cursor: nativePage.nextCursor,
-        })
-      ).nativePage;
-    }
+        ),
+        coverage: 'provider_snapshot',
+        ...(detail === 'records'
+          ? {
+              exercises: i.exercises.map((e) => ({
+                name: e.name,
+                historyRef: exerciseHistoryRef(e.exerciseId),
+                metrics: e.metrics,
+              })),
+            }
+          : {}),
+      })),
+    );
     workoutRows.sort(
       (a, b) =>
         a.date.localeCompare(b.date) ||
