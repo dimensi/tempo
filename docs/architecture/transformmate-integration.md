@@ -197,3 +197,10 @@ success label requires all linked workouts for the selected date to be synchroni
 
 Live custom exercise/actual/complete/resume DTO validation on 23 October 2026 used disposable
 exercises 33590–33592 and trainings 2298940/2298946. Cleanup returned DELETE 204 and GET 404.
+
+Resolved custom exercises are committed to the same owner/account-scoped catalog immediately,
+including on create recovery. Their persisted detail marks known local membership; older full
+catalog responses and subsequent detail enrichment cannot hide that membership. They appear
+first in the unfiltered catalog and participate in ordinary name search. Own custom exercises
+with the provider's empty metric declaration remain selectable through the verified weight/reps
+capability; the integration provenance marker is hidden from technique descriptions.

@@ -63,7 +63,7 @@ export function createCatalogStore(sqlite: Database.Database) {
     return (
       sqlite
         .prepare(
-          `SELECT * FROM transformmate_catalog_exercise WHERE ${WHERE}${fullOnly ? ' AND in_full_catalog=1' : ''} ORDER BY exercise_id LIMIT 10000`,
+          `SELECT * FROM transformmate_catalog_exercise WHERE ${WHERE}${fullOnly ? " AND (in_full_catalog=1 OR json_extract(detail,'$.ownedCustom')=1)" : ''} ORDER BY CASE WHEN json_extract(detail,'$.ownedCustom')=1 THEN 0 ELSE 1 END, exercise_id LIMIT 10000`,
         )
         .all(...values(scope)) as Row[]
     ).map(decode);
@@ -127,7 +127,11 @@ export function createCatalogStore(sqlite: Database.Database) {
       })();
     },
     detail(scope: CatalogIdentity, detail: PersistedDetail, at: string) {
-      const parsed = persistedDetailSchema.parse(detail);
+      const parsed = persistedDetailSchema.parse({
+        ...detail,
+        ownedCustom:
+          detail.ownedCustom ?? record(scope, detail.id)?.detail?.ownedCustom,
+      });
       sqlite.transaction(() => {
         ensure(scope);
         upsert(

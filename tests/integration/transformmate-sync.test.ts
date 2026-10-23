@@ -247,7 +247,7 @@ async function assertReplicaRecovery(
   replicaTest.storage = fsObjectStorage({ rootDir: directory });
   const scope = {
     ownerId: 'owner',
-    accountScope: 'a'.repeat(64),
+    accountScope: 'c'.repeat(64),
     locale: 'ru' as const,
   };
   const fixture = { ...exerciseDetailFixture(), image: null };
@@ -630,6 +630,7 @@ async function assertCustomExecutionRecovery(
   database: ReturnType<typeof openDatabase>,
   url: string,
 ) {
+  replicaTest.database = database;
   const manual = input();
   manual.exercises = [
     { name: 'Manual demo exercise', sets: [{ reps: 8, weightKg: 10 }] },
@@ -795,6 +796,44 @@ async function assertCustomExecutionRecovery(
   await process();
   expect(customPosts).toBe(1);
   expect(trainingPosts).toBe(1);
+  const { createCatalogStore } =
+    await import('@/server/transformmate/catalog-store');
+  const { projectDetail, catalogItem } =
+    await import('@/server/transformmate/catalog-projection');
+  const scope = {
+    ownerId: 'owner',
+    accountScope: 'a'.repeat(64),
+    locale: 'ru' as const,
+  };
+  const catalog = createCatalogStore(database.sqlite);
+  // A freshly created custom is immediately visible/selectable, even before the next full import.
+  let row = catalog.records(scope, true).find((item) => item.id === 502)!;
+  expect(row).toBeDefined();
+  expect(
+    catalogItem(
+      row.summary,
+      row.fetchedAt,
+      row.detail,
+      row.detailFetchedAt,
+      scope,
+    ),
+  ).toMatchObject({
+    id: 502,
+    canPlan: true,
+    snippet: '',
+    publicationCapability: { state: 'supported' },
+  });
+  // An older in-flight snapshot and later detail refresh cannot remove its local membership.
+  catalog.full(scope, [], new Date().toISOString());
+  catalog.detail(scope, projectDetail(custom!), new Date().toISOString());
+  row = catalog.records(scope, true).find((item) => item.id === 502)!;
+  expect(row.detail?.ownedCustom).toBe(true);
+  expect(catalog.records({ ...scope, ownerId: 'another-owner' }, true)).toEqual(
+    [],
+  );
+  expect(
+    catalog.records({ ...scope, accountScope: 'b'.repeat(64) }, true),
+  ).toEqual([]);
   const localInput = (status: 'in_progress' | 'completed') => {
     const current = workoutRepository(database.db).get('owner', saved.id);
     return {

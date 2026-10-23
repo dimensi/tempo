@@ -10,6 +10,8 @@ import {
   resolveCustomExercises,
 } from './custom-exercises';
 import { syncExecution } from './execution';
+import { catalogStore } from '@/server/transformmate/catalog-store';
+import { projectDetail } from '@/server/transformmate/catalog-projection';
 import { TransformMateApiError } from '@/server/transformmate/errors';
 import type { TransformMateClient } from '@/server/transformmate/client';
 import type { SyncRepository } from './repository';
@@ -495,6 +497,22 @@ export function syncEngine(options: SyncEngineOptions) {
             await access(execution ? 'workouts:log' : 'workouts:plan');
             if (currentPlan(link)?.revision !== local.revision)
               throw new Error('Local workout changed');
+          },
+          publishCatalog: (detail) => {
+            catalogStore().detail(
+              {
+                ownerId: link.ownerId,
+                accountScope: options.accountScope!,
+                locale: 'ru',
+              },
+              {
+                ...projectDetail(detail),
+                ownedCustom:
+                  detail.author === options.authorId &&
+                  detail.exercise_type?.id === 4,
+              },
+              new Date().toISOString(),
+            );
           },
           save,
         });

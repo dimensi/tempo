@@ -4,6 +4,7 @@ import { transformMatePublicationCapability } from '@/contracts/transformmate-ca
 import type { Workout } from '@/contracts/workouts';
 import type { TransformMateClient } from '@/server/transformmate/client';
 import type { SyncLink, SyncState } from './state';
+import type { TransformMateExerciseDetail } from '@/server/transformmate/types';
 
 export function bindCustomExercises(workout: Workout, link: SyncLink): Workout {
   return {
@@ -41,6 +42,7 @@ export async function resolveCustomExercises(options: {
     'listExercises' | 'getExercise' | 'createCustomExercise'
   >;
   guard(): Promise<void>;
+  publishCatalog(detail: TransformMateExerciseDetail): void;
   save(link: SyncLink, patch: Partial<SyncState>): Promise<SyncLink | null>;
 }) {
   let link = options.link;
@@ -172,6 +174,11 @@ export async function resolveCustomExercises(options: {
         if (!remoteId) return { link, ready: false };
       }
     }
+    const { body: resolved } = await options.client.getExercise(remoteId);
+    await options.guard();
+    if (resolved.id !== remoteId)
+      throw new Error('Catalog exercise identity mismatch');
+    options.publishCatalog(resolved);
     const next = await options.save(link, {
       status: 'pending',
       reason: null,

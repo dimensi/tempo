@@ -19,6 +19,7 @@ const named = z.object({ id, name: z.string().max(500) });
 export const persistedDetailSchema = z.object({
   id,
   name: z.string().max(500),
+  ownedCustom: z.boolean().optional(),
   description: z.string().max(20000),
   other_names: z.array(z.string().max(500)).max(50),
   image: z.string().max(4000).nullable(),
@@ -65,6 +66,12 @@ export function projectDetail(
 ): PersistedDetail {
   return persistedDetailSchema.parse({
     ...detail,
+    ownedCustom: undefined,
+    description:
+      detail.exercise_type?.id === 4 &&
+      /^\[tempo-exercise:[a-f0-9]{64}\]$/.test(detail.description)
+        ? ''
+        : detail.description,
     videoMetadataComplete: true,
     previewCoverage: detail.image === null ? 'absent' : 'unknown',
     previewCheckedAt: null,
@@ -74,8 +81,10 @@ export function projectDetail(
   });
 }
 export function publicationCapability(
-  detail: Pick<PersistedDetail, 'metrics'> | null,
+  detail: Pick<PersistedDetail, 'metrics' | 'ownedCustom'> | null,
 ) {
+  if (detail?.ownedCustom && detail.metrics.length === 0)
+    return { state: 'supported' as const, reason: null };
   return transformMatePublicationCapability(detail?.metrics ?? null);
 }
 export function catalogItem(
@@ -98,7 +107,9 @@ export function catalogItem(
   return transformMateCatalogItemSchema.parse({
     id: summary.id,
     name: detail?.name ?? summary.name,
-    canPlan: canPlanExercise(summary),
+    canPlan:
+      canPlanExercise(summary) ||
+      Boolean(detail?.ownedCustom && detail.metrics.length === 0),
     publicationCapability: publicationCapability(detail),
     snippet: detail ? detail.description.slice(0, 500) : null,
     // A non-null unvalidated URL is unknown, never an invented/unsafe preview.
