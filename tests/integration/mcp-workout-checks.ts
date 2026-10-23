@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import { createCatalogStore } from '@/server/transformmate/catalog-store';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -243,6 +244,46 @@ export async function assertWorkoutTools(
       { ...snapshot, remoteTrainingId: 9002 },
       '2026-08-05T00:00:00Z',
     );
+    const catalogScope = {
+      ownerId: 'owner',
+      accountScope: binding.accountScope,
+      locale: 'ru' as const,
+    };
+    createCatalogStore(connection.sqlite).full(
+      catalogScope,
+      [
+        { id: 501, name: 'Saved press', metrics: [] },
+        { id: 502, name: 'Saved press variation', metrics: [] },
+      ],
+      '2026-08-05T00:00:00Z',
+    );
+    const beforeSearch = connection.sqlite
+      .prepare('select total_changes() as count')
+      .get();
+    const search = await call('search_exercises', {
+      query: 'saved press',
+      limit: 1,
+    });
+    expect(search).toMatchObject({
+      data: {
+        source: 'TransformMate',
+        coverage: 'complete',
+        records: [{ exerciseId: 501, name: 'Saved press' }],
+      },
+    });
+    expect(search.next_cursor).toBeTypeOf('string');
+    const searchNext = await call('search_exercises', {
+      query: 'saved press',
+      limit: 1,
+      cursor: search.next_cursor,
+    });
+    expect(searchNext).toMatchObject({
+      next_cursor: null,
+      data: { records: [{ exerciseId: 502 }] },
+    });
+    expect(
+      connection.sqlite.prepare('select total_changes() as count').get(),
+    ).toEqual(beforeSearch);
     const beforeReads = connection.sqlite
       .prepare('select total_changes() as count')
       .get();

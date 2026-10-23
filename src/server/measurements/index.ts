@@ -8,6 +8,8 @@ import { hasTrustedOrigin } from '@/server/auth/origin';
 import { measurementInputSchema } from '@/contracts/measurements';
 import { measurementRepository } from './repository';
 import { bodyRepository } from '@/server/yazio/body-repository';
+import { withWriteReceipt, WriteConflict } from '@/server/write-receipts';
+import { measurementVersion } from './version';
 import { runBodySync } from '@/server/yazio/body-runtime';
 export class MeasurementError extends Error {
   constructor(public status: number) {
@@ -60,20 +62,58 @@ export async function saveMeasurement(
   await check(headers, ownerId, true);
   const parsed = measurementInputSchema.safeParse(input);
   if (!parsed.success) throw new MeasurementError(400);
-  const repo = measurementRepository();
-  const body = bodyRepository();
-  const result = getDatabase().sqlite.transaction(() => {
-    const previous = id ? (repo.find(ownerId, id) ?? null) : null;
-    const saved = id
-      ? repo.update(ownerId, id, parsed.data)
-      : repo.create(ownerId, parsed.data);
-    if (!saved) throw new MeasurementError(404);
-    body.enqueue(ownerId, saved.id, parsed.data, previous);
-    return saved;
-  })();
+  const result = getDatabase().sqlite.transaction(() =>
+    persistMeasurement(ownerId, parsed.data, id),
+  )();
   void runBodySync(ownerId).catch(() => {});
-  return { ...result, sync: body.status(ownerId, result.id) };
+  return { ...result, sync: bodyRepository().status(ownerId, result.id) };
 }
+function persistMeasurement(
+  ownerId: string,
+  data: z.infer<typeof measurementInputSchema>,
+  id?: string,
+) {
+  const repo = measurementRepository();
+  const previous = id ? (repo.find(ownerId, id) ?? null) : null;
+  const saved = id
+    ? repo.update(ownerId, id, data)
+    : repo.create(ownerId, data);
+  if (!saved) throw new MeasurementError(404);
+  bodyRepository().enqueue(ownerId, saved.id, data, previous);
+  return saved;
+}
+export async function saveVersionedMeasurement(
+  headers: Headers,
+  ownerId: string,
+  namespace: string,
+  input: { requestId: string; data: unknown; id?: string; version?: string },
+) {
+  await check(headers, ownerId, true);
+  const data = measurementInputSchema.parse(input.data);
+  const result = withWriteReceipt(
+    ownerId,
+    namespace,
+    input.requestId,
+    input,
+    () => {
+      if (input.id) {
+        const existing = measurementRepository().find(ownerId, input.id);
+        if (!existing) throw new MeasurementError(404);
+        if (measurementVersion(existing) !== input.version)
+          throw new WriteConflict();
+      }
+      const record = persistMeasurement(ownerId, data, input.id);
+      return {
+        ...record,
+        version: measurementVersion(record),
+        sync: bodyRepository().status(ownerId, record.id),
+      };
+    },
+  );
+  void runBodySync(ownerId).catch(() => {});
+  return result;
+}
+
 export async function deleteMeasurement(
   headers: Headers,
   ownerId: string,

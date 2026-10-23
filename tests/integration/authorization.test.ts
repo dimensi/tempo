@@ -389,6 +389,17 @@ it('fails closed for generic and selective medical-PDF trainer access, including
   process.env.BETTER_AUTH_URL = 'http://localhost:3000';
   process.env.BETTER_AUTH_SECRET =
     'synthetic-mcp-integration-secret-at-least-32';
+  // Rehearse upgrading the existing read-only resource, without expanding old clients.
+  connection.sqlite
+    .prepare(
+      'INSERT INTO oauth_resource (id,identifier,name,allowed_scopes) VALUES (?,?,?,?)',
+    )
+    .run(
+      crypto.randomUUID(),
+      'http://localhost:3000/api/mcp',
+      'Tempo',
+      JSON.stringify(JSON.stringify(['tempo:read', 'offline_access'])),
+    );
   state.realAuth = actual.getAuth();
   const { assertMcpAccess } = await import('./mcp-checks');
   await assertMcpAccess(state.realAuth, connection);

@@ -14,6 +14,7 @@ import { getDatabase } from '@/server/db';
 import { user } from '@/server/db/schema';
 import { oauthAccessToken, oauthRefreshToken } from '@/server/db/schema/oauth';
 import { readServerEnv } from '@/server/env';
+import { mcpScopes } from '@/contracts/mcp-scopes';
 
 export function mcpResource() {
   return new URL('/api/mcp', readServerEnv().BETTER_AUTH_URL).href;
@@ -28,12 +29,13 @@ export function mcpOAuthOptions(): OAuthOptions<string[]> {
   return {
     loginPage: '/mcp/login',
     consentPage: '/mcp/consent',
-    scopes: ['tempo:read', 'offline_access'],
+    scopes: [...mcpScopes],
+    resourceSeedMode: 'merge',
     resources: [
       {
         identifier: mcpResource(),
         name: 'Tempo',
-        allowedScopes: ['tempo:read', 'offline_access'],
+        allowedScopes: [...mcpScopes],
       },
     ],
     grantTypes: ['authorization_code', 'refresh_token'],
@@ -129,7 +131,14 @@ export function mcpTokenVerifier(options: OAuthOptions<string[]>) {
             .get();
           if (!owner || owner.role !== 'OWNER')
             throw new APIError('UNAUTHORIZED');
-          return { user: owner, session: null };
+          if (typeof claims.client_id !== 'string')
+            throw new APIError('UNAUTHORIZED');
+          return {
+            user: owner,
+            session: null,
+            scopes: claims.scope.split(' '),
+            clientId: claims.client_id,
+          };
         },
       ),
     },

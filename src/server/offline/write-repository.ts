@@ -1,5 +1,6 @@
 import 'server-only';
-import { createHash } from 'node:crypto';
+import { writeFingerprint as fingerprint } from '@/server/write-receipts';
+import { measurementVersion } from '@/server/measurements/version';
 import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '@/server/db';
 import { offlineWriteReceipts } from '@/server/db/schema/offline-writes';
@@ -19,8 +20,6 @@ export class OfflineWriteError extends Error {
     super('Offline write failed');
   }
 }
-const fingerprint = (value: unknown) =>
-  createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export function offlineWriteRepository(database = getDatabase()) {
   const { db, sqlite } = database;
   function find(
@@ -40,7 +39,7 @@ export function offlineWriteRepository(database = getDatabase()) {
         values: row.values,
         note: row.note,
       });
-      return { id, version: fingerprint(data), payload: { kind, data } };
+      return { id, version: measurementVersion(data), payload: { kind, data } };
     }
     const row = db
       .select()

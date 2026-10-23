@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export const mcpClientInput = z.strictObject({
   name: z.string().trim().min(1).max(80),
+  writeWorkouts: z.boolean().default(false),
+  writeMeasurements: z.boolean().default(false),
   callback: z
     .url()
     .max(2048)
@@ -17,6 +19,7 @@ export const mcpClientRow = z.object({
   name: z.string(),
   callback: z.string(),
   disabled: z.boolean(),
+  scopes: z.array(z.string()),
   createdAt: z.string().nullable(),
 });
 export const mcpClientList = z.object({

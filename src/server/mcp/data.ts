@@ -114,6 +114,9 @@ export async function readMcpData(
           source: 'LOCAL',
           id: w.id,
           workoutId: w.id,
+          revision: w.revision,
+          note: w.note,
+          editable: true,
           date: w.date,
           title: w.title,
           executionStatus: w.status,
@@ -127,6 +130,10 @@ export async function readMcpData(
             ? {
                 exercises: w.exercises.map((e) => ({
                   name: e.name,
+                  exerciseId: e.id,
+                  comment: e.comment,
+                  fatigue: e.fatigue ?? null,
+                  failure: e.failure ?? null,
                   historyRef: exerciseHistoryRef(e.transformMate?.exerciseId),
                   ...(w.status === 'planned'
                     ? { plannedSets: e.sets }

@@ -3,6 +3,7 @@ import { verifyOAuthQueryParams } from '@better-auth/oauth-provider';
 import { getAuth } from '@/server/auth';
 import { mcpResource } from '@/server/auth/mcp-oauth';
 import { z } from 'zod';
+import { mcpScopes } from '@/contracts/mcp-scopes';
 
 export async function completeMcpConsent(
   headers: Headers,
@@ -36,7 +37,8 @@ export async function validMcpQuery(query: string) {
   const scopes = params.get('scope')?.split(' ') ?? [];
   return (
     scopes.includes('tempo:read') &&
-    scopes.every((s) => ['tempo:read', 'offline_access'].includes(s)) &&
+    params.getAll('scope').length === 1 &&
+    scopes.every((s) => (mcpScopes as readonly string[]).includes(s)) &&
     params.getAll('resource').length === 1 &&
     params.get('resource') === mcpResource()
   );

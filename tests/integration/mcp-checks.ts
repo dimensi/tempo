@@ -1,4 +1,6 @@
 import { expect } from 'vitest';
+import { mcpExtraSchemas } from '@/contracts/mcp-writes';
+import { assertMcpWrites } from './mcp-write-checks';
 import { assertWorkoutTools } from './mcp-workout-checks';
 import { createHash, randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
@@ -21,7 +23,7 @@ import { getSavedDataFreshness } from '@/server/analytics/freshness';
 import { nutritionDays, nutritionSyncRuns } from '@/server/db/schema/nutrition';
 import { yazioDailySteps } from '@/server/db/schema/yazio-health';
 import { getAnalytics } from '@/server/analytics';
-import { bindMcpReader } from '@/server/auth/data-session';
+import { bindMcpPrincipal } from '@/server/auth/data-session';
 import { authorize } from '@/server/auth/guards';
 import { handleMcp } from '@/server/mcp/http';
 import { mcpHistoryInput, mcpOutput, mcpTools } from '@/contracts/mcp';
@@ -183,7 +185,7 @@ export async function assertMcpAccess(
   ).toBeNull();
   await auth.api.verifyTempoToken({ body: { token: tokens.access_token } });
   const headers = new Headers();
-  bindMcpReader(headers, () =>
+  bindMcpPrincipal(headers, () =>
     auth.api.verifyTempoToken({ body: { token: tokens.access_token } }),
   );
   expect((await authorize(headers, 'nutrition:read', 'owner')).ok).toBe(true);
@@ -316,8 +318,9 @@ export async function assertMcpAccess(
   await mcp.connect(transport);
   try {
     expect((await mcp.listTools()).tools.map((t) => t.name).sort()).toEqual(
-      [...mcpTools].sort(),
+      [...mcpTools, ...Object.keys(mcpExtraSchemas)].sort(),
     );
+    await assertMcpWrites(auth, connection, ownerHeaders, mcp);
     const range = { from: '2026-10-01', to: '2026-10-04' };
     const firstWorkout = mcpOutput.parse(
       (
@@ -793,7 +796,7 @@ export async function assertMcpAccess(
     }
     // Personal MCP has no HTTP, tool-call or parallelism throttle.
     for (let i = 0; i < 121; i++)
-      expect((await mcp.listTools()).tools).toHaveLength(8);
+      expect((await mcp.listTools()).tools).toHaveLength(16);
     for (let i = 0; i < 31; i++)
       expect(
         (await mcp.callTool({ name: 'get_profile', arguments: {} })).isError,
@@ -943,6 +946,15 @@ export async function assertMcpAccess(
       })
     ).status,
   ).toBe(403);
+  expect(
+    (
+      await tokenRequest({
+        grant_type: 'refresh_token',
+        refresh_token: tokens.refresh_token,
+        scope: 'tempo:read tempo:workouts:write',
+      })
+    ).ok,
+  ).toBe(false);
   const renewed = await tokenRequest({
     grant_type: 'refresh_token',
     refresh_token: tokens.refresh_token,
