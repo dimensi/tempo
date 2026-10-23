@@ -46,6 +46,12 @@ export async function resolveCustomExercises(options: {
   save(link: SyncLink, patch: Partial<SyncState>): Promise<SyncLink | null>;
 }) {
   let link = options.link;
+  const currentIds = new Set(options.workout.exercises.map((item) => item.id));
+  // Unknown claims retain write provenance even after their occurrence is removed.
+  const retainedClaims = () =>
+    (link.state.customExercises ?? []).filter(
+      (item) => item.phase === 'unknown' || currentIds.has(item.key),
+    );
   for (const exercise of options.workout.exercises) {
     if (exercise.transformMate) continue;
     if (!exercise.id) throw new Error('Missing persisted exercise identity');
@@ -133,9 +139,7 @@ export async function resolveCustomExercises(options: {
         status: 'unknown',
         reason: 'ambiguous_write',
         customExercises: [
-          ...(link.state.customExercises ?? []).filter(
-            (item) => item.key !== exercise.id,
-          ),
+          ...retainedClaims().filter((item) => item.key !== exercise.id),
           claim,
         ],
       });
@@ -183,9 +187,7 @@ export async function resolveCustomExercises(options: {
       status: 'pending',
       reason: null,
       customExercises: [
-        ...(link.state.customExercises ?? []).filter(
-          (item) => item.key !== exercise.id,
-        ),
+        ...retainedClaims().filter((item) => item.key !== exercise.id),
         {
           key: exercise.id,
           name: exercise.name,

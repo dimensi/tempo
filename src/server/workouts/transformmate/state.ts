@@ -59,7 +59,6 @@ export const syncStateSchema = z.object({
         remoteId: z.number().int().positive().nullable(),
       }),
     )
-    .max(50)
     .optional(),
   lifecycle: z
     .object({
