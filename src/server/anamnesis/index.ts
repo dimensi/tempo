@@ -81,90 +81,36 @@ async function check(
   return result.session;
 }
 
-// Владелец видит всё; тренер — только показатели с явным грантом.
-async function markerGrants(
-  session: AuthorizedSession,
-  repo: Repo,
-  ownerId: string,
-): Promise<Set<string> | null> {
-  if (session.user.role !== 'TRAINER') return null;
-  return repo.markerGrantIds(ownerId, session.user.id);
-}
-
-function requireMarkerAccess(
-  grants: Set<string> | null,
-  markerId: string | null,
-): void {
-  if (grants === null) return;
-  if (!markerId || !grants.has(markerId)) throw new AnamnesisError(403);
-}
-
-// Оригинал PDF выдаётся отдельным грантом — проверка едина для всех мест.
-function requireDocumentAccess(
-  session: AuthorizedSession,
-  repo: Repo,
-  ownerId: string,
-  documentId: string,
-): void {
-  if (session.user.role !== 'TRAINER') return;
-  const grants = repo.documentGrantIds(ownerId, session.user.id);
-  if (!grants.has(documentId)) throw new AnamnesisError(403);
-}
-
 // --- Обзор и показатели -------------------------------------------------------
 
 export async function getAnamnesisOverview(
   headers: Headers,
   ownerId: string,
 ): Promise<AnamnesisOverview> {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
   await ensureAnamnesisCatalog();
-  const grants = await markerGrants(session, repo, ownerId);
-  // Каждая цифра сводки ограничена разрешёнными тренеру данными.
-  const documentGrants =
-    session.user.role === 'TRAINER'
-      ? repo.documentGrantIds(ownerId, session.user.id)
-      : null;
-  const base = repo.overview(
-    ownerId,
-    grants === null ? undefined : { markerIds: [...grants] },
-    documentGrants === null ? undefined : [...documentGrants],
-  );
+  const base = repo.overview(ownerId);
   const counts = new Map(
     repo
       .markersWithObservations(ownerId)
       .map((row) => [row.markerId, row.count]),
   );
-  const visibleMarkers =
-    grants === null
-      ? [...counts.keys()].filter((markerId) => markerId !== null).length
-      : [...counts.keys()].filter(
-          (markerId) => markerId !== null && grants.has(markerId),
-        ).length;
   return {
     documents: base.documents,
-    markers: visibleMarkers,
-    observations:
-      grants === null
-        ? base.observations
-        : [...counts.entries()]
-            .filter(([markerId]) => markerId !== null && grants.has(markerId))
-            .reduce((sum, [, count]) => sum + count, 0),
+    markers: [...counts.keys()].filter((markerId) => markerId !== null).length,
+    observations: base.observations,
     pendingReviews: base.pendingReviews,
     activeImports: base.activeImports,
     pendingDocumentId:
-      session.user.role === 'OWNER'
+      (await check(headers, ownerId)).user.role === 'OWNER'
         ? (repo.listPendingReviews(ownerId)[0]?.documentId ?? null)
         : null,
     activeDocumentId:
       repo
         .listJobs(ownerId)
-        .find(
-          (job) =>
-            ['queued', 'processing'].includes(job.status) &&
-            (documentGrants === null || documentGrants.has(job.documentId)),
-        )?.documentId ?? null,
+        .find((job) => ['queued', 'processing'].includes(job.status))
+        ?.documentId ?? null,
     lastCollectedAt: base.lastCollectedAt,
   };
 }
@@ -173,12 +119,12 @@ export async function listAnamnesisMarkers(
   headers: Headers,
   ownerId: string,
 ): Promise<AnamnesisMarkerSummary[]> {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
   await ensureAnamnesisCatalog();
-  const grants = await markerGrants(session, repo, ownerId);
   const markers = repo.listMarkers();
   const rows = repo.listObservations(ownerId, {});
+  await check(headers, ownerId);
   return markers
     .map((marker) => {
       const own = rows.filter((row) => row.markerId === marker.id);
@@ -201,11 +147,7 @@ export async function listAnamnesisMarkers(
         lastReferenceAssessment: last?.referenceAssessment ?? null,
       };
     })
-    .filter(
-      (summary) =>
-        summary.observationCount > 0 &&
-        (grants === null || grants.has(summary.marker.id)),
-    );
+    .filter((summary) => summary.observationCount > 0);
 }
 
 // Полный справочник нужен владельцу при ручном сопоставлении, включая ещё не использованные показатели.
@@ -220,11 +162,10 @@ export async function getAnamnesisMarker(
   ownerId: string,
   markerId: string,
 ) {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
   await ensureAnamnesisCatalog();
-  const grants = await markerGrants(session, repo, ownerId);
-  requireMarkerAccess(grants, markerId);
+  await check(headers, ownerId);
   const marker = repo.findMarker(markerId);
   if (!marker) throw new AnamnesisError(404);
   return marker;
@@ -236,10 +177,8 @@ export async function listMarkerObservations(
   markerId: string,
   period: { from?: string; to?: string } = {},
 ) {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
-  const grants = await markerGrants(session, repo, ownerId);
-  requireMarkerAccess(grants, markerId);
   const parsed = z
     .object({
       from: z.iso.date().optional(),
@@ -259,27 +198,13 @@ export async function getAnamnesisObservation(
   ownerId: string,
   id: string,
 ) {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
   const row = repo.findObservation(ownerId, id);
   if (!row) throw new AnamnesisError(404);
-  const grants = await markerGrants(session, repo, ownerId);
-  requireMarkerAccess(grants, row.markerId);
-  // Грант на показатель не раскрывает оригиналы: тренеру видны цитаты
-  // только тех документов, что выданы отдельным грантом.
-  const documentGrants =
-    session.user.role === 'TRAINER'
-      ? repo.documentGrantIds(ownerId, session.user.id)
-      : null;
   return {
     observation: observationDto(row),
-    sources: repo
-      .listSources(id)
-      .filter(
-        (source) =>
-          documentGrants === null || documentGrants.has(source.documentId),
-      )
-      .map(sourceDto),
+    sources: repo.listSources(id).map(sourceDto),
   };
 }
 
@@ -417,12 +342,10 @@ export async function listAnamnesisDocuments(
   headers: Headers,
   ownerId: string,
 ): Promise<MedicalDocument[]> {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
   const rows = repo.listDocuments(ownerId);
-  if (session.user.role !== 'TRAINER') return rows.map(documentDto);
-  const grants = repo.documentGrantIds(ownerId, session.user.id);
-  return rows.filter((row) => grants.has(row.id)).map(documentDto);
+  return rows.map(documentDto);
 }
 
 export async function getAnamnesisDocument(
@@ -430,15 +353,14 @@ export async function getAnamnesisDocument(
   ownerId: string,
   id: string,
 ): Promise<MedicalDocument> {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
   const row = repo.findDocument(ownerId, id);
   if (!row) throw new AnamnesisError(404);
-  requireDocumentAccess(session, repo, ownerId, id);
   return documentDto(row);
 }
 
-// Измерения документа с происхождением; для тренера — по гранту документа.
+// Измерения документа с происхождением.
 export async function listAnamnesisDocumentObservations(
   headers: Headers,
   ownerId: string,
@@ -449,11 +371,10 @@ export async function listAnamnesisDocumentObservations(
     sources: MedicalObservationSource[];
   }>
 > {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
   const document = repo.findDocument(ownerId, documentId);
   if (!document) throw new AnamnesisError(404);
-  requireDocumentAccess(session, repo, ownerId, documentId);
   const observations = repo.listObservationsByDocument(ownerId, documentId);
   const sources = repo.listSourcesForObservations(
     observations.map((row) => row.id),
@@ -472,18 +393,18 @@ export async function listAnamnesisDocumentObservations(
   }));
 }
 
-// Скачивание оригинала: доступ к PDF выдаётся отдельно от показателей.
+// Скачивание оригинала с повторной проверкой доступа после чтения.
 export async function getAnamnesisDocumentFile(
   headers: Headers,
   ownerId: string,
   id: string,
 ): Promise<{ bytes: Uint8Array; filename: string }> {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
   const row = repo.findDocument(ownerId, id);
   if (!row) throw new AnamnesisError(404);
-  requireDocumentAccess(session, repo, ownerId, id);
   const bytes = await getObjectStorage().get(row.storageKey);
+  await check(headers, ownerId);
   return { bytes, filename: row.filename };
 }
 
@@ -637,15 +558,13 @@ export async function listAnamnesisImports(
   headers: Headers,
   ownerId: string,
 ): Promise<MedicalImportJob[]> {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   // Опрос очереди оживляет обработку после перезапуска процесса —
   // состояние заданий живёт в базе, а не в памяти.
   kickAnamnesisImport();
   const repo = anamnesisRepository();
   const rows = repo.listJobs(ownerId);
-  if (session.user.role !== 'TRAINER') return rows.map(jobDto);
-  const grants = repo.documentGrantIds(ownerId, session.user.id);
-  return rows.filter((row) => grants.has(row.documentId)).map(jobDto);
+  return rows.map(jobDto);
 }
 
 export async function getAnamnesisImport(
@@ -653,11 +572,10 @@ export async function getAnamnesisImport(
   ownerId: string,
   id: string,
 ): Promise<MedicalImportJob> {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
   const job = repo.findJob(ownerId, id);
   if (!job) throw new AnamnesisError(404);
-  requireDocumentAccess(session, repo, ownerId, job.documentId);
   return jobDto(job);
 }
 
@@ -683,14 +601,11 @@ export async function listAnamnesisReviews(headers: Headers, ownerId: string) {
   }));
 }
 
-// Тренеру виден только счётчик проверок по разрешённым показателям.
+// Счётчик проверок доступен вместе с медицинскими данными.
 export async function countAnamnesisReviews(headers: Headers, ownerId: string) {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
-  const grants = await markerGrants(session, repo, ownerId);
-  return grants === null
-    ? repo.countPendingReviews(ownerId)
-    : repo.countPendingReviews(ownerId, [...grants]);
+  return repo.countPendingReviews(ownerId);
 }
 
 export async function confirmAnamnesisReview(
@@ -757,63 +672,28 @@ export async function getAnamnesisAccess(
 ): Promise<AnamnesisAccess> {
   await check(headers, ownerId, true);
   const repo = anamnesisRepository();
-  await ensureAnamnesisCatalog();
-  const trainers = repo.listGrantTrainers(ownerId);
-  return {
-    trainers: trainers.map((trainer) => ({
-      trainerId: trainer.trainerId,
-      name: trainer.name,
-      email: trainer.email,
-      markerIds: [...repo.markerGrantIds(ownerId, trainer.trainerId)],
-      documentIds: [...repo.documentGrantIds(ownerId, trainer.trainerId)],
-    })),
-  };
+  return { trainers: repo.listGrantTrainers(ownerId) };
 }
 
-async function grantTargetTrainer(
+export async function setAnamnesisAccess(
+  headers: Headers,
   ownerId: string,
-  trainerId: string,
+  input: unknown,
 ): Promise<void> {
-  const grant = getDatabase()
-    .db.select({ ownerId: trainerAccess.ownerId })
-    .from(trainerAccess)
+  await check(headers, ownerId, true);
+  const parsed = anamnesisGrantInputSchema.parse(input);
+  const updated = getDatabase()
+    .db.update(trainerAccess)
+    .set({ anamnesisAccess: parsed.enabled })
     .where(
       and(
-        eq(trainerAccess.trainerId, trainerId),
         eq(trainerAccess.ownerId, ownerId),
+        eq(trainerAccess.trainerId, parsed.trainerId),
       ),
     )
+    .returning({ trainerId: trainerAccess.trainerId })
     .get();
-  if (!grant) throw new AnamnesisError(400);
-}
-
-export async function setAnamnesisMarkerGrant(
-  headers: Headers,
-  ownerId: string,
-  markerId: string,
-  input: unknown,
-): Promise<void> {
-  await check(headers, ownerId, true);
-  const parsed = anamnesisGrantInputSchema.parse(input);
-  const repo = anamnesisRepository();
-  await ensureAnamnesisCatalog();
-  if (!repo.findMarker(markerId)) throw new AnamnesisError(404);
-  await grantTargetTrainer(ownerId, parsed.trainerId);
-  repo.setMarkerGrant(ownerId, parsed.trainerId, markerId, parsed.enabled);
-}
-
-export async function setAnamnesisDocumentGrant(
-  headers: Headers,
-  ownerId: string,
-  documentId: string,
-  input: unknown,
-): Promise<void> {
-  await check(headers, ownerId, true);
-  const parsed = anamnesisGrantInputSchema.parse(input);
-  const repo = anamnesisRepository();
-  if (!repo.findDocument(ownerId, documentId)) throw new AnamnesisError(404);
-  await grantTargetTrainer(ownerId, parsed.trainerId);
-  repo.setDocumentGrant(ownerId, parsed.trainerId, documentId, parsed.enabled);
+  if (!updated) throw new AnamnesisError(400);
 }
 
 // --- Отчёты -----------------------------------------------------------------------
@@ -826,14 +706,7 @@ export async function createAnamnesisReport(
   const access = await authorize(headers, 'anamnesis:report', ownerId);
   if (!access.ok) throw new AnamnesisError(access.status);
   const session = access.session;
-  const repo = anamnesisRepository();
   const request = medicalReportCreateSchema.parse(input);
-  // Тренер строит отчёт только из разрешённых показателей.
-  if (session.user.role === 'TRAINER') {
-    const grants = repo.markerGrantIds(ownerId, session.user.id);
-    if (request.markerIds.some((markerId) => !grants.has(markerId)))
-      throw new AnamnesisError(403);
-  }
   try {
     const created = await withMedicalReportSlot(() =>
       generateMedicalReport(
@@ -862,12 +735,6 @@ async function authorizeReportSelection(
   const access = await authorize(headers, 'anamnesis:report', ownerId);
   if (!access.ok) throw new AnamnesisError(access.status);
   const request = medicalReportRequestSchema.parse(input);
-  const repo = anamnesisRepository();
-  if (access.session.user.role === 'TRAINER') {
-    const grants = repo.markerGrantIds(ownerId, access.session.user.id);
-    if (request.markerIds.some((id) => !grants.has(id)))
-      throw new AnamnesisError(403);
-  }
   return request;
 }
 export async function previewAnamnesisReport(
@@ -901,25 +768,13 @@ export async function anamnesisReportDates(
     .map(([key, count]) => ({ key, count }));
 }
 
-function reportVisibleToGrants(
-  grants: Set<string> | null,
-  report: { markerIds: string[] },
-): boolean {
-  if (grants === null) return true;
-  return report.markerIds.every((markerId) => grants.has(markerId));
-}
-
 export async function listAnamnesisReports(
   headers: Headers,
   ownerId: string,
 ): Promise<MedicalReportExport[]> {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
-  const grants = await markerGrants(session, repo, ownerId);
-  return repo
-    .listReports(ownerId)
-    .map(reportDto)
-    .filter((report) => reportVisibleToGrants(grants, report));
+  return repo.listReports(ownerId).map(reportDto);
 }
 
 // Скачивание перепроверяет гранты: отозванное разрешение блокирует и файл.
@@ -928,19 +783,13 @@ export async function getAnamnesisReportFile(
   ownerId: string,
   id: string,
 ): Promise<{ bytes: Uint8Array; filename: string }> {
-  const session = await check(headers, ownerId);
+  await check(headers, ownerId);
   const repo = anamnesisRepository();
   const row = repo.findReport(ownerId, id);
   if (!row || row.status !== 'ready' || !row.storageKey)
     throw new AnamnesisError(404);
-  const grants = await markerGrants(session, repo, ownerId);
-  if (!reportVisibleToGrants(grants, reportDto(row)))
-    throw new AnamnesisError(403);
   const bytes = await getObjectStorage().get(row.storageKey);
-  const currentSession = await check(headers, ownerId);
-  const currentGrants = await markerGrants(currentSession, repo, ownerId);
-  if (!reportVisibleToGrants(currentGrants, reportDto(row)))
-    throw new AnamnesisError(403);
+  await check(headers, ownerId);
   return { bytes, filename: row.filename };
 }
 

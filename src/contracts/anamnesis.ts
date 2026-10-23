@@ -325,21 +325,6 @@ export const medicalReportExportSchema = z
   .strict();
 export type MedicalReportExport = z.infer<typeof medicalReportExportSchema>;
 
-export const medicalMarkerGrantSchema = z
-  .object({
-    ownerId: id,
-    trainerId: id,
-    markerId: anamnesisMarkerSlug,
-    grantedAt: epoch,
-  })
-  .strict();
-export type MedicalMarkerGrant = z.infer<typeof medicalMarkerGrantSchema>;
-
-export const medicalDocumentGrantSchema = z
-  .object({ ownerId: id, trainerId: id, documentId: id, grantedAt: epoch })
-  .strict();
-export type MedicalDocumentGrant = z.infer<typeof medicalDocumentGrantSchema>;
-
 export const anamnesisGrantInputSchema = z
   .object({ trainerId: id, enabled: z.boolean() })
   .strict();
@@ -350,8 +335,7 @@ export const anamnesisTrainerAccessSchema = z
     trainerId: id,
     name: z.string().min(1).max(200),
     email: z.email().max(320),
-    markerIds: z.array(anamnesisMarkerSlug),
-    documentIds: z.array(id),
+    enabled: z.boolean(),
   })
   .strict();
 export type AnamnesisTrainerAccess = z.infer<

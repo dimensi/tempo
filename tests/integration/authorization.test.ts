@@ -462,47 +462,114 @@ async function assertMedicalPdfGrants() {
   state.objects.set('private/medical-report.pdf', new Uint8Array([7, 8, 9]));
   state.session = { user: { id: trainerId, role: 'TRAINER' } };
 
+  await expect(
+    anamnesis.listAnamnesisDocuments(headers(), ownerId),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(
+    anamnesis.getAnamnesisMarker(headers(), ownerId, 'alt'),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(
+    anamnesis.getAnamnesisDocumentFile(headers(), ownerId, 'granted-document'),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(
+    anamnesis.setAnamnesisAccess(headers(), ownerId, {
+      trainerId,
+      enabled: true,
+    }),
+  ).rejects.toMatchObject({ status: 403 });
+  state.session = { user: { id: ownerId, role: 'OWNER' } };
+  await anamnesis.setAnamnesisAccess(headers(), ownerId, {
+    trainerId,
+    enabled: true,
+  });
+  expect(
+    (await anamnesis.getAnamnesisAccess(headers(), ownerId)).trainers[0]
+      ?.enabled,
+  ).toBe(true);
+  state.session = { user: { id: trainerId, role: 'TRAINER' } };
   expect(
     await anamnesis.listAnamnesisDocuments(headers(), ownerId),
-  ).toHaveLength(0);
+  ).toHaveLength(2);
   await expect(
-    anamnesis.getAnamnesisDocumentFile(headers(), ownerId, 'granted-document'),
-  ).rejects.toMatchObject({ status: 403 });
-
-  repository.setDocumentGrant(ownerId, trainerId, 'granted-document', true);
-  expect(
-    (await anamnesis.listAnamnesisDocuments(headers(), ownerId)).map(
-      (document) => document.id,
-    ),
-  ).toEqual(['granted-document']);
+    anamnesis.getAnamnesisMarker(headers(), ownerId, 'alt'),
+  ).resolves.toMatchObject({ id: 'alt' });
+  await expect(
+    anamnesis.getAnamnesisMarker(headers(), ownerId, 'vitamin-d-25oh'),
+  ).resolves.toMatchObject({ id: 'vitamin-d-25oh' });
   await expect(
     anamnesis.getAnamnesisDocumentFile(headers(), ownerId, 'hidden-document'),
-  ).rejects.toMatchObject({ status: 403 });
-  await expect(
-    anamnesis.getAnamnesisDocumentFile(headers(), ownerId, 'granted-document'),
-  ).resolves.toMatchObject({ filename: 'granted.pdf' });
-
-  repository.setMarkerGrant(ownerId, trainerId, 'alt', true);
-  expect(await anamnesis.listAnamnesisReports(headers(), ownerId)).toHaveLength(
-    0,
-  );
-  await expect(
-    anamnesis.getAnamnesisReportFile(headers(), ownerId, 'medical-report'),
-  ).rejects.toMatchObject({ status: 403 });
-
-  repository.setMarkerGrant(ownerId, trainerId, 'vitamin-d-25oh', true);
+  ).resolves.toMatchObject({ filename: 'hidden.pdf' });
   expect(
     (await anamnesis.listAnamnesisReports(headers(), ownerId)).map(
       (report) => report.id,
     ),
   ).toEqual(['medical-report']);
-  state.beforeObjectRead = () =>
-    repository.setMarkerGrant(ownerId, trainerId, 'vitamin-d-25oh', false);
+  await expect(
+    anamnesis.getAnamnesisReportFile(headers(), ownerId, 'medical-report'),
+  ).resolves.toMatchObject({ filename: 'medical-report.pdf' });
+
+  const setEnabled = (enabled: boolean) =>
+    database
+      .handle!.db.update(trainerAccess)
+      .set({ anamnesisAccess: enabled })
+      .run();
+  state.beforeObjectRead = () => setEnabled(false);
   try {
     await expect(
       anamnesis.getAnamnesisReportFile(headers(), ownerId, 'medical-report'),
     ).rejects.toMatchObject({ status: 403 });
+    setEnabled(true);
+    await expect(
+      anamnesis.getAnamnesisDocumentFile(
+        headers(),
+        ownerId,
+        'granted-document',
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      anamnesis.listAnamnesisReports(headers(), ownerId),
+    ).rejects.toMatchObject({ status: 403 });
+    setEnabled(true);
+    state.beforeObjectRead = () =>
+      database.handle!.db.delete(trainerAccess).run();
+    await expect(
+      anamnesis.getAnamnesisDocumentFile(
+        headers(),
+        ownerId,
+        'granted-document',
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      anamnesis.listAnamnesisDocuments(headers(), ownerId),
+    ).rejects.toMatchObject({ status: 403 });
   } finally {
     state.beforeObjectRead = null;
   }
+  database
+    .handle!.db.insert(trainerAccess)
+    .values({
+      ownerId,
+      trainerId,
+      anamnesisAccess: true,
+      createdAt: new Date(),
+    })
+    .run();
+  state.session = { user: { id: 'another-owner', role: 'OWNER' } };
+  await expect(
+    anamnesis.listAnamnesisDocuments(headers(), ownerId),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(
+    anamnesis.setAnamnesisAccess(headers(), ownerId, {
+      trainerId,
+      enabled: false,
+    }),
+  ).rejects.toMatchObject({ status: 403 });
+  state.session = { user: { id: ownerId, role: 'OWNER' } };
+  await anamnesis.setAnamnesisAccess(headers(), ownerId, {
+    trainerId,
+    enabled: false,
+  });
+  expect(
+    await anamnesis.listAnamnesisDocuments(headers(), ownerId),
+  ).toHaveLength(2);
 }

@@ -65,7 +65,10 @@ export async function authorize(
         .from(trainerAccess)
         .where(eq(trainerAccess.trainerId, session.user.id))
         .get();
-      if (grant?.ownerId !== ownerId)
+      if (
+        grant?.ownerId !== ownerId ||
+        (permission.startsWith('anamnesis:') && !grant.anamnesisAccess)
+      )
         return { ok: false as const, status: 403 };
     }
   }

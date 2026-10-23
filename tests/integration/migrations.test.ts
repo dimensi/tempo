@@ -84,10 +84,61 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
           updatedAt: new Date(),
         })
         .run();
-    database.db
-      .insert(trainerAccess)
-      .values({ trainerId: 'trainer', ownerId: 'owner', createdAt: new Date() })
-      .run();
+    database.sqlite
+      .prepare(
+        'INSERT INTO trainer_access (trainer_id,owner_id,created_at) VALUES (?,?,?)',
+      )
+      .run('trainer', 'owner', Date.now());
+
+    for (const trainerId of ['trainer-pdf', 'trainer-none']) {
+      database.db
+        .insert(user)
+        .values({
+          id: trainerId,
+          role: 'TRAINER',
+          name: trainerId,
+          email: `${trainerId}@example.test`,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .run();
+      database.sqlite
+        .prepare(
+          'INSERT INTO trainer_access (trainer_id,owner_id,created_at) VALUES (?,?,?)',
+        )
+        .run(trainerId, 'owner', 123456);
+    }
+    database.sqlite
+      .prepare(
+        'INSERT INTO medical_markers (id,code,name,category) VALUES (?,?,?,?)',
+      )
+      .run('migration-marker', 'migration-marker', 'Migration marker', 'other');
+    database.sqlite
+      .prepare(
+        'INSERT INTO medical_documents (id,owner_id,filename,storage_key,sha256,mime_type,size_bytes,page_count,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        'migration-document',
+        'owner',
+        'medical.pdf',
+        'private/medical.pdf',
+        'a'.repeat(64),
+        'application/pdf',
+        3,
+        1,
+        123456,
+        123456,
+      );
+    database.sqlite
+      .prepare(
+        'INSERT INTO medical_marker_grants (owner_id,trainer_id,marker_id,granted_at) VALUES (?,?,?,?)',
+      )
+      .run('owner', 'trainer', 'migration-marker', 123456);
+    database.sqlite
+      .prepare(
+        'INSERT INTO medical_document_grants (owner_id,trainer_id,document_id,granted_at) VALUES (?,?,?,?)',
+      )
+      .run('owner', 'trainer-pdf', 'migration-document', 123456);
 
     const oldDetail = {
       ...projectDetail(exerciseDetailFixture()),
@@ -521,7 +572,35 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
     expect(
       database.sqlite.pragma('table_info(transformmate_replica_jobs)'),
     ).not.toContainEqual(expect.objectContaining({ name: 'error' }));
-    expect(database.db.select().from(user).all()).toHaveLength(2);
+    expect(database.db.select().from(user).all()).toHaveLength(4);
+    expect(
+      database.db
+        .select()
+        .from(trainerAccess)
+        .all()
+        .map((grant) => ({
+          trainerId: grant.trainerId,
+          enabled: grant.anamnesisAccess,
+        })),
+    ).toEqual([
+      { trainerId: 'trainer', enabled: true },
+      { trainerId: 'trainer-pdf', enabled: true },
+      { trainerId: 'trainer-none', enabled: false },
+    ]);
+    expect(
+      database.sqlite
+        .prepare(
+          'SELECT filename,storage_key FROM medical_documents WHERE id = ?',
+        )
+        .get('migration-document'),
+    ).toEqual({ filename: 'medical.pdf', storage_key: 'private/medical.pdf' });
+    expect(
+      database.sqlite
+        .prepare(
+          'SELECT name FROM sqlite_master WHERE type = ? AND name IN (?,?)',
+        )
+        .all('table', 'medical_marker_grants', 'medical_document_grants'),
+    ).toEqual([]);
     expect(database.db.select().from(trainerAccess).get()?.ownerId).toBe(
       'owner',
     );

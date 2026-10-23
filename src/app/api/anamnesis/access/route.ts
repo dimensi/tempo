@@ -1,4 +1,9 @@
-import { anamnesisErrorResponse, getAnamnesisAccess } from '@/server/anamnesis';
+import {
+  anamnesisErrorResponse,
+  getAnamnesisAccess,
+  setAnamnesisAccess,
+  checkAnamnesisOrigin,
+} from '@/server/anamnesis';
 import { withApiErrors } from '@/server/auth/api-response';
 
 export const runtime = 'nodejs';
@@ -18,3 +23,18 @@ async function GETHandler(request: Request) {
 }
 
 export const GET = withApiErrors(GETHandler);
+
+async function PUTHandler(request: Request) {
+  try {
+    checkAnamnesisOrigin(request);
+    await setAnamnesisAccess(
+      request.headers,
+      new URL(request.url).searchParams.get('ownerId') ?? '',
+      await request.json(),
+    );
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    return anamnesisErrorResponse(error);
+  }
+}
+export const PUT = withApiErrors(PUTHandler);
