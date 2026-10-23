@@ -360,6 +360,17 @@ export async function assertMcpAccess(
       baseline: null,
       occurrences: [],
       checkedAt: '2026-10-17T00:00:00Z',
+      updateAttempt: {
+        id: randomUUID(),
+        phase: 'conflict',
+        previous: { workout: plan.workouts[0], planTitle: plan.title },
+        desired: { workout: plan.workouts[0], planTitle: plan.title },
+        previousFingerprint: '0'.repeat(64),
+        expectedFingerprint: null,
+        connectionId: null,
+        createdAt: '2026-10-17T00:00:00Z',
+        checkedAt: '2026-10-18T00:00:00Z',
+      },
       actual: null,
     });
     connection.db
@@ -456,7 +467,7 @@ export async function assertMcpAccess(
           freshness: {
             transformmateLinked: {
               latestRecordDate: '2026-10-01',
-              lastCheckedAt: '2026-10-17T00:00:00Z',
+              lastCheckedAt: '2026-10-18T00:00:00Z',
               lastFetchedAt: null,
               syncState: 'unknown',
             },
@@ -468,6 +479,7 @@ export async function assertMcpAccess(
           records: [
             {
               kind: 'linked',
+              checkedAt: '2026-10-18T00:00:00Z',
               executionStatus: evidence.executionStatus,
               coverage: evidence.coverage,
             },

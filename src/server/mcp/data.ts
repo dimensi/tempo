@@ -165,7 +165,11 @@ export async function readMcpData(
             workoutId: i.workoutId,
             date: i.actual?.date ?? i.planSnapshot.workout.date,
             title: i.actual?.title ?? i.planSnapshot.workout.title,
-            checkedAt: i.checkedAt,
+            checkedAt:
+              [i.checkedAt, i.updateAttempt?.checkedAt]
+                .filter((value): value is string => value != null)
+                .sort((a, b) => Date.parse(a) - Date.parse(b))
+                .at(-1) ?? null,
             executionStatus,
             coverage: !i.actual
               ? 'missing'
