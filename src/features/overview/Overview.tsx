@@ -219,7 +219,7 @@ export function Overview({
                     series={[
                       { name: 'value', label: m.weight, color: 'teal.6' },
                     ]}
-                    connectNulls={false}
+                    connectNulls
                     withDots
                     withLegend={false}
                     curveType="linear"
