@@ -179,6 +179,7 @@ No real training is created, edited or deleted for testing. The wire contract re
 The link JSON stores custom exercise claims scoped by owner and provider account, plus execution
 intents containing the local revision, previous/desired full fingerprints and expected plan shape.
 Existing SQL tables and owner/grant checks are retained; no schema migration is required.
+Never-sent local intents are excluded from saved provider analytics until a remote ID is known.
 Custom POST uses the APK-verified `ExerciseEntityForCreate` DTO. The marker derives from the exact
 exercise name and owner/account, not a normalized or guessed identity. Claims across this owner's
 links prevent a second create while an earlier result is unknown. A lost response is recovered
