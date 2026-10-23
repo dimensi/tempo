@@ -1,89 +1,50 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import {
-  Alert,
-  Badge,
-  Group,
-  Paper,
-  Stack,
-  Switch,
-  Text,
-  Title,
-} from '@mantine/core';
-import type {
-  AnamnesisAccess,
-  AnamnesisMarkerSummary,
-  MedicalDocument,
-} from '@/contracts/anamnesis';
+import { Alert, Stack, Switch, Text, Title } from '@mantine/core';
+import type { AnamnesisAccess } from '@/contracts/anamnesis';
 import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import { fetchAnamnesis, ownerIdQuery } from './api';
 
-// Выборочный доступ: маркеры и документы переключаются независимо;
-// разрешения действуют, пока тренер имеет общий доступ к данным.
 export function AccessPanel({ ownerId }: { ownerId: string }) {
   const [access, setAccess] = useState<AnamnesisAccess>();
-  const [markers, setMarkers] = useState<AnamnesisMarkerSummary[]>([]);
-  const [documents, setDocuments] = useState<MedicalDocument[]>([]);
+  const [pending, setPending] = useState<string[]>([]);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const query = ownerIdQuery(ownerId);
 
   useEffect(() => {
     let active = true;
-    void (async () => {
-      try {
-        const [loadedAccess, markerList, documentList] = await Promise.all([
-          fetchAnamnesis<AnamnesisAccess>(`/api/anamnesis/access?${query}`),
-          fetchAnamnesis<AnamnesisMarkerSummary[]>(
-            `/api/anamnesis/markers?${query}`,
-          ),
-          fetchAnamnesis<MedicalDocument[]>(
-            `/api/anamnesis/documents?${query}`,
-          ),
-        ]);
-        if (active) {
-          setAccess(loadedAccess);
-          setMarkers(markerList);
-          setDocuments(documentList);
-        }
-      } catch {
+    void fetchAnamnesis<AnamnesisAccess>(`/api/anamnesis/access?${query}`)
+      .then((value) => {
+        if (active) setAccess(value);
+      })
+      .catch(() => {
         if (active) setError(m.errors.load);
-      } finally {
+      })
+      .finally(() => {
         if (active) setLoading(false);
-      }
-    })();
+      });
     return () => {
       active = false;
     };
   }, [query]);
 
-  async function toggleMarker(
-    trainerId: string,
-    markerId: string,
-    enabled: boolean,
-  ) {
+  async function toggle(trainerId: string, enabled: boolean) {
     setError(undefined);
+    setPending((ids) => [...ids, trainerId]);
     try {
-      await fetchAnamnesis(
-        `/api/anamnesis/access/markers/${markerId}?${query}`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ trainerId, enabled }),
-        },
-      );
+      await fetchAnamnesis(`/api/anamnesis/access?${query}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trainerId, enabled }),
+      });
       setAccess((old) =>
         old
           ? {
               trainers: old.trainers.map((trainer) =>
                 trainer.trainerId === trainerId
-                  ? {
-                      ...trainer,
-                      markerIds: enabled
-                        ? [...trainer.markerIds, markerId]
-                        : trainer.markerIds.filter((id) => id !== markerId),
-                    }
+                  ? { ...trainer, enabled }
                   : trainer,
               ),
             }
@@ -91,42 +52,8 @@ export function AccessPanel({ ownerId }: { ownerId: string }) {
       );
     } catch {
       setError(m.errors.save);
-    }
-  }
-
-  async function toggleDocument(
-    trainerId: string,
-    documentId: string,
-    enabled: boolean,
-  ) {
-    setError(undefined);
-    try {
-      await fetchAnamnesis(
-        `/api/anamnesis/access/documents/${documentId}?${query}`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ trainerId, enabled }),
-        },
-      );
-      setAccess((old) =>
-        old
-          ? {
-              trainers: old.trainers.map((trainer) =>
-                trainer.trainerId === trainerId
-                  ? {
-                      ...trainer,
-                      documentIds: enabled
-                        ? [...trainer.documentIds, documentId]
-                        : trainer.documentIds.filter((id) => id !== documentId),
-                    }
-                  : trainer,
-              ),
-            }
-          : old,
-      );
-    } catch {
-      setError(m.errors.save);
+    } finally {
+      setPending((ids) => ids.filter((id) => id !== trainerId));
     }
   }
 
@@ -142,60 +69,27 @@ export function AccessPanel({ ownerId }: { ownerId: string }) {
         </Alert>
       )}
       {loading && <Text>…</Text>}
-      {!loading && !access?.trainers.length && <Text>{m.access.empty}</Text>}
+      {!loading && !error && !access?.trainers.length && (
+        <Text>{m.access.empty}</Text>
+      )}
       {access?.trainers.map((trainer) => (
-        <Paper
+        <Switch
           key={trainer.trainerId}
-          withBorder
-          p="md"
           data-testid="anamnesis-access-trainer"
-        >
-          <Group mb="sm">
-            <Text fw={600}>{trainer.name}</Text>
-            <Badge variant="light">
-              {m.access.markers}: {trainer.markerIds.length}
-            </Badge>
-            <Badge variant="light">
-              {m.access.documents}: {trainer.documentIds.length}
-            </Badge>
-          </Group>
-          <Title order={4}>{m.access.markers}</Title>
-          <Stack gap="xs" mb="sm">
-            {markers.map((item) => (
-              <Switch
-                key={item.marker.id}
-                label={item.marker.name}
-                checked={trainer.markerIds.includes(item.marker.id)}
-                onChange={(event) =>
-                  void toggleMarker(
-                    trainer.trainerId,
-                    item.marker.id,
-                    event.currentTarget.checked,
-                  )
-                }
-              />
-            ))}
-            {!markers.length && <Text>{m.markers.empty}</Text>}
-          </Stack>
-          <Title order={4}>{m.access.documents}</Title>
-          <Stack gap="xs">
-            {documents.map((item) => (
-              <Switch
-                key={item.id}
-                label={item.filename}
-                checked={trainer.documentIds.includes(item.id)}
-                onChange={(event) =>
-                  void toggleDocument(
-                    trainer.trainerId,
-                    item.id,
-                    event.currentTarget.checked,
-                  )
-                }
-              />
-            ))}
-            {!documents.length && <Text>{m.documents.empty}</Text>}
-          </Stack>
-        </Paper>
+          label={trainer.name}
+          description={m.access.scope}
+          size="md"
+          checked={trainer.enabled}
+          disabled={pending.includes(trainer.trainerId)}
+          onChange={(event) =>
+            void toggle(trainer.trainerId, event.currentTarget.checked)
+          }
+          styles={{
+            root: { minHeight: 44 },
+            body: { alignItems: 'center' },
+            labelWrapper: { minWidth: 0 },
+          }}
+        />
       ))}
     </Stack>
   );

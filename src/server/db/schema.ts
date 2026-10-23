@@ -88,6 +88,9 @@ export const verification = sqliteTable(
 );
 // Explicit consent for a trainer to access the single owner's data.
 export const trainerAccess = sqliteTable('trainer_access', {
+  anamnesisAccess: integer('anamnesis_access', { mode: 'boolean' })
+    .notNull()
+    .default(false),
   trainerId: text('trainer_id')
     .primaryKey()
     .references(() => user.id, { onDelete: 'cascade' }),

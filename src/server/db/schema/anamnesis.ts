@@ -6,7 +6,6 @@ import {
   real,
   index,
   uniqueIndex,
-  primaryKey,
 } from 'drizzle-orm/sqlite-core';
 import { user } from '../schema';
 import {
@@ -291,46 +290,4 @@ export const medicalReportExports = sqliteTable(
     createdAt: integer('created_at').notNull(),
   },
   (t) => [index('medical_report_exports_owner_idx').on(t.ownerId, t.createdAt)],
-);
-
-// Второй уровень доступа: тренер видит показатель только по явному гранту.
-export const medicalMarkerGrants = sqliteTable(
-  'medical_marker_grants',
-  {
-    ownerId: text('owner_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    trainerId: text('trainer_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    markerId: text('marker_id')
-      .notNull()
-      .references(() => medicalMarkers.id, { onDelete: 'cascade' }),
-    grantedAt: integer('granted_at').notNull(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.ownerId, t.trainerId, t.markerId] }),
-    index('medical_marker_grants_trainer_idx').on(t.trainerId),
-  ],
-);
-
-// Доступ к оригиналу PDF выдаётся отдельно от доступа к показателю.
-export const medicalDocumentGrants = sqliteTable(
-  'medical_document_grants',
-  {
-    ownerId: text('owner_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    trainerId: text('trainer_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    documentId: text('document_id')
-      .notNull()
-      .references(() => medicalDocuments.id, { onDelete: 'cascade' }),
-    grantedAt: integer('granted_at').notNull(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.ownerId, t.trainerId, t.documentId] }),
-    index('medical_document_grants_trainer_idx').on(t.trainerId),
-  ],
 );

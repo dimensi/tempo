@@ -14,8 +14,6 @@ import {
   medicalReviewItems,
   medicalObservationRevisions,
   medicalReportExports,
-  medicalMarkerGrants,
-  medicalDocumentGrants,
 } from '@/server/db/schema/anamnesis';
 import type { AnamnesisObservationValue } from '@/contracts/anamnesis';
 
@@ -40,28 +38,11 @@ const documentScope = (ownerId: string, id: string) =>
   );
 
 export function anamnesisRepository(db: Db = getDatabase().db) {
-  function pendingReviewCount(ownerId: string, markerIds?: string[]) {
+  function pendingReviewCount(ownerId: string) {
     const conditions = [
       eq(medicalReviewItems.ownerId, ownerId),
       eq(medicalReviewItems.status, 'pending'),
     ];
-    if (markerIds && !markerIds.length) return 0;
-    if (markerIds?.length) {
-      conditions.push(
-        inArray(
-          medicalReviewItems.observationId,
-          db
-            .select({ id: medicalObservations.id })
-            .from(medicalObservations)
-            .where(
-              and(
-                eq(medicalObservations.ownerId, ownerId),
-                inArray(medicalObservations.markerId, markerIds),
-              ),
-            ),
-        ),
-      );
-    }
     return (
       db
         .select({ count: sql<number>`count(*)` })
@@ -472,8 +453,7 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
         )
         .orderBy(desc(medicalReviewItems.createdAt))
         .all(),
-    countPendingReviews: (ownerId: string, markerIds?: string[]) =>
-      pendingReviewCount(ownerId, markerIds),
+    countPendingReviews: (ownerId: string) => pendingReviewCount(ownerId),
     findReview: (ownerId: string, id: string) =>
       db
         .select()
@@ -546,84 +526,12 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
         .returning({ id: medicalReportExports.id })
         .get(),
 
-    // --- Гранты тренера
-    markerGrantIds: (ownerId: string, trainerId: string) =>
-      new Set(
-        db
-          .select({ markerId: medicalMarkerGrants.markerId })
-          .from(medicalMarkerGrants)
-          .where(
-            and(
-              eq(medicalMarkerGrants.ownerId, ownerId),
-              eq(medicalMarkerGrants.trainerId, trainerId),
-            ),
-          )
-          .all()
-          .map((row) => row.markerId),
-      ),
-    documentGrantIds: (ownerId: string, trainerId: string) =>
-      new Set(
-        db
-          .select({ documentId: medicalDocumentGrants.documentId })
-          .from(medicalDocumentGrants)
-          .where(
-            and(
-              eq(medicalDocumentGrants.ownerId, ownerId),
-              eq(medicalDocumentGrants.trainerId, trainerId),
-            ),
-          )
-          .all()
-          .map((row) => row.documentId),
-      ),
-    setMarkerGrant: (
-      ownerId: string,
-      trainerId: string,
-      markerId: string,
-      enabled: boolean,
-    ) => {
-      if (enabled)
-        db.insert(medicalMarkerGrants)
-          .values({ ownerId, trainerId, markerId, grantedAt: Date.now() })
-          .onConflictDoNothing()
-          .run();
-      else
-        db.delete(medicalMarkerGrants)
-          .where(
-            and(
-              eq(medicalMarkerGrants.ownerId, ownerId),
-              eq(medicalMarkerGrants.trainerId, trainerId),
-              eq(medicalMarkerGrants.markerId, markerId),
-            ),
-          )
-          .run();
-    },
-    setDocumentGrant: (
-      ownerId: string,
-      trainerId: string,
-      documentId: string,
-      enabled: boolean,
-    ) => {
-      if (enabled)
-        db.insert(medicalDocumentGrants)
-          .values({ ownerId, trainerId, documentId, grantedAt: Date.now() })
-          .onConflictDoNothing()
-          .run();
-      else
-        db.delete(medicalDocumentGrants)
-          .where(
-            and(
-              eq(medicalDocumentGrants.ownerId, ownerId),
-              eq(medicalDocumentGrants.trainerId, trainerId),
-              eq(medicalDocumentGrants.documentId, documentId),
-            ),
-          )
-          .run();
-    },
     // Тренеры с действующим trainer_access и их медицинские гранты.
     listGrantTrainers: (ownerId: string) =>
       db
         .select({
           trainerId: trainerAccess.trainerId,
+          enabled: trainerAccess.anamnesisAccess,
           name: user.name,
           email: user.email,
         })
@@ -632,95 +540,54 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
         .where(eq(trainerAccess.ownerId, ownerId))
         .all(),
 
-    // --- Сводка. Фильтры ограничивают каждую цифру разрешёнными данными.
-    overview: (
-      ownerId: string,
-      markerFilter?: { markerIds: string[] },
-      documentIds?: string[],
-    ) => {
-      const observationConditions = [
+    // --- Сводка по данным владельца; медицинский доступ проверяет общий guard.
+    overview: (ownerId: string) => {
+      const observationWhere = and(
         eq(medicalObservations.ownerId, ownerId),
         ne(medicalObservations.verification, 'rejected'),
-      ];
-      if (markerFilter && !markerFilter.markerIds.length)
-        observationConditions.push(sql`1 = 0`);
-      else if (markerFilter?.markerIds.length)
-        observationConditions.push(
-          inArray(medicalObservations.markerId, markerFilter.markerIds),
-        );
-      const observationWhere = and(...observationConditions);
-      const documents = documentIds
-        ? documentIds.length
-          ? (db
-              .select({ count: sql<number>`count(*)` })
-              .from(medicalDocuments)
-              .where(
-                and(
-                  eq(medicalDocuments.ownerId, ownerId),
-                  isNull(medicalDocuments.deletedAt),
-                  inArray(medicalDocuments.id, documentIds),
-                ),
-              )
-              .get()?.count ?? 0)
-          : 0
-        : (db
-            .select({ count: sql<number>`count(*)` })
-            .from(medicalDocuments)
-            .where(
-              and(
-                eq(medicalDocuments.ownerId, ownerId),
-                isNull(medicalDocuments.deletedAt),
-              ),
-            )
-            .get()?.count ?? 0);
+      );
+      const documents =
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(medicalDocuments)
+          .where(
+            and(
+              eq(medicalDocuments.ownerId, ownerId),
+              isNull(medicalDocuments.deletedAt),
+            ),
+          )
+          .get()?.count ?? 0;
       const observations =
         db
           .select({ count: sql<number>`count(*)` })
           .from(medicalObservations)
           .where(observationWhere)
           .get()?.count ?? 0;
-      const pendingReviews = pendingReviewCount(
-        ownerId,
-        markerFilter ? markerFilter.markerIds : undefined,
-      );
-      const activeImports = documentIds
-        ? documentIds.length
-          ? (db
-              .select({ count: sql<number>`count(*)` })
-              .from(medicalImportJobs)
-              .where(
-                and(
-                  eq(medicalImportJobs.ownerId, ownerId),
-                  inArray(medicalImportJobs.status, ['queued', 'processing']),
-                  inArray(medicalImportJobs.documentId, documentIds),
-                ),
-              )
-              .get()?.count ?? 0)
-          : 0
-        : (db
-            .select({ count: sql<number>`count(*)` })
-            .from(medicalImportJobs)
-            .where(
-              and(
-                eq(medicalImportJobs.ownerId, ownerId),
-                inArray(medicalImportJobs.status, ['queued', 'processing']),
-              ),
-            )
-            .get()?.count ?? 0);
-      const lastCollectedAt = db
-        .select({
-          value: sql<string | null>`max(${medicalObservations.collectedAt})`,
-        })
-        .from(medicalObservations)
-        .where(observationWhere)
-        .get()?.value;
+      const activeImports =
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(medicalImportJobs)
+          .where(
+            and(
+              eq(medicalImportJobs.ownerId, ownerId),
+              inArray(medicalImportJobs.status, ['queued', 'processing']),
+            ),
+          )
+          .get()?.count ?? 0;
+      const lastCollectedAt =
+        db
+          .select({
+            value: sql<string | null>`max(${medicalObservations.collectedAt})`,
+          })
+          .from(medicalObservations)
+          .where(observationWhere)
+          .get()?.value ?? null;
       return {
         documents,
         observations,
-        markers: 0,
-        pendingReviews,
+        pendingReviews: pendingReviewCount(ownerId),
         activeImports,
-        lastCollectedAt: lastCollectedAt ?? null,
+        lastCollectedAt,
       };
     },
     markersWithObservations: (ownerId: string) =>
