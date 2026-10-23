@@ -176,9 +176,10 @@ export function ApplicationShellFrame({
                           <NavLink
                             component={linkComponent as 'a'}
                             href={exerciseCatalogSection.href}
+                            className={classes.catalogLink}
                             label={exerciseCatalogSection.title}
                             leftSection={
-                              <exerciseCatalogSection.icon size={18} />
+                              <exerciseCatalogSection.icon size={16} />
                             }
                             active={isSectionActive(
                               pathname,
@@ -189,7 +190,6 @@ export function ApplicationShellFrame({
                                 ? 'page'
                                 : undefined
                             }
-                            pl="xl"
                             mih={44}
                             mb={4}
                             style={{ borderRadius: 'var(--mantine-radius-md)' }}
