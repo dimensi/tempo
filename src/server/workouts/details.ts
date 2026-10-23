@@ -4,6 +4,7 @@ import { authorize } from '@/server/auth/guards';
 import { getDatabase } from '@/server/db';
 import { getTransformMateBindingFence } from '@/server/transformmate/runtime';
 import { nativeRepository } from './transformmate/native-repository';
+import { syncRepository } from './transformmate/repository';
 import { listTransformMateSync } from './transformmate/service';
 import { listWorkouts, WorkoutAccessError } from './index';
 
@@ -27,6 +28,13 @@ export async function readWorkoutDetails(
     await binding.assertCurrent();
     await access();
     if (!binding.accountScope) return null;
+    // A cached native snapshot may later become linked; keep detail reads consistent with lists.
+    if (
+      syncRepository(getDatabase().db)
+        .list(ownerId)
+        .some((link) => link.remoteTrainingId === resource.id)
+    )
+      return null;
     const item = nativeRepository(getDatabase().db).get(
       ownerId,
       binding.accountScope,

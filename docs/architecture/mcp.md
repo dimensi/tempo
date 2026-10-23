@@ -12,26 +12,69 @@
 
 Ответ: `{version: 1, data: {...}, next_cursor: string|null}` в `structuredContent` и текстовом JSON. Discovery содержит schemas и read-only annotations.
 
-| Tool              | Summary по умолчанию                                                            | Детализация                                                                  |
-| ----------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| get_profile       | Единицы, OWNER, цель шагов и недоступность несохраняемых целей                  | Без аргументов, имени, почты и credentials                                   |
-| get_nutrition     | Итоги/средние нутриентов, макросы, покрытие                                     | daily: качество и итоги по датам; records: продукты, масса/объём, КБЖУ       |
-| get_body_metrics  | Конечные точки, разница, недельный темп, неоднозначность                        | daily/records: наблюдения, источники, единицы                                |
-| get_activity      | Сумма, среднее шагов по наблюдавшимся дням, цель, покрытие                      | daily/records: даты, шаги или null                                           |
-| get_workouts      | Постраничные LOCAL планы/сессии и linked/native TransformMate                   | records: плановые и фактические подходы отдельно, provider units/values/done |
-| get_data_coverage | Покрытие питания/замеров/шагов, количество сохранённых workout DTO каждого вида | daily/records: качество питания и наличие шагов по датам                     |
+| Tool                 | Summary по умолчанию                                                            | Детализация                                                                  |
+| -------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| get_profile          | Единицы, OWNER, цель шагов и недоступность несохраняемых целей                  | Без аргументов, имени, почты и credentials                                   |
+| get_nutrition        | Итоги/средние нутриентов, макросы, покрытие                                     | daily: качество и итоги по датам; records: продукты, масса/объём, КБЖУ       |
+| get_body_metrics     | Конечные точки, разница, недельный темп, неоднозначность                        | daily/records: наблюдения, источники, единицы                                |
+| get_activity         | Сумма, среднее шагов по наблюдавшимся дням, цель, покрытие                      | daily/records: даты, шаги или null                                           |
+| get_workouts         | Постраничные LOCAL тренировки и linked/native TransformMate                     | records: плановые и фактические подходы отдельно, provider units/values/done |
+| get_workout          | Одна тренировка по workoutRef, упражнения и связанные записи                    | records: отдельные плановые и фактические подходы                            |
+| get_exercise_history | Фактические подходы по точному exerciseRef за период                            | summary: вхождения; records по умолчанию, до 366 дней                        |
+| get_data_coverage    | Покрытие питания/замеров/шагов, количество сохранённых workout DTO каждого вида | daily/records: качество питания и наличие шагов по датам                     |
 
-Исторические аргументы: `from`, `to` включительно (YYYY-MM-DD); `timezone` (IANA, default UTC); `detail` (summary/daily/records, default summary); `limit` (1–50, default 20); `cursor`. Максимум 366 дней, для records — 31 день. Даты источников остаются календарными; timezone не переносит запись на другой день. Неизвестные поля, включая ownerId, отвергаются. Годы ограничены 1901–9998 для корректного предыдущего аналитического периода.
+Исторические аргументы исходных инструментов: `from`, `to` включительно (YYYY-MM-DD); `timezone` (IANA, default UTC); `detail` (summary/daily/records, default summary); `limit` (1–50, default 20); `cursor`. Максимум 366 дней, для records — 31 день. У новых get_workout/get_exercise_history отдельные схемы, описанные ниже; история одного упражнения поддерживает records за 366 дней. Даты источников остаются календарными; timezone не переносит запись на другой день. Неизвестные поля, включая ownerId, отвергаются. Годы исторических запросов ограничены 1901–9998.
 
-`get_workouts`: у каждой записи есть `executionStatus`: `planned`, `not_started`, `in_progress`, `completed`, `skipped` или `unknown`. LOCAL использует сохранённый статус сессии; план всегда `planned`. Для TransformMate завершение подтверждает `finished`; начало, выполненный подход или непустое фактическое значение (включая `"0"`) без завершения означают `in_progress`. Объект actual с пустыми подходами без начала/завершения — `not_started` и coverage `empty`; отсутствующий actual — `unknown` и `missing`. Плановые метрики не подтверждают выполнение. `coverage` описывает доступность данных, а не завершение; `provider_snapshot` также не означает выполненную тренировку.
+`get_workouts`: у каждой записи есть `executionStatus`: `planned`, `not_started`, `in_progress`, `completed` или `unknown`. LOCAL использует статус единой тренировки: `planned`, `in_progress` или `completed`. Для TransformMate завершение подтверждает `finished`; начало, выполненный подход или непустое фактическое значение (включая `"0"`) без завершения означают `in_progress`. Объект actual с пустыми подходами без начала/завершения — `not_started` и coverage `empty`; отсутствующий actual — `unknown` и `missing`. Плановые метрики не подтверждают выполнение. `coverage` описывает доступность данных, а не завершение; `provider_snapshot` также не означает выполненную тренировку.
 
-`summary.completedSessions` — количество подтверждённых завершений за весь диапазон, одинаковое на всех страницах. `coverage.recordCounts` считает записи по kind, не тренировки. Если завершённые LOCAL и linked TransformMate имеют одинаковые planId/workoutId/date, `completionCountAmbiguous=true`, а `completedSessions=null`: связи с планом недостаточно для доказательства идентичности сессии. Не складывайте эти факты и не склеивайте их автоматически; сообщите неопределённость. Повторные LOCAL-сессии сохраняются отдельными. Linked/native дубли TransformMate уже исключаются существующим сервисом.
+`summary.completedSessions` — количество подтверждённых завершений за весь диапазон, одинаковое на всех страницах. `coverage.recordCounts` считает записи по kind, не тренировки. Если завершённые LOCAL и linked TransformMate имеют одинаковые workoutId/date, `completionCountAmbiguous=true`, а `completedSessions=null`: связи с планом недостаточно для доказательства идентичности сессии. Не складывайте эти факты и не склеивайте их автоматически; сообщите неопределённость. Отдельные LOCAL-тренировки сохраняются отдельными. Linked/native дубли TransformMate уже исключаются существующим сервисом.
 
 Сводки относятся ко всему диапазону, records — к странице. Для get_workouts даже summary постраничный; остальные summary не принимают cursor. Следующая страница повторяет tool, диапазон, timezone и detail с `next_cursor`. Cursor HMAC-подписан, привязан к владельцу/запросу, живёт час. Это живое представление, не snapshot: после изменения исходных записей между страницами начните чтение заново. Не суммируйте агрегаты между страницами.
 
 КБЖУ и измерения сохраняют десятичные строки, шаги по датам — integer/null. Единицы есть в units, метриках и подходах. `null` означает неизвестное/отсутствующее, `0`/`"0"` — подтверждённый ноль. Питание различает complete/partial/empty/missing. Сохранённый пустой дневник не доказывает голодание и исключён из средних; knownTotals не заменяет полные totals. Пропуск замера не означает нулевой вес.
 
-Workouts сохраняют kind и связи planId/workoutId. LOCAL план и linked-запись могут описывать одну тренировку — их нельзя считать двумя выполненными. Status сессии, provider started/finished, plan/fact и done не взаимозаменяемы. Пустая история не доказывает отдых, полнота upstream неизвестна. Обновление источников остаётся обычной функцией Tempo.
+Workouts сохраняют kind и workoutId. LOCAL тренировка и linked-запись могут описывать одну тренировку — их нельзя считать двумя выполненными. Status тренировки, provider started/finished, plan/fact и done не взаимозаменяемы. Пустая история не доказывает отдых, полнота upstream неизвестна. Обновление источников остаётся обычной функцией Tempo.
+
+## Детали тренировок и история упражнений
+
+`get_workouts` возвращает workoutRef на каждой строке: `{kind:"workout",id,date}`, `{kind:"linked",id,date}` или `{kind:"native",id:number,date}`. В упражнениях records есть historyRef: `{source:"TransformMate",exerciseId:number}` либо null. Название и UUID отдельного вхождения не являются идентификатором каталога.
+
+`get_workout` принимает `{workoutRef,detail?,limit?,cursor?}`. Идентификатор определяет запись, date служит календарным контекстом чтения. По умолчанию detail=summary: records содержит строки recordType=exercise с phase=plan/actual, name, occurrenceId, historyRef, setCount и recordedSetCount. Detail=records возвращает отдельные подходы с order, recorded, reps/weightKg или исходными provider metrics/units/values/done. Строки recordType=related_workout содержат ссылки на связанные записи и также пагинируются; это не дополнительные выполненные тренировки. LOCAL возвращает один набор подходов: плановые в состоянии planned, фактические в in_progress/completed. Provider planSnapshot и фактические метрики остаются раздельными; planBasis указывает происхождение provider-плана. Отсутствующий и чужой идентификатор дают одинаковый not_found.
+
+`get_exercise_history` принимает `{exerciseRef,from,to,timezone?,detail?,limit?,cursor?}`, период до 366 дней. По умолчанию detail=records: одна строка на фактический подход с workoutRef/date/source/executionStatus, именем и occurrenceId упражнения, historyRef, freshness и possibleOverlap. Summary выдаёт строки вхождений с количеством подходов. Включены completed и in_progress; планы, skipped и пустые provider-заготовки исключены. Подтверждением provider-подхода считается done=true либо непустое фактическое значение, включая "0"; пустая строка не подтверждает факт.
+
+История связывается только по точному TransformMate exerciseId, в том числе сохранённому в LOCAL упражнении. Совпадение названий, позиций или UUID не создаёт связь. LOCAL без ссылки каталога доступен в деталях с historyRef=null. OccurrenceId относится к вхождению в указанной тренировке и phase, не к истории упражнения; при отсутствии собственного ID используется индекс сохранённого представления. Повторные вхождения сохраняются. Существующие linked/native исключения применяются к списку, истории и деталям cached native-снимка, ставшего linked.
+
+LOCAL и linked факты выбранного упражнения с одинаковыми workoutId/date помечаются possibleOverlap=true: они не объединяются, общий объём и число уникальных тренировок не рассчитываются. Детали показывают пустые фактические подходы с recorded=false, история их исключает. Незаполненный подход, записанный ноль и отсутствие истории различаются; пустая история не доказывает отдых.
+
+Оба инструмента возвращают units и freshness: lastSavedAt для LOCAL, lastCheckedAt для linked с учётом updateAttempt, lastFetchedAt для native. Coverage относится к сохранённым данным, upstreamCompleteness=unknown. Последняя проверка не обязательно успешна. Пагинация: 1–50 строк (по умолчанию 20), существующие ограничения байтов и 10 000 строк, native до 40 страниц. Слишком большую отдельную строку не обрезаем: use_summary; слишком широкий период — narrow_range. Cursor привязан к владельцу, инструменту, идентификаторам, диапазону/дате и детализации; limit можно менять.
+
+Доступ только OWNER с tempo:read, проверяется сервером до и после чтения; ownerId не принимается от клиента. Нет refresh, миграций, записи, URL файлов, видео или credentials. Список и история переиспользуют загрузку сохранённых тренировок; детали используют readWorkoutDetails.
+
+Примеры arguments:
+
+```json
+{
+  "workoutRef": {
+    "kind": "workout",
+    "id": "<id из get_workouts>",
+    "date": "2026-10-13"
+  },
+  "detail": "summary"
+}
+```
+
+```json
+{
+  "exerciseRef": { "source": "TransformMate", "exerciseId": 501 },
+  "from": "2026-01-01",
+  "to": "2026-10-23",
+  "detail": "records",
+  "limit": 20
+}
+```
+
+Примеры вопросов: «Открой тренировку и покажи план отдельно от факта»; «Покажи подходы этого упражнения за полгода, включая начатые тренировки; возможные пересечения источников отметь отдельно». Сначала получать workoutRef/historyRef из списка или деталей, не угадывать provider ID по названию.
 
 ## Свежесть сохранённых данных
 
@@ -66,7 +109,7 @@ HTTP: 401 с WWW-Authenticate для отсутствующего/недейст
 
 3. Перенесите client_id/client_secret из файла в защищённые поля OAuth клиента: auth method `client_secret_post`, scope `tempo:read offline_access`, PKCE S256. Не помещайте credentials или access token в prompt, сообщения, Git и логи.
 4. Discovery: `/.well-known/oauth-protected-resource/api/mcp` → issuer `https://<tempo-host>/api/auth` → `/.well-known/oauth-authorization-server/api/auth`. Authorization/token/revoke: `/api/auth/oauth2/authorize`, `/api/auth/oauth2/token`, `/api/auth/oauth2/revoke`. Resource authorize/token — точный HTTPS `/api/mcp`.
-5. Подключитесь, войдите OWNER на Tempo и подтвердите чтение. TRAINER не получает доступ даже с trainer_access. После подключения проверьте шесть инструментов и короткий запрос покрытия.
+5. Подключитесь, войдите OWNER на Tempo и подтвердите чтение. TRAINER не получает доступ даже с trainer_access. После подключения проверьте восемь инструментов и короткий запрос покрытия.
 
 Если конкретная поверхность клиента требует только CIMD/DCR и не принимает provided credentials, она не совместима с закрытой registration policy v1. Не включайте открытую регистрацию как обход: используйте интерфейс с заранее зарегистрированным клиентом. End-to-end проверка именно ChatGPT остаётся отдельной приёмкой на опубликованном endpoint.
 
