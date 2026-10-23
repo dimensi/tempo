@@ -225,7 +225,7 @@
 }
 
 .withSetActions {
-  grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1fr) 94px;
+  grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1fr) 44px;
   gap: 4px;
 }
 
@@ -334,7 +334,7 @@
   .withSetActions {
     grid-template-columns:
       36px minmax(100px, 160px) minmax(100px, 160px)
-      94px;
+      44px;
   }
 
   .mobileLabel {
@@ -366,8 +366,8 @@
   }
 
   .withSetActions {
-    grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1fr) 94px;
-    gap: 2px;
+    grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1fr) 44px;
+    gap: 4px;
   }
 
   .setRow input {
