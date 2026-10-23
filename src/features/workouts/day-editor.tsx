@@ -45,6 +45,7 @@ import {
   type WorkoutDraft,
 } from './workout-draft';
 import { ExerciseRows } from './exercise-rows';
+import { usePendingWorkoutWrites } from './use-pending-workout-writes';
 import { ExercisePicker } from './exercise-picker';
 import { workoutMessages as m } from './messages';
 import styles from './day-workout.module.css';
@@ -105,6 +106,7 @@ export function DayEditor({
   const [recordId, setRecordId] = useState(
     () => workout?.id ?? crypto.randomUUID(),
   );
+  const pendingWrites = usePendingWorkoutWrites(recordId, canLog);
   const [key] = useState(() =>
     dayWorkoutDraftKey(identity, date, workout?.id ?? 'new'),
   );
@@ -374,6 +376,14 @@ export function DayEditor({
       if (canLog && !removed) {
         const writes = await readDeviceWrites();
         const local = writes.records.find((item) => item.id === recordId);
+        if (
+          local?.payload.kind === 'workout' &&
+          local.payload.data.exercises.some(
+            (exercise) =>
+              !parsed.data.exercises.some((next) => next.id === exercise.id),
+          )
+        )
+          throw new Error(m.removalPending);
         if (local?.payload.kind === 'workout' && local.version)
           revision.current = Math.max(
             revision.current ?? 0,
@@ -601,6 +611,7 @@ export function DayEditor({
         }
       />
       <ExerciseRows
+        removalPending={pendingWrites}
         ownerId={ownerId}
         canLog={canLog}
         exercises={value.exercises}

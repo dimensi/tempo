@@ -29,6 +29,8 @@ import { BottomSheet } from '@/components/shared/bottom-sheet';
 import { DateNavigation } from '@/components/shared/date-navigation';
 import type { Workout, WorkoutInput } from '@/contracts/workouts';
 import { apiFetch } from '@/lib/api-client';
+import { readDeviceWrites } from '@/lib/offline-write-client';
+import { usePendingWorkoutWrites } from './use-pending-workout-writes';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
 import { useReadOnline } from '@/lib/use-read-online';
@@ -137,6 +139,7 @@ export function WorkoutsDashboard({
         remote,
       });
   const entry = entries.find((item) => item.id === active) ?? entries[0];
+  const pendingWrites = usePendingWorkoutWrites(entry?.workout?.id, canLog);
   const downloadExercises = [...(entry?.workout?.exercises ?? [])].flatMap(
     (exercise) =>
       exercise.transformMate
@@ -178,6 +181,17 @@ export function WorkoutsDashboard({
     setBusy(true);
     setError(null);
     try {
+      if (canLog) {
+        const writes = await readDeviceWrites();
+        if (
+          writes.operations.some(
+            (item) =>
+              item.operation.recordId === workout.id &&
+              item.status !== 'synced',
+          )
+        )
+          throw new Error(m.removalPending);
+      }
       const response = await apiFetch(
         `/api/workouts/${workout.id}?ownerId=${encodeURIComponent(ownerId)}`,
         {
@@ -256,7 +270,7 @@ export function WorkoutsDashboard({
             label: m.removeWorkout,
             icon: <IconTrash size={20} />,
             color: 'red',
-            disabled: draftDirty || busy || !online,
+            disabled: draftDirty || busy || !online || pendingWrites,
             run: () => setDeletion({ entryId: entry.id }),
           },
         ]

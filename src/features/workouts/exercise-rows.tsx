@@ -40,6 +40,7 @@ export function ExerciseRows({
   disabled = false,
   reordering = false,
   showValidation = false,
+  removalPending = false,
 }: {
   ownerId: string;
   canLog: boolean;
@@ -51,6 +52,7 @@ export function ExerciseRows({
   disabled?: boolean;
   reordering?: boolean;
   showValidation?: boolean;
+  removalPending?: boolean;
 }) {
   const [media, setMedia] = useState<{
     exercise: DraftExercise;
@@ -97,7 +99,7 @@ export function ExerciseRows({
           exercise.id &&
           session.exercises.some((item) => item.id === exercise.id),
         );
-        const lockedRemoval = existingOccurrence && !online;
+        const lockedRemoval = removalPending || (existingOccurrence && !online);
         const options = [
           {
             label: m.techniqueAndVideo,
@@ -182,7 +184,9 @@ export function ExerciseRows({
                         ))}
                         {lockedRemoval && (
                           <Text size="sm" c="dimmed">
-                            {m.removeExerciseOffline}
+                            {removalPending
+                              ? m.removalPending
+                              : m.removeExerciseOffline}
                           </Text>
                         )}
                       </Stack>
@@ -213,7 +217,11 @@ export function ExerciseRows({
                         </Menu.Item>
                       ))}
                       {lockedRemoval && (
-                        <Menu.Label>{m.removeExerciseOffline}</Menu.Label>
+                        <Menu.Label>
+                          {removalPending
+                            ? m.removalPending
+                            : m.removeExerciseOffline}
+                        </Menu.Label>
                       )}
                     </Menu.Dropdown>
                   </Menu>

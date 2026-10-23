@@ -484,6 +484,18 @@ test('real login reaches core sections, recovers a cached workout offline, purge
 
   // Pending writes survive a logout attempt until the owner chooses what to do.
   await context.setOffline(true);
+  await page
+    .getByRole('button', { name: 'Добавить упражнения', exact: true })
+    .click();
+  await page
+    .getByRole('textbox', { name: 'Поиск по названию', exact: true })
+    .fill('Queued exercise');
+  await page
+    .getByRole('button', {
+      name: 'Добавить вручную: Queued exercise',
+      exact: true,
+    })
+    .click();
   await note.fill('Saved while offline');
   await expect(
     page.getByText(
@@ -491,6 +503,28 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       { exact: true },
     ),
   ).toBeVisible();
+  // Pending operations also protect deletion when transport fails but the browser is online.
+  await page.route('**/api/offline/writes', (route) => route.abort());
+  await context.setOffline(false);
+  await page
+    .getByRole('button', { name: 'Действия с тренировкой', exact: true })
+    .click();
+  await expect(
+    page.getByRole('menuitem', { name: 'Удалить тренировку', exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await page
+    .getByRole('button', {
+      name: 'Действия с упражнением: Smoke squat',
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole('menuitem', { name: 'Удалить упражнение', exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await context.setOffline(true);
+  await page.unroute('**/api/offline/writes');
   await page.getByRole('button', { name: 'Выйти', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText(
     'Есть несинхронизированные записи',
