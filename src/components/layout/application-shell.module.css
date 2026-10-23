@@ -27,6 +27,18 @@
 .mobileNav {
   display: none;
 }
+.catalogLink {
+  margin-inline-start: 20px;
+  width: calc(100% - 20px);
+  padding-inline: 12px;
+}
+.catalogLink[data-active] {
+  background-color: transparent;
+  font-weight: 600;
+}
+.catalogLink[data-active]:hover {
+  background-color: var(--mantine-color-default-hover);
+}
 @media (max-width: 47.999em) {
   .sidebar {
     display: none;

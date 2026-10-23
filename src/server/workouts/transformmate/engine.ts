@@ -1,9 +1,10 @@
 import 'server-only';
 import {
-  plannedWorkoutSchema,
-  type WorkoutPlan,
-  type PlannedWorkout,
-} from '@/contracts/workouts';
+  publicationWorkoutSchema,
+  type PublicationWorkout,
+} from '@/contracts/workout-publication';
+import type { Workout } from '@/contracts/workouts';
+import { canPublish, publicationFor } from './publication';
 import { TransformMateApiError } from '@/server/transformmate/errors';
 import type { TransformMateClient } from '@/server/transformmate/client';
 import type { SyncRepository } from './repository';
@@ -33,7 +34,7 @@ export interface SyncEngineOptions {
     | null;
   // Must throw on revocation. Called before and after each HTTP await and before local writes.
   access: (permission: 'workouts:read' | 'workouts:plan') => Promise<void>;
-  plans: () => WorkoutPlan[];
+  workouts: () => Workout[];
   checkConnection?: () => Promise<void>;
   connectionId?: string;
 }
@@ -52,7 +53,7 @@ export async function serializeOwner<T>(
   }
 }
 export function syncEngine(options: SyncEngineOptions) {
-  const { repository, client, plans } = options;
+  const { repository, client, workouts } = options;
   const access = async (permission: 'workouts:read' | 'workouts:plan') => {
     await options.access(permission);
     if (options.checkConnection) {
@@ -61,14 +62,18 @@ export function syncEngine(options: SyncEngineOptions) {
     }
   };
   const currentPlan = (link: SyncLink) =>
-    plans().find((p) => p.id === link.planId && p.ownerId === link.ownerId);
-  const currentWorkout = (link: SyncLink): PlannedWorkout | undefined =>
-    currentPlan(link)?.workouts.find((w) => w.id === link.workoutId);
+    workouts().find((p) => p.id === link.planId && p.ownerId === link.ownerId);
+  const currentWorkout = (link: SyncLink): PublicationWorkout | undefined => {
+    const local = currentPlan(link);
+    return local && canPublish(local)
+      ? publicationFor(local).workouts.find((w) => w.id === link.workoutId)
+      : undefined;
+  };
   const changed = (link: SyncLink) => {
     const current = currentWorkout(link);
     return (
       current &&
-      JSON.stringify(plannedWorkoutSchema.parse(current)) !==
+      JSON.stringify(publicationWorkoutSchema.parse(current)) !==
         JSON.stringify(link.state.published?.workout ?? link.state.workout)
     );
   };
@@ -145,8 +150,9 @@ export function syncEngine(options: SyncEngineOptions) {
           const actual = actualProjection(body, updated, true);
           const needsNewer =
             currentWorkout(link) &&
-            JSON.stringify(plannedWorkoutSchema.parse(currentWorkout(link))) !==
-              JSON.stringify(published.workout);
+            JSON.stringify(
+              publicationWorkoutSchema.parse(currentWorkout(link)),
+            ) !== JSON.stringify(published.workout);
           await save(link, {
             published,
             baseline: projection,
@@ -368,7 +374,7 @@ export function syncEngine(options: SyncEngineOptions) {
     await access('workouts:plan');
     if (
       !currentWorkout(link) ||
-      JSON.stringify(plannedWorkoutSchema.parse(currentWorkout(link))) !==
+      JSON.stringify(publicationWorkoutSchema.parse(currentWorkout(link))) !==
         JSON.stringify(desired)
     )
       return;
@@ -387,7 +393,7 @@ export function syncEngine(options: SyncEngineOptions) {
     await access('workouts:plan');
     if (
       !currentWorkout(link) ||
-      JSON.stringify(plannedWorkoutSchema.parse(currentWorkout(link))) !==
+      JSON.stringify(publicationWorkoutSchema.parse(currentWorkout(link))) !==
         JSON.stringify(desired)
     )
       return;
@@ -407,7 +413,7 @@ export function syncEngine(options: SyncEngineOptions) {
             latest.state.updateAttempt?.id !== attempt.id ||
             latest.state.updateAttempt.phase !== 'unknown' ||
             !current ||
-            JSON.stringify(plannedWorkoutSchema.parse(current)) !==
+            JSON.stringify(publicationWorkoutSchema.parse(current)) !==
               JSON.stringify(desired)
           )
             throw new Error('Update intent changed');

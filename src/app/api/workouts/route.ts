@@ -1,13 +1,28 @@
 import { withApiErrors } from '@/server/auth/api-response';
-import { listWorkouts } from '@/server/workouts';
-import { workoutResponse } from '@/server/workouts/http';
-async function GETHandler(request: Request) {
-  return workoutResponse(() =>
+import { createWorkout, listWorkouts } from '@/server/workouts';
+import {
+  checkWorkoutOrigin,
+  readWorkoutJson,
+  workoutCreateBody,
+  workoutResponse,
+} from '@/server/workouts/http';
+export const GET = withApiErrors(async (request: Request) =>
+  workoutResponse(() =>
     listWorkouts(
       request.headers,
       new URL(request.url).searchParams.get('ownerId') ?? '',
     ),
-  );
-}
-
-export const GET = withApiErrors(GETHandler);
+  ),
+);
+export const POST = withApiErrors(async (request: Request) =>
+  workoutResponse(async () => {
+    checkWorkoutOrigin(request);
+    const body = workoutCreateBody.parse(await readWorkoutJson(request));
+    return createWorkout(
+      request.headers,
+      body.ownerId,
+      body.data,
+      body.requestId,
+    );
+  }),
+);

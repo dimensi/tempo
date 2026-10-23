@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { readFileSync, readdirSync } from 'node:fs';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from '@/server/db/schema';
 import { offlineWriteRepository } from '@/server/offline/write-repository';
 import { offlineWriteSchema } from '@/contracts/offline-write';
@@ -13,20 +13,7 @@ afterEach(() => databases.splice(0).forEach((database) => database.close()));
 function fixture() {
   const sqlite = new Database(':memory:');
   databases.push(sqlite);
-  const wanted = new Set([
-    'user',
-    'measurements',
-    'workout_sessions',
-    'nutrition_schedule',
-    'offline_write_receipts',
-  ]);
-  for (const file of readdirSync('./drizzle')
-    .filter((file) => file.endsWith('.sql'))
-    .sort()) {
-    const sql = readFileSync(`./drizzle/${file}`, 'utf8');
-    for (const match of sql.matchAll(/CREATE TABLE `([^`]+)` \([\s\S]*?\);/g))
-      if (wanted.has(match[1]!)) sqlite.exec(match[0]);
-  }
+  migrate(drizzle(sqlite), { migrationsFolder: './drizzle' });
   sqlite
     .prepare(
       'INSERT INTO user (id,name,email,email_verified,created_at,updated_at) VALUES (?,?,?,?,?,?)',
@@ -89,7 +76,7 @@ it('commits an offline receipt with its record and replays it without cross-owne
         date: '2026-10-15',
         title: '',
         note: '',
-        status: 'in_progress',
+        status: 'planned',
         exercises: [exercise],
       },
     },

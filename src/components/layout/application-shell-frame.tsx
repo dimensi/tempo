@@ -112,7 +112,7 @@ export function ApplicationShellFrame({
               <Group
                 h="100%"
                 px="md"
-                gap={4}
+                gap="md"
                 justify="space-between"
                 wrap="nowrap"
               >
@@ -164,15 +164,10 @@ export function ApplicationShellFrame({
                           href={section.href}
                           label={section.title}
                           leftSection={<Icon size={20} />}
-                          active={
-                            pathname === section.href ||
-                            (section.href !== '/' &&
-                              pathname.startsWith(`${section.href}/`))
-                          }
+                          active={isSectionActive(pathname, section.href)}
                           aria-current={
                             pathname === section.href ? 'page' : undefined
                           }
-
                           py="sm"
                           mb={4}
                           style={{ borderRadius: 'var(--mantine-radius-md)' }}
@@ -181,22 +176,20 @@ export function ApplicationShellFrame({
                           <NavLink
                             component={linkComponent as 'a'}
                             href={exerciseCatalogSection.href}
+                            className={classes.catalogLink}
                             label={exerciseCatalogSection.title}
                             leftSection={
-                              <exerciseCatalogSection.icon size={18} />
+                              <exerciseCatalogSection.icon size={16} />
                             }
-                            active={
-                              pathname === exerciseCatalogSection.href ||
-                              pathname.startsWith(
-                                `${exerciseCatalogSection.href}/`,
-                              )
-                            }
+                            active={isSectionActive(
+                              pathname,
+                              exerciseCatalogSection.href,
+                            )}
                             aria-current={
                               pathname === exerciseCatalogSection.href
                                 ? 'page'
                                 : undefined
                             }
-                            pl="xl"
                             mih={44}
                             mb={4}
                             style={{ borderRadius: 'var(--mantine-radius-md)' }}

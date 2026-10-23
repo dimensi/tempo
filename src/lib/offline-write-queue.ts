@@ -6,6 +6,7 @@ import {
   type WriteStatus,
   type WriteCatalog,
 } from '@/contracts/offline-write';
+import { migrateWorkoutWrites } from './workout-write-migration';
 export interface QueuedWrite {
   operation: OfflineWrite;
   status: WriteStatus;
@@ -13,14 +14,17 @@ export interface QueuedWrite {
   nextAttempt: number;
   reason?: 'conflict' | 'access' | 'validation' | 'retry';
   result?: WriteRecord;
+  legacyOperation?: unknown;
 }
 export interface WriteState {
+  workoutVersion?: 2;
   partition: string | null;
   yazioEpoch: number | null;
   records: WriteRecord[];
   operations: QueuedWrite[];
 }
 export const emptyWriteState = (): WriteState => ({
+  workoutVersion: 2,
   partition: null,
   yazioEpoch: null,
   records: [],
@@ -211,11 +215,35 @@ export function resolveWrite(
               title: record.payload.data.title,
               exercises: record.payload.data.exercises,
               note: record.payload.data.note,
-              status: record.payload.data.status,
+              status: 'planned',
             },
           }
         : record.payload;
-    enqueueWrite(state, partition, payload);
+    const saved = enqueueWrite(state, partition, payload);
+    if (record.payload.kind === 'workout' && payload.kind === 'workout') {
+      if (record.payload.data.status !== 'planned')
+        enqueueWrite(
+          state,
+          partition,
+          {
+            ...payload,
+            data: { ...payload.data, status: 'in_progress' },
+            action: 'start',
+          },
+          saved.recordId,
+        );
+      if (record.payload.data.status === 'completed')
+        enqueueWrite(
+          state,
+          partition,
+          {
+            ...payload,
+            data: { ...payload.data, status: 'completed' },
+            action: 'complete',
+          },
+          saved.recordId,
+        );
+    }
   }
 }
 export interface WriteStore {
@@ -245,7 +273,7 @@ export class IndexedWriteStore implements WriteStore {
   }
   async read(): Promise<WriteState> {
     const db = await this.open();
-    return new Promise((resolve, reject) => {
+    const state = await new Promise<WriteState>((resolve, reject) => {
       const tx = db.transaction('state', 'readonly');
       let result: WriteState;
       tx.oncomplete = () => resolve(result);
@@ -256,6 +284,9 @@ export class IndexedWriteStore implements WriteStore {
         result = request.result ?? emptyWriteState();
       };
     });
+    return state.workoutVersion === 2
+      ? state
+      : this.update((value) => structuredClone(value));
   }
   async update<T>(action: (state: WriteState) => T): Promise<T> {
     const db = await this.open();
@@ -270,7 +301,9 @@ export class IndexedWriteStore implements WriteStore {
         request = store.get('current');
       request.onsuccess = () => {
         try {
-          const state: WriteState = request.result ?? emptyWriteState();
+          const state = migrateWorkoutWrites(
+            request.result ?? emptyWriteState(),
+          );
           result = action(state);
           if (
             new TextEncoder().encode(JSON.stringify(state)).length >

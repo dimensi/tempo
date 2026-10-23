@@ -33,17 +33,14 @@ import {
   transformMateNativePageSchema,
   transformMateNativeRefreshSchema,
 } from './transformmate-native';
-import { workoutPlanSchema, workoutSessionSchema } from './workouts';
+import { workoutsDataSchema } from './workouts';
 const weightPoint = z.object({
   date: z.string(),
   value: z.string().nullable(),
 });
 const workout = z.object({ title: z.string(), date: z.string() }).nullable();
 export const workoutsReadSchema = z.object({
-  data: z.object({
-    plans: z.array(workoutPlanSchema),
-    sessions: z.array(workoutSessionSchema),
-  }),
+  data: workoutsDataSchema,
 });
 export const overviewReadSchema: z.ZodType<OverviewData> = z.object({
   today: z.string(),

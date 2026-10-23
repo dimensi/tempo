@@ -5,7 +5,7 @@ import {
   measurementMetrics,
 } from '@/contracts/measurements';
 import type { WritePayload } from '@/contracts/offline-write';
-import { workoutSessionInputSchema } from '@/contracts/workouts';
+import { workoutInputSchema } from '@/contracts/workouts';
 import { subscribeSessionReset } from '@/lib/offline-device';
 import {
   readDeviceWrites,
@@ -155,14 +155,14 @@ export function OfflineWrites({
       }
       payload = { kind, data: parsed.data };
     } else {
-      const parsed = workoutSessionInputSchema.safeParse({
+      const parsed = workoutInputSchema.safeParse({
         date,
         title,
         note,
         status:
           previous?.payload.kind === 'workout'
             ? previous.payload.data.status
-            : 'completed',
+            : 'planned',
         exercises: exercises.map((item) => ({
           ...(previous?.payload.kind === 'workout'
             ? previous.payload.data.exercises.find((ex) => ex.id === item.id)

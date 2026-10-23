@@ -11,7 +11,7 @@ import {
   mcpExerciseHistoryInput,
 } from '@/contracts/mcp';
 import { workoutRepository } from '@/server/workouts/repository';
-import { workoutSessions, workoutPlans } from '@/server/db/schema/workouts';
+import { workouts } from '@/server/db/schema/workouts';
 import { workoutTransformMateLinks } from '@/server/db/schema/transformmate';
 import { workoutTransformMateNative } from '@/server/db/schema/transformmate-native';
 import {
@@ -45,62 +45,81 @@ export async function assertWorkoutTools(
       : { transformMate: { exerciseId, occurrenceKey: randomUUID() } }),
     sets: [{ reps: 5, weightKg }],
   });
-  const plan = repo.createPlan('owner', {
-    title: 'History plan',
-    description: '',
-    startsOn: '2026-08-01',
-    endsOn: '2026-08-04',
-    workouts: [
-      {
-        id: 'history-plan-workout',
-        date: '2026-08-01',
-        title: 'History',
-        exercises: [
-          exercise('Press', 501),
-          exercise('Press', 502),
-          exercise('Press'),
-        ],
-      },
-    ],
-  });
-  const base = { title: 'History', note: '', status: 'completed' as const };
-  const completed = repo.createSession('owner', {
-    ...base,
+  const plan = repo.create('owner', {
+    title: 'History',
+    note: '',
     date: '2026-08-01',
-    planId: plan.id,
-    plannedWorkoutId: 'history-plan-workout',
+    status: 'planned',
     exercises: [
-      exercise('Renamed press', 501, 0),
-      exercise('Repeated press', 501, 30),
-      exercise('Press', 502, 100),
-      exercise('Press', undefined, 400),
+      exercise('Press', 501),
+      exercise('Press', 502),
+      exercise('Press'),
     ],
   });
-  const partial = repo.createSession('owner', {
-    ...base,
-    date: '2026-08-02',
-    status: 'in_progress',
-    exercises: [exercise('Different name', 501, 25)],
-  });
-  const skipped = repo.createSession('owner', {
-    ...base,
-    date: '2026-08-03',
-    status: 'skipped',
-    exercises: [exercise('Press', 501, 90)],
-  });
-  const foreign = repo.createSession('trainer', {
-    ...base,
-    date: '2026-08-01',
-    exercises: [exercise('Press', 501, 999)],
-  });
+  const create = (
+    ownerId: string,
+    date: string,
+    exercises: ReturnType<typeof exercise>[],
+    completed = true,
+  ) => {
+    const saved = repo.create(ownerId, {
+      title: 'History',
+      note: '',
+      date,
+      status: 'planned',
+      exercises,
+    });
+    const { id, revision } = saved;
+    const data = {
+      title: saved.title,
+      note: saved.note,
+      date: saved.date,
+      exercises: saved.exercises,
+    };
+    const started = repo.update(
+      ownerId,
+      id,
+      revision,
+      { ...data, status: 'in_progress' },
+      'start',
+    );
+    if (!completed) return started;
+    return repo.update(
+      ownerId,
+      id,
+      started.revision,
+      { ...data, status: 'completed' },
+      'complete',
+    );
+  };
+  const completed = create('owner', '2026-08-01', [
+    exercise('Renamed press', 501, 0),
+    exercise('Repeated press', 501, 30),
+    exercise('Press', 502, 100),
+    exercise('Press', undefined, 400),
+  ]);
+  const partial = create(
+    'owner',
+    '2026-08-02',
+    [exercise('Different name', 501, 25)],
+    false,
+  );
+  const foreign = create('trainer', '2026-08-01', [
+    exercise('Press', 501, 999),
+  ]);
   const linkId = connection.db
     .select()
     .from(workoutTransformMateLinks)
-    .where(eq(workoutTransformMateLinks.planId, plan.id))
+    .where(eq(workoutTransformMateLinks.planId, completed.id))
     .get()!.id;
   const state = syncStateSchema.parse({
     version: 1,
-    workout: plan.workouts[0],
+    workout: {
+      id: completed.id,
+      date: plan.date,
+      title: plan.title,
+      exercises: plan.exercises,
+    },
     planTitle: plan.title,
     marker: `[yazio-dashboard:${linkId}]`,
     attempted: true,
@@ -131,8 +150,8 @@ export async function assertWorkoutTools(
     .values({
       id: linkId,
       ownerId: 'owner',
-      planId: plan.id,
-      workoutId: 'history-plan-workout',
+      planId: completed.id,
+      workoutId: completed.id,
       remoteTrainingId: 9002,
       state: JSON.stringify(state),
       createdAt: '2026-08-01T00:00:00Z',
@@ -151,7 +170,7 @@ export async function assertWorkoutTools(
   const exerciseRef = { source: 'TransformMate', exerciseId: 501 };
   const historyArgs = { ...range, exerciseRef };
   const completedRef = {
-    kind: 'session',
+    kind: 'workout',
     id: completed.id,
     date: completed.date,
   };
@@ -228,7 +247,7 @@ export async function assertWorkoutTools(
       .prepare('select total_changes() as count')
       .get();
     const history = await call('get_exercise_history', historyArgs);
-    // Three LOCAL facts + two native occurrences; no plans, skipped, foreign, empty linked, or duplicate native copy.
+    // Three LOCAL facts + two native occurrences; no planned workouts, foreign, empty linked, or duplicate native copy.
     expect(history.data.records).toHaveLength(5);
     expect(history.data.records).toEqual(
       expect.arrayContaining([
@@ -256,55 +275,26 @@ export async function assertWorkoutTools(
       detail: 'records',
     });
     expect(detail.data).toMatchObject({
-      planBasis: 'session_snapshot',
       executionStatus: 'completed',
     });
     expect(detail.data.records).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          phase: 'plan',
-          recorded: false,
-          historyRef: { source: 'TransformMate', exerciseId: 502 },
-        }),
-        expect.objectContaining({
           phase: 'actual',
           historyRef: null,
           weightKg: 400,
         }),
-        expect.objectContaining({
-          recordType: 'related_workout',
-          workoutRef: {
-            kind: 'plan',
-            planId: plan.id,
-            workoutId: 'history-plan-workout',
-            date: '2026-08-01',
-          },
-        }),
       ]),
     );
     const planRef = {
-      kind: 'plan',
-      planId: plan.id,
-      workoutId: 'history-plan-workout',
+      kind: 'workout',
+      id: plan.id,
       date: '2026-08-01',
     };
     const planDetail = await call('get_workout', { workoutRef: planRef });
     expect(planDetail.data).toMatchObject({
       executionStatus: 'planned',
-      planBasis: 'saved_plan',
     });
-    expect(planDetail.data.records).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          recordType: 'related_workout',
-          workoutRef: completedRef,
-        }),
-        expect.objectContaining({
-          recordType: 'related_workout',
-          workoutRef: { kind: 'linked', id: linkId, date: '2026-08-01' },
-        }),
-      ]),
-    );
     const linkedDetail = await call('get_workout', {
       workoutRef: { kind: 'linked', id: linkId, date: '2026-08-01' },
     });
@@ -393,8 +383,8 @@ export async function assertWorkoutTools(
     });
     expect(summaryNext.data.records).not.toEqual(summary.data.records);
     for (const ref of [
-      { kind: 'session', id: foreign.id, date: foreign.date },
-      { kind: 'session', id: randomUUID(), date: foreign.date },
+      { kind: 'workout', id: foreign.id, date: foreign.date },
+      { kind: 'workout', id: randomUUID(), date: foreign.date },
       { kind: 'native', id: 9002, date: '2026-08-04' },
     ])
       expect(
@@ -510,22 +500,20 @@ export async function assertWorkoutTools(
       .run();
     connection.db
       .delete(workoutTransformMateLinks)
-      .where(eq(workoutTransformMateLinks.id, linkId))
-      .run();
-    connection.db
-      .delete(workoutSessions)
       .where(
-        inArray(workoutSessions.id, [
+        inArray(workoutTransformMateLinks.planId, [
+          plan.id,
           completed.id,
           partial.id,
-          skipped.id,
           foreign.id,
         ]),
       )
       .run();
     connection.db
-      .delete(workoutPlans)
-      .where(eq(workoutPlans.id, plan.id))
+      .delete(workouts)
+      .where(
+        inArray(workouts.id, [completed.id, partial.id, plan.id, foreign.id]),
+      )
       .run();
     if (oldTokenFile === undefined) delete process.env.TRANSFORMMATE_TOKEN_FILE;
     else process.env.TRANSFORMMATE_TOKEN_FILE = oldTokenFile;

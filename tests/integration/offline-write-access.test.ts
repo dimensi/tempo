@@ -89,6 +89,28 @@ it('derives the owner from the session and rejects foreign partitions before a w
   expect(result.headers.get('cache-control')).toBe('private, no-store');
   expect(mocks.apply).toHaveBeenCalledWith('owner', accepted);
 
+  const subdomainRequest = request(accepted);
+  subdomainRequest.headers.set('Origin', 'https://preview.dimensi.ru');
+  expect(
+    (await offlineWriteResponse(() => saveOfflineWrite(subdomainRequest)))
+      .status,
+  ).toBe(200);
+
+  for (const origin of [
+    'https://dimensi.ru.attacker.test',
+    'https://notdimensi.ru',
+    'http://preview.dimensi.ru',
+    'null',
+  ]) {
+    mocks.apply.mockClear();
+    const untrusted = request(accepted);
+    untrusted.headers.set('Origin', origin);
+    expect(
+      (await offlineWriteResponse(() => saveOfflineWrite(untrusted))).status,
+    ).toBe(403);
+    expect(mocks.apply).not.toHaveBeenCalled();
+  }
+
   mocks.apply.mockClear();
   const foreign = await offlineWriteResponse(() =>
     saveOfflineWrite(

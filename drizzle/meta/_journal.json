@@ -148,6 +148,20 @@
       "when": 1792609911513,
       "tag": "0020_known_captain_universe",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1792706918860,
+      "tag": "0021_rapid_carmella_unuscione",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1792750691852,
+      "tag": "0022_normalize_workout_occurrences",
+      "breakpoints": true
     }
   ]
 }

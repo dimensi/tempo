@@ -18,6 +18,7 @@ import {
 import { useMediaQuery } from '@mantine/hooks';
 import {
   IconArrowsSort,
+  IconCalendarPlus,
   IconDots,
   IconRefresh,
   IconTrash,
@@ -26,12 +27,10 @@ import { z } from 'zod';
 import { PageHeader } from '@/components/layout/page-header';
 import { BottomSheet } from '@/components/shared/bottom-sheet';
 import { DateNavigation } from '@/components/shared/date-navigation';
-import type {
-  PlannedWorkout,
-  WorkoutPlan,
-  WorkoutSession,
-} from '@/contracts/workouts';
+import type { Workout, WorkoutInput } from '@/contracts/workouts';
 import { apiFetch } from '@/lib/api-client';
+import { readDeviceWrites } from '@/lib/offline-write-client';
+import { usePendingWorkoutWrites } from './use-pending-workout-writes';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
 import { useReadOnline } from '@/lib/use-read-online';
@@ -39,7 +38,7 @@ import { workoutTitle } from '@/lib/workout-title';
 import { DayEditor } from './day-editor';
 import { clearWorkoutDraft, dayWorkoutDraftKey } from './draft-storage';
 import { DownloadWorkoutButton } from './download-workout-button';
-import { copyPlanToDate } from './copy-plan';
+import { copyWorkoutToDate } from './copy-workout';
 import { NativeWorkout } from './native-workout';
 import { WorkoutSync, useTransformMateSync } from './transformmate-sync';
 import { workoutMessages as m } from './messages';
@@ -76,72 +75,41 @@ export function WorkoutsDashboard({
   const mobile = useMediaQuery('(max-width: 47.99em)');
   const [dayActions, setDayActions] = useState(false);
   const [reorderTarget, setReorderTarget] = useState<string | null>(null);
-  const [creating, setCreating] = useState<string | null>(null);
+  const [creating, setCreating] = useState<{
+    date: string;
+  } | null>(null);
   const [copied, setCopied] = useState<{
     date: string;
-    workout: PlannedWorkout;
+    workout: WorkoutInput;
   } | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [syncRequested, setSyncRequested] = useState<string | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyDate, setCopyDate] = useState(date);
   const [deletion, setDeletion] = useState<{
-    kind: 'plan' | 'result';
     entryId: string;
   } | null>(null);
   const [editorVersion, setEditorVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const [draftDirty, setDraftDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const plans =
-    data?.plans.flatMap((plan) =>
-      plan.workouts
-        .filter((workout) => workout.date === date)
-        .map((workout) => ({ plan, workout })),
-    ) ?? [];
-  const sessions =
-    data?.sessions.filter((session) => session.date === date) ?? [];
+  const [deletedIds, setDeletedIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const entries: {
     id: string;
     label: string;
-    plan?: WorkoutPlan;
-    workout?: PlannedWorkout;
-    session?: WorkoutSession;
+    workout?: Workout;
     native?: (typeof sync.nativePage.items)[number];
     remote?: (typeof sync.items)[number];
-  }[] = [];
-  for (const { plan, workout } of plans) {
-    const results = sessions.filter(
-      (session) =>
-        session.planId === plan.id && session.plannedWorkoutId === workout.id,
-    );
-    const session = results.at(-1);
-    const remote = sync.items.find(
-      (item) => item.planId === plan.id && item.workoutId === workout.id,
-    );
-    const native = !session
-      ? sync.nativePage.items.find(
-          (item) => item.remoteTrainingId === remote?.remoteTrainingId,
-        )
-      : undefined;
-    entries.push({
+  }[] = (data?.workouts ?? [])
+    .filter((item) => item.date === date && !deletedIds.has(item.id))
+    .map((workout) => ({
       id: workout.id,
       label: workoutTitle(workout.title, workout.date),
-      plan,
       workout,
-      session,
-      native,
-      remote,
-    });
-  }
-  for (const session of sessions)
-    if (!entries.some((entry) => entry.session?.id === session.id))
-      entries.push({
-        id: session.id,
-        label: `${workoutTitle(session.title, session.date)} · ${m[session.status]}`,
-        session,
-        workout: session.planSnapshot?.workout,
-      });
+      remote: sync.items.find((item) => item.workoutId === workout.id),
+    }));
   for (const native of sync.nativePage.items)
     if (
       native.date === date &&
@@ -171,13 +139,12 @@ export function WorkoutsDashboard({
         remote,
       });
   const entry = entries.find((item) => item.id === active) ?? entries[0];
-  const downloadExercises = [
-    ...(entry?.workout?.exercises ?? []),
-    ...(entry?.session?.exercises ?? []),
-  ].flatMap((exercise) =>
-    exercise.transformMate
-      ? [{ id: exercise.transformMate.exerciseId, name: exercise.name }]
-      : [],
+  const pendingWrites = usePendingWorkoutWrites(entry?.workout?.id, canLog);
+  const downloadExercises = [...(entry?.workout?.exercises ?? [])].flatMap(
+    (exercise) =>
+      exercise.transformMate
+        ? [{ id: exercise.transformMate.exerciseId, name: exercise.name }]
+        : [],
   );
   if (entry?.native)
     downloadExercises.push(
@@ -195,66 +162,58 @@ export function WorkoutsDashboard({
     );
   const downloadSignature = JSON.stringify([
     entry?.workout,
-    entry?.session,
     entry?.native,
     entry?.remote?.actual,
   ]);
-  const create = creating === date;
-  const done = async () => {
+  const create = creating?.date === date;
+  const done = async (background = false) => {
     await resource.refresh();
-    if (create) setCreating(null);
+    if (create && !background) setCreating(null);
   };
   async function remove() {
+    const workout = entry?.workout;
     if (
-      !entry ||
+      !workout ||
       entry.id !== deletion?.entryId ||
-      (deletion.kind === 'plan' && !entry.plan) ||
-      (deletion.kind === 'result' && (!canLog || !entry.session))
+      (!canLog && workout.status !== 'planned')
     )
       return;
     setBusy(true);
     setError(null);
     try {
-      const { workout, session } = entry;
-      const plan = deletion.kind === 'plan' ? entry.plan : undefined;
-      const remaining = plan?.workouts.filter(
-        (item) => item.id !== workout?.id,
-      );
+      if (canLog) {
+        const writes = await readDeviceWrites();
+        if (
+          writes.operations.some(
+            (item) =>
+              item.operation.recordId === workout.id &&
+              item.status !== 'synced',
+          )
+        )
+          throw new Error(m.removalPending);
+      }
       const response = await apiFetch(
-        `/api/workouts/${plan ? 'plans' : 'sessions'}/${plan?.id ?? session!.id}?ownerId=${encodeURIComponent(ownerId)}`,
+        `/api/workouts/${workout.id}?ownerId=${encodeURIComponent(ownerId)}`,
         {
-          method: plan && remaining?.length ? 'PUT' : 'DELETE',
+          method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(
-            plan && remaining?.length
-              ? {
-                  revision: plan.revision,
-                  data: {
-                    title: plan.title,
-                    description: plan.description,
-                    startsOn: plan.startsOn,
-                    endsOn: plan.endsOn,
-                    workouts: remaining,
-                  },
-                }
-              : { revision: plan?.revision ?? session!.revision },
-          ),
+          body: JSON.stringify({ ownerId, revision: workout.revision }),
         },
       );
       if (!response.ok)
         throw new Error(response.status === 409 ? m.conflict : m.error);
       clearWorkoutDraft(
-        dayWorkoutDraftKey(
-          `${userId}:${ownerId}`,
-          date,
-          entry.plan?.id ?? session!.id,
-          workout?.id,
-        ),
+        dayWorkoutDraftKey(`${userId}:${ownerId}`, date, workout.id),
       );
-      await resource.refresh();
+      setDeletedIds((previous) => new Set([...previous, workout.id]));
+      setCreating(null);
+      setCopied(null);
+      setActive(null);
+      setReorderTarget(null);
       setEditorVersion((version) => version + 1);
       setDraftDirty(false);
       setDeletion(null);
+      void resource.refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.error);
     } finally {
@@ -265,10 +224,10 @@ export function WorkoutsDashboard({
   const reordering = reorderTarget === editorKey;
   const dayOptions = [
     {
-      label: m.anotherWorkout,
+      label: m.createWorkout,
       run: () => {
         setCopied(null);
-        setCreating(date);
+        setCreating({ date });
       },
     },
     ...(entry?.workout
@@ -282,7 +241,10 @@ export function WorkoutsDashboard({
           },
         ]
       : []),
-    ...(create || entry?.plan || (canLog && entry?.session)
+    ...(create ||
+    (entry?.workout &&
+      entry.workout.status !== 'completed' &&
+      (canLog || entry.workout.status === 'planned'))
       ? [
           {
             label: m.reorderExercises,
@@ -300,25 +262,16 @@ export function WorkoutsDashboard({
         void sync.refresh();
       },
     },
-    ...(entry?.plan
+    ...(entry?.workout &&
+    entry.workout.status !== 'completed' &&
+    (canLog || entry.workout.status === 'planned')
       ? [
           {
-            label: m.removeDayPlan,
+            label: m.removeWorkout,
             icon: <IconTrash size={20} />,
             color: 'red',
-            disabled: draftDirty || busy,
-            run: () => setDeletion({ kind: 'plan', entryId: entry.id }),
-          },
-        ]
-      : []),
-    ...(canLog && entry?.session
-      ? [
-          {
-            label: m.removeDayResult,
-            icon: <IconTrash size={20} />,
-            color: 'red',
-            disabled: draftDirty || busy,
-            run: () => setDeletion({ kind: 'result', entryId: entry.id }),
+            disabled: draftDirty || busy || !online || pendingWrites,
+            run: () => setDeletion({ entryId: entry.id }),
           },
         ]
       : []),
@@ -399,15 +352,19 @@ export function WorkoutsDashboard({
       >
         {m.title}
       </PageHeader>
-      <DateNavigation
-        date={date}
-        onSelect={(value) => {
-          setActive(null);
-          setReorderTarget(null);
-          router.push(`/workouts?date=${value}`, { scroll: false });
-        }}
-        labels={m.dateNavigation}
-      />
+      <div className={classes.dateCard}>
+        <DateNavigation
+          date={date}
+          onSelect={(value) => {
+            setCreating(null);
+            setCopied(null);
+            setActive(null);
+            setReorderTarget(null);
+            router.push(`/workouts?date=${value}`, { scroll: false });
+          }}
+          labels={m.dateNavigation}
+        />
+      </div>
       {syncRequested === date && (
         <Text size="sm" c={sync.error ? 'orange' : 'dimmed'} role="status">
           {sync.busy
@@ -448,16 +405,21 @@ export function WorkoutsDashboard({
             <Title order={2} size="h3">
               {m.emptyDay}
             </Title>
-            <Text c="dimmed">{m.prepareHint}</Text>
-            <Button
-              mih={44}
-              onClick={() => {
-                setCopied(null);
-                setCreating(date);
-              }}
-            >
-              {m.newWorkout}
-            </Button>
+            <Text c="dimmed" ta="center" maw={420}>
+              {m.emptyDayHint}
+            </Text>
+            <div className={classes.emptyActions}>
+              <Button
+                mih={48}
+                leftSection={<IconCalendarPlus size={20} />}
+                onClick={() => {
+                  setCopied(null);
+                  setCreating({ date });
+                }}
+              >
+                {m.createWorkout}
+              </Button>
+            </div>
             <Button
               variant="subtle"
               mih={44}
@@ -480,49 +442,50 @@ export function WorkoutsDashboard({
       )}
       {data && create && (
         <DayEditor
-          key={`new:${ownerId}:${date}:${copied?.workout.id ?? ''}`}
+          key={`new:${ownerId}:${date}:${copied?.date ?? ''}`}
           ownerId={ownerId}
           userId={userId}
           date={date}
-          workout={copied?.date === date ? copied.workout : undefined}
+          copy={copied?.date === date ? copied.workout : undefined}
           canLog={canLog}
           onSaved={done}
+          onDirtyChange={setDraftDirty}
           reordering={reordering}
           onReorderDone={() => setReorderTarget(null)}
           onCancel={() => setCreating(null)}
         />
       )}
       {!create && entry && (
-        <DownloadWorkoutButton
-          key={`${entry.id}:${downloadSignature}`}
-          ownerId={ownerId}
-          blocked={draftDirty}
-          workoutKey={`${ownerId}:${entry.id}`}
-          signature={downloadSignature}
-          resources={[
-            readResources.workouts(
-              `/api/workouts?ownerId=${encodeURIComponent(ownerId)}`,
-            ),
-            ...(entry.native || entry.remote
-              ? [
-                  readResources.transformMate(
-                    `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20' })}`,
-                  ),
-                ]
-              : []),
-          ]}
-          exercises={downloadExercises}
-        />
+        <div hidden>
+          <DownloadWorkoutButton
+            key={`${entry.id}:${downloadSignature}`}
+            ownerId={ownerId}
+            blocked={draftDirty}
+            workoutKey={`${ownerId}:${entry.id}`}
+            signature={downloadSignature}
+            resources={[
+              readResources.workouts(
+                `/api/workouts?ownerId=${encodeURIComponent(ownerId)}`,
+              ),
+              ...(entry.native || entry.remote
+                ? [
+                    readResources.transformMate(
+                      `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20' })}`,
+                    ),
+                  ]
+                : []),
+            ]}
+            exercises={downloadExercises}
+          />
+        </div>
       )}
-      {!create && entry && (entry.plan || entry.session) && (
+      {!create && entry && entry.workout && (
         <DayEditor
           key={`${ownerId}:${date}:${entry.id}:${editorVersion}`}
           ownerId={ownerId}
           userId={userId}
           date={date}
-          plan={entry.plan}
           workout={entry.workout}
-          existing={entry.session}
           canLog={canLog}
           onSaved={done}
           reordering={reordering}
@@ -531,7 +494,7 @@ export function WorkoutsDashboard({
           onDirtyChange={setDraftDirty}
         />
       )}
-      {!create && entry?.native && !entry.session && (
+      {!create && entry?.native && !entry.workout && (
         <section aria-label={m.remoteActual}>
           <Text fw={600} mb="sm">
             {m.remoteActual}
@@ -539,7 +502,7 @@ export function WorkoutsDashboard({
           <NativeWorkout item={entry.native} ownerId={ownerId} fullView />
         </section>
       )}
-      {!create && entry?.remote?.actual && !entry.native && !entry.session && (
+      {!create && entry?.remote?.actual && !entry.native && !entry.workout && (
         <section aria-label={m.remoteActual}>
           <Text fw={600} mb="sm">
             {m.remoteActual}
@@ -572,18 +535,9 @@ export function WorkoutsDashboard({
             disabled={!z.iso.date().safeParse(copyDate).success}
             onClick={() => {
               if (!entry?.workout) return;
-              const next = copyPlanToDate(
-                {
-                  title: '',
-                  description: '',
-                  startsOn: entry.workout.date,
-                  endsOn: entry.workout.date,
-                  workouts: [entry.workout],
-                },
-                copyDate,
-              );
-              setCopied({ date: copyDate, workout: next.workouts[0]! });
-              setCreating(copyDate);
+              const next = copyWorkoutToDate(entry.workout, copyDate);
+              setCopied({ date: copyDate, workout: next });
+              setCreating({ date: copyDate });
               setCopyOpen(false);
               router.push(`/workouts?date=${copyDate}`, { scroll: false });
             }}
@@ -600,11 +554,7 @@ export function WorkoutsDashboard({
         title={m.confirmDelete}
       >
         <Stack>
-          <Text>
-            {deletion?.kind === 'result'
-              ? m.confirmResultDelete
-              : m.confirmText}
-          </Text>
+          <Text>{m.confirmResultDelete}</Text>
           {error && <Alert color="red">{error}</Alert>}
           <Group justify="flex-end">
             <Button

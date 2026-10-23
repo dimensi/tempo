@@ -14,23 +14,15 @@ async function GETHandler(request: Request) {
     const url = new URL(request.url);
     const query = url.searchParams;
     const date = z.iso.date().parse(query.get('date'));
-    const kind = z
-      .enum(['plan', 'session', 'native', 'link'])
-      .parse(query.get('kind'));
+    const kind = z.enum(['workout', 'native', 'link']).parse(query.get('kind'));
     const id = z.string().min(1).max(200);
     const resource =
-      kind === 'plan'
+      kind === 'native'
         ? {
             kind,
-            planId: id.parse(query.get('planId')),
-            workoutId: id.parse(query.get('workoutId')),
+            id: z.coerce.number().int().positive().parse(query.get('id')),
           }
-        : kind === 'native'
-          ? {
-              kind,
-              id: z.coerce.number().int().positive().parse(query.get('id')),
-            }
-          : { kind, id: id.parse(query.get('id')) };
+        : { kind, id: id.parse(query.get('id')) };
     const data = await readWorkoutDetails(
       request.headers,
       context.ownerId,

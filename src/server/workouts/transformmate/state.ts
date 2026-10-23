@@ -1,6 +1,6 @@
 import 'server-only';
 import { z } from 'zod';
-import { plannedWorkoutSchema } from '@/contracts/workouts';
+import { publicationWorkoutSchema } from '@/contracts/workout-publication';
 import {
   transformMateActualSchema,
   transformMateSyncStatusSchema,
@@ -8,13 +8,13 @@ import {
 } from '@/contracts/transformmate';
 
 const domainSnapshot = z.object({
-  workout: plannedWorkoutSchema,
+  workout: publicationWorkoutSchema,
   planTitle: z.string().max(160),
 });
 const fingerprint = z.string().regex(/^[0-9a-f]{64}$/);
 export const syncStateSchema = z.object({
   version: z.literal(1),
-  workout: plannedWorkoutSchema,
+  workout: publicationWorkoutSchema,
   planTitle: z.string().max(160),
   marker: z
     .string()

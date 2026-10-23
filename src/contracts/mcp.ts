@@ -62,13 +62,7 @@ const referenceDate = z.iso.date();
 const providerId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const mcpWorkoutRef = z.discriminatedUnion('kind', [
   z.strictObject({
-    kind: z.literal('plan'),
-    planId: referenceId,
-    workoutId: referenceId,
-    date: referenceDate,
-  }),
-  z.strictObject({
-    kind: z.literal('session'),
+    kind: z.literal('workout'),
     id: referenceId,
     date: referenceDate,
   }),

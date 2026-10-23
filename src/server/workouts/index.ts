@@ -3,133 +3,125 @@ import { z } from 'zod';
 import { authorize } from '@/server/auth/guards';
 import { getDatabase } from '@/server/db';
 import {
-  workoutPlanInputSchema,
-  workoutSessionInputSchema,
-  sessionCreateSchema,
+  workoutInputSchema,
+  workoutActionSchema,
   revisionSchema,
+  type WorkoutAction,
 } from '@/contracts/workouts';
 import { workoutRepository, WorkoutError } from './repository';
-import { saveAndSyncWorkoutPlan } from './transformmate/service';
+import { saveAndSyncWorkout } from './transformmate/service';
 import { serializeOwner } from './transformmate/engine';
-
 export class WorkoutAccessError extends Error {
   constructor(public status: number) {
     super('Workout access denied');
   }
 }
-const ownerSchema = z.string().min(1).max(128);
+const idSchema = z.string().min(1).max(128);
 async function access(
   headers: Headers,
   ownerId: string,
   permission: Parameters<typeof authorize>[1],
 ) {
-  const result = await authorize(
-    headers,
-    permission,
-    ownerSchema.parse(ownerId),
-  );
+  const result = await authorize(headers, permission, idSchema.parse(ownerId));
   if (!result.ok) throw new WorkoutAccessError(result.status);
-  return workoutRepository(getDatabase().db);
+  return {
+    repository: workoutRepository(getDatabase().db),
+    role: result.session.user.role,
+  };
 }
-/** Scoped DTO API for reports, analytics and comment target resolution. */
 export async function listWorkouts(headers: Headers, ownerId: string) {
-  return (await access(headers, ownerId, 'workouts:read')).list(ownerId);
+  return (await access(headers, ownerId, 'workouts:read')).repository.list(
+    ownerId,
+  );
 }
-export async function createWorkoutPlan(
+export async function createWorkout(
   headers: Headers,
   ownerId: string,
   input: unknown,
   requestId?: string,
 ) {
-  const repository = await access(headers, ownerId, 'workouts:plan');
-  const data = workoutPlanInputSchema.parse(input);
+  const { repository } = await access(headers, ownerId, 'workouts:plan');
+  const data = workoutInputSchema.parse(input);
   const key = requestId === undefined ? undefined : z.uuid().parse(requestId);
-  return saveAndSyncWorkoutPlan(headers, ownerId, () =>
-    repository.createPlan(ownerId, data, key),
+  return saveAndSyncWorkout(headers, ownerId, () =>
+    repository.create(ownerId, data, key),
   );
 }
-export async function updateWorkoutPlan(
+export async function updateWorkout(
   headers: Headers,
   ownerId: string,
   id: string,
   revision: unknown,
   input: unknown,
+  action?: WorkoutAction,
+  requestId?: string,
 ) {
-  const repository = await access(headers, ownerId, 'workouts:plan');
-  const planId = ownerSchema.parse(id);
-  const expectedRevision = revisionSchema.parse(revision);
-  const data = workoutPlanInputSchema.parse(input);
-  return saveAndSyncWorkoutPlan(headers, ownerId, () =>
-    repository.updatePlan(ownerId, planId, expectedRevision, data),
-  );
-}
-export async function deleteWorkoutPlan(
-  headers: Headers,
-  ownerId: string,
-  id: string,
-  revision: unknown,
-) {
-  return serializeOwner(ownerId, async () =>
-    (await access(headers, ownerId, 'workouts:plan')).deletePlan(
-      ownerId,
-      ownerSchema.parse(id),
-      revisionSchema.parse(revision),
-    ),
-  );
-}
-export async function createWorkoutSession(
-  headers: Headers,
-  ownerId: string,
-  input: unknown,
-) {
-  return (await access(headers, ownerId, 'workouts:log')).createSession(
+  const { repository, role } = await access(
+    headers,
     ownerId,
-    sessionCreateSchema.parse(input),
+    action ? 'workouts:log' : 'workouts:plan',
   );
+  idSchema.parse(id);
+  const expected = revisionSchema.parse(revision);
+  const data = workoutInputSchema.parse(input);
+  const transition =
+    action === undefined ? undefined : workoutActionSchema.parse(action);
+  const key = requestId === undefined ? undefined : z.uuid().parse(requestId);
+  const { sessionVideoRows, cleanupVideoRows, withSessionVideoLock } =
+    await import('./videos');
+  return withSessionVideoLock(ownerId, id, async () => {
+    return saveAndSyncWorkout(headers, ownerId, async () => {
+      const replay = repository.replayUpdate(
+        ownerId,
+        id,
+        expected,
+        data,
+        transition,
+        key,
+      );
+      if (replay) return replay;
+      // Check the live state inside the same lock used by uploads and removal.
+      const existing = repository.get(ownerId, id);
+      if (
+        role === 'TRAINER' &&
+        (existing.status !== 'planned' ||
+          data.status !== 'planned' ||
+          transition)
+      )
+        throw new WorkoutAccessError(403);
+      repository.validateUpdate(ownerId, id, expected, data, transition);
+      await cleanupVideoRows(
+        sessionVideoRows(ownerId, id).filter(
+          (row) =>
+            !data.exercises.some((exercise) => exercise.id === row.exerciseId),
+        ),
+      );
+      return repository.update(ownerId, id, expected, data, transition, key);
+    });
+  });
 }
-export async function updateWorkoutSession(
+export async function deleteWorkout(
   headers: Headers,
   ownerId: string,
   id: string,
   revision: unknown,
-  input: unknown,
 ) {
-  const repository = await access(headers, ownerId, 'workouts:log');
-  const sessionId = ownerSchema.parse(id);
-  const expectedRevision = revisionSchema.parse(revision);
-  const data = workoutSessionInputSchema.parse(input);
-  if (data.exercises.some((exercise) => !exercise.id))
-    throw new WorkoutError(409);
+  const { repository, role } = await access(headers, ownerId, 'workouts:plan');
+  idSchema.parse(id);
+  const expected = revisionSchema.parse(revision);
   const { sessionVideoRows, cleanupVideoRows, withSessionVideoLock } =
     await import('./videos');
-  return withSessionVideoLock(ownerId, sessionId, async () => {
-    repository.assertSessionRevision(ownerId, sessionId, expectedRevision);
-    // Keep the parent and occurrence valid until every object removal succeeds.
-    await cleanupVideoRows(
-      sessionVideoRows(ownerId, sessionId).filter(
-        (row) =>
-          !data.exercises.some((exercise) => exercise.id === row.exerciseId),
-      ),
-    );
-    return repository.updateSession(ownerId, sessionId, expectedRevision, data);
-  });
-}
-export async function deleteWorkoutSession(
-  headers: Headers,
-  ownerId: string,
-  id: string,
-  revision: unknown,
-) {
-  const repository = await access(headers, ownerId, 'workouts:log');
-  const sessionId = ownerSchema.parse(id);
-  const expectedRevision = revisionSchema.parse(revision);
-  const { sessionVideoRows, cleanupVideoRows, withSessionVideoLock } =
-    await import('./videos');
-  return withSessionVideoLock(ownerId, sessionId, async () => {
-    repository.assertSessionRevision(ownerId, sessionId, expectedRevision);
-    // FK cascade must only run after all object deletions are confirmed.
-    await cleanupVideoRows(sessionVideoRows(ownerId, sessionId));
-    repository.deleteSession(ownerId, sessionId, expectedRevision);
-  });
+  return withSessionVideoLock(ownerId, id, () =>
+    serializeOwner(ownerId, async () => {
+      repository.assertRevision(ownerId, id, expected);
+      if (
+        role === 'TRAINER' &&
+        repository.get(ownerId, id).status !== 'planned'
+      )
+        throw new WorkoutAccessError(403);
+      await cleanupVideoRows(sessionVideoRows(ownerId, id));
+      repository.delete(ownerId, id, expected);
+    }),
+  );
 }
 export { WorkoutError };

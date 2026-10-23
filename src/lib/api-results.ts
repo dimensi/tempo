@@ -12,7 +12,7 @@ import {
   transformMateMuscleDictionarySchema,
 } from '@/contracts/transformmate';
 import { transformMateConnectionStatusSchema } from '@/contracts/transformmate-connection';
-import { workoutPlanSchema, workoutSessionSchema } from '@/contracts/workouts';
+import { workoutSchema } from '@/contracts/workouts';
 import { measurementPrecisionIssueSchema } from '@/contracts/yazio-body';
 import { z } from 'zod';
 import { mcpClientList, mcpClientCredentials } from '@/contracts/mcp-clients';
@@ -31,8 +31,7 @@ export const apiResults = {
   catalog: (value: unknown) => transformMateCatalogResultSchema.parse(value),
   transformMate: (value: unknown) =>
     transformMateReadSchema.shape.data.parse(value),
-  plan: (value: unknown) => workoutPlanSchema.parse(value),
-  session: (value: unknown) => workoutSessionSchema.parse(value),
+  workout: (value: unknown) => workoutSchema.parse(value),
   connection: (value: unknown) =>
     transformMateConnectionStatusSchema.parse(value),
   invite: (value: unknown) => acceptInviteResponseSchema.safeParse(value),

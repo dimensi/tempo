@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   ActionIcon,
   Button,
@@ -18,18 +18,13 @@ import {
   IconPlus,
   IconX,
   IconPlayerPlay,
-  IconClipboardCopy,
 } from '@tabler/icons-react';
 import { useMediaQuery } from '@mantine/hooks';
 import { BottomSheet } from '@/components/shared/bottom-sheet';
+import { useReadOnline } from '@/lib/use-read-online';
 import { ExerciseOrder } from './exercise-order';
-import { matchExerciseGuides } from './exercise-guides';
-import type {
-  PlannedWorkout,
-  WorkoutExercise,
-  WorkoutSession,
-} from '@/contracts/workouts';
-import type { ResultExercise } from './result-draft';
+import type { WorkoutExercise, Workout } from '@/contracts/workouts';
+import type { DraftExercise } from './workout-draft';
 import { ExerciseMedia } from './exercise-media';
 import { workoutMessages as m } from './messages';
 import styles from './day-workout.module.css';
@@ -38,42 +33,51 @@ export function ExerciseRows({
   ownerId,
   canLog,
   exercises,
-  planned,
   session,
   mode,
   onChange,
   onCommit,
   disabled = false,
   reordering = false,
+  showValidation = false,
+  removalPending = false,
 }: {
   ownerId: string;
   canLog: boolean;
-  exercises: ResultExercise[];
-  planned?: PlannedWorkout;
-  session?: WorkoutSession;
-  mode: 'plan' | 'result' | 'read';
-  onChange?: (value: ResultExercise[]) => void;
+  exercises: DraftExercise[];
+  session?: Workout;
+  mode: 'edit' | 'read';
+  onChange?: (value: DraftExercise[]) => void;
   onCommit?: () => void;
   disabled?: boolean;
   reordering?: boolean;
+  showValidation?: boolean;
+  removalPending?: boolean;
 }) {
   const [media, setMedia] = useState<{
-    exercise: ResultExercise;
+    exercise: DraftExercise;
     actual?: WorkoutExercise;
   } | null>(null);
   const mobile = useMediaQuery('(max-width: 47.99em)');
   const [actions, setActions] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const guides = matchExerciseGuides(exercises, planned?.exercises ?? []);
-  const recorded =
-    mode === 'plan'
-      ? matchExerciseGuides(exercises, session?.exercises ?? [])
-      : exercises.map((exercise) =>
-          session?.exercises.find(
-            (item) => Boolean(exercise.id) && item.id === exercise.id,
-          ),
-        );
-  const update = (index: number, next: ResultExercise) =>
+  const pendingFocus = useRef<{ exercise: number; set: number } | null>(null);
+  const weightInputs = useRef(new Map<string, HTMLInputElement>());
+  useLayoutEffect(() => {
+    const target = pendingFocus.current;
+    if (!target) return;
+    const input = weightInputs.current.get(`${target.exercise}:${target.set}`);
+    if (input) {
+      input.focus();
+      input.select();
+      pendingFocus.current = null;
+    }
+  }, [exercises]);
+  const online = useReadOnline();
+  const recorded = exercises.map((exercise) =>
+    session?.exercises.find((item) => item.id === exercise.id),
+  );
+  const update = (index: number, next: DraftExercise) =>
     onChange?.(exercises.map((exercise, i) => (i === index ? next : exercise)));
   if (reordering && onChange)
     return (
@@ -88,23 +92,31 @@ export function ExerciseRows({
       {exercises.map((exercise, index) => {
         const key =
           exercise.id ?? exercise.transformMate?.occurrenceKey ?? `${index}`;
-        const guide = guides[index];
         const openMedia = () => setMedia({ exercise, actual: recorded[index] });
         const titleParts = /^(.*?)\s*(\([^)]*\))$/.exec(exercise.name);
+        const existingOccurrence = Boolean(
+          session &&
+          exercise.id &&
+          session.exercises.some((item) => item.id === exercise.id),
+        );
+        const lockedRemoval = removalPending || (existingOccurrence && !online);
         const options = [
           {
             label: m.techniqueAndVideo,
             icon: <IconPlayerPlay size={20} />,
+            disabled,
             run: openMedia,
           },
           {
             label: m.exerciseComment,
+            disabled,
             run: () => setNote(note === key ? null : key),
           },
           {
             label: m.removeExercise,
             color: 'red',
             icon: <IconTrash size={20} />,
+            disabled: disabled || lockedRemoval,
             run: () => onChange?.(exercises.filter((_, i) => i !== index)),
           },
         ];
@@ -126,8 +138,10 @@ export function ExerciseRows({
                     {titleParts[2]}
                   </span>
                 )}
-                <span className={styles.techniqueLink}>
-                  {m.techniqueAndVideo} ›
+                <span className={styles.exerciseAssist}>
+                  <span className={styles.techniqueLink}>
+                    {m.techniqueAndVideo} ›
+                  </span>
                 </span>
               </UnstyledButton>
               {onChange &&
@@ -159,7 +173,7 @@ export function ExerciseRows({
                             c={option.color ? 'red.7' : undefined}
                             justify="start"
                             mih={52}
-                            disabled={disabled}
+                            disabled={option.disabled}
                             onClick={() => {
                               setActions(null);
                               option.run();
@@ -168,6 +182,13 @@ export function ExerciseRows({
                             {option.label}
                           </Button>
                         ))}
+                        {lockedRemoval && (
+                          <Text size="sm" c="dimmed">
+                            {removalPending
+                              ? m.removalPending
+                              : m.removeExerciseOffline}
+                          </Text>
+                        )}
                       </Stack>
                     </BottomSheet>
                   </>
@@ -189,72 +210,42 @@ export function ExerciseRows({
                         <Menu.Item
                           key={option.label}
                           color={option.color}
-                          disabled={disabled}
+                          disabled={option.disabled}
                           onClick={option.run}
                         >
                           {option.label}
                         </Menu.Item>
                       ))}
+                      {lockedRemoval && (
+                        <Menu.Label>
+                          {removalPending
+                            ? m.removalPending
+                            : m.removeExerciseOffline}
+                        </Menu.Label>
+                      )}
                     </Menu.Dropdown>
                   </Menu>
                 ))}
             </Group>
-            {mode !== 'plan' && guide && (
-              <div className={styles.planSummary}>
-                <Text size="sm" fw={600}>
-                  {m.prepare}
-                </Text>
-                <div className={styles.planSets}>
-                  {guide.sets.map((set, setIndex) => (
-                    <div key={setIndex} className={styles.planSet}>
-                      {guide.sets.length > 1 && (
-                        <Text
-                          size="sm"
-                          c="dimmed"
-                          className={styles.planSetIndex}
-                        >
-                          {m.set} {setIndex + 1}
-                        </Text>
-                      )}
-                      <Stack gap={0}>
-                        <Text size="sm" c="dimmed">
-                          {m.reps}
-                        </Text>
-                        <Text size="md" fw={600}>
-                          {set.reps}
-                        </Text>
-                      </Stack>
-                      <Stack gap={0}>
-                        <Text size="sm" c="dimmed">
-                          {m.weight}
-                        </Text>
-                        <Text size="md" fw={600}>
-                          {set.weightKg === null ? m.noWeight : set.weightKg}
-                        </Text>
-                      </Stack>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {mode === 'result' && (
-              <Text size="sm" fw={600} mb={4}>
-                {m.actualSets}
-              </Text>
-            )}
             <div
-              className={`${styles.setHeading} ${mode === 'result' && onChange ? styles.withSetActions : ''}`}
+              className={`${styles.setHeading} ${onChange ? styles.withSetActions : ''}`}
               aria-hidden
             >
               <span>{m.setNumber}</span>
-              <span>{m.weight}</span>
-              <span>{m.reps}</span>
-              {!(mode === 'result' && onChange) && <span />}
+              <span>
+                <span className={styles.desktopLabel}>{m.weight}</span>
+                <span className={styles.mobileLabel}>{m.resultWeight}</span>
+              </span>
+              <span>
+                <span className={styles.desktopLabel}>{m.reps}</span>
+                <span className={styles.mobileLabel}>{m.resultReps}</span>
+              </span>
+              {!onChange && <span />}
             </div>
             {exercise.sets.map((set, setIndex) => (
               <div
                 key={setIndex}
-                className={`${styles.setRow} ${mode === 'result' && onChange ? styles.withSetActions : ''}`}
+                className={`${styles.setRow} ${onChange ? styles.withSetActions : ''}`}
                 onBlur={(event) => {
                   if (!event.currentTarget.contains(event.relatedTarget))
                     onCommit?.();
@@ -271,7 +262,13 @@ export function ExerciseRows({
                 ) : (
                   <>
                     <NumberInput
+                      ref={(input) => {
+                        const id = `${index}:${setIndex}`;
+                        if (input) weightInputs.current.set(id, input);
+                        else weightInputs.current.delete(id);
+                      }}
                       aria-label={`${exercise.name}, ${m.set} ${setIndex + 1}, ${m.weight}`}
+                      clampBehavior="none"
                       hideControls
                       inputMode="decimal"
                       placeholder={m.noWeight}
@@ -280,6 +277,15 @@ export function ExerciseRows({
                       max={2000}
                       decimalScale={2}
                       disabled={disabled}
+                      error={
+                        showValidation &&
+                        set.weightKg !== null &&
+                        (typeof set.weightKg !== 'number' ||
+                          set.weightKg < 0 ||
+                          set.weightKg > 2000)
+                          ? m.invalidWeight
+                          : undefined
+                      }
                       onChange={(value) =>
                         update(index, {
                           ...exercise,
@@ -287,8 +293,7 @@ export function ExerciseRows({
                             i === setIndex
                               ? {
                                   ...row,
-                                  weightKg:
-                                    typeof value === 'number' ? value : null,
+                                  weightKg: value === '' ? null : value,
                                 }
                               : row,
                           ),
@@ -297,18 +302,26 @@ export function ExerciseRows({
                     />
                     <NumberInput
                       aria-label={`${exercise.name}, ${m.set} ${setIndex + 1}, ${m.reps}`}
+                      clampBehavior="none"
                       hideControls
                       inputMode="numeric"
-                      placeholder={
-                        mode === 'result'
-                          ? String(guide?.sets[setIndex]?.reps ?? '—')
-                          : '10'
-                      }
+                      placeholder="—"
                       value={set.reps ?? ''}
                       min={1}
                       max={1000}
                       allowDecimal={false}
                       disabled={disabled}
+                      error={
+                        showValidation &&
+                        (set.reps === null ||
+                          (set.reps !== null &&
+                            (typeof set.reps !== 'number' ||
+                              !Number.isInteger(set.reps) ||
+                              set.reps < 1 ||
+                              set.reps > 1000)))
+                          ? m.invalidReps
+                          : undefined
+                      }
                       onChange={(value) =>
                         update(index, {
                           ...exercise,
@@ -316,8 +329,7 @@ export function ExerciseRows({
                             i === setIndex
                               ? {
                                   ...row,
-                                  reps:
-                                    typeof value === 'number' ? value : null,
+                                  reps: value === '' ? null : value,
                                 }
                               : row,
                           ),
@@ -326,30 +338,8 @@ export function ExerciseRows({
                     />
                   </>
                 )}
-                {mode === 'result' && onChange ? (
+                {onChange ? (
                   <div className={styles.setActions}>
-                    {guide?.sets[setIndex] && (
-                      <Tooltip label={m.fillFromPlan}>
-                        <ActionIcon
-                          variant="subtle"
-                          size={44}
-                          disabled={disabled}
-                          aria-label={`${m.fillFromPlan}, ${m.set} ${setIndex + 1}: ${exercise.name}`}
-                          onClick={() =>
-                            update(index, {
-                              ...exercise,
-                              sets: exercise.sets.map((row, i) =>
-                                i === setIndex
-                                  ? { ...guide.sets[setIndex]! }
-                                  : row,
-                              ),
-                            })
-                          }
-                        >
-                          <IconClipboardCopy size={20} />
-                        </ActionIcon>
-                      </Tooltip>
-                    )}
                     {exercise.sets.length > 1 && (
                       <Tooltip label={`${m.removeSet} ${setIndex + 1}`}>
                         <span className={styles.removeSet}>
@@ -404,20 +394,25 @@ export function ExerciseRows({
                 mt={8}
                 leftSection={<IconPlus size={15} />}
                 disabled={disabled || exercise.sets.length >= 50}
-                onClick={() =>
+                onClick={(event) => {
+                  if (event.detail === 0) {
+                    pendingFocus.current = {
+                      exercise: index,
+                      set: exercise.sets.length,
+                    };
+                  }
                   update(index, {
                     ...exercise,
                     sets: [
                       ...exercise.sets,
-                      mode === 'plan'
-                        ? {
-                            ...exercise.sets.at(-1)!,
-                            reps: exercise.sets.at(-1)?.reps ?? 10,
-                          }
-                        : { reps: null, weightKg: null },
+                      {
+                        reps: exercise.sets.at(-1)?.reps ?? null,
+                        weightKg: exercise.sets.at(-1)?.weightKg ?? null,
+                        lastValid: null,
+                      },
                     ],
-                  })
-                }
+                  });
+                }}
               >
                 {m.addSet}
               </Button>
@@ -450,8 +445,8 @@ export function ExerciseRows({
           exercise={{
             ...media.exercise,
             sets: media.exercise.sets.map((set) => ({
-              ...set,
-              reps: set.reps ?? 1,
+              reps: typeof set.reps === 'number' ? set.reps : 1,
+              weightKg: typeof set.weightKg === 'number' ? set.weightKg : null,
             })),
           }}
           actual={media.actual}

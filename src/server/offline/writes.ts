@@ -8,6 +8,10 @@ import { offlineWriteSchema } from '@/contracts/offline-write';
 import { bodyRepository } from '@/server/yazio/body-repository';
 import { runBodySync } from '@/server/yazio/body-runtime';
 import { WorkoutError } from '@/server/workouts/repository';
+import { withSessionVideoLock } from '@/server/workouts/videos';
+import { syncSavedWorkout } from '@/server/workouts/transformmate/service';
+import { workoutRepository } from '@/server/workouts/repository';
+import { getDatabase } from '@/server/db';
 import { offlineWriteRepository, OfflineWriteError } from './write-repository';
 async function owner(headers: Headers) {
   const session = await getAuth().api.getSession({ headers });
@@ -54,9 +58,31 @@ export async function saveOfflineWrite(request: Request) {
   const identity = await owner(request.headers);
   if (identity.partition !== parsed.data.partition)
     throw new OfflineWriteError(403);
-  const result = offlineWriteRepository().apply(identity.ownerId, parsed.data);
+  const result =
+    parsed.data.payload.kind === 'workout'
+      ? await withSessionVideoLock(
+          identity.ownerId,
+          parsed.data.recordId,
+          async () =>
+            offlineWriteRepository().apply(identity.ownerId, parsed.data),
+        )
+      : offlineWriteRepository().apply(identity.ownerId, parsed.data);
   if (parsed.data.payload.kind === 'measurement')
     void runBodySync(identity.ownerId).catch(() => {});
+  else if (
+    result.payload.kind === 'workout' &&
+    result.payload.data.status === 'planned'
+  ) {
+    // Publication is best-effort after commit: a replayed receipt remains valid
+    // even when another tab has since deleted the workout.
+    void (async () => {
+      const workout = workoutRepository(getDatabase().db).get(
+        identity.ownerId,
+        result.id,
+      );
+      await syncSavedWorkout(request.headers, identity.ownerId, workout);
+    })().catch(() => {});
+  }
   return result;
 }
 export async function offlineWriteResponse(action: () => Promise<unknown>) {

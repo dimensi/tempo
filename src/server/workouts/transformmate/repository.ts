@@ -3,9 +3,11 @@ import { and, eq, asc } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { getDatabase } from '@/server/db';
-import { plannedWorkoutSchema, type WorkoutPlan } from '@/contracts/workouts';
+import { publicationWorkoutSchema } from '@/contracts/workout-publication';
 import { workoutTransformMateLinks as links } from '@/server/db/schema/transformmate';
 import { syncStateSchema, type SyncLink, type SyncState } from './state';
+import type { Workout } from '@/contracts/workouts';
+import { canPublish, publicationFor } from './publication';
 import { projectionFingerprint } from './mapping';
 
 export function syncRepository(
@@ -56,8 +58,11 @@ export function syncRepository(
         .all()
         .map(dto);
     },
-    reconcile(link: SyncLink, plan: WorkoutPlan): SyncLink | null {
-      if (plan.ownerId !== link.ownerId || plan.id !== link.planId) return null;
+    reconcile(link: SyncLink, saved: Workout): SyncLink | null {
+      if (saved.ownerId !== link.ownerId || saved.id !== link.planId)
+        return null;
+      if (!canPublish(saved)) return link;
+      const plan = publicationFor(saved);
       if (link.state.attempted || link.remoteTrainingId !== null) {
         const published = link.state.published;
         const current = plan.workouts.find((w) => w.id === link.workoutId);
@@ -69,7 +74,7 @@ export function syncRepository(
           link.state.updateAttempt?.phase === 'unknown'
         )
           return link;
-        const workout = plannedWorkoutSchema.parse(current);
+        const workout = publicationWorkoutSchema.parse(current);
         if (JSON.stringify(workout) === JSON.stringify(published.workout)) {
           if (link.state.updateAttempt?.phase === 'pending')
             return repository.cas(link, {
@@ -118,7 +123,7 @@ export function syncRepository(
       }
       const current = plan.workouts.find((w) => w.id === link.workoutId);
       if (!current) return null;
-      const workout = plannedWorkoutSchema.parse(current);
+      const workout = publicationWorkoutSchema.parse(current);
       if (
         JSON.stringify(workout) === JSON.stringify(link.state.workout) &&
         plan.title === link.state.planTitle
@@ -141,8 +146,10 @@ export function syncRepository(
         checkedAt: null,
       });
     },
-    ensure(ownerId: string, plan: WorkoutPlan) {
-      if (plan.ownerId !== ownerId) throw new Error('Invalid plan owner');
+    ensure(ownerId: string, saved: Workout) {
+      if (saved.ownerId !== ownerId) throw new Error('Invalid workout owner');
+      if (!canPublish(saved)) return;
+      const plan = publicationFor(saved);
       for (const workout of plan.workouts) {
         const existing = db
           .select()
@@ -156,7 +163,7 @@ export function syncRepository(
           )
           .get();
         if (existing) {
-          repository.reconcile(dto(existing), plan);
+          repository.reconcile(dto(existing), saved);
           continue;
         }
         if (!workout.exercises.some((e) => e.transformMate)) continue;

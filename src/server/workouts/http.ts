@@ -6,9 +6,25 @@ import { hasTrustedOrigin } from '@/server/auth/origin';
 import { SyncAccessError } from './transformmate/service';
 import { TransformMateStaleConnectionError } from '@/server/transformmate/token-store';
 export const workoutUpdateBody = z
-  .object({ revision: z.unknown(), data: z.unknown() })
+  .object({
+    ownerId: z.string(),
+    requestId: z.uuid().optional(),
+    revision: z.unknown(),
+    data: z.unknown(),
+  })
   .strict();
-export const workoutDeleteBody = z.object({ revision: z.unknown() }).strict();
+export const workoutDeleteBody = z
+  .object({ ownerId: z.string(), revision: z.unknown() })
+  .strict();
+
+export const workoutCreateBody = z.strictObject({
+  ownerId: z.string(),
+  requestId: z.uuid().optional(),
+  data: z.unknown(),
+});
+export const workoutTransitionBody = workoutUpdateBody.extend({
+  action: z.enum(['start', 'complete', 'resume']),
+});
 
 /** Bound bytes before parsing private notes/large plan arrays; never include body in errors. */
 export async function readWorkoutJson(request: Request): Promise<unknown> {
@@ -53,7 +69,7 @@ export async function workoutResponse(operation: () => Promise<unknown>) {
   try {
     return Response.json(
       {
-        contractVersion: 1,
+        contractVersion: 2,
         source: 'user',
         data: await operation(),
       },

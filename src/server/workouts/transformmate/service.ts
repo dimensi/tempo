@@ -1,6 +1,6 @@
 import 'server-only';
 import { z } from 'zod';
-import type { WorkoutPlan } from '@/contracts/workouts';
+import type { Workout } from '@/contracts/workouts';
 import type { TransformMateSyncData } from '@/contracts/transformmate';
 import { transformMateSyncItemSchema } from '@/contracts/transformmate';
 import {
@@ -16,6 +16,7 @@ import {
 } from '@/server/transformmate/runtime';
 import { workoutRepository } from '@/server/workouts/repository';
 import { TransformMateStorageError } from '@/server/transformmate/token-store';
+import { canPublish } from './publication';
 import { syncRepository } from './repository';
 import { nativeRepository } from './native-repository';
 import { nativeService } from './native-service';
@@ -34,8 +35,8 @@ function context(headers: Headers, ownerId: string) {
   };
   const db = getDatabase().db;
   const repository = syncRepository(db);
-  const plans = () => workoutRepository(db).list(ownerId).plans;
-  return { access, repository, plans };
+  const workouts = () => workoutRepository(db).list(ownerId).workouts;
+  return { access, repository, workouts };
 }
 async function loadEngine(
   contextValue: ReturnType<typeof context>,
@@ -69,11 +70,12 @@ async function loadEngine(
 async function publishSavedPlan(
   contextValue: Awaited<ReturnType<typeof loadEngine>>,
   ownerId: string,
-  plan: WorkoutPlan,
+  plan: Workout,
 ) {
+  if (!canPublish(plan)) return;
   // Only the current owner-scoped persisted plan can authorize a new durable link.
   const current = contextValue
-    .plans()
+    .workouts()
     .find(
       (p) =>
         p.id === plan.id &&
@@ -94,11 +96,11 @@ async function publishSavedPlan(
 }
 
 /** Keep local save/reconciliation and upstream claims in one owner queue; HTTP stays outside SQL. */
-export async function saveAndSyncWorkoutPlan(
+export async function saveAndSyncWorkout(
   headers: Headers,
   ownerId: string,
-  save: () => WorkoutPlan,
-): Promise<WorkoutPlan> {
+  save: () => Workout | Promise<Workout>,
+): Promise<Workout> {
   return serializeOwner(ownerId, async () => {
     const base = context(headers, ownerId);
     await base.access('workouts:plan');
@@ -106,16 +108,16 @@ export async function saveAndSyncWorkoutPlan(
     await contextValue.access('workouts:plan');
     await contextValue.checkConnection?.();
     await contextValue.access('workouts:plan');
-    const plan = save();
+    const plan = await save();
     await publishSavedPlan(contextValue, ownerId, plan);
     return plan;
   });
 }
 
-export async function syncSavedPlan(
+export async function syncSavedWorkout(
   headers: Headers,
   ownerId: string,
-  plan: WorkoutPlan,
+  plan: Workout,
 ): Promise<void> {
   await serializeOwner(ownerId, async () => {
     const base = context(headers, ownerId);

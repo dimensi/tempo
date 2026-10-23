@@ -2,8 +2,7 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import type {
   WorkoutExercise,
-  WorkoutSession,
-  PlannedWorkout,
+  Workout as LocalWorkout,
 } from '@/contracts/workouts';
 import type { TransformMateSyncItem } from '@/contracts/transformmate';
 import type { TransformMateNativeItem } from '@/contracts/transformmate-native';
@@ -53,9 +52,8 @@ type Workout = {
   date: string;
   title: string;
   executionStatus: McpWorkoutExecutionStatus;
-  planId?: string | null;
-  workoutId?: string | null;
-  planBasis?: 'saved_plan' | 'session_snapshot' | 'published_snapshot';
+  workoutId?: string;
+  planBasis?: 'saved_plan' | 'published_snapshot';
   freshness: {
     lastSavedAt: string | null;
     lastFetchedAt: string | null;
@@ -85,64 +83,24 @@ function localExercises(
     })),
   }));
 }
-function planView(
-  planId: string,
-  workout: PlannedWorkout,
-  updatedAt: string | null,
-): Workout {
+function localView(workout: LocalWorkout): Workout {
   return {
-    workoutRef: {
-      kind: 'plan',
-      planId,
-      workoutId: workout.id,
-      date: workout.date,
-    },
+    workoutRef: { kind: 'workout', id: workout.id, date: workout.date },
     source: 'LOCAL',
     date: workout.date,
     title: workout.title,
-    executionStatus: 'planned',
-    planId,
+    executionStatus: workout.status,
     workoutId: workout.id,
-    planBasis: 'saved_plan',
     freshness: {
-      lastSavedAt: updatedAt,
+      lastSavedAt: workout.updatedAt,
       lastFetchedAt: null,
       lastCheckedAt: null,
     },
-    exercises: localExercises(workout.exercises, 'plan'),
+    exercises: localExercises(
+      workout.exercises,
+      workout.status === 'planned' ? 'plan' : 'actual',
+    ),
     related: [],
-  };
-}
-function sessionView(session: WorkoutSession): Workout {
-  return {
-    workoutRef: { kind: 'session', id: session.id, date: session.date },
-    source: 'LOCAL',
-    date: session.date,
-    title: session.title,
-    executionStatus: session.status,
-    planId: session.planId,
-    workoutId: session.plannedWorkoutId,
-    planBasis: session.planSnapshot ? 'session_snapshot' : undefined,
-    freshness: {
-      lastSavedAt: session.updatedAt,
-      lastFetchedAt: null,
-      lastCheckedAt: null,
-    },
-    exercises: [
-      ...localExercises(session.planSnapshot?.workout.exercises ?? [], 'plan'),
-      ...localExercises(session.exercises, 'actual'),
-    ],
-    related:
-      session.planId && session.plannedWorkoutId
-        ? [
-            {
-              kind: 'plan',
-              planId: session.planId,
-              workoutId: session.plannedWorkoutId,
-              date: session.planSnapshot?.workout.date ?? session.date,
-            },
-          ]
-        : [],
   };
 }
 function linkedView(item: TransformMateSyncItem): Workout {
@@ -154,7 +112,6 @@ function linkedView(item: TransformMateSyncItem): Workout {
     source: 'TransformMate',
     date,
     title: actual?.title ?? plan.title,
-    planId: item.planId,
     workoutId: item.workoutId,
     executionStatus: providerExecutionStatus(
       actual,
@@ -182,9 +139,8 @@ function linkedView(item: TransformMateSyncItem): Workout {
     ],
     related: [
       {
-        kind: 'plan',
-        planId: item.planId,
-        workoutId: item.workoutId,
+        kind: 'workout',
+        id: item.workoutId,
         date: item.planSnapshot.workout.date,
       },
     ],
@@ -289,18 +245,10 @@ export async function readMcpWorkout(
   if (!detail) throw new McpReadError('not_found');
   let workout: Workout;
   if (detail.kind === 'native') workout = nativeView(detail.item);
-  else if (detail.kind === 'session') workout = sessionView(detail.session);
   else if (detail.kind === 'link') workout = linkedView(detail.item);
   else {
-    workout = planView(detail.plan.id, detail.workout, detail.plan.updatedAt);
-    workout.related = [
-      ...detail.sessions.map((s) => ({
-        kind: 'session' as const,
-        id: s.id,
-        date: s.date,
-      })),
-      ...(detail.sync ? [linkedView(detail.sync).workoutRef] : []),
-    ];
+    workout = localView(detail.workout);
+    workout.related = detail.sync ? [linkedView(detail.sync).workoutRef] : [];
   }
   // Related references are page rows too; no unbounded arrays or silent truncation.
   const { exercises, related, ...metadata } = workout;
@@ -337,7 +285,7 @@ export async function readMcpExerciseHistory(
     to: input.to,
   });
   const views = [
-    ...local.sessions.map(sessionView),
+    ...local.workouts.map(localView),
     ...linked.map(linkedView),
     ...native.map(nativeView),
   ].filter(
@@ -362,12 +310,10 @@ export async function readMcpExerciseHistory(
     if (rows.length > 0) matching.push({ workout, rows });
   }
   const key = (w: Workout) =>
-    w.planId && w.workoutId
-      ? JSON.stringify([w.planId, w.workoutId, w.date])
-      : null;
+    w.workoutId ? JSON.stringify([w.workoutId, w.date]) : null;
   const localKeys = new Set(
     matching
-      .filter((v) => v.workout.workoutRef.kind === 'session')
+      .filter((v) => v.workout.workoutRef.kind === 'workout')
       .map((v) => key(v.workout))
       .filter((k) => k != null),
   );

@@ -3,7 +3,7 @@ import { workoutTitle } from '@/lib/workout-title';
 import 'server-only';
 import { createHash } from 'node:crypto';
 import { trainingWriteSnapshot } from '@/server/transformmate/write-snapshot';
-import type { PlannedWorkout } from '@/contracts/workouts';
+import type { PublicationWorkout } from '@/contracts/workout-publication';
 import {
   transformMateActualSchema,
   type TransformMateActual,
@@ -25,7 +25,7 @@ export function canProject(
   );
 }
 export function createProjection(
-  workout: PlannedWorkout,
+  workout: PublicationWorkout,
   marker: string,
 ): TrainingWriteBody {
   return {
@@ -177,7 +177,7 @@ export function remoteProjection(training: TransformMateTrainingDetail) {
 }
 export function initialPlaceholders(
   training: TransformMateTrainingDetail,
-  workout: PlannedWorkout,
+  workout: PublicationWorkout,
 ) {
   const exercises = remoteExercises(training);
   return (
@@ -257,8 +257,8 @@ export function hasRemoteFact(training: TransformMateTrainingDetail) {
 /** Verified ordered correspondence binds local occurrences, never remote fact IDs. */
 export function updateProjection(
   training: TransformMateTrainingDetail,
-  previous: PlannedWorkout,
-  desired: PlannedWorkout,
+  previous: PublicationWorkout,
+  desired: PublicationWorkout,
 ) {
   validateRemoteOrder(training);
   if (training.protocols.length !== 1)

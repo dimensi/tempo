@@ -22,7 +22,7 @@ function createAuth() {
     secret:
       env.BETTER_AUTH_SECRET ??
       'development-only-secret-change-before-deploy-32',
-    trustedOrigins: [env.BETTER_AUTH_URL],
+    trustedOrigins: [env.BETTER_AUTH_URL, 'https://*.dimensi.ru'],
     emailAndPassword: {
       enabled: true,
       disableSignUp: true,
