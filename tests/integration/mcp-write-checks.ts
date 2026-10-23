@@ -224,7 +224,12 @@ export async function assertMcpWrites(
     const link = syncRepository(connection.db)
       .list('owner')
       .find((link) => link.workoutId === workout.id)!;
-    expect(link.state.lifecycle?.status).toBe('completed');
+    expect(link.state.lifecycle).toMatchObject({
+      status: 'completed',
+      historicalTimeUnknown: true,
+    });
+    expect(link.state.lifecycle?.startedAt).toBeTruthy();
+    expect(link.state.lifecycle?.finishedAt).toBeTruthy();
     expect(link.state.published).toBeFalsy();
     expect(link.state.attempted).toBe(false);
     expect(JSON.stringify(publicationFor(saved))).not.toMatch(
@@ -348,6 +353,12 @@ export async function assertMcpWrites(
       revision: 7,
       action: 'complete',
     });
+    expect(
+      syncRepository(connection.db)
+        .list('owner')
+        .find((item) => item.id === link.id)?.state.lifecycle
+        ?.historicalTimeUnknown,
+    ).toBe(true);
     // Failed completed creation rolls back record, outbox and receipt together.
     expect(
       (

@@ -92,6 +92,11 @@ export async function executeWorkoutCommand(
                 actual,
                 'complete',
               );
+              // These transitions describe import, not observed historical execution times.
+              syncRepository(getDatabase().db).markHistoricalTimeUnknown(
+                ownerId,
+                saved.id,
+              );
             }
           } else {
             const { id, revision } = command.input;
