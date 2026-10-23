@@ -2,6 +2,9 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { trainerAccess, user } from '@/server/db/schema';
 import { medicalMarkerSchema } from '@/contracts/anamnesis';
+import { measurements } from '@/server/db/schema/measurements';
+import { yazioWeightEntries } from '@/server/db/schema/yazio-health';
+import { yazioBodyLinks } from '@/server/db/schema/yazio-body';
 
 const state = vi.hoisted(() => ({
   session: null as null | { user: { id: string; role: string } },
@@ -111,6 +114,59 @@ it('fails closed for generic and selective medical-PDF trainer access, including
   expect((await authorize(new Headers(), 'nutrition:read', ownerId)).ok).toBe(
     true,
   );
+  const { getOverview } = await import('@/server/overview');
+  connection.db
+    .insert(measurements)
+    .values({
+      id: 'overview-weight',
+      ownerId,
+      measuredAt: '2026-09-01',
+      values: [{ metric: 'weight', value: '75', unit: 'kg' }],
+    })
+    .run();
+  const importedId = crypto.randomUUID();
+  const linkedId = crypto.randomUUID();
+  for (const [externalId, subject, date, rawValue] of [
+    [importedId, ownerId, '2026-09-02', '74.5999984741211'],
+    [linkedId, ownerId, '2026-09-01', '99'],
+    [crypto.randomUUID(), trainerId, '2026-09-03', '200'],
+  ])
+    connection.db
+      .insert(yazioWeightEntries)
+      .values({
+        ownerId: subject!,
+        externalId: externalId!,
+        providerDate: `${date} 00:00:00`,
+        measuredDate: null,
+        rawValue: rawValue!,
+        unit: null,
+        observedAt: '2026-09-03T00:00:00.000Z',
+      })
+      .run();
+  connection.db
+    .insert(yazioBodyLinks)
+    .values({
+      id: crypto.randomUUID(),
+      ownerId,
+      epoch: 0,
+      providerId: linkedId,
+      measurementId: 'overview-weight',
+      metric: 'weight',
+      providerDateTime: '2026-09-01 00:00:00',
+    })
+    .run();
+  const overview = await getOverview(
+    headers(),
+    'UTC',
+    new Date('2026-09-03T12:00:00Z'),
+  );
+  expect(overview.weight.latest).toEqual({ date: '2026-09-02', value: '74.6' });
+  expect(
+    overview.weight.points.filter((point) => point.value !== null),
+  ).toEqual([
+    { date: '2026-09-01', value: '75' },
+    { date: '2026-09-02', value: '74.6' },
+  ]);
   expect(await authorize(new Headers(), 'nutrition:write', ownerId)).toEqual({
     ok: false,
     status: 403,
@@ -193,6 +249,9 @@ it('fails closed for generic and selective medical-PDF trainer access, including
     status: 403,
   });
   connection.db.delete(trainerAccess).run();
+  await expect(getOverview(headers(), 'UTC')).rejects.toMatchObject({
+    status: 403,
+  });
   expect(await authorize(new Headers(), 'nutrition:read', ownerId)).toEqual({
     ok: false,
     status: 403,

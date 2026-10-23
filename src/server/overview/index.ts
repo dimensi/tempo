@@ -12,6 +12,7 @@ import { listNutritionDays } from '@/server/nutrition';
 import { nutritionRepository } from '@/server/nutrition/repository';
 import { summarizeNutrition } from '@/features/analytics';
 import { getNutritionSchedule } from '@/server/jobs/nutrition-scheduler';
+import { canonicalYazioBodyValue } from '@/lib/yazio-observations';
 
 export class OverviewError extends Error {
   constructor(public status: number) {
@@ -49,24 +50,36 @@ export async function getOverview(
   const days = await listNutritionDays(headers, ownerId, range);
   const summary = summarizeNutrition(range, days);
   const { sqlite } = getDatabase();
-  // Indexed date window, and one latest weight record; never load historical measurements for a month chart.
+  // Combine canonical measurements with unlinked YAZIO observations, as in
+  // weight history. This owner's imported weights are confirmed kilograms.
+  // Keep linked imports out so local edits remain authoritative.
+  const weightProjection = `WITH weight_observations AS (
+    SELECT m.id, m.measured_at AS date, json_extract(v.value, '$.value') AS value, 1 AS local
+    FROM measurements m, json_each(m.values_json) v
+    WHERE m.owner_id = @ownerId AND json_extract(v.value, '$.metric') = 'weight'
+      AND json_extract(v.value, '$.unit') = 'kg'
+    UNION ALL
+    SELECT w.external_id AS id, coalesce(w.measured_date, substr(w.provider_date, 1, 10)) AS date, w.raw_value AS value, 0 AS local
+    FROM yazio_weight_entries w
+    WHERE w.owner_id = @ownerId AND w.raw_value IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM yazio_body_links l WHERE l.owner_id = w.owner_id
+        AND l.provider_id = w.external_id AND l.metric = 'weight' AND l.measurement_id IS NOT NULL)
+  )`;
+  type WeightRow = { date: string; value: string; local: number };
   const weightRows = sqlite
     .prepare(
-      `SELECT measured_at as date, values_json as valuesJson FROM measurements WHERE owner_id = ? AND measured_at >= ? AND measured_at <= ? ORDER BY measured_at, id`,
+      `${weightProjection} SELECT date, value, local FROM weight_observations
+       WHERE date >= @from AND date <= @to ORDER BY date, local, id`,
     )
-    .all(ownerId, shiftDate(today, -29), today) as Array<{
-    date: string;
-    valuesJson: string;
-  }>;
+    .all({ ownerId, from: shiftDate(today, -29), to: today }) as WeightRow[];
   const latestRow = sqlite
     .prepare(
-      `SELECT measured_at as date, values_json as valuesJson FROM measurements WHERE owner_id = ? AND measured_at <= ? AND EXISTS (SELECT 1 FROM json_each(values_json) WHERE json_extract(value, '$.metric') = 'weight') ORDER BY measured_at DESC, id DESC LIMIT 1`,
+      `${weightProjection} SELECT date, value, local FROM weight_observations
+       WHERE date <= @to ORDER BY date DESC, local DESC, id DESC LIMIT 1`,
     )
-    .get(ownerId, today) as { date: string; valuesJson: string } | undefined;
-  const weight = (row: { date: string; valuesJson: string }) =>
-    (
-      JSON.parse(row.valuesJson) as Array<{ metric: string; value: string }>
-    ).find((value) => value.metric === 'weight')?.value ?? null;
+    .get({ ownerId, to: today }) as WeightRow | undefined;
+  const weight = (row: WeightRow) =>
+    row.local ? row.value : (canonicalYazioBodyValue(row.value) ?? row.value);
   const byDate = new Map(
     weightRows.flatMap((row) => {
       const value = weight(row);
