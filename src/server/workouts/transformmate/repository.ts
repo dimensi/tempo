@@ -7,7 +7,7 @@ import { publicationWorkoutSchema } from '@/contracts/workout-publication';
 import { workoutTransformMateLinks as links } from '@/server/db/schema/transformmate';
 import { syncStateSchema, type SyncLink, type SyncState } from './state';
 import type { Workout } from '@/contracts/workouts';
-import { canPublish, publicationFor } from './publication';
+import { canPublish, publicationFor, workoutLifecycle } from './publication';
 import { projectionFingerprint } from './mapping';
 
 export function syncRepository(
@@ -62,6 +62,17 @@ export function syncRepository(
       if (saved.ownerId !== link.ownerId || saved.id !== link.planId)
         return null;
       if (!canPublish(saved)) return link;
+      const lifecycle = workoutLifecycle(saved, link.state.lifecycle);
+      if (JSON.stringify(lifecycle) !== JSON.stringify(link.state.lifecycle)) {
+        const next = repository.cas(link, { ...link.state, lifecycle });
+        if (!next) return null;
+        link = next;
+      }
+      if (
+        saved.status !== 'planned' &&
+        (link.remoteTrainingId !== null || link.state.attempted)
+      )
+        return link;
       const plan = publicationFor(saved);
       if (link.state.attempted || link.remoteTrainingId !== null) {
         const published = link.state.published;
@@ -166,7 +177,6 @@ export function syncRepository(
           repository.reconcile(dto(existing), saved);
           continue;
         }
-        if (!workout.exercises.some((e) => e.transformMate)) continue;
         const id = randomUUID();
         const now = new Date().toISOString();
         const supported =
@@ -175,6 +185,7 @@ export function syncRepository(
             .size === workout.exercises.length;
         const state: SyncState = {
           version: 1,
+          lifecycle: workoutLifecycle(saved),
           workout,
           planTitle: plan.title,
           marker: `[yazio-dashboard:${id}]`,

@@ -108,11 +108,19 @@ export function useTransformMateSync(ownerId: string, date: string) {
   }, [refresh]);
   return {
     items,
+    linkedIncomplete: items.some(
+      (item) =>
+        (item.planSnapshot.workout.date === date ||
+          item.actual?.date === date) &&
+        item.status !== 'synced' &&
+        item.status !== 'started',
+    ),
     nativePage,
     nativeRefresh,
     configured,
     error: error || !!resource.error,
     busy,
+    reload: refreshRead,
     refresh,
     denied: resource.error === 'denied',
     loadMore: () => nativePage.nextCursor && refresh(nativePage.nextCursor),
@@ -136,7 +144,10 @@ export function WorkoutSync({
       ? 'green'
       : item.status === 'error'
         ? 'red'
-        : item.status === 'conflict' || item.status === 'unknown'
+        : item.status === 'conflict' ||
+            item.status === 'unknown' ||
+            item.status === 'unavailable' ||
+            item.status === 'pending'
           ? 'orange'
           : 'gray';
   return (
@@ -163,6 +174,9 @@ export function WorkoutSync({
               ? m.notPublished
               : reasons[item.reason]}
         </Text>
+      )}
+      {item.execution?.historicalTimeUnknown && (
+        <Text size="sm">{m.historicalExecutionTime}</Text>
       )}
       {item.updateAttempt && (
         <Text size="sm" role="status">

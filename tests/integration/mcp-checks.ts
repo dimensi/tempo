@@ -390,6 +390,18 @@ export async function assertMcpAccess(
         createdAt: '2026-10-01T00:00:00Z',
         updatedAt: '2026-10-01T00:00:00Z',
       })
+      .onConflictDoUpdate({
+        target: [
+          workoutTransformMateLinks.ownerId,
+          workoutTransformMateLinks.planId,
+          workoutTransformMateLinks.workoutId,
+        ],
+        set: {
+          id: linkId,
+          remoteTrainingId: 123,
+          state: JSON.stringify(state),
+        },
+      })
       .run();
     const actual = {
       date: '2026-10-01',

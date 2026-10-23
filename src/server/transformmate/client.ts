@@ -27,6 +27,7 @@ import {
   updateTrainingInputSchema,
   setInputSchema,
   updateSetInputSchema,
+  createCustomExerciseSchema,
   parseWriteInput,
   type CreateTrainingInput,
   type UpdateTrainingInput,
@@ -312,6 +313,18 @@ export function createTransformMateClient(options: {
         throw new Error('Invalid TransformMate exercise ID');
       return validated(`exercises/${id}/`, transformMateExerciseDetailSchema);
     },
+    createCustomExercise: (
+      input: import('zod').input<typeof createCustomExerciseSchema>,
+      beforeSend?: () => Promise<void>,
+    ) =>
+      validated(
+        'exercises/',
+        mutationResponseSchema,
+        'POST',
+        parseWriteInput(createCustomExerciseSchema, input),
+        false,
+        beforeSend,
+      ),
     createTraining: (
       input: CreateTrainingInput,
       beforeSend?: () => Promise<void>,

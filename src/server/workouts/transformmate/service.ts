@@ -29,14 +29,18 @@ export class SyncAccessError extends Error {
 }
 function context(headers: Headers, ownerId: string) {
   z.string().min(1).max(128).parse(ownerId);
-  const access = async (permission: 'workouts:read' | 'workouts:plan') => {
+  const access = async (
+    permission: 'workouts:read' | 'workouts:plan' | 'workouts:log',
+  ) => {
     const result = await authorize(headers, permission, ownerId);
     if (!result.ok) throw new SyncAccessError(result.status);
   };
   const db = getDatabase().db;
   const repository = syncRepository(db);
   const workouts = () => workoutRepository(db).list(ownerId).workouts;
-  return { access, repository, workouts };
+  const canLog = async () =>
+    (await authorize(headers, 'workouts:log', ownerId)).ok;
+  return { access, repository, workouts, canLog };
 }
 async function loadEngine(
   contextValue: ReturnType<typeof context>,
@@ -53,6 +57,7 @@ async function loadEngine(
       checkConnection: fence?.assertCurrent,
       connectionId: fence?.generation,
       accountScope: fence?.accountScope,
+      authorId: fence?.authorId,
     };
   } catch (error) {
     await contextValue.access('workouts:read');
@@ -162,6 +167,12 @@ export async function listTransformMateSync(
             },
           }
         : {}),
+      execution: link.state.execution
+        ? {
+            phase: link.state.execution.phase,
+            historicalTimeUnknown: link.state.execution.historicalTimeUnknown,
+          }
+        : undefined,
       status: link.state.status,
       reason: link.state.reason,
       checkedAt: link.state.checkedAt,
@@ -210,6 +221,12 @@ export async function refreshTransformMateSync(
   return serializeOwner(ownerId, async () => {
     const contextValue = context(headers, ownerId);
     await contextValue.access('workouts:read');
+    if ((await authorize(headers, 'workouts:plan', ownerId)).ok) {
+      for (const workout of contextValue.workouts()) {
+        await contextValue.access('workouts:plan');
+        contextValue.repository.ensure(ownerId, workout);
+      }
+    }
     const engine = syncEngine(await loadEngine(contextValue, ownerId));
     for (const link of contextValue.repository.list(ownerId))
       await engine.process(link);

@@ -39,8 +39,8 @@ export const createTrainingInputSchema = z.strictObject({
   description: z.string(),
   date: z.iso.date(),
   protocols: z.array(protocolInputSchema).default([]),
-  started: z.iso.datetime({ offset: true }).optional(),
-  finished: z.iso.datetime({ offset: true }).optional(),
+  started: z.iso.datetime({ offset: true }).nullable().optional(),
+  finished: z.iso.datetime({ offset: true }).nullable().optional(),
 });
 export const updateTrainingInputSchema = createTrainingInputSchema
   .omit({ protocols: true })
@@ -64,3 +64,16 @@ export function parseWriteInput<T>(schema: z.ZodType<T>, input: unknown): T {
   if (!result.success) throw new Error('Invalid TransformMate write input');
   return result.data;
 }
+
+/** APK ExerciseEntityForCreate, verified through the own-account API. */
+export const createCustomExerciseSchema = z.strictObject({
+  name: z.string().trim().min(1).max(160),
+  description: z.string().max(4000),
+  youtube_link: z.literal(''),
+  vimeo_link: z.literal(''),
+  muscles: z.array(id).max(0),
+  equipments: z.array(id).max(0),
+  sports: z.array(id).max(0),
+  time_zone: z.literal('UTC'),
+  exercise_type: z.literal('Пользовательский'),
+});

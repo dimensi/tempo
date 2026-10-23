@@ -42,5 +42,7 @@ export async function listSavedWorkouts(
     cursor = page.nextCursor;
   }
   await requireOwnerWorkoutRead(headers, ownerId);
-  return { local, linked: remote.items, native };
+  // A local publication intent is not another saved provider workout.
+  const linked = remote.items.filter((item) => item.remoteTrainingId !== null);
+  return { local, linked, native };
 }

@@ -167,6 +167,7 @@ export async function getTransformMateConnectionFence(ownerId: string) {
   return {
     client: entry.client,
     generation: entry.token.connectionId,
+    authorId: entry.token.account.id,
     accountScope: accountScope(ownerId, entry.token),
     assertCurrent: () => entry.store.assertCurrent(),
     assertBindingCurrent: () =>
