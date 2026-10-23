@@ -12,7 +12,12 @@ import {
   oauthClient,
   oauthRefreshToken,
 } from '@/server/db/schema/oauth';
-import { nutritionDays } from '@/server/db/schema/nutrition';
+import { nutritionSchedule } from '@/server/db/schema/nutrition-schedule';
+import { nutritionRepository } from '@/server/nutrition/repository';
+import { measurementRepository } from '@/server/measurements/repository';
+import { yazioHealthRepository } from '@/server/yazio/health-repository';
+import { getSavedDataFreshness } from '@/server/analytics/freshness';
+import { nutritionDays, nutritionSyncRuns } from '@/server/db/schema/nutrition';
 import { yazioDailySteps } from '@/server/db/schema/yazio-health';
 import { getAnalytics } from '@/server/analytics';
 import { bindMcpReader } from '@/server/auth/data-session';
@@ -354,7 +359,18 @@ export async function assertMcpAccess(
       expected: null,
       baseline: null,
       occurrences: [],
-      checkedAt: null,
+      checkedAt: '2026-10-17T00:00:00Z',
+      updateAttempt: {
+        id: randomUUID(),
+        phase: 'conflict',
+        previous: { workout: plan.workouts[0], planTitle: plan.title },
+        desired: { workout: plan.workouts[0], planTitle: plan.title },
+        previousFingerprint: '0'.repeat(64),
+        expectedFingerprint: null,
+        connectionId: null,
+        createdAt: '2026-10-17T00:00:00Z',
+        checkedAt: '2026-10-18T00:00:00Z',
+      },
       actual: null,
     });
     connection.db
@@ -448,6 +464,14 @@ export async function assertMcpAccess(
       });
       expect(result.structuredContent).toMatchObject({
         data: {
+          freshness: {
+            transformmateLinked: {
+              latestRecordDate: '2026-10-01',
+              lastCheckedAt: '2026-10-18T00:00:00Z',
+              lastFetchedAt: null,
+              syncState: 'unknown',
+            },
+          },
           summary: {
             completedSessions: evidence.completedSessions,
             completionCountAmbiguous: evidence.completedSessions === null,
@@ -455,6 +479,7 @@ export async function assertMcpAccess(
           records: [
             {
               kind: 'linked',
+              checkedAt: '2026-10-18T00:00:00Z',
               executionStatus: evidence.executionStatus,
               coverage: evidence.coverage,
             },
@@ -466,6 +491,223 @@ export async function assertMcpAccess(
       .delete(workoutTransformMateLinks)
       .where(eq(workoutTransformMateLinks.id, linkId))
       .run();
+    // Saved data remains readable after a failed sync; each source has its own clock.
+    const failedSync = {
+      state: 'failed' as const,
+      startedAt: '2026-10-21T00:00:00Z',
+      finishedAt: '2026-10-21T00:01:00Z',
+      completedDates: [],
+      skippedDates: [],
+      failedDates: ['2026-10-04'],
+      photoFailedDates: [],
+    };
+    const repository = nutritionRepository(connection);
+    repository.saveStatus('owner', failedSync);
+    connection.db
+      .insert(nutritionSchedule)
+      .values({
+        ownerId: 'owner',
+        enabled: true,
+        lastSuccess: Date.parse('2026-10-20T01:00:00Z'),
+        lastError: 'SYNC_FAILED',
+        nextRunAt: Date.parse('2026-10-21T04:00:00Z'),
+      })
+      .onConflictDoUpdate({
+        target: nutritionSchedule.ownerId,
+        set: { lastError: 'SYNC_FAILED' },
+      })
+      .run();
+    yazioHealthRepository(connection.db).upsert(
+      'owner',
+      {
+        dailySteps: [],
+        weights: [
+          {
+            source: 'yazio',
+            externalId: randomUUID(),
+            providerDate: '2026-10-02',
+            measuredDate: '2026-10-02',
+            rawValue: '70',
+            unit: null,
+            unitContext: null,
+            upstreamSource: null,
+            gateway: null,
+          },
+        ],
+      },
+      '2026-10-18T00:00:00Z',
+    );
+    measurementRepository(connection.db).create('owner', {
+      measuredAt: '2026-10-04',
+      values: [{ metric: 'waist', value: '80', unit: 'cm' }],
+      note: null,
+    });
+    const changesBefore = connection.sqlite
+      .prepare('select total_changes() as count')
+      .get();
+    const coverage = await mcp.callTool({
+      name: 'get_data_coverage',
+      arguments: range,
+    });
+    expect(coverage.isError).toBeFalsy();
+    expect(coverage.structuredContent).toMatchObject({
+      data: {
+        freshness: {
+          recordScope: 'requested_range',
+          syncScope: 'latest_saved_status_not_range_verification',
+          nutrition: {
+            state: 'ready',
+            latestRecordDate: '2026-10-03',
+            lastFetchedAt: '2026-10-20T00:00:00Z',
+            syncState: 'failed',
+            lastRun: { failedDates: ['2026-10-04'] },
+            automatic: {
+              lastSuccessAt: '2026-10-20T01:00:00.000Z',
+              lastErrorCode: 'SYNC_FAILED',
+            },
+          },
+          yazioWeight: {
+            latestRecordDate: '2026-10-02',
+            lastFetchedAt: '2026-10-18T00:00:00Z',
+            syncState: 'unknown',
+          },
+          steps: {
+            latestRecordDate: '2026-10-01',
+            lastFetchedAt: '2026-10-20T00:00:00Z',
+            syncState: 'unknown',
+          },
+          localMeasurements: {
+            latestRecordDate: '2026-10-04',
+            lastFetchedAt: null,
+            lastCheckedAt: null,
+            syncState: 'not_applicable',
+          },
+          transformmateNative: {
+            latestRecordDate: null,
+            lastFetchedAt: null,
+            syncState: 'unknown',
+          },
+        },
+      },
+    });
+    expect(
+      connection.sqlite.prepare('select total_changes() as count').get(),
+    ).toEqual(changesBefore);
+    await expect(
+      getSavedDataFreshness(trainerHeaders, 'owner', range),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      getSavedDataFreshness(headers, 'someone-else', range),
+    ).rejects.toMatchObject({ status: 403 });
+    const emptyCoverage = await mcp.callTool({
+      name: 'get_data_coverage',
+      arguments: { from: '2026-09-01', to: '2026-09-30' },
+    });
+    expect(emptyCoverage.structuredContent).toMatchObject({
+      data: {
+        freshness: {
+          nutrition: {
+            state: 'ready',
+            latestRecordDate: null,
+            lastFetchedAt: null,
+            syncState: 'failed',
+          },
+          localMeasurements: {
+            latestRecordDate: null,
+            syncState: 'not_applicable',
+          },
+        },
+      },
+    });
+    const coveragePage = mcpOutput.parse(
+      (
+        await mcp.callTool({
+          name: 'get_data_coverage',
+          arguments: { ...range, detail: 'daily', limit: 1 },
+        })
+      ).structuredContent,
+    );
+    const nextCoverage = mcpOutput.parse(
+      (
+        await mcp.callTool({
+          name: 'get_data_coverage',
+          arguments: {
+            ...range,
+            detail: 'daily',
+            limit: 1,
+            cursor: coveragePage.next_cursor,
+          },
+        })
+      ).structuredContent,
+    );
+    expect(nextCoverage.data.freshness).toEqual(coveragePage.data.freshness);
+    // A photo-only failure is not a nutrition-data failure, nor a steps/weight success.
+    repository.saveStatus('owner', {
+      ...failedSync,
+      state: 'partial',
+      completedDates: ['2026-10-01'],
+      failedDates: [],
+      photoFailedDates: ['2026-10-01'],
+    });
+    connection.db
+      .update(nutritionSchedule)
+      .set({ lastError: 'PHOTO_INCOMPLETE' })
+      .where(eq(nutritionSchedule.ownerId, 'owner'))
+      .run();
+    const photoOnly = await mcp.callTool({
+      name: 'get_data_coverage',
+      arguments: range,
+    });
+    expect(photoOnly.structuredContent).toMatchObject({
+      data: {
+        freshness: {
+          nutrition: {
+            syncState: 'completed',
+            automatic: { lastErrorCode: null },
+          },
+          steps: { syncState: 'unknown' },
+          yazioWeight: { syncState: 'unknown' },
+        },
+      },
+    });
+    // Bad status metadata degrades only freshness; it must not erase the saved diary.
+    connection.db
+      .update(nutritionSyncRuns)
+      .set({ status: 'invalid-json' })
+      .where(eq(nutritionSyncRuns.ownerId, 'owner'))
+      .run();
+    const brokenStatus = await mcp.callTool({
+      name: 'get_data_coverage',
+      arguments: range,
+    });
+    expect(brokenStatus.structuredContent).toMatchObject({
+      data: {
+        nutrition: { complete: 1, partial: 1, empty: 1, missing: 1 },
+        freshness: {
+          nutrition: { state: 'unavailable' },
+          steps: { state: 'ready' },
+        },
+      },
+    });
+    repository.saveStatus('owner', {
+      ...failedSync,
+      startedAt: 'invalid-start',
+      finishedAt: 'invalid-finish',
+    });
+    const malformedTimes = await mcp.callTool({
+      name: 'get_data_coverage',
+      arguments: range,
+    });
+    expect(malformedTimes.structuredContent).toMatchObject({
+      data: {
+        nutrition: { complete: 1, partial: 1, empty: 1, missing: 1 },
+        freshness: {
+          nutrition: { state: 'unavailable' },
+          steps: { state: 'ready' },
+        },
+      },
+    });
+    repository.saveStatus('owner', failedSync);
     const analytics = await getAnalytics(headers, 'owner', range);
     const nutrition = await mcp.callTool({
       name: 'get_nutrition',
