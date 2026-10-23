@@ -87,6 +87,7 @@ export const yazioDailyGoals = sqliteTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     date: text('date').notNull(),
     calories: text('calories'),
+    weight: text('weight'),
     steps: integer('steps'),
     fetchedAt: text('fetched_at').notNull(),
   },

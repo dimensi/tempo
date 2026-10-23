@@ -372,7 +372,27 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
       cpSync(`drizzle/${tag}.sql`, join(unified, `${tag}.sql`));
     migrate(database.db, { migrationsFolder: unified });
     expect(() => workoutRepository(database.db).list('owner')).toThrow();
+    const beforeTarget = join(directory, 'before-target');
+    mkdirSync(join(beforeTarget, 'meta'), { recursive: true });
+    const beforeTargetEntries = journal.entries.slice(0, -1);
+    writeFileSync(
+      join(beforeTarget, 'meta/_journal.json'),
+      JSON.stringify({ ...journal, entries: beforeTargetEntries }),
+    );
+    for (const { tag } of beforeTargetEntries)
+      cpSync(`drizzle/${tag}.sql`, join(beforeTarget, `${tag}.sql`));
+    migrate(database.db, { migrationsFolder: beforeTarget });
+    database.sqlite
+      .prepare(
+        'INSERT INTO yazio_daily_goals (owner_id,date,calories,steps,fetched_at) VALUES (?,?,?,?,?)',
+      )
+      .run('owner', '2026-10-01', '2100', 9000, '2026-10-01T00:00:00Z');
     migrate(database.db, { migrationsFolder: './drizzle' });
+    expect(
+      database.sqlite
+        .prepare('SELECT calories,steps,weight FROM yazio_daily_goals')
+        .get(),
+    ).toEqual({ calories: '2100', steps: 9000, weight: null });
     expect(
       database.sqlite
         .prepare(
@@ -384,7 +404,7 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
       database.sqlite
         .prepare('SELECT count(*) AS count FROM yazio_daily_goals')
         .get(),
-    ).toEqual({ count: 0 });
+    ).toEqual({ count: 1 });
 
     migrate(database.db, { migrationsFolder: './drizzle' });
     const workoutRows = database.sqlite

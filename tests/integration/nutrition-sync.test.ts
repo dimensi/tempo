@@ -100,7 +100,7 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
   let failGoals = false;
   const goalRead = vi.fn(async (day: string) => {
     if (failGoals) throw new Error('Synthetic goal outage');
-    return { date: day, calories: '2000', steps: 8000 };
+    return { date: day, calories: '2000', steps: 8000, weight: '72.5' };
   });
   const scheduler = () =>
     createNutritionScheduler({
@@ -148,6 +148,7 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
   expect(dailyGoalsRepository(database).day('owner', date)).toMatchObject({
     calories: '2000',
     steps: 8000,
+    weight: '72.5',
   });
   await scheduler().overview('owner', 'UTC');
   expect(goalRead).toHaveBeenCalledTimes(2);
@@ -158,6 +159,7 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
   expect(dailyGoalsRepository(database).day('owner', date).calories).toBe(
     '2000',
   );
+  expect(dailyGoalsRepository(database).day('owner', date).weight).toBe('72.5');
   // Failed automatic reads are persisted attempts too, including a fresh scheduler.
   await scheduler().overview('owner', 'UTC');
   expect(goalRead).toHaveBeenCalledTimes(4);
