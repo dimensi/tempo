@@ -48,6 +48,39 @@ export const syncStateSchema = z.object({
       authorId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     })
     .optional(),
+  customExercises: z
+    .array(
+      z.object({
+        key: z.uuid(),
+        name: z.string().max(160),
+        marker: z.string().max(100),
+        accountScope: z.string(),
+        phase: z.enum(['unknown', 'verified']),
+        remoteId: z.number().int().positive().nullable(),
+      }),
+    )
+    .max(50)
+    .optional(),
+  lifecycle: z
+    .object({
+      status: z.enum(['planned', 'in_progress', 'completed']),
+      startedAt: z.iso.datetime().nullable(),
+      finishedAt: z.iso.datetime().nullable(),
+      historicalTimeUnknown: z.boolean(),
+    })
+    .optional(),
+  execution: z
+    .object({
+      workout: publicationWorkoutSchema,
+      revision: z.number().int().positive(),
+      phase: z.enum(['unknown', 'verified', 'conflict']),
+      previousFingerprint: fingerprint,
+      expectedFingerprint: fingerprint,
+      startedAt: z.iso.datetime(),
+      finishedAt: z.iso.datetime().nullable(),
+      historicalTimeUnknown: z.boolean(),
+    })
+    .optional(),
   updateAttempt: z
     .object({
       id: z.uuid(),

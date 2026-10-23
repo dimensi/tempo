@@ -4,7 +4,6 @@ import type { WorkoutPublication } from '@/contracts/workout-publication';
 
 export function canPublish(workout: Workout): boolean {
   return (
-    workout.status === 'planned' &&
     workout.exercises.length > 0 &&
     workout.exercises.every((exercise) => exercise.sets.length > 0)
   );
@@ -37,5 +36,22 @@ export function publicationFor(workout: Workout): WorkoutPublication {
         ),
       },
     ],
+  };
+}
+
+/** Old records did not retain lifecycle times. Mark repair timestamps as unknown history. */
+export function workoutLifecycle(
+  workout: Workout,
+  previous?: import('./state').SyncState['lifecycle'],
+) {
+  if (previous?.status === workout.status) return previous;
+  const at = previous ? workout.updatedAt : new Date().toISOString();
+  return {
+    status: workout.status,
+    startedAt:
+      workout.status === 'planned' ? null : (previous?.startedAt ?? at),
+    finishedAt: workout.status === 'completed' ? at : null,
+    historicalTimeUnknown:
+      previous?.historicalTimeUnknown ?? workout.status !== 'planned',
   };
 }

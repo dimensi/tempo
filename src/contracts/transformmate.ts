@@ -220,6 +220,12 @@ export const transformMateSyncItemSchema = z.object({
       checkedAt: z.iso.datetime().nullable(),
     })
     .optional(),
+  execution: z
+    .object({
+      phase: z.enum(['unknown', 'verified', 'conflict']),
+      historicalTimeUnknown: z.boolean(),
+    })
+    .optional(),
   status: transformMateSyncStatusSchema,
   reason: z
     .enum([

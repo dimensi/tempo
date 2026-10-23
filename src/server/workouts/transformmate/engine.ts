@@ -5,6 +5,11 @@ import {
 } from '@/contracts/workout-publication';
 import type { Workout } from '@/contracts/workouts';
 import { canPublish, publicationFor } from './publication';
+import {
+  bindCustomExercises,
+  resolveCustomExercises,
+} from './custom-exercises';
+import { syncExecution } from './execution';
 import { TransformMateApiError } from '@/server/transformmate/errors';
 import type { TransformMateClient } from '@/server/transformmate/client';
 import type { SyncRepository } from './repository';
@@ -30,13 +35,23 @@ export interface SyncEngineOptions {
         TransformMateClient,
         'getExercise' | 'createTraining' | 'listTrainings' | 'getTraining'
       > &
-        Partial<Pick<TransformMateClient, 'updateTrainingOnce'>>)
+        Partial<
+          Pick<
+            TransformMateClient,
+            'updateTrainingOnce' | 'listExercises' | 'createCustomExercise'
+          >
+        >)
     | null;
   // Must throw on revocation. Called before and after each HTTP await and before local writes.
-  access: (permission: 'workouts:read' | 'workouts:plan') => Promise<void>;
+  access: (
+    permission: 'workouts:read' | 'workouts:plan' | 'workouts:log',
+  ) => Promise<void>;
   workouts: () => Workout[];
   checkConnection?: () => Promise<void>;
   connectionId?: string;
+  accountScope?: string;
+  authorId?: number;
+  canLog?: () => Promise<boolean>;
 }
 const queues = new Map<string, Promise<unknown>>();
 export async function serializeOwner<T>(
@@ -54,15 +69,30 @@ export async function serializeOwner<T>(
 }
 export function syncEngine(options: SyncEngineOptions) {
   const { repository, client, workouts } = options;
-  const access = async (permission: 'workouts:read' | 'workouts:plan') => {
+  const access = async (
+    permission: 'workouts:read' | 'workouts:plan' | 'workouts:log',
+  ) => {
     await options.access(permission);
     if (options.checkConnection) {
       await options.checkConnection();
       await options.access(permission);
     }
   };
-  const currentPlan = (link: SyncLink) =>
-    workouts().find((p) => p.id === link.planId && p.ownerId === link.ownerId);
+  const currentPlan = (link: SyncLink) => {
+    const local = workouts().find(
+      (p) => p.id === link.planId && p.ownerId === link.ownerId,
+    );
+    return local ? bindCustomExercises(local, link) : undefined;
+  };
+  const projectable = (
+    body: Parameters<typeof canProject>[0],
+    weighted: boolean,
+  ) =>
+    canProject(body, weighted) ||
+    (body.exercise_type?.id === 4 &&
+      body.author === options.authorId &&
+      body.metrics.length === 0);
+
   const currentWorkout = (link: SyncLink): PublicationWorkout | undefined => {
     const local = currentPlan(link);
     return local && canPublish(local)
@@ -307,7 +337,7 @@ export function syncEngine(options: SyncEngineOptions) {
         );
         if (
           body.id !== exercise.transformMate!.exerciseId ||
-          !canProject(
+          !projectable(
             body,
             exercise.sets.some((s) => s.weightKg !== null),
           )
@@ -427,6 +457,56 @@ export function syncEngine(options: SyncEngineOptions) {
   }
   async function process(link: SyncLink) {
     await access('workouts:read');
+    const local = currentPlan(link);
+    const execution = local && local.status !== 'planned';
+    if (execution && options.canLog && !(await options.canLog())) {
+      await verify(link);
+      return;
+    }
+    if (
+      local &&
+      local.exercises.some((exercise) => !exercise.transformMate) &&
+      client
+    ) {
+      if (
+        !options.accountScope ||
+        !options.authorId ||
+        !client.createCustomExercise ||
+        !client.listExercises
+      ) {
+        await save(link, { status: 'unavailable', reason: 'unsupported' });
+        return;
+      }
+      try {
+        const resolved = await resolveCustomExercises({
+          workout: local,
+          link,
+          accountScope: options.accountScope,
+          authorId: options.authorId,
+          claims: repository
+            .list(link.ownerId)
+            .flatMap((item) => item.state.customExercises ?? []),
+          client: {
+            getExercise: client.getExercise,
+            createCustomExercise: client.createCustomExercise,
+            listExercises: client.listExercises,
+          },
+          guard: async () => {
+            await access(execution ? 'workouts:log' : 'workouts:plan');
+            if (currentPlan(link)?.revision !== local.revision)
+              throw new Error('Local workout changed');
+          },
+          save,
+        });
+        link = resolved.link;
+        if (!resolved.ready) return;
+      } catch {
+        await access('workouts:read');
+        await save(link, { status: 'error', reason: 'upstream_error' });
+        return;
+      }
+    }
+
     if (
       (!link.state.attempted && link.remoteTrainingId === null) ||
       (link.state.published && link.state.updateAttempt?.phase !== 'unknown')
@@ -442,6 +522,45 @@ export function syncEngine(options: SyncEngineOptions) {
     }
     if (!client) {
       await save(link, { status: 'unavailable', reason: 'not_configured' });
+      return;
+    }
+    if (link.state.updateAttempt?.phase === 'unknown') {
+      await verify(link);
+      return;
+    }
+    if (
+      execution &&
+      link.remoteTrainingId !== null &&
+      link.state.published &&
+      client.updateTrainingOnce
+    ) {
+      try {
+        await syncExecution({
+          link,
+          client: {
+            getTraining: client.getTraining,
+            updateTrainingOnce: client.updateTrainingOnce,
+          },
+          current: () => currentPlan(link),
+          guard: () => access('workouts:log'),
+          save,
+        });
+      } catch {
+        await access('workouts:read');
+        // A transport failure must retain the durable unknown execution intent.
+        const latest = repository
+          .list(link.ownerId)
+          .find((item) => item.id === link.id);
+        if (latest)
+          await save(latest, {
+            status:
+              latest.state.execution?.phase === 'unknown' ? 'unknown' : 'error',
+            reason:
+              latest.state.execution?.phase === 'unknown'
+                ? 'ambiguous_write'
+                : 'upstream_error',
+          });
+      }
       return;
     }
     if (link.state.updateAttempt?.phase === 'pending' && currentWorkout(link)) {
@@ -470,7 +589,7 @@ export function syncEngine(options: SyncEngineOptions) {
         );
         if (
           body.id !== exercise.transformMate!.exerciseId ||
-          !canProject(
+          !projectable(
             body,
             exercise.sets.some((s) => s.weightKg !== null),
           )
@@ -525,7 +644,15 @@ export function syncEngine(options: SyncEngineOptions) {
       });
       await access('workouts:plan');
       const next = await save(link, {}, result.body.id);
-      if (next) await verify(next);
+      if (next) {
+        await verify(next);
+        if (execution) {
+          const verified = repository
+            .list(link.ownerId)
+            .find((item) => item.id === link.id);
+          if (verified?.state.published) await process(verified);
+        }
+      }
     } catch {
       await access('workouts:plan');
       await verify(link); // Read-only recovery; ambiguous attempts never POST again.

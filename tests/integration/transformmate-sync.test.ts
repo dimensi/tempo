@@ -20,7 +20,16 @@ import {
   trainingSummaryFixture,
 } from '../fixtures/transformmate';
 import { transformMateTrainingDetailSchema } from '@/server/transformmate/schemas';
-import type { RawResponse } from '@/server/transformmate/types';
+import {
+  createTrainingInputSchema,
+  type CreateTrainingInput,
+  type TrainingWriteBody,
+} from '@/server/transformmate/write-inputs';
+import type {
+  RawResponse,
+  TransformMateTrainingDetail,
+  TransformMateExerciseDetail,
+} from '@/server/transformmate/types';
 
 const replicaTest = vi.hoisted(() => ({
   database: null as ReturnType<
@@ -64,7 +73,7 @@ const input = () =>
     ],
   });
 
-it('recovers a committed TransformMate create after restart without duplicating the POST', async () => {
+it('recovers provider creates and completed results across restarts without duplicates or overwriting external edits', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'transformmate-recovery-'));
   const url = `file:${join(directory, 'synthetic.sqlite')}`;
   let database = openDatabase(url);
@@ -148,7 +157,6 @@ it('recovers a committed TransformMate create after restart without duplicating 
       { ...values, status: 'in_progress' },
       'start',
     );
-    const linkBeforeFeedback = syncRepository(database.db).list('owner');
     const feedback = {
       exerciseId: started.exercises[0]!.id!,
       fatigue: 9,
@@ -173,6 +181,7 @@ it('recovers a committed TransformMate create after restart without duplicating 
       { ...values, exercises: rated.exercises, status: 'completed' },
       'complete',
     );
+    const linkBeforeFeedback = syncRepository(database.db).list('owner');
     const corrected = workouts.updateFeedback(
       'owner',
       completed.id,
@@ -183,7 +192,6 @@ it('recovers a committed TransformMate create after restart without duplicating 
     expect(syncRepository(database.db).list('owner')).toEqual(
       linkBeforeFeedback,
     );
-    await engine().process(syncRepository(database.db).list('owner')[0]!);
     expect(syncRepository(database.db).list('owner')[0]!.state.workout).toEqual(
       linkBeforeFeedback[0]!.state.workout,
     );
@@ -195,6 +203,7 @@ it('recovers a committed TransformMate create after restart without duplicating 
       failure: 'full',
     });
     expect(posts).toBe(1);
+    await assertCustomExecutionRecovery(database, url);
     await assertReplicaRecovery(database, url, directory);
   } finally {
     replicaTest.database = null;
@@ -615,4 +624,271 @@ async function assertReplicaRecovery(
   } finally {
     replicaTest.database.sqlite.close();
   }
+}
+
+async function assertCustomExecutionRecovery(
+  database: ReturnType<typeof openDatabase>,
+  url: string,
+) {
+  const manual = input();
+  manual.exercises = [
+    { name: 'Manual demo exercise', sets: [{ reps: 8, weightKg: 10 }] },
+  ];
+  const saved = workoutRepository(database.db).create(
+    'owner',
+    manual,
+    randomUUID(),
+  );
+  let custom: TransformMateExerciseDetail | undefined;
+  let remote: TransformMateTrainingDetail | undefined;
+  let customPosts = 0,
+    trainingPosts = 0,
+    patches = 0,
+    lookupHidden = false,
+    getFails = false,
+    commitTimeout = false;
+  let sequence = 1000;
+  const detail = (body: TrainingWriteBody): TransformMateTrainingDetail => {
+    const template = trainingDetailFixture();
+    return transformMateTrainingDetailSchema.parse({
+      ...template,
+      id: 102,
+      name: body.name,
+      description: body.description,
+      date: body.date,
+      started: body.started ?? null,
+      finished: body.finished ?? null,
+      progress: body.finished ? 'done' : body.started ? 'in_progress' : 'idle',
+      protocols: body.protocols.map((protocol, pi) => ({
+        id: protocol.id ?? ++sequence,
+        order: pi + 1,
+        workout_exercises: protocol.workout_exercises.map((exercise, ei) => ({
+          ...template.protocols[0]!.workout_exercises[0]!,
+          id: exercise.id ?? ++sequence,
+          order: ei + 1,
+          exercise: { id: exercise.exercise, name: 'Manual demo exercise' },
+          comment: exercise.comment,
+          exercise_metrics: exercise.exercise_metrics.map((id) => ({
+            id,
+            name: String(id),
+          })),
+          metrics: exercise.metrics.map((group) => ({
+            id: group.id ?? ++sequence,
+            type: group.type,
+            sets: group.sets.map((set, si) => ({
+              id: set.id ?? ++sequence,
+              order: si + 1,
+              techniques: set.techniques ?? [],
+              ...(group.type === 'fact'
+                ? { is_done: set.is_done ?? false }
+                : {}),
+              set_metrics: set.set_metrics.map((metric) => ({
+                id: metric.id ?? ++sequence,
+                type: metric.type ?? 'straight',
+                measure: {
+                  id: metric.measure,
+                  key: metric.measure === 3 ? 'weight' : 'reps',
+                  name: String(metric.measure),
+                  short_name: String(metric.measure),
+                },
+                metric_values: metric.metric_values.map((value) => ({
+                  id: value.id ?? ++sequence,
+                  value: value.value,
+                })),
+              })),
+            })),
+          })),
+        })),
+      })),
+    });
+  };
+  const client = {
+    getExercise: async () => raw(custom!),
+    listExercises: async () => {
+      if (lookupHidden) {
+        lookupHidden = false;
+        return raw([]);
+      }
+      return raw(
+        custom ? [{ id: custom.id, name: custom.name, metrics: [] }] : [],
+      );
+    },
+    createCustomExercise: async (
+      body: { name: string; description: string },
+      guard?: () => Promise<void>,
+    ) => {
+      await guard?.();
+      customPosts++;
+      custom = {
+        ...exerciseDetailFixture(),
+        id: 502,
+        name: body.name,
+        description: body.description,
+        author: 201,
+        exercise_type: { id: 4, name: 'Пользовательский' },
+        metrics: [],
+      };
+      lookupHidden = true;
+      throw new Error('Synthetic custom POST committed, response lost');
+    },
+    createTraining: async (
+      body: CreateTrainingInput,
+      guard?: () => Promise<void>,
+    ) => {
+      await guard?.();
+      trainingPosts++;
+      remote = detail(createTrainingInputSchema.parse(body));
+      return raw({ id: 102 });
+    },
+    listTrainings: async () => raw([]),
+    getTraining: async () => {
+      if (getFails) {
+        getFails = false;
+        throw new Error('Synthetic GET unavailable');
+      }
+      return raw(structuredClone(remote!));
+    },
+    updateTrainingOnce: async (
+      _id: number,
+      body: TrainingWriteBody,
+      guard?: () => Promise<void>,
+    ) => {
+      await guard?.();
+      patches++;
+      remote = detail(body);
+      if (commitTimeout) {
+        commitTimeout = false;
+        getFails = true;
+        throw new Error('Synthetic committed PATCH timeout');
+      }
+      return raw({ id: 102 });
+    },
+  };
+  const process = async (canLog = true, targetId = saved.id) => {
+    const links = syncRepository(database.db);
+    await syncEngine({
+      repository: links,
+      client,
+      accountScope: 'a'.repeat(64),
+      authorId: 201,
+      access: async () => {},
+      canLog: async () => canLog,
+      workouts: () => workoutRepository(database.db).list('owner').workouts,
+    }).process(links.list('owner').find((link) => link.planId === targetId)!);
+  };
+  await process();
+  expect(customPosts).toBe(1);
+  expect(trainingPosts).toBe(0);
+  const another = workoutRepository(database.db).create(
+    'owner',
+    manual,
+    randomUUID(),
+  );
+  lookupHidden = true;
+  await process(true, another.id);
+  expect(customPosts).toBe(1);
+  expect(trainingPosts).toBe(0);
+  database.sqlite.close();
+  const reopened = openDatabase(url);
+  // Keep the caller's database handle valid for its replica recovery assertions.
+  Object.assign(database, reopened);
+  await process();
+  expect(customPosts).toBe(1);
+  expect(trainingPosts).toBe(1);
+  const localInput = (status: 'in_progress' | 'completed') => {
+    const current = workoutRepository(database.db).get('owner', saved.id);
+    return {
+      date: current.date,
+      title: current.title,
+      note: current.note,
+      exercises: current.exercises,
+      status,
+    };
+  };
+  let local = workoutRepository(database.db).get('owner', saved.id);
+  local = workoutRepository(database.db).update(
+    'owner',
+    saved.id,
+    local.revision,
+    localInput('in_progress'),
+    'start',
+  );
+  await process();
+  expect(remote!.progress).toBe('in_progress');
+  expect(patches).toBe(1);
+  const finished = localInput('completed');
+  finished.exercises[0]!.sets = [{ reps: 12, weightKg: 11 }];
+  workoutRepository(database.db).update(
+    'owner',
+    saved.id,
+    local.revision,
+    finished,
+    'complete',
+  );
+  commitTimeout = true;
+  await process();
+  expect(
+    syncRepository(database.db)
+      .list('owner')
+      .find((link) => link.planId === saved.id)?.state.execution?.phase,
+  ).toBe('unknown');
+  // A newer local resume must wait for the unknown completion to settle, then publish.
+  const completedLocal = workoutRepository(database.db).get('owner', saved.id);
+  const resumed = workoutRepository(database.db).update(
+    'owner',
+    saved.id,
+    completedLocal.revision,
+    localInput('in_progress'),
+    'resume',
+  );
+  database.sqlite.close();
+  Object.assign(database, openDatabase(url));
+  await process();
+  expect(remote!.progress).toBe('in_progress');
+  expect(remote!.finished).toBeNull();
+  expect(patches).toBe(3);
+  workoutRepository(database.db).update(
+    'owner',
+    saved.id,
+    resumed.revision,
+    localInput('completed'),
+    'complete',
+  );
+  await process();
+  const verified = syncRepository(database.db)
+    .list('owner')
+    .find((link) => link.planId === saved.id)!;
+  expect(verified.state.status).toBe('synced');
+  expect(verified.state.execution?.phase).toBe('verified');
+  expect(patches).toBe(4);
+  expect(remote!.progress).toBe('done');
+  expect(
+    remote!.protocols[0]!.workout_exercises[0]!.metrics.find(
+      (group) => group.type === 'fact',
+    )!.sets[0],
+  ).toMatchObject({
+    is_done: true,
+    set_metrics: [
+      { metric_values: [{ value: '11' }] },
+      { metric_values: [{ value: '12' }] },
+    ],
+  });
+  expect(
+    remote!.protocols[0]!.workout_exercises[0]!.metrics.find(
+      (group) => group.type === 'plan',
+    )!.sets[0]!.set_metrics[0]!.metric_values[0]!.value,
+  ).toBe('10');
+  await process(false);
+  expect(patches).toBe(4);
+  remote!.protocols[0]!.workout_exercises[0]!.metrics.find(
+    (group) => group.type === 'fact',
+  )!.sets[0]!.set_metrics[0]!.metric_values[0]!.value = '99';
+  await process();
+  expect(
+    syncRepository(database.db)
+      .list('owner')
+      .find((link) => link.planId === saved.id)?.state,
+  ).toMatchObject({ status: 'conflict', reason: 'remote_changed' });
+  expect(patches).toBe(4);
+  expect(customPosts).toBe(1);
 }

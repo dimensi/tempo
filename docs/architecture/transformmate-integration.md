@@ -1,9 +1,8 @@
 # TransformMate workout integration
 
-Saving persists the local plan and automatically publishes eligible catalog workouts. Published
-workouts can be updated while the latest observed remote training is unstarted, unfinished,
-idle and has no factual values or done flags. Started/completed workouts and observed external
-conflicts remain read-only. The upstream API has no verified atomic conditional-write primitive:
+Saving persists the local workout and publishes its plan, execution values and lifecycle.
+Plan edits require an idle remote workout without facts. Owner-authorized execution updates
+require the remote state to match the last verified state; external conflicts stop writes. The upstream API has no verified atomic conditional-write primitive:
 a concurrent external change after the last GET and before the full PATCH can still be overwritten.
 The user accepted this residual race and avoids editing both applications simultaneously. This
 is a practical guarded update, not an atomic exclusion guarantee.
@@ -11,8 +10,9 @@ is a practical guarded update, not an atomic exclusion guarantee.
 The workout editor keeps manual plans and sessions and adds catalog exercises with a local
 occurrence UUID and optional exercise comment. Dates, array order, repetitions and nullable kg
 remain explicit. Every linked exercise must support the verified weight/reps straight metrics.
-Mixed manual/catalog workouts remain local with a visible unsupported status; there is no partial
-publication. The save button persists the local plan and automatically publishes eligible new or safely editable published
+Manual exercises first reuse one exact supported catalog match, or create an account-owned
+custom exercise with a durable provenance marker. No fuzzy name matching or partial workout
+publication is performed. The save button persists the local plan and automatically publishes eligible new or safely editable published
 workouts, without a separate confirmation. Copying a plan shifts calendar dates, generates new
 workout/occurrence IDs and copies planned sets/comments only. Recurring plans and uploaded videos
 are outside this change.
@@ -66,8 +66,8 @@ request runs in a database transaction.
 The verified write API sends a full training DTO. A single guarded PATCH supports changing date,
 plan/workout title, comments, weights/repetitions, exercise order, adding/removing/replacing catalog
 exercises, and adding/removing planned sets. Straight weight/repetition metrics are required for
-all exercises; manual/catalog mixes and unsupported techniques remain local with an explicit
-status. The integration never deletes remote workouts. Removing a local workout preserves its
+catalog exercises. Own custom exercises advertise no metrics but explicitly accept the verified
+weight/reps DTO. Unsupported provider metrics remain an explicit blocking status. The integration never deletes remote workouts. Removing a local workout preserves its
 remote training and local linked history.
 
 Each update retains immutable original history and a separate last verified published snapshot.
@@ -82,9 +82,11 @@ an unknown intent only reads: the previous projection remains unknown, a differe
 conflicts, and a matching desired projection confirms publication. No blind rollback or retry is
 performed. Later local edits do not replace an unresolved unknown intent.
 
-The last observed started/completed state blocks writes even if its planned projection matches.
-An idle training with factual values also blocks writes and displays a conflict. Results remain
-visible alongside the last published plan; editing the local plan cannot relabel performed facts.
+Plan edits stop when the remote workout has started or has facts. Execution writes for local
+workouts require `workouts:log`, preserve original planned values for existing occurrences, and
+write actual values into fact groups. Complete marks sets done and writes finished; resume clears
+finished. Before the first execution write the remote workout must match its published baseline
+and contain no external facts. Later writes require the last acknowledged full execution fingerprint.
 Observed external edits cause a conflict rather than an overwrite. These checks cannot close the
 last GET→PATCH race described above, and successful post-verification cannot prove no concurrent
 fact was lost during that window.
@@ -95,7 +97,7 @@ Fact IDs are never treated as stable identity. Initial correspondence uses the c
 semantic projection; when that projection changes, ambiguous occurrence keys become null. The
 UI additionally checks catalog exercise ID and local occurrence key before placing a result beside
 a planned set. Unknown/range/empty values are retained without invented numeric results. Manual
-sessions and their original snapshots are unchanged.
+sessions retain their local data and original publication snapshots.
 
 `GET /api/workouts/transformmate?ownerId=…&from=…&to=…&limit=…` reads scoped local linked and
 provider-native history. Cursor pagination is local; the upstream SDK exposes one complete summary
@@ -171,3 +173,26 @@ pnpm exec vitest run tests/integration/transformmate-sync.test.ts
 
 No real training is created, edited or deleted for testing. The wire contract remains documented in
 [write API](transformmate-write.md) and [exercise API](transformmate-exercises.md).
+
+## Custom exercise and execution recovery
+
+The link JSON stores custom exercise claims scoped by owner and provider account, plus execution
+intents containing the local revision, previous/desired full fingerprints and expected plan shape.
+Existing SQL tables and owner/grant checks are retained; no schema migration is required.
+Custom POST uses the APK-verified `ExerciseEntityForCreate` DTO. The marker derives from the exact
+exercise name and owner/account, not a normalized or guessed identity. Claims across this owner's
+links prevent a second create while an earlier result is unknown. A lost response is recovered
+only by a unique owned provenance marker. A committed timeout is never blindly replayed.
+
+Execution PATCH retains fresh provider IDs. Its fingerprint includes plan semantics, ordered
+actual values, done flags and normalized lifecycle timestamps. Unknown attempts settle through
+reads before newer local changes can be sent. An external change displays a conflict; no blind
+merge or overwrite is performed. Local save remains durable if the provider is unavailable.
+
+Local lifecycle transitions retain their timestamps in link state. Historical workouts without
+retained times use a durable transfer timestamp, explicitly identified in the UI as an unknown
+historical execution time. Linked failures are visible even next to a local workout; the refresh
+success label requires all linked workouts for the selected date to be synchronized.
+
+Live custom exercise/actual/complete/resume DTO validation on 23 October 2026 used disposable
+exercises 33590–33592 and trainings 2298940/2298946. Cleanup returned DELETE 204 and GET 404.

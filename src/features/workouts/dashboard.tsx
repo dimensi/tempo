@@ -139,6 +139,14 @@ export function WorkoutsDashboard({
         remote,
       });
   const entry = entries.find((item) => item.id === active) ?? entries[0];
+  const linkedIncomplete =
+    sync.linkedIncomplete ||
+    entries.some(
+      (item) =>
+        item.remote &&
+        item.remote.status !== 'synced' &&
+        item.remote.status !== 'started',
+    );
   const pendingWrites = usePendingWorkoutWrites(entry?.workout?.id, canLog);
   const downloadExercises = [...(entry?.workout?.exercises ?? [])].flatMap(
     (exercise) =>
@@ -167,7 +175,7 @@ export function WorkoutsDashboard({
   ]);
   const create = creating?.date === date;
   const done = async (background = false) => {
-    await resource.refresh();
+    await Promise.all([resource.refresh(), sync.reload()]);
     if (create && !background) setCreating(null);
   };
   async function remove() {
@@ -366,7 +374,11 @@ export function WorkoutsDashboard({
         />
       </div>
       {syncRequested === date && (
-        <Text size="sm" c={sync.error ? 'orange' : 'dimmed'} role="status">
+        <Text
+          size="sm"
+          c={sync.error || linkedIncomplete ? 'orange' : 'dimmed'}
+          role="status"
+        >
           {sync.busy
             ? m.syncRefreshing
             : sync.configured === false
@@ -377,7 +389,9 @@ export function WorkoutsDashboard({
                 ? sync.nativeRefresh.errorCode === 'reauth_required'
                   ? m.nativeReconnect
                   : m.syncError
-                : m.syncUpdated}
+                : linkedIncomplete
+                  ? m.syncIncomplete
+                  : m.syncUpdated}
         </Text>
       )}
       {renderPendingWrites?.()}
@@ -502,12 +516,14 @@ export function WorkoutsDashboard({
           <NativeWorkout item={entry.native} ownerId={ownerId} fullView />
         </section>
       )}
-      {!create && entry?.remote?.actual && !entry.native && !entry.workout && (
+      {!create && entry?.remote && !entry.native && (
         <section aria-label={m.remoteActual}>
-          <Text fw={600} mb="sm">
-            {m.remoteActual}
-          </Text>
-          <WorkoutSync item={entry.remote} />
+          {!entry.workout && (
+            <Text fw={600} mb="sm">
+              {m.remoteActual}
+            </Text>
+          )}
+          <WorkoutSync item={entry.remote} showActual={!entry.workout} />
         </section>
       )}
       {sync.nativePage.nextCursor && (

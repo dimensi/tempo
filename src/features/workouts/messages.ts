@@ -90,6 +90,10 @@ export const workoutMessages = {
   finishShort: 'Завершить',
   syncRefreshing: 'Загружаем из TransformMate…',
   syncUpdated: 'Данные TransformMate обновлены',
+  syncIncomplete:
+    'Синхронизация с TransformMate не завершена. Причина указана у тренировки.',
+  historicalExecutionTime:
+    'Точное время выполнения этой старой записи не сохранено. В TransformMate указано время переноса результатов.',
   refreshOfflineHint: 'Для обновления нужно подключение к интернету.',
   actualSets: 'Фактические подходы',
   autoSaveHint: 'Подходы сохраняются автоматически.',
@@ -279,9 +283,10 @@ export const workoutMessages = {
   optionalTitle: 'Название (необязательно)',
   back: 'К тренировкам',
   draftSaved: 'Черновик сохранён в этой вкладке.',
-  localHint: 'Ручные упражнения сохранятся здесь.',
+  localHint:
+    'При синхронизации ручные упражнения создаются в вашем аккаунте TransformMate.',
   catalogHint:
-    'Отправка в TransformMate — при подключении, до начала и без результатов или конфликта.',
+    'План, результаты и завершение передаются в подключённый TransformMate. Внешние изменения показываются как конфликт.',
   discard: 'Удалить черновик',
   keepEditing: 'Продолжить редактирование',
   discardQuestion: 'Удалить несохранённые изменения?',
