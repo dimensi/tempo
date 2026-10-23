@@ -604,7 +604,8 @@ export async function assertMcpAccess(
     ).rejects.toMatchObject({ status: 403 });
     const emptyCoverage = await mcp.callTool({
       name: 'get_data_coverage',
-      arguments: { from: '2026-09-01', to: '2026-09-30' },
+      // September contains the overview weight fixtures in the shared scenario.
+      arguments: { from: '2026-08-01', to: '2026-08-31' },
     });
     expect(emptyCoverage.structuredContent).toMatchObject({
       data: {
