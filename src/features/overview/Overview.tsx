@@ -1,6 +1,7 @@
 'use client';
 import { PageHeader } from '@/components/layout/page-header';
 import type { OverviewData } from '@/contracts/overview';
+import { shiftDate } from '@/contracts/nutrition-sync-dates';
 import { formatDecimal, toChartNumber } from '@/lib/number-display';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
@@ -243,7 +244,7 @@ export function Overview({
                 </Title>
                 <Anchor
                   renderRoot={(props) => createElement(linkComponent, props)}
-                  href={`/analytics?from=${current.weight.points.at(-7)!.date}&to=${current.today}`}
+                  href={`/analytics?from=${shiftDate(current.today, -6)}&to=${current.today}`}
                   className={classes.link}
                 >
                   {m.analytics}
