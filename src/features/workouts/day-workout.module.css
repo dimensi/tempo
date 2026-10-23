@@ -22,10 +22,9 @@
 }
 
 .emptyActions {
-  display: grid;
-  gap: 10px;
-  width: min(100%, 520px);
-  grid-template-columns: 1fr;
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 
 .emptyActions > * {
@@ -295,10 +294,6 @@
 
   .empty {
     padding: 68px 24px;
-  }
-
-  .emptyActions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .toolbar {
