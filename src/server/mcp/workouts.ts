@@ -224,41 +224,44 @@ function recorded(set: SetData) {
     ? set.reps !== undefined
     : hasProviderSetData({ done: set.done ?? null, metrics: set.metrics });
 }
-function exerciseRows(
+function* exerciseRows(
   exercises: Exercise[],
   detail: 'summary' | 'records',
   exerciseId?: number,
-) {
-  return exercises
-    .filter(
-      (e) =>
-        exerciseId === undefined ||
-        (e.phase === 'actual' && e.historyRef?.exerciseId === exerciseId),
+): Generator<Record<string, unknown>> {
+  for (const e of exercises) {
+    if (
+      exerciseId !== undefined &&
+      (e.phase !== 'actual' || e.historyRef?.exerciseId !== exerciseId)
     )
-    .flatMap<Record<string, unknown>>((e) => {
-      const identity = {
-        name: e.name,
-        occurrenceId: e.occurrenceId,
-        phase: e.phase,
-        historyRef: e.historyRef,
-      };
-      const sets = exerciseId === undefined ? e.sets : e.sets.filter(recorded);
-      if (exerciseId !== undefined && sets.length === 0) return [];
-      if (detail === 'summary')
-        return [
-          {
-            ...identity,
-            setCount: sets.length,
-            recordedSetCount:
-              e.phase === 'actual' ? sets.filter(recorded).length : 0,
-          },
-        ];
-      return sets.map((set) => ({
-        ...identity,
-        ...set,
-        recorded: e.phase === 'actual' && recorded(set),
-      }));
-    });
+      continue;
+    const identity = {
+      name: e.name,
+      occurrenceId: e.occurrenceId,
+      phase: e.phase,
+      historyRef: e.historyRef,
+    };
+    if (detail === 'summary') {
+      let recordedSetCount = 0;
+      for (const set of e.sets) {
+        if (e.phase === 'actual' && recorded(set)) recordedSetCount++;
+      }
+      const setCount =
+        exerciseId === undefined ? e.sets.length : recordedSetCount;
+      if (exerciseId !== undefined && setCount === 0) continue;
+      yield { ...identity, setCount, recordedSetCount };
+    } else {
+      for (const set of e.sets) {
+        const isRecorded = e.phase === 'actual' && recorded(set);
+        if (exerciseId !== undefined && !isRecorded) continue;
+        yield { ...identity, ...set, recorded: isRecorded };
+      }
+    }
+  }
+}
+function appendRow<T>(rows: T[], row: T) {
+  if (rows.length >= 10000) throw new McpReadError('narrow_range');
+  rows.push(row);
 }
 function paginate(
   ownerId: string,
@@ -301,16 +304,13 @@ export async function readMcpWorkout(
   }
   // Related references are page rows too; no unbounded arrays or silent truncation.
   const { exercises, related, ...metadata } = workout;
-  const rows = [
-    ...exerciseRows(exercises, input.detail).map((r) => ({
-      recordType: 'exercise',
-      ...r,
-    })),
-    ...related.map((workoutRef) => ({
-      recordType: 'related_workout',
-      workoutRef,
-    })),
-  ];
+  const rows: Record<string, unknown>[] = [];
+  for (const row of exerciseRows(exercises, input.detail)) {
+    appendRow(rows, { recordType: 'exercise', ...row });
+  }
+  for (const workoutRef of related) {
+    appendRow(rows, { recordType: 'related_workout', workoutRef });
+  }
   const page = paginate(ownerId, 'get_workout', input, rows);
   await requireOwnerWorkoutRead(headers, ownerId);
   return {
@@ -346,16 +346,21 @@ export async function readMcpExerciseHistory(
       w.date <= input.to &&
       ['completed', 'in_progress'].includes(w.executionStatus),
   );
-  const matching = views
-    .map((workout) => ({
-      workout,
-      rows: exerciseRows(
-        workout.exercises,
-        input.detail,
-        input.exerciseRef.exerciseId,
-      ),
-    }))
-    .filter((v) => v.rows.length > 0);
+  const matching: { workout: Workout; rows: Record<string, unknown>[] }[] = [];
+  let rowCount = 0;
+  for (const workout of views) {
+    const rows: Record<string, unknown>[] = [];
+    for (const row of exerciseRows(
+      workout.exercises,
+      input.detail,
+      input.exerciseRef.exerciseId,
+    )) {
+      if (rowCount >= 10000) throw new McpReadError('narrow_range');
+      rows.push(row);
+      rowCount++;
+    }
+    if (rows.length > 0) matching.push({ workout, rows });
+  }
   const key = (w: Workout) =>
     w.planId && w.workoutId
       ? JSON.stringify([w.planId, w.workoutId, w.date])

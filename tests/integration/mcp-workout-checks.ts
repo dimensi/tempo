@@ -471,6 +471,38 @@ export async function assertWorkoutTools(
         }),
       ]),
     );
+    // Dense valid history must fail safely before materializing all output rows.
+    native.save(
+      'owner',
+      binding.accountScope,
+      {
+        ...snapshot,
+        exercises: Array.from({ length: 100 }, (_, index) => ({
+          ...snapshot.exercises[0]!,
+          remoteExerciseId: index + 1,
+          metrics: [
+            {
+              type: 'fact' as const,
+              sets: Array.from({ length: 100 }, (_, order) => ({
+                order: order + 1,
+                done: true,
+                metrics: [],
+              })),
+            },
+          ],
+        })),
+      },
+      '2026-08-05T00:00:00Z',
+    );
+    expect(
+      await client.callTool({
+        name: 'get_exercise_history',
+        arguments: historyArgs,
+      }),
+    ).toMatchObject({
+      isError: true,
+      content: [{ type: 'text', text: 'narrow_range' }],
+    });
   } finally {
     connection.db
       .delete(workoutTransformMateNative)
