@@ -453,8 +453,7 @@ export function anamnesisRepository(db: Db = getDatabase().db) {
         )
         .orderBy(desc(medicalReviewItems.createdAt))
         .all(),
-    countPendingReviews: (ownerId: string, markerIds?: string[]) =>
-      pendingReviewCount(ownerId, markerIds),
+    countPendingReviews: (ownerId: string) => pendingReviewCount(ownerId),
     findReview: (ownerId: string, id: string) =>
       db
         .select()

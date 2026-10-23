@@ -15,9 +15,6 @@ export function AccessPanel({ ownerId }: { ownerId: string }) {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setAccess(undefined);
-    setError(undefined);
     void fetchAnamnesis<AnamnesisAccess>(`/api/anamnesis/access?${query}`)
       .then((value) => {
         if (active) setAccess(value);

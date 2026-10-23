@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { trainerAccess, user } from '@/server/db/schema';
@@ -82,7 +83,7 @@ beforeAll(async () => {
 });
 afterAll(() => database.handle?.sqlite.close());
 
-it('fails closed for generic and selective medical-PDF trainer access, including revocation during a read', async () => {
+it('fails closed for generic and global medical-PDF trainer access, including revocation during a read', async () => {
   const connection = database.handle!;
   state.session = null;
   expect(await authorize(new Headers(), 'nutrition:read', ownerId)).toEqual({
@@ -406,6 +407,22 @@ it('fails closed for generic and selective medical-PDF trainer access, including
 }, 10_000);
 
 async function assertMedicalPdfGrants() {
+  const trainerId = '00000000-0000-4000-8000-000000000002';
+  database
+    .handle!.db.insert(user)
+    .values({
+      id: trainerId,
+      role: 'TRAINER',
+      name: 'Medical trainer',
+      email: 'medical-trainer@example.test',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .run();
+  database
+    .handle!.db.insert(trainerAccess)
+    .values({ trainerId, ownerId, createdAt: new Date() })
+    .run();
   const repository = anamnesisRepository(database.handle!.db);
   for (const marker of repository.listMarkers())
     medicalMarkerSchema.parse(marker);
@@ -483,8 +500,9 @@ async function assertMedicalPdfGrants() {
     enabled: true,
   });
   expect(
-    (await anamnesis.getAnamnesisAccess(headers(), ownerId)).trainers[0]
-      ?.enabled,
+    (await anamnesis.getAnamnesisAccess(headers(), ownerId)).trainers.find(
+      (trainer) => trainer.trainerId === trainerId,
+    )?.enabled,
   ).toBe(true);
   state.session = { user: { id: trainerId, role: 'TRAINER' } };
   expect(
@@ -572,4 +590,9 @@ async function assertMedicalPdfGrants() {
   expect(
     await anamnesis.listAnamnesisDocuments(headers(), ownerId),
   ).toHaveLength(2);
+  database.handle!.db.delete(user).where(eq(user.id, trainerId)).run();
+  database
+    .handle!.db.insert(trainerAccess)
+    .values({ trainerId: 'trainer', ownerId, createdAt: new Date() })
+    .run();
 }
