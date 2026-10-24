@@ -24,7 +24,7 @@ export function TeachingVideo({
   const [failed, setFailed] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [picker, setPicker] = useState<{
-    target: HTMLElement;
+    target: Element;
     trigger: HTMLElement;
     change(value: number): void;
   } | null>(null);
