@@ -797,33 +797,109 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     ).ok(),
   ).toBe(true);
 
+  await page.addInitScript(() => {
+    const NativeEventSource = window.EventSource;
+    Object.assign(window, { workoutRevisionEvents: 0 });
+    window.EventSource = class extends NativeEventSource {
+      constructor(url: string | URL, options?: EventSourceInit) {
+        super(url, options);
+        this.addEventListener('revision', () => {
+          const state = window as typeof window & {
+            workoutRevisionEvents: number;
+          };
+          state.workoutRevisionEvents += 1;
+        });
+      }
+    };
+  });
   await page.goto('/workouts');
   await expect(
     page.getByRole('button', { name: 'Завершить', exact: true }),
   ).toBeVisible();
   await expect(firstWeight).toBeEditable();
+  await page.waitForFunction(
+    () =>
+      (window as typeof window & { workoutRevisionEvents: number })
+        .workoutRevisionEvents > 0,
+  );
   const liveWorkout = await readWorkout();
   expect(liveWorkout).toBeTruthy();
-  expect(
-    (
-      await request.put(`/api/workouts/${liveWorkout!.id}`, {
-        headers: { Origin: testOrigin },
+  let releaseStaleRead!: () => void;
+  let staleReadCaptured!: () => void;
+  const staleReadReady = new Promise<void>((resolve) => {
+    staleReadCaptured = resolve;
+  });
+  const staleReadRelease = new Promise<void>((resolve) => {
+    releaseStaleRead = resolve;
+  });
+  let held = false;
+  const workoutReadUrl = `**/api/workouts?ownerId=${owner}`;
+  await page.route(workoutReadUrl, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    if (
+      !held &&
+      body.data.workouts.some(
+        (workout: { note: string }) => workout.note === 'Owner live edit',
+      )
+    ) {
+      held = true;
+      staleReadCaptured();
+      await staleReadRelease;
+    }
+    await route.fulfill({ response });
+  });
+  const ownerEdit = async (revision: number, text: string) => {
+    const response = await request.put(`/api/workouts/${liveWorkout!.id}`, {
+      headers: { Origin: testOrigin },
+      data: {
+        ownerId: owner,
+        revision,
+        requestId: crypto.randomUUID(),
         data: {
-          ownerId: owner,
-          revision: liveWorkout!.revision,
-          requestId: crypto.randomUUID(),
-          data: {
-            date: liveWorkout!.date,
-            title: liveWorkout!.title,
-            status: liveWorkout!.status,
-            exercises: liveWorkout!.exercises,
-            note: 'Owner live edit',
-          },
+          date: liveWorkout!.date,
+          title: liveWorkout!.title,
+          status: liveWorkout!.status,
+          exercises: liveWorkout!.exercises,
+          note: text,
         },
-      })
-    ).ok(),
-  ).toBe(true);
-  await expect(note).toHaveValue('Owner live edit');
+      },
+    });
+    expect(response.ok()).toBe(true);
+    return (await response.json()).data as { revision: number };
+  };
+  const initialRevisionEvents = await page.evaluate(
+    () =>
+      (window as typeof window & { workoutRevisionEvents: number })
+        .workoutRevisionEvents,
+  );
+  try {
+    const firstEdit = await ownerEdit(liveWorkout!.revision, 'Owner live edit');
+    await staleReadReady;
+    await page.waitForFunction(
+      (previous) =>
+        (window as typeof window & { workoutRevisionEvents: number })
+          .workoutRevisionEvents > previous,
+      initialRevisionEvents,
+    );
+    const revisionEvents = await page.evaluate(
+      () =>
+        (window as typeof window & { workoutRevisionEvents: number })
+          .workoutRevisionEvents,
+    );
+    await ownerEdit(firstEdit.revision, 'Owner second live edit');
+    await page.waitForFunction(
+      (previous) =>
+        (window as typeof window & { workoutRevisionEvents: number })
+          .workoutRevisionEvents > previous,
+      revisionEvents,
+    );
+    releaseStaleRead();
+    await expect(note).toHaveValue('Owner second live edit');
+  } finally {
+    releaseStaleRead();
+    await page.unroute(workoutReadUrl);
+  }
   await context.setOffline(true);
   await firstWeight.fill('30');
   await page

@@ -79,12 +79,26 @@ export function WorkoutsDashboard({
     const events = new EventSource(
       `/api/workouts/events?ownerId=${encodeURIComponent(ownerId)}`,
     );
+    let disposed = false;
+    let refreshing = false;
+    let pending = false;
     const refresh = () => {
-      void Promise.all([refreshWorkouts(), reloadSync()]);
+      if (disposed) return;
+      pending = true;
+      if (refreshing) return;
+      refreshing = true;
+      void (async () => {
+        do {
+          pending = false;
+          await Promise.allSettled([refreshWorkouts(), reloadSync()]);
+        } while (pending && !disposed);
+        refreshing = false;
+      })();
     };
     events.addEventListener('revision', refresh);
     window.addEventListener('focus', refresh);
     return () => {
+      disposed = true;
       events.close();
       window.removeEventListener('focus', refresh);
     };
