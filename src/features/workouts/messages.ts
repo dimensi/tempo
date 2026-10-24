@@ -198,6 +198,7 @@ export const workoutMessages = {
   exerciseDetails: 'Комментарий и порядок',
   exerciseComment: 'Комментарий к упражнению',
   video: 'Обучающее видео',
+  playbackSpeed: 'Скорость воспроизведения',
   videoError: 'Видео недоступно. Попробуйте позже.',
   up: 'Выше',
   down: 'Ниже',
