@@ -123,9 +123,8 @@ function ExerciseCard({
               className={styles.poster}
             />
           )}
-          <span className={styles.play}>
-            <IconPlayerPlay size={24} />
-            <span>{m.playTechnique}</span>
+          <span className={styles.play} aria-hidden="true">
+            <IconPlayerPlay size={24} fill="currentColor" />
           </span>
         </UnstyledButton>
       )}
