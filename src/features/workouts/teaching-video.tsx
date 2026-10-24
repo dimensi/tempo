@@ -54,24 +54,30 @@ export function TeachingVideo({
     const fitRateMenu = () => {
       const button = rateButton?.el();
       const menu = button?.querySelector<HTMLElement>('.vjs-menu-content');
-      if (!button || !menu || !host.current) return;
-      const popup = button.querySelector<HTMLElement>('.vjs-menu');
-      const bounds = button.getBoundingClientRect();
-      const header = document.fullscreenElement
-        ? 0
-        : (document
-            .querySelector('.mantine-AppShell-header')
-            ?.getBoundingClientRect().bottom ?? 0);
-      const above = bounds.top - header - 8;
-      const downward = above < 44;
-      if (popup) {
-        popup.style.top = downward ? '44px' : '';
-        popup.style.bottom = downward ? 'auto' : '';
+      const popup = button?.querySelector<HTMLElement>('.vjs-menu');
+      if (!button || !menu || !popup) return;
+      if (!menu.querySelector('.vjs-speed-heading')) {
+        const heading = document.createElement('li');
+        heading.className = 'vjs-speed-heading';
+        heading.setAttribute('role', 'presentation');
+        heading.textContent = m.playbackSpeed;
+        menu.prepend(heading);
+        menu.setAttribute('aria-label', m.playbackSpeed);
       }
-      menu.style.top = downward ? '0' : '';
-      menu.style.bottom = downward ? 'auto' : '';
-      menu.style.maxHeight = `${Math.max(44, downward ? window.innerHeight - bounds.bottom - 8 : above)}px`;
+      const video = player.el().getBoundingClientRect();
+      const bounds = button.getBoundingClientRect();
+      const height = Math.min(320, Math.max(44, video.height - 16));
+      popup.style.width = `${Math.min(280, Math.max(0, video.width - 16))}px`;
+      popup.style.height = `${height}px`;
+      popup.style.right = `${bounds.right - video.right + 8}px`;
+      popup.style.top = `${video.bottom - 8 - height - bounds.top}px`;
+      const selected = menu.querySelector<HTMLElement>('.vjs-selected');
+      if (selected)
+        menu.scrollTop = Math.max(0, selected.offsetTop - (height - 44) / 2);
     };
+    const observer = new ResizeObserver(fitRateMenu);
+    observer.observe(player.el());
+    player.ready(fitRateMenu);
     rateButton?.on('mouseenter', fitRateMenu);
     rateButton?.on('click', fitRateMenu);
     rateButton?.on('keydown', fitRateMenu);
@@ -79,6 +85,7 @@ export function TeachingVideo({
       setFailed(true);
     });
     return () => {
+      observer.disconnect();
       if (!player.isDisposed()) player.dispose();
     };
   }, [src, poster, label, autoPlay]);
