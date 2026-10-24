@@ -83,8 +83,8 @@ checksum отключён (`WHEN_REQUIRED`) для совместимости st
 Сервер держит в памяти по одной части, не весь ролик.
 
 Каждый list/upload-part/finalize/delete/playback/HEAD/Range авторизует ownerId.
-Запись только OWNER (`workouts:log`), чтение OWNER либо TRAINER с текущим
-`trainer_access` (`workouts:read`). Grant также перепроверяется между частями
+Запись (`workouts:log`) и чтение (`workouts:read`) доступны OWNER либо TRAINER
+с текущим `trainer_access`. Grant также перепроверяется между частями
 finalize и при каждом pull playback-потока. После отзыва новые Range запрещены,
 активный поток прерывается при следующем pull. Уже полученные браузером
 байты отозвать невозможно. Удаление упражнения/результата сначала проверяет

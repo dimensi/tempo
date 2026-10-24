@@ -12,6 +12,18 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/server/auth', () => ({
   getAuth: () => ({ api: { getSession: mocks.session } }),
 }));
+vi.mock('@/server/access/owner', () => ({
+  getAccessibleOwnerId: async () => 'owner',
+}));
+vi.mock('@/server/workouts/videos', () => ({
+  withSessionVideoLock: async (
+    _owner: string,
+    _id: string,
+    action: () => Promise<unknown>,
+  ) => {
+    return action();
+  },
+}));
 vi.mock('@/server/auth/guards', () => ({ authorize: mocks.authorize }));
 vi.mock('@/server/env', () => ({
   readServerEnv: () => ({
@@ -36,6 +48,7 @@ vi.mock('@/server/yazio/body-repository', () => ({
 vi.mock('@/server/yazio/body-runtime', () => ({ runBodySync: mocks.sync }));
 
 import {
+  readOfflineWrites,
   offlineWriteResponse,
   saveOfflineWrite,
 } from '@/server/offline/writes';
@@ -122,5 +135,88 @@ it('derives the owner from the session and rejects foreign partitions before a w
     ),
   );
   expect(foreign.status).toBe(403);
+  expect(mocks.apply).not.toHaveBeenCalled();
+
+  const trainerSession = {
+    ...session(),
+    user: { id: 'trainer', role: 'TRAINER' },
+  };
+  mocks.session.mockResolvedValue(trainerSession);
+  mocks.authorize.mockImplementation(async (_headers, permission) =>
+    permission === 'measurements:write'
+      ? { ok: false, status: 403 }
+      : { ok: true, session: trainerSession },
+  );
+  const trainerPartition = createHmac('sha256', 'synthetic-unit-secret')
+    .update(
+      JSON.stringify(['offline-reader/v2', 'trainer', 'TRAINER', 'owner']),
+    )
+    .digest('base64url');
+  expect(await readOfflineWrites(new Headers())).toEqual({
+    partition: trainerPartition,
+    yazioEpoch: null,
+    records: [],
+  });
+  expect(mocks.catalog).toHaveBeenLastCalledWith('owner', ['workout']);
+  const trainerWorkout = {
+    ...operation(),
+    partition: trainerPartition,
+    payload: {
+      kind: 'workout',
+      data: {
+        date: '2026-10-15',
+        title: 'Trainer workout',
+        note: '',
+        status: 'in_progress',
+        exercises: [{ name: 'Squat', sets: [{ reps: 8, weightKg: 60 }] }],
+      },
+      action: 'start',
+    },
+  };
+  mocks.apply.mockReturnValue({ payload: trainerWorkout.payload });
+  expect(
+    (
+      await offlineWriteResponse(() =>
+        saveOfflineWrite(request(trainerWorkout)),
+      )
+    ).status,
+  ).toBe(200);
+  expect(mocks.apply).toHaveBeenLastCalledWith('owner', trainerWorkout);
+
+  mocks.apply.mockClear();
+  expect(
+    (
+      await offlineWriteResponse(() =>
+        saveOfflineWrite(
+          request({
+            ...operation(),
+            partition: trainerPartition,
+          }),
+        ),
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await offlineWriteResponse(() =>
+        saveOfflineWrite(
+          request({
+            ...trainerWorkout,
+            partition: accepted.partition,
+          }),
+        ),
+      )
+    ).status,
+  ).toBe(403);
+  expect(mocks.apply).not.toHaveBeenCalled();
+
+  mocks.authorize.mockResolvedValue({ ok: false, status: 403 });
+  expect(
+    (
+      await offlineWriteResponse(() =>
+        saveOfflineWrite(request(trainerWorkout)),
+      )
+    ).status,
+  ).toBe(403);
   expect(mocks.apply).not.toHaveBeenCalled();
 });

@@ -1,6 +1,7 @@
 'use client';
 import { LoginForm } from '@/components/shared/login-form';
 import type { ReadContext } from '@/contracts/read-context';
+import { hasPermission } from '@/contracts/permissions';
 import { readContextSchema } from '@/contracts/read-context';
 import {
   createContext,
@@ -77,7 +78,8 @@ export function ClientSession({
           }
           bindSession(context);
           revalidateVisibleReads();
-          if (context.role === 'OWNER') await syncDeviceWrites();
+          if (hasPermission(context.role, 'workouts:log'))
+            await syncDeviceWrites();
         } catch {
           /* An unreachable server does not revoke cached data. */
         }
@@ -97,7 +99,7 @@ export function ClientSession({
     document.addEventListener('visibilitychange', refresh);
     const timer = setInterval(() => {
       if (
-        initial.role === 'OWNER' &&
+        hasPermission(initial.role, 'workouts:log') &&
         navigator.onLine &&
         document.visibilityState === 'visible'
       )

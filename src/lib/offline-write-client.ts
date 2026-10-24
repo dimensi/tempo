@@ -1,4 +1,5 @@
 import { offlineLocalWindow } from '@/contracts/offline-retention';
+import { hasPermission } from '@/contracts/permissions';
 import {
   writeCatalogSchema,
   writeRecordSchema,
@@ -29,7 +30,7 @@ export async function withWriteLock<T>(action: () => Promise<T>) {
 }
 async function eligible() {
   const current = readSession();
-  if (!current || current.role !== 'OWNER')
+  if (!current?.ownerId || !hasPermission(current.role, 'workouts:log'))
     throw new Error('Account unavailable');
   return current.partition;
 }

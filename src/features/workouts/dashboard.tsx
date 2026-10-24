@@ -1,5 +1,5 @@
 'use client';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ActionIcon,
@@ -72,6 +72,23 @@ export function WorkoutsDashboard({
   const data = resource.data;
   const online = useReadOnline();
   const sync = useTransformMateSync(ownerId, date);
+  const refreshWorkouts = resource.refresh;
+  const reloadSync = sync.reload;
+  useEffect(() => {
+    if (!online) return;
+    const events = new EventSource(
+      `/api/workouts/events?ownerId=${encodeURIComponent(ownerId)}`,
+    );
+    const refresh = () => {
+      void Promise.all([refreshWorkouts(), reloadSync()]);
+    };
+    events.addEventListener('revision', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      events.close();
+      window.removeEventListener('focus', refresh);
+    };
+  }, [ownerId, online, refreshWorkouts, reloadSync]);
   const mobile = useMediaQuery('(max-width: 47.99em)');
   const [dayActions, setDayActions] = useState(false);
   const [reorderTarget, setReorderTarget] = useState<string | null>(null);

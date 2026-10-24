@@ -2,6 +2,7 @@
 import { CommentsPanel } from '@/features/comments';
 import { OfflineWrites } from '@/features/offline';
 import { WorkoutsDashboard } from '@/features/workouts';
+import { hasPermission } from '@/contracts/permissions';
 import { useReadContext } from '@/lib/client-session';
 import { Stack } from '@mantine/core';
 export default function Page() {
@@ -11,9 +12,9 @@ export default function Page() {
       <WorkoutsDashboard
         userId={context.readerId}
         ownerId={context.ownerId}
-        canLog={context.role === 'OWNER'}
+        canLog={hasPermission(context.role, 'workouts:log')}
         renderPendingWrites={
-          context.role === 'OWNER'
+          hasPermission(context.role, 'workouts:log')
             ? () => <OfflineWrites kind="workout" pendingOnly />
             : undefined
         }
