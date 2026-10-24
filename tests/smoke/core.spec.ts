@@ -35,7 +35,7 @@ async function cachedReadBody(page: Page, expectedTitle: string) {
   }, expectedTitle);
 }
 
-test('real login reaches core sections, recovers a cached workout offline, purges logout data, and blocks a trainer', async ({
+test('real login reaches core sections, recovers a cached workout offline, purges logout data, and authorizes trainer offline edits', async ({
   page,
   context,
   request,
@@ -773,4 +773,109 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       )
     ).status(),
   ).toBe(403);
+
+  const trainer = (
+    await (await page.request.get('/api/auth/get-session')).json()
+  ).user.id as string;
+  expect(
+    (
+      await request.post('/api/auth/sign-in/email', {
+        headers: { origin: testOrigin },
+        data: {
+          email: 'owner@example.test',
+          password: 'Test-only-password-12345',
+        },
+      })
+    ).status(),
+  ).toBe(200);
+  expect(
+    (
+      await request.post('/api/trainers', {
+        headers: { Origin: testOrigin },
+        data: { ownerId: owner, trainerId: trainer },
+      })
+    ).ok(),
+  ).toBe(true);
+
+  await page.goto('/workouts');
+  await expect(
+    page.getByRole('button', { name: 'Завершить', exact: true }),
+  ).toBeVisible();
+  await expect(firstWeight).toBeEditable();
+  const liveWorkout = await readWorkout();
+  expect(liveWorkout).toBeTruthy();
+  expect(
+    (
+      await request.put(`/api/workouts/${liveWorkout!.id}`, {
+        headers: { Origin: testOrigin },
+        data: {
+          ownerId: owner,
+          revision: liveWorkout!.revision,
+          requestId: crypto.randomUUID(),
+          data: {
+            date: liveWorkout!.date,
+            title: liveWorkout!.title,
+            status: liveWorkout!.status,
+            exercises: liveWorkout!.exercises,
+            note: 'Owner live edit',
+          },
+        },
+      })
+    ).ok(),
+  ).toBe(true);
+  await expect(note).toHaveValue('Owner live edit');
+  await context.setOffline(true);
+  await firstWeight.fill('30');
+  await page
+    .getByRole('button', { name: 'Добавить подход', exact: true })
+    .first()
+    .click();
+  await expect(thirdWeight).toHaveValue('25');
+  await page
+    .getByLabel('Smoke squat, Подход 3, Повторения', { exact: true })
+    .fill('6');
+  await page
+    .getByRole('button', { name: 'Добавить упражнения', exact: true })
+    .click();
+  await page
+    .getByRole('textbox', { name: 'Поиск по названию', exact: true })
+    .fill('Trainer offline exercise');
+  await page
+    .getByRole('button', {
+      name: 'Добавить вручную: Trainer offline exercise',
+      exact: true,
+    })
+    .click();
+  await note.fill('Trainer offline changes');
+  await expect(
+    page.getByText(
+      'Результаты сохранены на устройстве и отправятся при подключении.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await context.setOffline(false);
+  await expect
+    .poll(async () => {
+      const workout = await readWorkout();
+      return (
+        workout && {
+          status: workout.status,
+          note: workout.note,
+          sets: workout.exercises[0]?.sets,
+          added: workout.exercises.some(
+            (exercise) => exercise.name === 'Trainer offline exercise',
+          ),
+        }
+      );
+    })
+    .toEqual({
+      status: 'in_progress',
+      note: 'Trainer offline changes',
+      sets: [
+        { weightKg: 30, reps: 10 },
+        { weightKg: 25, reps: 8 },
+        { weightKg: 25, reps: 6 },
+      ],
+      added: true,
+    });
 });

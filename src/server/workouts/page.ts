@@ -1,6 +1,7 @@
 import 'server-only';
 import { eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
+import { hasPermission } from '@/contracts/permissions';
 import { requireSession, authorize } from '@/server/auth/guards';
 import { getDatabase } from '@/server/db';
 import { trainerAccess } from '@/server/db/schema';
@@ -18,5 +19,5 @@ export async function workoutsPageAccess() {
   if (!ownerId) return null;
   const result = await authorize(await headers(), 'workouts:read', ownerId);
   if (!result.ok) return null;
-  return { ownerId, canLog: session.user.role === 'OWNER' };
+  return { ownerId, canLog: hasPermission(session.user.role, 'workouts:log') };
 }

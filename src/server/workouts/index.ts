@@ -27,7 +27,6 @@ async function access(
   if (!result.ok) throw new WorkoutAccessError(result.status);
   return {
     repository: workoutRepository(getDatabase().db),
-    role: result.session.user.role,
   };
 }
 export async function listWorkouts(headers: Headers, ownerId: string) {
@@ -57,7 +56,7 @@ export async function updateWorkout(
   action?: WorkoutAction,
   requestId?: string,
 ) {
-  const { repository, role } = await access(
+  const { repository } = await access(
     headers,
     ownerId,
     action ? 'workouts:log' : 'workouts:plan',
@@ -81,15 +80,6 @@ export async function updateWorkout(
         key,
       );
       if (replay) return replay;
-      // Check the live state inside the same lock used by uploads and removal.
-      const existing = repository.get(ownerId, id);
-      if (
-        role === 'TRAINER' &&
-        (existing.status !== 'planned' ||
-          data.status !== 'planned' ||
-          transition)
-      )
-        throw new WorkoutAccessError(403);
       repository.validateUpdate(ownerId, id, expected, data, transition);
       await cleanupVideoRows(
         sessionVideoRows(ownerId, id).filter(
@@ -109,9 +99,7 @@ export async function updateExerciseFeedback(
   input: unknown,
   requestId: unknown,
 ) {
-  // workouts:plan already includes an explicit owner/grant check for trainers.
-  const { repository, role } = await access(headers, ownerId, 'workouts:plan');
-  if (role === 'OWNER') await access(headers, ownerId, 'workouts:log');
+  const { repository } = await access(headers, ownerId, 'workouts:log');
   return repository.updateFeedback(
     ownerId,
     idSchema.parse(id),
@@ -126,7 +114,7 @@ export async function deleteWorkout(
   id: string,
   revision: unknown,
 ) {
-  const { repository, role } = await access(headers, ownerId, 'workouts:plan');
+  const { repository } = await access(headers, ownerId, 'workouts:plan');
   idSchema.parse(id);
   const expected = revisionSchema.parse(revision);
   const { sessionVideoRows, cleanupVideoRows, withSessionVideoLock } =
@@ -134,11 +122,6 @@ export async function deleteWorkout(
   return withSessionVideoLock(ownerId, id, () =>
     serializeOwner(ownerId, async () => {
       repository.assertRevision(ownerId, id, expected);
-      if (
-        role === 'TRAINER' &&
-        repository.get(ownerId, id).status !== 'planned'
-      )
-        throw new WorkoutAccessError(403);
       await cleanupVideoRows(sessionVideoRows(ownerId, id));
       repository.delete(ownerId, id, expected);
     }),
