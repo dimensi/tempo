@@ -19,8 +19,8 @@ are outside this change.
 
 The dashboard uses one day-oriented workout stream rather than separate plan/history modes. Each
 workout shows ordered exercises and planned/performed sets together; TransformMate is a source and
-sync status on the workout, not a different editing mode. OWNER can record local facts, while a
-granted TRAINER can prepare plans. Provider-native workouts are read-only cards and expose no
+sync status on the workout, not a different editing mode. OWNER and a granted TRAINER can both prepare plans and record local facts, including while
+the workout is in progress. Both use the same durable local workout write queue. Provider-native workouts are read-only cards and expose no
 start, finish or fact mutation controls.
 
 ## Persistence and recovery

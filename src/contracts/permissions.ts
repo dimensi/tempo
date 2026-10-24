@@ -24,6 +24,7 @@ const trainerPermissions: readonly Permission[] = [
   'measurements:read',
   'workouts:read',
   'workouts:plan',
+  'workouts:log',
   'comments:write',
   'reports:export',
   // Тренер читает анамнез и строит отчёты только по выданным грантам;

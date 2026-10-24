@@ -108,6 +108,21 @@ it('fails closed for generic and global medical-PDF trainer access, including re
     ok: false,
     status: 403,
   });
+  const workoutService = await import('@/server/workouts');
+  await expect(
+    workoutService.createWorkout(
+      headers(),
+      ownerId,
+      {
+        date: '2026-09-01',
+        title: 'Denied plan',
+        note: '',
+        status: 'planned',
+        exercises: [],
+      },
+      crypto.randomUUID(),
+    ),
+  ).rejects.toMatchObject({ status: 403 });
   connection.db
     .insert(trainerAccess)
     .values({ trainerId, ownerId, createdAt: new Date() })
@@ -174,7 +189,6 @@ it('fails closed for generic and global medical-PDF trainer access, including re
     ok: false,
     status: 403,
   });
-  const workoutService = await import('@/server/workouts');
   const { workoutRepository } = await import('@/server/workouts/repository');
   const workoutData = {
     date: '2026-09-01',
@@ -199,17 +213,6 @@ it('fails closed for generic and global medical-PDF trainer access, including re
     crypto.randomUUID(),
   );
   expect(trainerEdited.note).toBe('Trainer edit');
-  await expect(
-    workoutService.updateWorkout(
-      headers(),
-      ownerId,
-      trainerEdited.id,
-      trainerEdited.revision,
-      { ...workoutData, status: 'in_progress' },
-      'start',
-      crypto.randomUUID(),
-    ),
-  ).rejects.toMatchObject({ status: 403 });
   const repository = workoutRepository(connection.db);
   const activeData = {
     ...workoutData,
@@ -233,18 +236,55 @@ it('fails closed for generic and global medical-PDF trainer access, including re
     { ...activeData, status: 'in_progress' },
     'start',
   );
+  const activeEditData = {
+    ...activeData,
+    status: 'in_progress' as const,
+    note: 'Trainer records performed sets',
+    exercises: [
+      { ...activeWorkout.exercises[0]!, sets: [{ reps: 10, weightKg: 60 }] },
+      {
+        id: crypto.randomUUID(),
+        name: 'Row',
+        sets: [{ reps: 12, weightKg: 30 }],
+      },
+    ],
+  };
+  const activeEditRequest = crypto.randomUUID();
+  const editedActive = await workoutService.updateWorkout(
+    headers(),
+    ownerId,
+    activeWorkout.id,
+    activeWorkout.revision,
+    activeEditData,
+    undefined,
+    activeEditRequest,
+  );
+  expect(editedActive.exercises).toMatchObject(activeEditData.exercises);
+  expect(repository.get(ownerId, activeWorkout.id).note).toBe(
+    activeEditData.note,
+  );
+  expect(
+    await workoutService.updateWorkout(
+      headers(),
+      ownerId,
+      activeWorkout.id,
+      activeWorkout.revision,
+      activeEditData,
+      undefined,
+      activeEditRequest,
+    ),
+  ).toEqual(editedActive);
   await expect(
     workoutService.updateWorkout(
       headers(),
       ownerId,
       activeWorkout.id,
       activeWorkout.revision,
-      { ...activeData, status: 'in_progress', note: 'Not permitted' },
+      { ...activeEditData, note: 'Stale edit' },
       undefined,
       crypto.randomUUID(),
     ),
-  ).rejects.toMatchObject({ status: 403 });
-  expect(repository.get(ownerId, activeWorkout.id).note).toBe('');
+  ).rejects.toMatchObject({ status: 409 });
   const feedback = {
     exerciseId: activeWorkout.exercises[0]!.id!,
     fatigue: 8,
@@ -265,21 +305,21 @@ it('fails closed for generic and global medical-PDF trainer access, including re
     headers(),
     ownerId,
     activeWorkout.id,
-    activeWorkout.revision,
+    editedActive.revision,
     feedback,
     feedbackRequest,
   );
   expect(rated.exercises[0]).toMatchObject({
     fatigue: 8,
     failure: 'partial',
-    sets: activeWorkout.exercises[0]!.sets,
+    sets: editedActive.exercises[0]!.sets,
   });
   expect(
     await workoutService.updateExerciseFeedback(
       headers(),
       ownerId,
       activeWorkout.id,
-      activeWorkout.revision,
+      editedActive.revision,
       feedback,
       feedbackRequest,
     ),
@@ -289,7 +329,7 @@ it('fails closed for generic and global medical-PDF trainer access, including re
       headers(),
       ownerId,
       activeWorkout.id,
-      activeWorkout.revision,
+      editedActive.revision,
       { ...feedback, fatigue: 9 },
       crypto.randomUUID(),
     ),
@@ -304,7 +344,8 @@ it('fails closed for generic and global medical-PDF trainer access, including re
       crypto.randomUUID(),
     ),
   ).rejects.toThrow();
-  const completed = repository.update(
+  const completed = await workoutService.updateWorkout(
+    headers(),
     ownerId,
     rated.id,
     rated.revision,
@@ -316,6 +357,7 @@ it('fails closed for generic and global medical-PDF trainer access, including re
       exercises: rated.exercises,
     },
     'complete',
+    crypto.randomUUID(),
   );
   const trainerCorrection = await workoutService.updateExerciseFeedback(
     headers(),
@@ -340,6 +382,58 @@ it('fails closed for generic and global medical-PDF trainer access, including re
     crypto.randomUUID(),
   );
   expect(cleared.exercises[0]).toMatchObject({ fatigue: null, failure: null });
+  state.session = { user: { id: trainerId, role: 'TRAINER' } };
+  const resumed = await workoutService.updateWorkout(
+    headers(),
+    ownerId,
+    cleared.id,
+    cleared.revision,
+    {
+      date: cleared.date,
+      title: cleared.title,
+      note: cleared.note,
+      exercises: cleared.exercises,
+      status: 'in_progress',
+    },
+    'resume',
+    crypto.randomUUID(),
+  );
+  expect(resumed.status).toBe('in_progress');
+  await workoutService.deleteWorkout(
+    headers(),
+    ownerId,
+    resumed.id,
+    resumed.revision,
+  );
+  expect(
+    repository
+      .list(ownerId)
+      .workouts.some((workout) => workout.id === resumed.id),
+  ).toBe(false);
+  const started = await workoutService.updateWorkout(
+    headers(),
+    ownerId,
+    trainerEdited.id,
+    trainerEdited.revision,
+    { ...activeData, status: 'in_progress' },
+    'start',
+    crypto.randomUUID(),
+  );
+  expect(started.status).toBe('in_progress');
+  state.session = { user: { id: 'another-owner', role: 'OWNER' } };
+  await expect(
+    workoutService.updateWorkout(
+      headers(),
+      ownerId,
+      started.id,
+      started.revision,
+      { ...workoutData, status: 'in_progress' },
+      undefined,
+      crypto.randomUUID(),
+    ),
+  ).rejects.toMatchObject({ status: 403 });
+  state.session = { user: { id: ownerId, role: 'OWNER' } };
+
   await expect(
     workoutService.updateExerciseFeedback(
       headers(),
@@ -358,6 +452,15 @@ it('fails closed for generic and global medical-PDF trainer access, including re
     status: 403,
   });
   connection.db.delete(trainerAccess).run();
+  await expect(
+    workoutService.deleteWorkout(
+      headers(),
+      ownerId,
+      started.id,
+      started.revision,
+    ),
+  ).rejects.toMatchObject({ status: 403 });
+
   await expect(
     workoutService.updateExerciseFeedback(
       headers(),

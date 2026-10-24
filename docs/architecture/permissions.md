@@ -10,14 +10,14 @@ Better Auth provides password hashing, server-side sessions, HttpOnly cookies an
 | measurements:write   | yes   | no               |
 | workouts:read        | yes   | with owner grant |
 | workouts:plan        | yes   | with owner grant |
-| workouts:log         | yes   | no               |
+| workouts:log         | yes   | with owner grant |
 | comments:write       | yes   | with owner grant |
 | reports:export       | yes   | with owner grant |
 | yazio:manage         | yes   | no               |
 | transformmate:manage | yes   | no               |
 | trainers:manage      | yes   | no               |
 
-`workouts:plan` covers planned workouts; `workouts:log` covers actual workout results and is owner-only. A trainer may read and plan workouts with an owner grant, but cannot log results.
+`workouts:plan` covers workout structure; `workouts:log` covers execution and results. With an owner grant, a trainer has the same workout management actions as the owner: create, edit exercises and sets during execution, start, complete, resume, delete and manage personal workout videos. Both roles use the same durable workout write queue when disconnected. Each send checks the current session and owner grant; account partitions, revision conflicts and idempotent receipts remain enforced. Measurement writes and external-service connection management remain owner-only.
 
 `src/contracts/permissions.ts` defines capabilities. `src/server/auth/guards.ts` enforces authentication, capability and subject scope. `requireSession()` is a page gate; data handlers still call `authorize(request.headers, permission, ownerId)` and filter every query by the authorized owner ID. Missing ownerId fails closed for all data permissions. Global owner-only configuration actions may omit it. OWNER cannot access another owner's subject. TRAINER needs `trainer_access(trainerId, ownerId)`; it is not enough to have a trainer role.
 

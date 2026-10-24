@@ -64,22 +64,32 @@ export function offlineWriteRepository(database = getDatabase()) {
       : null;
   }
   return {
-    catalog(ownerId: string) {
+    catalog(
+      ownerId: string,
+      kinds: readonly OfflineWrite['payload']['kind'][] = [
+        'measurement',
+        'workout',
+      ],
+    ) {
       const ids = [
-        ...db
-          .select({ id: measurements.id })
-          .from(measurements)
-          .where(eq(measurements.ownerId, ownerId))
-          .limit(501)
-          .all()
-          .map((r) => ({ ...r, kind: 'measurement' as const })),
-        ...db
-          .select({ id: workouts.id })
-          .from(workouts)
-          .where(eq(workouts.ownerId, ownerId))
-          .limit(501)
-          .all()
-          .map((r) => ({ ...r, kind: 'workout' as const })),
+        ...(kinds.includes('measurement')
+          ? db
+              .select({ id: measurements.id })
+              .from(measurements)
+              .where(eq(measurements.ownerId, ownerId))
+              .limit(501)
+              .all()
+              .map((r) => ({ ...r, kind: 'measurement' as const }))
+          : []),
+        ...(kinds.includes('workout')
+          ? db
+              .select({ id: workouts.id })
+              .from(workouts)
+              .where(eq(workouts.ownerId, ownerId))
+              .limit(501)
+              .all()
+              .map((r) => ({ ...r, kind: 'workout' as const }))
+          : []),
       ];
       if (
         ids.filter((r) => r.kind === 'measurement').length > 500 ||

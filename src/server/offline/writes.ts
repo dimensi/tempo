@@ -1,5 +1,7 @@
 import 'server-only';
 import { createHmac } from 'node:crypto';
+import { getAccessibleOwnerId } from '@/server/access/owner';
+import type { Permission } from '@/contracts/permissions';
 import { getAuth } from '@/server/auth';
 import { authorize } from '@/server/auth/guards';
 import { hasTrustedOrigin } from '@/server/auth/origin';
@@ -13,36 +15,49 @@ import { syncSavedWorkout } from '@/server/workouts/transformmate/service';
 import { workoutRepository } from '@/server/workouts/repository';
 import { getDatabase } from '@/server/db';
 import { offlineWriteRepository, OfflineWriteError } from './write-repository';
-async function owner(headers: Headers) {
+async function identityFor(headers: Headers, permission: Permission) {
   const session = await getAuth().api.getSession({ headers });
   if (!session || new Date(session.session.expiresAt).getTime() <= Date.now())
     throw new OfflineWriteError(401);
-  if (session.user.role !== 'OWNER') throw new OfflineWriteError(403);
-  for (const permission of ['workouts:log', 'measurements:write'] as const) {
-    const access = await authorize(headers, permission, session.user.id);
-    if (!access.ok) throw new OfflineWriteError(access.status);
-    if (
-      !access.session.session ||
-      access.session.user.role !== 'OWNER' ||
-      new Date(access.session.session.expiresAt).getTime() <= Date.now() ||
-      access.session.session.id !== session.session.id ||
-      access.session.user.id !== session.user.id
-    )
-      throw new OfflineWriteError(403);
-  }
+  const ownerId = await getAccessibleOwnerId(headers);
+  if (!ownerId) throw new OfflineWriteError(403);
+  const access = await authorize(headers, permission, ownerId);
+  if (!access.ok) throw new OfflineWriteError(access.status);
+  if (
+    !access.session.session ||
+    new Date(access.session.session.expiresAt).getTime() <= Date.now() ||
+    access.session.session.id !== session.session.id ||
+    access.session.user.id !== session.user.id
+  )
+    throw new OfflineWriteError(403);
   const secret = readServerEnv().BETTER_AUTH_SECRET;
   if (!secret) throw new OfflineWriteError(503);
   const partition = createHmac('sha256', secret)
-    .update(JSON.stringify(['offline-owner/v1', session.user.id]))
+    .update(
+      JSON.stringify(
+        session.user.role === 'OWNER'
+          ? ['offline-owner/v1', session.user.id]
+          : ['offline-reader/v2', session.user.id, session.user.role, ownerId],
+      ),
+    )
     .digest('base64url');
-  return { ownerId: session.user.id, partition };
+  return {
+    ownerId,
+    partition,
+    canWriteMeasurements: session.user.role === 'OWNER',
+  };
 }
 export async function readOfflineWrites(headers: Headers) {
-  const identity = await owner(headers);
-  const records = offlineWriteRepository().catalog(identity.ownerId);
+  const identity = await identityFor(headers, 'workouts:log');
+  const records = offlineWriteRepository().catalog(
+    identity.ownerId,
+    identity.canWriteMeasurements ? ['measurement', 'workout'] : ['workout'],
+  );
   const result = {
     partition: identity.partition,
-    yazioEpoch: bodyRepository().schedule(identity.ownerId)?.epoch ?? null,
+    yazioEpoch: identity.canWriteMeasurements
+      ? (bodyRepository().schedule(identity.ownerId)?.epoch ?? null)
+      : null,
     records,
   };
   if (Buffer.byteLength(JSON.stringify(result)) > 4 * 1024 * 1024)
@@ -55,7 +70,13 @@ export async function saveOfflineWrite(request: Request) {
   if (Buffer.byteLength(text) > 128 * 1024) throw new OfflineWriteError(413);
   const parsed = offlineWriteSchema.safeParse(JSON.parse(text));
   if (!parsed.success) throw new OfflineWriteError(400);
-  const identity = await owner(request.headers);
+  const permission =
+    parsed.data.payload.kind === 'measurement'
+      ? 'measurements:write'
+      : parsed.data.payload.action || parsed.data.payload.feedback
+        ? 'workouts:log'
+        : 'workouts:plan';
+  const identity = await identityFor(request.headers, permission);
   if (identity.partition !== parsed.data.partition)
     throw new OfflineWriteError(403);
   const result =
