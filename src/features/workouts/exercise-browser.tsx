@@ -104,7 +104,7 @@ function ExerciseCard({
         <div className={styles.media}>
           <ExerciseDetails ownerId={ownerId} exerciseId={item.id} autoPlay />
         </div>
-      ) : (
+      ) : info?.hasVideo ? (
         <UnstyledButton
           className={styles.preview}
           onClick={onPlay}
@@ -127,7 +127,7 @@ function ExerciseCard({
             <IconPlayerPlay size={24} fill="currentColor" />
           </span>
         </UnstyledButton>
-      )}
+      ) : null}
       <Stack gap="sm" p="md">
         <Text component="h2" size="md" fw={650} className={styles.name}>
           {onChoose ? (
