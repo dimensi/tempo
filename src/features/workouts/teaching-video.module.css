@@ -6,8 +6,17 @@
 }
 
 .player :global(.video-js .vjs-control-bar) {
-  height: 88px;
+  inset: auto 8px 8px;
+  width: calc(100% - 16px);
+  height: 64px;
+  padding: 0 4px 4px;
   flex-wrap: wrap;
+  color: white;
+  font-size: 12px;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 62%);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 
 .player :global(.video-js .vjs-control) {
@@ -23,12 +32,15 @@
 .player :global(.video-js .vjs-progress-control) {
   flex: 0 0 100%;
   width: 100%;
+  height: 16px;
   order: -1;
 }
 
 .player :global(.video-js .vjs-remaining-time) {
   flex: 1;
   line-height: 44px;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
 }
 
 .player :global(.video-js .vjs-playback-rate-value) {
@@ -43,4 +55,84 @@
   min-height: 44px;
   line-height: 44px;
   padding-block: 0;
+}
+
+.player :global(.video-js) {
+  border-radius: var(--mantine-radius-md);
+  font-family: inherit;
+}
+
+.player :global(.video-js .vjs-big-play-button) {
+  top: 50%;
+  left: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 46%);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  font-size: 24px;
+  line-height: 46px;
+}
+
+.player :global(.video-js:hover .vjs-big-play-button),
+.player :global(.video-js .vjs-big-play-button:focus) {
+  background: rgb(0 0 0 / 62%);
+}
+
+.player :global(.video-js .vjs-button > .vjs-icon-placeholder::before) {
+  font-size: 20px;
+  line-height: 44px;
+}
+
+.player
+  :global(.video-js .vjs-big-play-button > .vjs-icon-placeholder::before) {
+  font-size: 28px;
+  line-height: 46px;
+}
+
+.player :global(.video-js .vjs-progress-holder) {
+  height: 3px;
+  margin-inline: 10px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 25%);
+}
+
+.player :global(.video-js .vjs-load-progress),
+.player :global(.video-js .vjs-load-progress div) {
+  background: rgb(255 255 255 / 28%);
+  border-radius: inherit;
+}
+
+.player :global(.video-js .vjs-play-progress) {
+  background: white;
+  border-radius: inherit;
+}
+
+.player :global(.video-js .vjs-control:focus-visible),
+.player :global(.video-js .vjs-menu-item:focus-visible) {
+  outline: 2px solid white;
+  outline-offset: -3px;
+}
+
+.player :global(.video-js .vjs-menu-content),
+.player :global(.video-js .vjs-volume-vertical) {
+  border-radius: 8px;
+  background: rgb(20 20 20 / 94%);
+}
+
+.player :global(.video-js .vjs-tech),
+.player :global(.video-js .vjs-poster) {
+  border-radius: inherit;
+}
+
+.player :global(.video-js .vjs-button:hover) {
+  background: rgb(255 255 255 / 12%);
+  border-radius: 8px;
+}
+
+.player :global(.video-js .vjs-playback-rate-value) {
+  font-size: 14px;
 }
