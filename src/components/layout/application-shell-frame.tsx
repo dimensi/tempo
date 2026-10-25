@@ -32,7 +32,7 @@ export function ApplicationShellFrame({
   pathname,
   onLogout,
   logoutDisabled = false,
-  brandSrc = '/branding/mark.svg',
+  brandSrc = '/branding/tempo-joke.jpg',
   linkComponent = 'a',
   cleanupError = false,
 }: {
@@ -121,7 +121,7 @@ export function ApplicationShellFrame({
                   href="/"
                   className={classes.mobileBrand}
                 >
-                  <Image src={brandSrc} w={28} h={28} alt="" />
+                  <Image src={brandSrc} w={44} h={44} alt="" />
                   <Stack gap={2} align="flex-start">
                     <Text fw={700} lh={1.2}>
                       {ru.appName}
@@ -148,7 +148,7 @@ export function ApplicationShellFrame({
                     mih={44}
                   >
                     <Group gap="sm" wrap="nowrap">
-                      <Image src={brandSrc} w={28} h={28} alt="" />
+                      <Image src={brandSrc} w={44} h={44} alt="" />
                       <Text fw={700}>{ru.appName}</Text>
                     </Group>
                   </UnstyledButton>
