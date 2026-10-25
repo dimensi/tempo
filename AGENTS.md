@@ -39,6 +39,12 @@ All changes to tables require reviewed schema and generated, committed SQL + met
 
 Use Mantine components and official App Router setup. Put user-facing Russian text in a message dictionary; introduce another locale through a resolver later. Only use client components for interaction/context. Maintain touch targets, keyboard navigation, theme persistence and no mobile overflow. Fixtures are explicitly `source: demo`, never persisted or rendered in production; load them through `src/server/demo.ts` for local feature previews. Tests may import fixtures directly.
 
+### Photo lightboxes
+
+When a photo needs an enlarged overlay/lightbox, use PhotoSwipe (`photoswipe`), the project's standard photo viewer. This is an explicit exception to the Mantine-only UI-kit rule for photo viewing. Do not build a custom photo lightbox with Mantine Modal, CSS transforms, or handwritten zoom, pan, pinch, double-tap, or swipe-to-close handlers. Let PhotoSwipe own those interactions and its viewer controls; ordinary thumbnails and photo forms remain Mantine UI.
+
+Reuse the existing integration in `src/features/nutrition/ui/meal-photo.tsx` as the reference. For another feature, respect feature boundaries: coordinate a shared component instead of importing nutrition UI across features. Keep application integration limited to authorized image sources, lifecycle cleanup, Russian labels, accessibility and safe-area styling. Preserve existing authorization and cached-file handling. Do not introduce a second photo-lightbox library or a custom gesture engine without explicit user approval.
+
 ### Cached reads and degraded networks
 
 [ADR 002](docs/decisions/002-resilient-client-reads.md) is the current product decision; [client read cache](docs/architecture/client-read-cache.md) describes its target implementation. The existing runtime still needs simplification. Do not treat old code/tests or historical benchmark results as requirements to restore the removed offline architecture.
