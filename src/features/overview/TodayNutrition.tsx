@@ -1,68 +1,64 @@
-import { MacroEnergyPie } from '@/components/shared/macro-energy-pie';
-import { Group, Stack, Text } from '@mantine/core';
+import { GoalComparison } from '@/components/shared/goal-comparison';
+import { Group, Text } from '@mantine/core';
 import type { NutritionTotals } from '@/contracts/nutrition';
 import { formatDecimal } from '@/lib/number-display';
 import palette from '@/config/nutrient-colors.module.css';
-import { macroEnergyShares, macroKeys } from '@/lib/macro-energy';
+import { macroKeys } from '@/lib/macro-energy';
 import { overviewMessages as m } from './messages';
 import classes from './overview.module.css';
 
-export function TodayNutrition({ totals }: { totals: NutritionTotals | null }) {
-  const shares = macroEnergyShares(totals);
+export function TodayNutrition({
+  totals,
+  goal,
+}: {
+  totals: NutritionTotals | null;
+  goal: string | number | null;
+}) {
   return (
-    <div className={`${classes.nutrition} ${palette.palette}`}>
-      <div>
+    <div className={palette.palette}>
+      <div className={classes.rowHeading}>
+        <Text component="h2" size="md" fw={600} m={0}>
+          {m.today}
+        </Text>
         <Text className={classes.calories}>
           {formatDecimal(totals?.calories ?? null) ?? m.empty}
           {totals?.calories != null && (
-            <Text span size="lg" c="dimmed">
+            <Text span size="sm">
               {' '}
               {m.kcal}
             </Text>
           )}
         </Text>
+      </div>
+      <div className={classes.details}>
+        <GoalComparison
+          actual={totals?.calories ?? null}
+          goal={goal}
+          unit={m.kcal}
+          compact
+        />
         {totals ? (
-          <Group gap={24} align="flex-start">
+          <Group gap="md" wrap="wrap" className={classes.macros}>
             {macroKeys.map((key) => (
-              <Stack key={key} gap={4} className={classes.macro}>
-                <Text size="sm" c="dimmed">
-                  <span
-                    className={classes.swatch}
-                    style={{ background: `var(--nutrient-${key})` }}
-                  />
-                  {m[key]}
-                </Text>
-                <Text fw={600} style={{ color: `var(--nutrient-${key})` }}>
-                  {formatDecimal(totals[key]) ?? m.empty}
-                  {totals[key] !== null ? ` ${m.grams}` : ''}
-                </Text>
-                {shares && (
-                  <Text size="sm">
-                    {formatDecimal(
-                      shares.find((share) => share.key === key)!.percent,
-                    )}
-                    % {m.energyShare}
-                  </Text>
-                )}
-              </Stack>
+              <Text
+                key={key}
+                size="sm"
+                title={m[key]}
+                aria-label={`${m[key]} ${formatDecimal(totals[key]) ?? m.empty}${totals[key] !== null ? ` ${m.grams}` : ''}`}
+                style={{ color: `var(--nutrient-${key})` }}
+              >
+                {m.macroAbbreviations[key]}{' '}
+                {formatDecimal(totals[key]) ?? m.empty}
+                {totals[key] !== null ? ` ${m.grams}` : ''}
+              </Text>
             ))}
           </Group>
         ) : (
-          <Text c="dimmed">{m.todayEmpty}</Text>
+          <Text size="sm" c="dimmed">
+            {m.todayEmpty}
+          </Text>
         )}
       </div>
-      {totals && (
-        <Stack gap="xs" align="center" className={classes.chart}>
-          <MacroEnergyPie
-            totals={totals}
-            labels={m}
-            title={m.macroChart}
-            unavailable={m.macroUnavailable}
-            zero={m.zeroEnergy}
-            compact
-          />
-        </Stack>
-      )}
     </div>
   );
 }

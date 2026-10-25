@@ -1,20 +1,94 @@
 .surface {
+  max-width: 960px;
+  width: 100%;
+  margin-inline: auto;
   --mantine-color-dimmed: light-dark(
     var(--mantine-color-gray-7),
     var(--mantine-color-gray-4)
   );
 }
-.today {
-  padding: 24px;
+.heading {
+  min-width: 0;
+}
+.rows {
+  min-width: 0;
+}
+.row {
+  position: relative;
+  display: block;
+  min-height: 108px;
+  padding: 14px 40px 14px 16px;
+  color: var(--mantine-color-text);
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  overflow-wrap: anywhere;
+}
+.row:hover {
+  background: var(--mantine-color-default-hover);
+}
+.row:focus-visible,
+.link:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 3px;
+}
+.foodRow {
   background: var(--mantine-color-default-hover);
   border-radius: var(--mantine-radius-md);
+  border-bottom: 0;
+}
+.rowHeading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+.rowHeading > * {
+  min-width: 0;
+}
+.value,
+.calories {
+  margin-inline-start: auto;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .calories {
   color: var(--nutrient-calories);
-  font-size: 40px;
-  font-weight: 600;
-  margin-block: 20px;
+}
+.details {
+  margin-top: 6px;
+}
+.macros {
+  margin-top: 5px;
+  column-gap: 12px;
+  row-gap: 2px;
+}
+.weightDetails {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.trend {
+  width: 45%;
+  max-width: 240px;
+  min-width: 80px;
+  pointer-events: none;
+}
+.workoutTitle,
+.completed {
   overflow-wrap: anywhere;
+}
+.completed {
+  margin-top: 4px;
+}
+.footer {
+  padding-inline: 16px;
 }
 .link {
   color: light-dark(var(--mantine-color-teal-9), var(--mantine-color-teal-3));
@@ -22,41 +96,32 @@
   align-items: center;
   min-height: 44px;
 }
-
-.nutrition {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 160px;
-  gap: 24px;
+.sync {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  column-gap: 12px;
 }
-.chart {
-  min-width: 0;
-  padding-block: 16px;
-}
-.macro {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  margin-inline-end: 6px;
-}
-@media (max-width: 767px) {
-  .nutrition {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
+@media (min-width: 48em) {
+  .row {
+    padding: 18px 48px 18px 20px;
   }
-  .today {
-    padding: 16px;
+  .details {
+    margin-top: 8px;
+  }
+  .footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 24px;
   }
 }
 
-.stepsValue {
-  font-size: 40px;
-  font-weight: 600;
-  margin-block: 20px;
-  font-variant-numeric: tabular-nums;
+.chevron {
+  position: absolute;
+  right: 12px;
+  top: 22px;
+  color: var(--mantine-color-dimmed);
+  pointer-events: none;
 }
