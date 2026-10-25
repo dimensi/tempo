@@ -11,12 +11,10 @@ import {
   Button,
   Card,
   Group,
-  Image,
   Modal,
   Stack,
   Text,
   Title,
-  UnstyledButton,
 } from '@mantine/core';
 import {
   meals,
@@ -28,7 +26,7 @@ import { diaryMessages as m } from './messages';
 import { hasNutritionMealContent } from '@/lib/nutrition-meal-content';
 import classes from './diary-view.module.css';
 import { MacroEnergyPie } from '@/components/shared/macro-energy-pie';
-import { PhotoViewerImage } from './photo-viewer-image';
+import { MealPhoto } from './meal-photo';
 import {
   displayValue,
   displayIssue,
@@ -144,10 +142,6 @@ export function DiaryView({
   privatePhotos = false,
   photoActions,
 }: DiaryViewProps) {
-  const [viewing, setViewing] = useState<string | null>(null);
-  const viewingPhoto = photos.find(
-    (photo) => photo.id === viewing && photo.date === date,
-  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -234,20 +228,11 @@ export function DiaryView({
                     {mealPhotos.map((photo) => (
                       <Stack key={photo.id}>
                         {photo.href ? (
-                          <UnstyledButton
-                            className={classes.photoOpen}
-                            aria-label={`${m.enlargePhoto}: ${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
-                            onClick={() => setViewing(photo.id)}
-                          >
-                            <Image
-                              src={photo.href}
-                              alt={`${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
-                              radius="md"
-                              mah={260}
-                              style={{ aspectRatio: '4 / 3' }}
-                              fit="contain"
-                            />
-                          </UnstyledButton>
+                          <MealPhoto
+                            src={photo.href}
+                            alt={`${m.meals[kind]} — ${photo.source === 'yazio' ? m.automatic : m.manual}`}
+                            privatePhoto={privatePhotos}
+                          />
                         ) : (
                           <Text role="status">{m.photoNotSaved}</Text>
                         )}
@@ -328,26 +313,6 @@ export function DiaryView({
         );
       })}
       {commentsSlot}
-      <Modal
-        fullScreen
-        removeScrollProps={{ allowPinchZoom: true }}
-        opened={Boolean(viewingPhoto)}
-        onClose={() => setViewing(null)}
-        title={m.photoViewer}
-        returnFocus
-        trapFocus
-        closeButtonProps={{ 'aria-label': m.closePhoto, size: 44 }}
-      >
-        {viewingPhoto?.href && (
-          <div data-offline-private={privatePhotos || undefined}>
-            <PhotoViewerImage
-              key={viewingPhoto.id}
-              src={viewingPhoto.href}
-              alt={`${m.meals[viewingPhoto.daytime]} — ${viewingPhoto.source === 'yazio' ? m.automatic : m.manual}`}
-            />
-          </div>
-        )}
-      </Modal>
       <Modal
         opened={deleting !== null}
         onClose={() => {

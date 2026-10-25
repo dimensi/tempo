@@ -75,6 +75,7 @@
     "jpeg-js": "0.4.4",
     "mediabunny": "1.61.4",
     "next": "16.4.2",
+    "photoswipe": "5.4.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "recharts": "^3",
