@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-17T12:26:54.244184+00:00",
+  "generatedAt": "2026-10-25T08:07:43.276Z",
   "title": "Design System: Темпо",
   "extensions": {
     "colorMeta": {
@@ -145,7 +145,13 @@
         "purpose": "Small labels and secondary explanations."
       }
     },
-    "shadows": [],
+    "shadows": [
+      {
+        "name": "mobile-navigation",
+        "value": "0 8px 28px rgb(0 0 0 / 16%)",
+        "purpose": "Existing floating mobile navigation; keep it below dialogs."
+      }
+    ],
     "motion": [
       {
         "name": "exercise-media-dialog",
@@ -210,7 +216,7 @@
       "name": "Shared page heading",
       "kind": "custom",
       "refersTo": "page-heading",
-      "description": "One semantic page title with a compact header action.",
+      "description": "PageHeader owns a semantic title and optional actions; the shell owns their placement. PageActions places additional controls in the same header. Actions stay compact and nonwrapping; icon buttons have accessible names and explanatory tooltips where present. On mobile the title starts the content; the shell header retains brand, account role and actions.",
       "html": "<div class=\"ds-header\"><h1>Тренировки</h1><button class=\"ds-header-action\" aria-label=\"Обновить\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M20 7v5h-5M4 17v-5h5M6.1 6.1a8 8 0 0 1 13.2 3M4.7 14.9a8 8 0 0 0 13.2 3\"/></svg></button></div>",
       "css": ".ds-header{display:flex;align-items:center;justify-content:space-between;gap:10px;font-family:Arial,system-ui,sans-serif}.ds-header h1{min-width:0;margin:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--mantine-color-text,#000);font-size:22px;line-height:1.4;font-weight:700}.ds-header-action{display:grid;place-items:center;flex-shrink:0;width:44px;height:44px;border:1px solid transparent;border-radius:var(--mantine-radius-md,8px);color:light-dark(color-mix(in srgb,var(--mantine-color-teal-9,#087f5b) 80%,black),var(--mantine-color-teal-3,#63e6be));background:color-mix(in srgb,currentColor 9%,transparent);cursor:pointer}.ds-header-action:hover{background:color-mix(in srgb,currentColor 15%,transparent)}.ds-header-action:focus-visible{outline:2px solid currentColor;outline-offset:3px;}.ds-header-action:active{background:color-mix(in srgb,currentColor 22%,transparent)}"
     },
@@ -227,6 +233,13 @@
       "description": "The picker footer confirms the selected exercises together. Its sticky container uses the current body surface and a mobile safe-area inset.",
       "html": "<div class=\"ds-picker-footer\"><button class=\"ds-add-selected\">Добавить выбранные · 2</button></div>",
       "css": ".ds-picker-footer{position:sticky;bottom:0;padding-block:12px max(12px,env(safe-area-inset-bottom));background:var(--mantine-color-body,#fff)}.ds-add-selected{width:100%;min-height:48px;padding:0 22px;border:1px solid transparent;border-radius:var(--mantine-radius-md,8px);background:var(--mantine-color-teal-9,#087f5b);color:var(--mantine-color-white,#fff);font:600 16px Arial,system-ui,sans-serif;cursor:pointer}.ds-add-selected:hover{background:color-mix(in srgb,var(--mantine-color-teal-9,#087f5b),black 15%)}.ds-add-selected:focus-visible{outline:2px solid currentColor;outline-offset:3px}.ds-add-selected:disabled{cursor:not-allowed;background:var(--mantine-color-disabled,#f1f3f5);color:var(--mantine-color-disabled-color,#adb5bd)}"
+    },
+    {
+      "name": "Mobile section navigation",
+      "kind": "nav",
+      "description": "The desktop sidebar contains the brand and icon-led section links. Active links use Mantine's selected treatment. Exercise discovery belongs to the add-exercise task and has no standalone navigation item. Below 48em, a floating four-item navigation links to Overview, Food, Workouts and More. More is a normal page listing secondary sections and account actions, not a sheet. The header also shows the current account role: beneath the brand name on mobile and beside the page actions on desktop. The mobile header contains the brand and page actions; the single left-aligned page title starts the content. The bar reserves content space and the device safe area, stays visible on scroll, and sits below dialogs. Theme selection (light, dark, system) lives in Settings → Appearance for both roles. Keep the skip link and current-page semantics.\n\nRoot viewport metadata uses `viewport-fit=cover` and preserves pinch zoom. Shared safe-area variables account for all four edges. The header's total height includes the top inset; main content offsets and sticky section navigation use the same height. Floating navigation reserves bottom and side safe areas. Full-screen dialog headers/bodies and bottom sheets keep their controls within safe bounds. Zero insets retain the existing desktop geometry.",
+      "html": "<nav class=\"ds-mobile-nav\" aria-label=\"Навигация\"><a class=\"ds-tab\" href=\"#overview\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12l-2 0l9 -9l9 9l-2 0\"></path><path d=\"M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7\"></path><path d=\"M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6\"></path></svg><span>Обзор</span></a><a class=\"ds-tab\" href=\"#food\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M19 3v12h-5c-.023 -3.681 .184 -7.406 5 -12m0 12v6h-1v-3m-10 -14v17m-3 -17v3a3 3 0 1 0 6 0v-3\"></path></svg><span>Питание</span></a><a class=\"ds-tab\" href=\"#workouts\" data-active aria-current=\"page\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M2 12h1\"></path><path d=\"M6 8h-2a1 1 0 0 0 -1 1v6a1 1 0 0 0 1 1h2\"></path><path d=\"M6 7v10a1 1 0 0 0 1 1h1a1 1 0 0 0 1 -1v-10a1 1 0 0 0 -1 -1h-1a1 1 0 0 0 -1 1\"></path><path d=\"M9 12h6\"></path><path d=\"M15 7v10a1 1 0 0 0 1 1h1a1 1 0 0 0 1 -1v-10a1 1 0 0 0 -1 -1h-1a1 1 0 0 0 -1 1\"></path><path d=\"M18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-2\"></path><path d=\"M22 12h-1\"></path></svg><span>Тренировки</span></a><a class=\"ds-tab\" href=\"#more\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0\"></path><path d=\"M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0\"></path><path d=\"M18 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0\"></path></svg><span>Ещё</span></a></nav>",
+      "css": ".ds-mobile-nav {\n    position: fixed;\n    bottom: calc(12px + var(--tempo-safe-bottom,env(safe-area-inset-bottom,0px)));\n    inset-inline-start: var(--tempo-safe-left,env(safe-area-inset-left,0px));\n    inset-inline-end: var(--tempo-safe-right,env(safe-area-inset-right,0px));\n    width: min(\n      400px,\n      calc(100% - 24px - var(--tempo-safe-left,env(safe-area-inset-left,0px)) - var(--tempo-safe-right,env(safe-area-inset-right,0px)))\n    );\n    margin-inline: auto;\n    height: 64px;\n    z-index: 101;\n    display: grid;\n    grid-template-columns: repeat(4, minmax(0, 1fr));\n    padding: 5px;\n    border-radius: 32px;\n    border: 1px solid var(--mantine-color-default-border,#ced4da);\n    background: var(--mantine-color-body,#fff);\n    box-shadow: 0 8px 28px rgb(0 0 0 / 16%);\n  }\n.ds-tab {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    justify-content: center;\n    gap: 3px;\n    border-radius: 27px;\n    font-size: 11px;\n    line-height: 1.2;\n    font-weight: 600;\n    color: var(--mantine-color-text,#000);\n  }\n.ds-tab[data-active] {\n    background: var(--mantine-color-teal-light,rgba(18,184,134,.1));\n    color: var(--mantine-color-teal-light-color,#099268);\n  }\n.ds-tab:hover {\n    background: var(--mantine-color-default-hover,#f8f9fa);\n  }\n.ds-mobile-nav{font-family:Arial,system-ui,sans-serif}.ds-tab{text-decoration:none}.ds-tab:focus-visible{outline:2px solid var(--mantine-primary-color-filled,#12b886);outline-offset:3px}\n@supports (backdrop-filter: blur(20px)) {\n    .ds-mobile-nav {\n      background: color-mix(\n        in srgb,\n        var(--mantine-color-body,#fff) 92%,\n        transparent\n      );\n      backdrop-filter: blur(20px);\n      -webkit-backdrop-filter: blur(20px);\n    }\n  }"
     }
   ],
   "narrative": {
@@ -251,16 +264,16 @@
       }
     ],
     "dos": [
-      "Do preserve the existing Mantine teal identity and both color themes.",
-      "Do use the shared header for page headings and primary page actions.",
-      "Do retain visible focus, accessible names and 44px action targets.",
-      "Do use semantic theme variables and readable tabular numeric fields."
+      "**Do** preserve the existing Mantine teal identity and both color themes.",
+      "**Do** use the shared header for page headings and primary page actions.",
+      "**Do** retain visible focus, accessible names and 44px action targets.",
+      "**Do** use semantic theme variables and readable tabular numeric fields."
     ],
     "donts": [
-      "Don't introduce a new UI kit, display font or replacement brand palette in ordinary feature work.",
-      "Don't duplicate the page heading in the content area.",
-      "Don't apply workout-specific composition rules to every feature.",
-      "Don't use color alone to communicate a status or selection."
+      "**Don't** introduce a new UI kit, display font or replacement brand palette in ordinary feature work.",
+      "**Don't** duplicate the page heading in the content area.",
+      "**Don't** apply workout-specific composition rules to every feature.",
+      "**Don't** use color alone to communicate a status or selection."
     ]
   }
 }
