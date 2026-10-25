@@ -17,14 +17,13 @@ export function displayValue(
 export function displayIssue(issue: string): string {
   return m.massIssues[issue as keyof typeof m.massIssues] ?? issue;
 }
+function displayServingLabel(value: string) {
+  return m.servingLabels[value as keyof typeof m.servingLabels] ?? value;
+}
+
 /** Hide only quantities which repeat an authoritative mass or volume. */
 export function entryAmounts(entry: NutritionEntry) {
-  const unit =
-    entry.baseUnit === 'g'
-      ? 'г'
-      : entry.baseUnit === 'ml'
-        ? 'мл'
-        : (entry.baseUnit ?? '');
+  const unit = displayServingLabel(entry.baseUnit ?? '');
   const repeatedAmount =
     entry.amount !== null &&
     ((entry.baseUnit === 'g' &&
@@ -39,7 +38,7 @@ export function entryAmounts(entry: NutritionEntry) {
       m.serving,
       entry.serving === null
         ? m.unknown
-        : `${entry.serving}${entry.servingQuantity === null ? '' : ` × ${displayValue(entry.servingQuantity)}`}`,
+        : `${displayServingLabel(entry.serving)}${entry.servingQuantity === null ? '' : ` × ${displayValue(entry.servingQuantity)}`}`,
     ],
     [m.consumed, displayValue(entry.consumedPortions)],
     [m.recipe, displayValue(entry.recipePortions)],
