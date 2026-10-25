@@ -32,6 +32,8 @@ export const diaryMessages = {
   emptyDay: 'За этот день нет записей питания.',
   unknown: 'нет данных',
   totals: 'Итого по записям',
+  details: 'Подробности',
+  shortNutrients: { calories: 'ккал', protein: 'Б', fat: 'Ж', carbs: 'У' },
   sourceNote: 'Сумма по продуктам и порциям в загруженных записях.',
   partial: 'Не все значения известны. «Нет данных» означает неполный итог.',
   meals: {

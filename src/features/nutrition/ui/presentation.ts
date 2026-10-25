@@ -17,9 +17,24 @@ export function displayValue(
 export function displayIssue(issue: string): string {
   return m.massIssues[issue as keyof typeof m.massIssues] ?? issue;
 }
+/** Hide only quantities which repeat an authoritative mass or volume. */
 export function entryAmounts(entry: NutritionEntry) {
+  const unit =
+    entry.baseUnit === 'g'
+      ? 'г'
+      : entry.baseUnit === 'ml'
+        ? 'мл'
+        : (entry.baseUnit ?? '');
+  const repeatedAmount =
+    entry.amount !== null &&
+    ((entry.baseUnit === 'g' &&
+      entry.massG !== null &&
+      new Decimal(entry.amount).eq(entry.massG)) ||
+      (entry.baseUnit === 'ml' &&
+        entry.volumeMl !== null &&
+        new Decimal(entry.amount).eq(entry.volumeMl)));
   return [
-    [m.amount, displayValue(entry.amount, entry.baseUnit ?? '')],
+    ...(repeatedAmount ? [] : [[m.amount, displayValue(entry.amount, unit)]]),
     [
       m.serving,
       entry.serving === null
@@ -33,7 +48,24 @@ export function entryAmounts(entry: NutritionEntry) {
     ...(entry.ingredientMassEstimateG === null
       ? []
       : [[m.estimate, displayValue(entry.ingredientMassEstimateG, 'г')]]),
-  ];
+  ].filter(([, value]) => value !== m.unknown);
+}
+
+export function entryQuantity(entry: NutritionEntry) {
+  const amounts = entryAmounts(entry);
+  return amounts
+    .filter(
+      ([label]) =>
+        label === m.amount ||
+        label === m.mass ||
+        label === m.volume ||
+        label === m.serving ||
+        label === m.consumed,
+    )
+    .map(([label, value]) =>
+      label === m.consumed ? `${m.consumed}: ${value}` : value,
+    )
+    .join(' · ');
 }
 
 // Display significance only; normalization and stored decimal values remain unchanged.

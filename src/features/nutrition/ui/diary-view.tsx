@@ -19,6 +19,7 @@ import {
 import {
   meals,
   type NutritionDay,
+  type NutritionEntry,
   type NutritionTotals,
   type SafeMealPhotoView,
 } from '@/contracts/nutrition';
@@ -27,10 +28,13 @@ import { hasNutritionMealContent } from '@/lib/nutrition-meal-content';
 import classes from './diary-view.module.css';
 import { MacroEnergyPie } from '@/components/shared/macro-energy-pie';
 import { MealPhoto } from './meal-photo';
+import { macroEnergyShares, macroKeys } from '@/lib/macro-energy';
+import { formatDecimal } from '@/lib/number-display';
 import {
   displayValue,
   displayIssue,
   entryAmounts,
+  entryQuantity,
   noticeableDifferences,
 } from './presentation';
 
@@ -54,40 +58,59 @@ export interface DiaryViewProps {
   };
 }
 
-function Totals({
-  totals,
-  label,
-  kind = 'value',
-}: {
-  totals: NutritionTotals;
-  label?: string;
-  kind?: 'value' | 'delta';
-}) {
+function Entry({ entry }: { entry: NutritionEntry }) {
+  const quantity = entryQuantity(entry);
+  const details = entryAmounts(entry).filter(
+    ([label]) => label === m.recipe || label === m.estimate,
+  );
   return (
-    <Stack gap="xs" className={classes.totals}>
-      {label && (
-        <Text fw={600} size="sm">
-          {label}
+    <Box component="li" className={classes.entry}>
+      <div className={classes.entryHeading}>
+        <Text span fw={600} className={classes.entryName}>
+          {entry.name}
         </Text>
-      )}
-      <div className={classes.nutrients}>
+        {quantity && (
+          <Text span size="sm" c="dimmed">
+            {' '}
+            · {quantity}
+          </Text>
+        )}
+        {entry.kind === 'ai' && <Badge size="xs">{m.ai}</Badge>}
+      </div>
+      <div className={classes.entryNutrients}>
         {(Object.keys(m.nutrients) as (keyof NutritionTotals)[]).map((key) => (
-          <Box key={key} className={classes.nutrient} data-nutrient={key}>
-            <Text size="sm">{m.nutrients[key]}</Text>
-            <Text
-              title={totals[key] ?? undefined}
-              className={classes.nutrientValue}
-            >
-              {displayValue(
-                totals[key],
-                key === 'calories' ? 'ккал' : 'г',
-                kind,
-              )}
-            </Text>
-          </Box>
+          <Text
+            span
+            size="sm"
+            key={key}
+            className={classes.nutrientValue}
+            data-nutrient={key}
+            title={`${m.nutrients[key]}: ${entry.totals[key] ?? m.unknown}`}
+          >
+            <span className={classes.srOnly}>{m.nutrients[key]}: </span>
+            {key !== 'calories' && (
+              <span aria-hidden="true">{m.shortNutrients[key]} </span>
+            )}
+            {displayValue(entry.totals[key], key === 'calories' ? 'ккал' : 'г')}
+          </Text>
         ))}
       </div>
-    </Stack>
+      {entry.issues.length > 0 && (
+        <Text size="sm" c="dimmed" className={classes.entryIssues}>
+          {entry.issues.map(displayIssue).join(' ')}
+        </Text>
+      )}
+      {details.length > 0 && (
+        <details className={classes.entryDetails}>
+          <summary>{m.details}</summary>
+          {details.map(([label, value]) => (
+            <Text key={label} size="sm">
+              {label}: {value}
+            </Text>
+          ))}
+        </details>
+      )}
+    </Box>
   );
 }
 
@@ -102,26 +125,83 @@ function Summary({
   withGoal?: boolean;
   showSource?: boolean;
 }) {
+  const shares = macroEnergyShares(totals);
+  const hasEnergy = shares?.some(({ percent }) => percent > 0);
   return (
     <Stack gap="xs">
-      <Totals totals={totals} label={m.totals} />
+      <div className={classes.summary} data-has-chart={hasEnergy || undefined}>
+        {hasEnergy && (
+          <div className={classes.summaryChart}>
+            <MacroEnergyPie
+              totals={totals}
+              labels={m.nutrients}
+              title={m.macroRatio}
+              unavailable={m.macroUnavailable}
+              zero={m.zeroEnergy}
+              size={88}
+              withCaption={false}
+            />
+          </div>
+        )}
+        <div className={classes.summaryStats}>
+          <Text
+            className={classes.summaryCalories}
+            data-nutrient="calories"
+            title={totals.calories ?? undefined}
+          >
+            {displayValue(totals.calories, 'ккал')}
+          </Text>
+          <dl className={classes.summaryMacros}>
+            {macroKeys.map((key) => (
+              <div key={key} className={classes.summaryMacro}>
+                <dt>
+                  <span
+                    className={classes.swatch}
+                    data-nutrient={key}
+                    aria-hidden="true"
+                  />
+                  {m.nutrients[key]}
+                </dt>
+                <dd>
+                  <span
+                    className={classes.nutrientValue}
+                    data-nutrient={key}
+                    title={totals[key] ?? undefined}
+                  >
+                    {displayValue(totals[key], 'г')}
+                  </span>
+                  {hasEnergy && (
+                    <span className={classes.share}>
+                      {formatDecimal(
+                        shares!.find((share) => share.key === key)!.percent,
+                      )}
+                      %
+                    </span>
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </div>
+      {!hasEnergy && (
+        <Text size="sm" c="dimmed">
+          {shares ? m.zeroEnergy : m.macroUnavailable}
+        </Text>
+      )}
       {withGoal && (
         <GoalComparison
           actual={totals.calories}
           goal={goal ?? null}
           unit="ккал"
+          compact
         />
       )}
-      <MacroEnergyPie
-        totals={totals}
-        labels={m.nutrients}
-        title={m.macroRatio}
-        unavailable={m.macroUnavailable}
-        zero={m.zeroEnergy}
-        withLegend
-        compact
-      />
-      {showSource && <Text size="sm">{m.sourceNote}</Text>}
+      {showSource && (
+        <Text size="xs" c="dimmed">
+          {m.sourceNote}
+        </Text>
+      )}
       {showSource && Object.values(totals).some((value) => value === null) && (
         <Text size="sm">{m.partial}</Text>
       )}
@@ -260,54 +340,13 @@ export function DiaryView({
                     <Summary {...meal} />
                   )}
               </div>
-              {meal?.entries.map((entry) => (
-                <Box key={entry.id} className={classes.entry}>
-                  <Stack gap="xs">
-                    <Group>
-                      <Text fw={600} style={{ overflowWrap: 'anywhere' }}>
-                        {entry.name}
-                      </Text>
-                      {entry.kind === 'ai' && <Badge>{m.ai}</Badge>}
-                    </Group>
-                    <Group gap="xs" className={classes.amounts}>
-                      {entryAmounts(entry)
-                        .filter(([, value]) => value !== m.unknown)
-                        .map(([label, value]) => (
-                          <Text
-                            key={label}
-                            size="sm"
-                            style={{ overflowWrap: 'anywhere' }}
-                          >
-                            {label}: {value}
-                          </Text>
-                        ))}
-                    </Group>
-                    <Totals totals={entry.totals} />
-                    {entry.issues.length > 0 && (
-                      <Alert
-                        color="yellow"
-                        title={m.issues}
-                        styles={{
-                          title: { color: 'var(--mantine-color-text)' },
-                          message: { color: 'var(--mantine-color-text)' },
-                        }}
-                      >
-                        <Stack gap="xs">
-                          {entry.issues.map((issue, index) => (
-                            <Text
-                              key={index}
-                              size="sm"
-                              style={{ overflowWrap: 'anywhere' }}
-                            >
-                              {displayIssue(issue)}
-                            </Text>
-                          ))}
-                        </Stack>
-                      </Alert>
-                    )}
-                  </Stack>
+              {meal && meal.entries.length > 0 && (
+                <Box component="ul" className={classes.entries}>
+                  {meal.entries.map((entry) => (
+                    <Entry key={entry.id} entry={entry} />
+                  ))}
                 </Box>
-              ))}
+              )}
             </Stack>
           </Card>
         );
