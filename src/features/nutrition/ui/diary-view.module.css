@@ -4,47 +4,142 @@
   min-width: 0;
 }
 
-.nutrients {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  max-width: 640px;
-}
-
-.nutrient {
-  min-width: 0;
-  padding-inline-start: 10px;
-  border-inline-start: 1px solid var(--mantine-color-default-border);
-}
-
-.nutrient[data-nutrient='calories'] {
-  --nutrient-color: var(--nutrient-calories);
-}
-.nutrient[data-nutrient='protein'] {
-  --nutrient-color: var(--nutrient-protein);
-}
-.nutrient[data-nutrient='fat'] {
-  --nutrient-color: var(--nutrient-fat);
-}
-.nutrient[data-nutrient='carbs'] {
-  --nutrient-color: var(--nutrient-carbs);
-}
-
-.nutrientValue {
+.nutrientValue,
+.summaryCalories {
   color: var(--nutrient-color);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
 }
 
+.diary [data-nutrient='calories'] {
+  --nutrient-color: var(--nutrient-calories);
+}
+.diary [data-nutrient='protein'] {
+  --nutrient-color: var(--nutrient-protein);
+}
+.diary [data-nutrient='fat'] {
+  --nutrient-color: var(--nutrient-fat);
+}
+.diary [data-nutrient='carbs'] {
+  --nutrient-color: var(--nutrient-carbs);
+}
+
+.entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
 .entry {
-  border-radius: var(--mantine-radius-md);
-  background: var(--mantine-color-default-hover);
-  padding: 16px;
+  padding-block: 12px;
+  border-top: 1px solid var(--mantine-color-default-border);
+  overflow-wrap: anywhere;
 }
-.entry .nutrients {
-  max-width: 560px;
+.entry:last-child {
+  padding-bottom: 0;
 }
+.entryHeading {
+  line-height: 1.4;
+}
+.entryName {
+  font-size: var(--mantine-font-size-md);
+}
+.entryHeading :global(.mantine-Badge-root) {
+  margin-inline-start: 6px;
+}
+.entryNutrients {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 10px;
+  row-gap: 2px;
+  margin-top: 4px;
+}
+.entryNutrients > span {
+  white-space: nowrap;
+}
+.entryIssues {
+  margin-top: 4px;
+}
+.entryDetails {
+  font-size: var(--mantine-font-size-sm);
+}
+.entryDetails summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: list-item;
+  align-content: center;
+  width: fit-content;
+}
+.entryDetails summary:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 3px;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  max-width: 440px;
+}
+.summary[data-has-chart] {
+  grid-template-columns: 88px minmax(0, 1fr);
+}
+.summaryChart,
+.summaryStats {
+  min-width: 0;
+}
+.summaryCalories {
+  font-size: var(--mantine-font-size-lg);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.summaryMacros {
+  margin: 6px 0 0;
+  font-size: var(--mantine-font-size-sm);
+}
+.summaryMacro {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 8px;
+}
+.summaryMacro dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.summaryMacro dd {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.swatch {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--nutrient-color);
+}
+.share {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  align-self: center;
+}
+
 .mealHeader {
   display: grid;
   min-width: 0;
@@ -63,20 +158,6 @@
   .photos {
     max-width: 360px;
   }
-}
-@media (max-width: 480px) {
-  .nutrients {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-  .entry {
-    padding-block: 12px;
-  }
-}
-
-.amounts {
-  max-width: 640px;
-  column-gap: 20px;
 }
 .meal > div {
   gap: 12px;
