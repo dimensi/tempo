@@ -6,8 +6,8 @@ motion accent. This is independent branding, not the YAZIO identity.
 - `mark.svg`: original transparent master; teal `#0ca678`. Still used on the
   login page and retained as the primary application logo.
 - `tempo-joke.png`: user-supplied candy-wrapper image, used temporarily in the
-  mobile header and desktop sidebar just for fun. Optimized transparent 132×132px
-  PNG (about 24 kB), sized for the 44×44px mark at 3× pixel density. Keep this
+  mobile header and desktop sidebar just for fun. Optimized transparent 192×192px
+  PNG (about 46 kB), covering the 44×44px mark through 4× pixel density. Keep this
   small export in the application instead of the full-resolution upload.
   This is not a rebrand.
 - `app.svg`: rounded app tile, white mark on Mantine teal `#087f5b`.
