@@ -14,16 +14,13 @@ import { LineChart } from '@mantine/charts';
 import {
   Alert,
   Anchor,
-  Badge,
   Button,
-  Divider,
   Group,
-  SimpleGrid,
   Skeleton,
   Stack,
   Text,
-  Title,
 } from '@mantine/core';
+import { IconChevronRight } from '@tabler/icons-react';
 import Link from 'next/link';
 import {
   createElement,
@@ -155,259 +152,213 @@ export function Overview({
       document.removeEventListener('visibilitychange', visible);
     };
   }, [current?.sync?.running, automaticPending, refreshResource]);
+  const analyticsHref = current
+    ? `/analytics?from=${shiftDate(current.today, -6)}&to=${current.today}`
+    : '/analytics';
   return (
-    <Stack gap={32} className={classes.surface}>
-      <Stack gap={4}>
+    <Stack gap="md" className={classes.surface}>
+      <Group justify="space-between" gap="sm" className={classes.heading}>
         <PageHeader>{m.title}</PageHeader>
-        <Text c="dimmed">
-          {saved || calendar
-            ? `${date(saved?.today ?? calendar!.today)} · ${m.subtitle}`
-            : m.subtitle}
-        </Text>
-      </Stack>
+        {(saved || calendar) && (
+          <Text size="sm" c="dimmed">
+            {date(saved?.today ?? calendar!.today)}
+          </Text>
+        )}
+      </Group>
       {error ? (
         <Alert color="red" role="alert">
           {m.error}
-          {
-            <Button
-              onClick={() => void localRead.refresh()}
-              variant="subtle"
-              mih={44}
-            >
-              {m.retry}
-            </Button>
-          }
+          <Button
+            onClick={() => void localRead.refresh()}
+            variant="subtle"
+            mih={44}
+          >
+            {m.retry}
+          </Button>
         </Alert>
       ) : !current ? (
-        <Stack aria-label={m.loading}>
-          <Skeleton height={200} />
-          <Skeleton height={160} />
+        <Stack gap={0} aria-label={m.loading}>
+          {[0, 1, 2, 3].map((row) => (
+            <Skeleton key={row} height={112} mb={8} />
+          ))}
         </Stack>
       ) : (
         <>
-          <section aria-labelledby="today-heading" className={classes.today}>
-            <Group justify="space-between">
-              <Title order={2} size="h3" id="today-heading">
-                {m.today}
-              </Title>
-              <Anchor
-                renderRoot={(props) => createElement(linkComponent, props)}
-                href={`/diary?date=${current.today}`}
-                className={classes.link}
-              >
-                {m.diary}
-              </Anchor>
-            </Group>
-            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl">
-              <Stack>
-                <TodayNutrition totals={current.nutrition.today} />
-                <GoalComparison
-                  actual={current.nutrition.today?.calories ?? null}
-                  goal={current.goals.calories}
-                  unit={m.kcal}
-                />
-              </Stack>
-              <Stack gap="md">
-                <Title order={3}>{goalMessages.stepsTitle}</Title>
-                <Text className={classes.stepsValue}>
+          <div className={classes.rows}>
+            <Anchor
+              renderRoot={(props) => createElement(linkComponent, props)}
+              href={`/diary?date=${current.today}`}
+              className={`${classes.row} ${classes.foodRow}`}
+              underline="never"
+            >
+              <IconChevronRight
+                className={classes.chevron}
+                size={18}
+                aria-hidden="true"
+              />
+              <TodayNutrition
+                totals={current.nutrition.today}
+                goal={current.goals.calories}
+              />
+            </Anchor>
+            <Anchor
+              renderRoot={(props) => createElement(linkComponent, props)}
+              href={analyticsHref}
+              className={classes.row}
+              underline="never"
+            >
+              <IconChevronRight
+                className={classes.chevron}
+                size={18}
+                aria-hidden="true"
+              />
+              <div className={classes.rowHeading}>
+                <Text component="h2" size="md" fw={600} m={0}>
+                  {goalMessages.stepsTitle}
+                </Text>
+                <Text className={classes.value}>
                   {formatDecimal(current.steps) ?? m.empty}
                 </Text>
+              </div>
+              <div className={classes.details}>
                 <GoalComparison
                   actual={current.steps}
                   goal={current.goals.steps}
                   unit={goalMessages.stepsUnit}
+                  compact
                 />
-              </Stack>
-            </SimpleGrid>
-          </section>
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={40}>
-            <section aria-labelledby="workouts-heading">
-              <Stack gap="md">
-                <Title order={2} size="h3" id="workouts-heading">
-                  {m.workouts}
-                </Title>
-                {(['planned', 'completed'] as const).map((key) => (
-                  <Stack key={key} gap={4}>
-                    <Text size="sm" c="dimmed">
-                      {m[key]}
-                    </Text>
-                    {current.workouts[key] ? (
-                      <>
-                        <Text fw={600}>
-                          {workoutTitle(
-                            current.workouts[key]!.title,
-                            current.workouts[key]!.date,
-                          )}
-                        </Text>
-                        <Text size="sm">
-                          {date(current.workouts[key]!.date)}
-                        </Text>
-                      </>
-                    ) : (
-                      <Text>
-                        {key === 'planned'
-                          ? plannedUnknown
-                            ? m.noSavedPlan
-                            : m.noPlan
-                          : m.noCompleted}
-                      </Text>
-                    )}
-                  </Stack>
-                ))}
-                <Anchor
-                  renderRoot={(props) => createElement(linkComponent, props)}
-                  href="/workouts"
-                  className={classes.link}
-                >
-                  {m.openWorkouts}
-                </Anchor>
-              </Stack>
-            </section>
-            <section aria-labelledby="weight-heading">
-              <Stack gap="md">
-                <Group justify="space-between">
-                  <Title order={2} size="h3" id="weight-heading">
-                    {m.weight}
-                  </Title>
-                  <Anchor
-                    renderRoot={(props) => createElement(linkComponent, props)}
-                    href="/measurements"
-                    className={classes.link}
-                  >
-                    {m.measurements}
-                  </Anchor>
-                </Group>
-                {current.weight.latest ? (
-                  <>
-                    <Text size="xl" fw={600}>
-                      {number(current.weight.latest.value)} {m.kg}
-                    </Text>
-                    <Text size="sm" c="dimmed">
-                      {date(current.weight.latest.date)}
-                    </Text>
-                  </>
-                ) : (
-                  <Text c="dimmed">{m.weightEmpty}</Text>
-                )}
-                <Text size="sm" c="dimmed">
-                  {m.trend}
+              </div>
+            </Anchor>
+            <Anchor
+              renderRoot={(props) => createElement(linkComponent, props)}
+              href="/measurements"
+              className={classes.row}
+              underline="never"
+            >
+              <IconChevronRight
+                className={classes.chevron}
+                size={18}
+                aria-hidden="true"
+              />
+              <div className={classes.rowHeading}>
+                <Text component="h2" size="md" fw={600} m={0}>
+                  {m.weight}
                 </Text>
+                <Text className={classes.value}>
+                  {current.weight.latest
+                    ? `${number(current.weight.latest.value)} ${m.kg}`
+                    : m.empty}
+                </Text>
+              </div>
+              <div className={`${classes.details} ${classes.weightDetails}`}>
+                {current.weight.latest && (
+                  <Text size="sm" c="dimmed">
+                    {date(current.weight.latest.date)}
+                  </Text>
+                )}
                 {current.weight.points.filter(
                   (point) => toChartNumber(point.value) !== null,
                 ).length >= 2 ? (
-                  <LineChart
-                    h={160}
-                    data={current.weight.points.map((point) => ({
-                      ...point,
-                      value: toChartNumber(point.value),
-                    }))}
-                    dataKey="date"
-                    series={[
-                      { name: 'value', label: m.weight, color: 'teal.6' },
-                    ]}
-                    connectNulls
-                    withDots
-                    withLegend={false}
-                    curveType="linear"
-                    valueFormatter={(value) =>
-                      `${formatDecimal(value) ?? m.empty} ${m.kg}`
-                    }
-                    xAxisProps={{ tickFormatter: date }}
-                    yAxisProps={{ domain: ['dataMin - 1', 'dataMax + 1'] }}
-                  />
-                ) : (
-                  <Text size="sm">{m.noTrend}</Text>
-                )}
-              </Stack>
-            </section>
-          </SimpleGrid>
-          <Divider />
-          <section aria-labelledby="week-heading">
-            <Stack gap="md">
-              <Group justify="space-between">
-                <Title order={2} size="h3" id="week-heading">
-                  {m.week}
-                </Title>
-                <Anchor
-                  renderRoot={(props) => createElement(linkComponent, props)}
-                  href={`/analytics?from=${shiftDate(current.today, -6)}&to=${current.today}`}
-                  className={classes.link}
-                >
-                  {m.analytics}
-                </Anchor>
-              </Group>
-              <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                <Stack gap={4}>
-                  <Text c="dimmed" size="sm">
-                    {m.mean}
-                  </Text>
-                  <Text fw={600} size="xl">
-                    {number(current.nutrition.meanCalories)}
-                    {current.nutrition.meanCalories !== null
-                      ? ` ${m.kcal}`
-                      : ''}
-                  </Text>
-                </Stack>
-                <Stack gap={4}>
-                  <Text c="dimmed" size="sm">
-                    {m.coverage}
-                  </Text>
-                  <Text fw={600} size="xl">
-                    {current.nutrition.recordedDays} / 7
-                  </Text>
-                </Stack>
-                <Stack gap={4}>
-                  <Text c="dimmed" size="sm">
-                    {m.confirmed}
-                  </Text>
-                  <Text fw={600} size="xl">
-                    {current.nutrition.confirmedDays} / 7
-                  </Text>
-                  <Text size="sm" c="dimmed">
-                    {m.partial}: {current.nutrition.partialDays}
-                  </Text>
-                </Stack>
-              </SimpleGrid>
-            </Stack>
-          </section>
-          {current.sync && (
-            <>
-              <Divider />
-              <Group justify="space-between">
-                <Stack gap={4}>
-                  <Text fw={600}>{m.sync}</Text>
-                  <Group>
-                    <Badge
-                      variant="light"
-                      color={current.sync.hasError ? 'orange' : 'teal'}
-                    >
-                      {current.sync.running
-                        ? m.syncRunning
-                        : current.sync.hasError
-                          ? m.syncError
-                          : current.sync.lastSuccess
-                            ? m.syncSuccess
-                            : m.syncIdle}
-                    </Badge>
-                    {current.sync.lastSuccess && (
-                      <Text size="sm" c="dimmed">
-                        {new Date(current.sync.lastSuccess).toLocaleString(
-                          'ru',
-                        )}
-                      </Text>
-                    )}
-                  </Group>
-                </Stack>
+                  <div className={classes.trend} aria-hidden="true">
+                    <LineChart
+                      h={36}
+                      data={current.weight.points.map((point) => ({
+                        ...point,
+                        value: toChartNumber(point.value),
+                      }))}
+                      dataKey="date"
+                      series={[
+                        { name: 'value', label: m.weight, color: 'teal.6' },
+                      ]}
+                      connectNulls
+                      gridAxis="none"
+                      withXAxis={false}
+                      withYAxis={false}
+                      withTooltip={false}
+                      withLegend={false}
+                      withDots={false}
+                      accessibilityLayer={false}
+                      curveType="linear"
+                      yAxisProps={{ domain: ['dataMin - 1', 'dataMax + 1'] }}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </Anchor>
+            <Anchor
+              renderRoot={(props) => createElement(linkComponent, props)}
+              href="/workouts"
+              className={classes.row}
+              underline="never"
+            >
+              <IconChevronRight
+                className={classes.chevron}
+                size={18}
+                aria-hidden="true"
+              />
+              <div className={classes.rowHeading}>
+                <Text component="h2" size="md" fw={600} m={0}>
+                  {m.workouts}
+                </Text>
+                <Text size="sm" c="dimmed">
+                  {current.workouts.planned
+                    ? date(current.workouts.planned.date)
+                    : m.planned}
+                </Text>
+              </div>
+              <div className={classes.details}>
+                <Text fw={600} size="sm" className={classes.workoutTitle}>
+                  {current.workouts.planned
+                    ? workoutTitle(
+                        current.workouts.planned.title,
+                        current.workouts.planned.date,
+                      )
+                    : plannedUnknown
+                      ? m.noSavedPlan
+                      : m.noPlan}
+                </Text>
+                <Text size="sm" c="dimmed" className={classes.completed}>
+                  {m.completed}:{' '}
+                  {current.workouts.completed
+                    ? `${workoutTitle(current.workouts.completed.title, current.workouts.completed.date)} · ${date(current.workouts.completed.date)}`
+                    : m.noCompleted}
+                </Text>
+              </div>
+            </Anchor>
+          </div>
+          <footer className={classes.footer}>
+            <Anchor
+              renderRoot={(props) => createElement(linkComponent, props)}
+              href={analyticsHref}
+              className={classes.link}
+            >
+              {m.analytics}
+            </Anchor>
+            {current.sync && (
+              <div className={classes.sync}>
+                <Text size="xs" c="dimmed">
+                  {m.sync}:{' '}
+                  {current.sync.running
+                    ? m.syncRunning
+                    : current.sync.hasError
+                      ? m.syncError
+                      : current.sync.lastSuccess
+                        ? m.syncSuccess
+                        : m.syncIdle}
+                  {current.sync.lastSuccess &&
+                    ` · ${new Date(current.sync.lastSuccess).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
+                </Text>
                 <Anchor
                   renderRoot={(props) => createElement(linkComponent, props)}
                   href="/settings#sync"
                   className={classes.link}
+                  size="xs"
                 >
                   {m.settings}
                 </Anchor>
-              </Group>
-            </>
-          )}
+              </div>
+            )}
+          </footer>
         </>
       )}
     </Stack>
