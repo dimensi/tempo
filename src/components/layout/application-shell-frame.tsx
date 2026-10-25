@@ -32,7 +32,7 @@ export function ApplicationShellFrame({
   pathname,
   onLogout,
   logoutDisabled = false,
-  brandSrc = '/branding/tempo-joke.jpg',
+  brandSrc = '/branding/tempo-joke.png',
   linkComponent = 'a',
   cleanupError = false,
 }: {
