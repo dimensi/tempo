@@ -70,6 +70,9 @@ export default function VideoQueue({
   const serial = useRef<Promise<void>>(Promise.resolve());
   const [initialized, setInitialized] = useState(false);
   const [stage, setStage] = useState('');
+  const [fileErrors, setFileErrors] = useState<
+    Record<string, { name: string; message: string }>
+  >({});
   const alive = useRef(false);
   const [initial, setInitial] = useState<ActualFileObject[]>([]);
   const [items, setItems] = useState<FilePondFile[]>([]);
@@ -139,6 +142,7 @@ export default function VideoQueue({
       setDraftUploads({});
       setWarning('');
       setStage('');
+      setFileErrors({});
       setReinserting(false);
       setInitialized(true);
       setResetKey((key) => key + 1);
@@ -249,12 +253,7 @@ export default function VideoQueue({
           {warning}
         </Alert>
       )}
-      <Text size="sm" c="dimmed">
-        {m.videoQueueHelp}
-      </Text>
-      <Text size="sm" c="dimmed">
-        {m.videoHelp}
-      </Text>
+      <Text size="sm">{m.videoLimits}</Text>
       {initialized && (
         <FilePond
           key={resetKey}
@@ -293,14 +292,10 @@ export default function VideoQueue({
           name="videos"
           credits={false}
           labelIdle={m.videoQueueSelect}
-          labelFileProcessing={m.videoUploading}
+          labelFileProcessing={stage || m.videoPreparing}
           labelFileProcessingComplete={m.videoUploaded}
-          labelFileProcessingAborted={m.videoPaused}
-          labelFileProcessingError={(error: { body?: unknown }) =>
-            typeof error.body === 'string' && error.body !== m.videoUploadError
-              ? error.body
-              : m.videoUploadFailed
-          }
+          labelFileProcessingAborted={m.videoPausedShort}
+          labelFileProcessingError={m.videoFailedShort}
           labelInvalidField={m.videoInvalidFiles}
           labelFileLoading={m.videoWaiting}
           labelFileLoadError={m.videoLoadError}
@@ -309,8 +304,8 @@ export default function VideoQueue({
           labelButtonAbortItemLoad={m.videoPause}
           labelButtonRetryItemLoad={m.videoResume}
           labelButtonUndoItemProcessing={m.videoDiscard}
-          labelTapToRetry={m.videoResume}
-          labelTapToCancel={m.videoPause}
+          labelTapToRetry={m.videoRetryShort}
+          labelTapToCancel={m.videoPauseShort}
           labelTapToUndo=""
           labelButtonRemoveItem={m.videoDiscard}
           labelButtonAbortItemProcessing={m.videoPause}
@@ -369,7 +364,14 @@ export default function VideoQueue({
               return true;
             }
             try {
-              return await discard(entry);
+              const removed = await discard(entry);
+              if (removed && current(token, session))
+                setFileErrors((errors) => {
+                  const next = { ...errors };
+                  delete next[entry.id];
+                  return next;
+                });
+              return removed;
             } catch (cause) {
               if (current(token, session)) setWarning(videoError(cause));
               return false;
@@ -425,6 +427,11 @@ export default function VideoQueue({
                 };
               }
               const active = entry;
+              setFileErrors((errors) => {
+                const next = { ...errors };
+                delete next[id];
+                return next;
+              });
               active.paused = false;
               const controller = new AbortController();
               active.controller = controller;
@@ -456,7 +463,7 @@ export default function VideoQueue({
                 try {
                   check();
                   if (!active.draft) {
-                    setStage(`${file.name}: ${m.videoCompressing}`);
+                    setStage(m.videoCompressing);
                     const compressed = await compressWorkoutVideo(
                       file as File,
                       controller.signal,
@@ -473,7 +480,7 @@ export default function VideoQueue({
                     uploadId: draft.uploadId ?? crypto.randomUUID(),
                   });
                   draft = active.draft!;
-                  setStage(`${file.name}: ${m.videoUploading}`);
+                  setStage(m.videoUploading);
                   const rows = await refresh(controller.signal);
                   check();
                   let row = rows.find((row) => row.id === draft.uploadId);
@@ -551,7 +558,14 @@ export default function VideoQueue({
                       cause.name === 'AbortError')
                   )
                     pause();
-                  else fail(videoError(cause));
+                  else {
+                    const message = videoError(cause);
+                    setFileErrors((errors) => ({
+                      ...errors,
+                      [id]: { name: file.name, message },
+                    }));
+                    fail(message);
+                  }
                 } finally {
                   if (active.controller === controller)
                     active.controller = undefined;
@@ -570,14 +584,22 @@ export default function VideoQueue({
           }}
         />
       )}
-      <Text size="xs" c="dimmed">
-        {m.videoLocalDraft}
-      </Text>
-      {stage && (
-        <Text size="sm" aria-live="polite">
-          {stage}
-        </Text>
-      )}
+      {Object.entries(fileErrors).map(([id, error]) => (
+        <Alert key={id} color="red" role="alert" className={classes.error}>
+          <Text fw={600} className={classes.filename}>
+            {error.name}
+          </Text>
+          <Text mt={4}>{error.message}</Text>
+        </Alert>
+      ))}
+      <details className={classes.help}>
+        <summary>{m.videoHelpTitle}</summary>
+        <Stack gap="xs" pt="xs">
+          <Text size="sm">{m.videoQueueHelp}</Text>
+          <Text size="sm">{m.videoHelp}</Text>
+          <Text size="sm">{m.videoLocalDraft}</Text>
+        </Stack>
+      </details>
       {unmatched.map((row) => (
         <Group key={row.id}>
           <Text size="sm">{m.videoIncomplete}</Text>
