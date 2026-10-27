@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { ALL_FORMATS, BufferSource, Input } from 'mediabunny';
 import { expect, test, type Page } from '@playwright/test';
 import type { WorkoutVideo } from '@/contracts/workout-videos';
 import { testOrigin } from './origin';
@@ -527,15 +528,24 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     name: 'Видео выполнения: Smoke squat',
     exact: true,
   });
-  const videoBuffer = await readFile('tests/fixtures/technique-demo.mp4');
+  // Camera-like MOV: primary stereo AAC plus an undecodable auxiliary AC-3 track.
+  const videoBuffer = await readFile('tests/fixtures/camera-audio-demo.mov');
   const uploadStarted = page.waitForRequest(
     (request) =>
       new URL(request.url()).pathname === '/api/workouts/videos' &&
       request.method() === 'POST',
   );
   await ownVideos.locator('input[type="file"]').setInputFiles([
-    { name: 'smoke-first.mp4', mimeType: 'video/mp4', buffer: videoBuffer },
-    { name: 'smoke-second.mp4', mimeType: 'video/mp4', buffer: videoBuffer },
+    {
+      name: 'smoke-first.mov',
+      mimeType: 'video/quicktime',
+      buffer: videoBuffer,
+    },
+    {
+      name: 'smoke-second.mov',
+      mimeType: 'video/quicktime',
+      buffer: videoBuffer,
+    },
   ]);
   await uploadStarted;
   const readVideos = async () => {
@@ -569,6 +579,21 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     playbackSources[1]!.includes(`/videos/${video.id}/playback`),
   )!;
   expect(retainedVideo).toBeTruthy();
+  const playback = await page.request.get(
+    `/api/workouts/videos/${retainedVideo.id}/playback?ownerId=${owner}`,
+  );
+  expect(playback.ok()).toBe(true);
+  const recorded = new Input({
+    formats: ALL_FORMATS,
+    source: new BufferSource(await playback.body()),
+  });
+  try {
+    const audioTracks = await recorded.getAudioTracks();
+    expect(audioTracks).toHaveLength(1);
+    expect(await audioTracks[0]!.getNumberOfChannels()).toBe(2);
+  } finally {
+    recorded.dispose();
+  }
   await ownVideos
     .getByRole('button', { name: 'Удалить видео', exact: true })
     .first()

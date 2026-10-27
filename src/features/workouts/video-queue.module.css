@@ -3,6 +3,7 @@
 }
 .queue :global(.filepond--root) {
   font-family: inherit;
+  font-size: 16px;
   margin-bottom: 0;
 }
 .queue :global(.filepond--panel-root) {
@@ -14,6 +15,10 @@
   color: var(--mantine-color-text);
   min-height: 88px;
 }
+.queue :global(.filepond--drop-label label) {
+  padding: 16px;
+  line-height: 1.5;
+}
 .queue :global(.filepond--label-action) {
   color: var(--mantine-color-teal-text);
   text-decoration-color: currentColor;
@@ -22,39 +27,117 @@
 .queue :global(.filepond--item-panel) {
   background: var(--mantine-color-teal-9);
 }
-.queue :global(.filepond--file-action-button) {
+/* FilePond animates text positions inline. The queue uses fixed control columns
+   instead, so text never moves under an action when a file changes state. */
+.queue :global(.filepond--file) {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 6px;
+  align-content: center;
+  min-height: 112px;
+  height: auto;
+  padding: 12px;
+}
+.queue :global(.filepond--file-info),
+.queue :global(.filepond--file .filepond--file-status) {
+  grid-column: 2;
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  align-items: flex-start;
+  text-align: left;
+  transform: none !important;
+}
+.queue :global(.filepond--file-info) {
+  grid-row: 1;
+}
+.queue :global(.filepond--file .filepond--file-status) {
+  grid-row: 2;
+}
+.queue :global(.filepond--file-info .filepond--file-info-main) {
+  font-size: 16px;
+  line-height: 1.4;
+}
+.queue :global(.filepond--file-info .filepond--file-info-sub),
+.queue :global(.filepond--file-status .filepond--file-status-main),
+.queue :global(.filepond--file-status .filepond--file-status-sub) {
+  max-width: 100%;
+  font-size: 14px;
+  line-height: 1.4;
+  opacity: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queue :global(.filepond--file .filepond--file-action-button) {
   width: 44px;
   height: 44px;
+  top: 12px;
+  right: 12px;
+  bottom: auto;
+  left: auto;
+  margin: 0;
+  transform: none !important;
   cursor: pointer;
+}
+.queue :global(.filepond--file .filepond--action-remove-item) {
+  left: 12px;
+  right: auto;
+}
+.queue :global(.filepond--file .filepond--progress-indicator),
+.queue :global(.filepond--file .filepond--processing-complete-indicator) {
+  left: 24px;
+  right: auto;
+  top: 68px;
+  margin: 0;
+  transform: none !important;
 }
 .queue :global(.filepond--file-action-button:focus-visible),
 .queue :global(.filepond--label-action:focus-visible) {
   outline: 2px solid var(--mantine-color-teal-6);
   outline-offset: 3px;
 }
-.queue :global(.filepond--file) {
-  padding-block: 12px;
-  min-height: 68px;
-}
-.queue :global(.filepond--file-info) {
-  min-width: 0;
-  margin-right: 60px;
-}
-.queue :global(.filepond--file-status) {
-  max-width: 50%;
-  margin-right: 52px;
-}
-.queue :global(.filepond--file-status-main),
-.queue :global(.filepond--file-status-sub) {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.queue :global(.filepond--file-info-sub),
-.queue :global(.filepond--file-status-sub) {
-  opacity: 1;
-}
 .queue :global([data-filepond-item-state*='error'] .filepond--item-panel),
 .queue :global([data-filepond-item-state*='invalid'] .filepond--item-panel) {
   background: var(--mantine-color-red-9);
+}
+.filename,
+.error {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.help {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-sm);
+}
+.help summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--mantine-color-teal-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.help summary:focus-visible {
+  outline: 2px solid var(--mantine-color-teal-6);
+  outline-offset: 3px;
+  border-radius: var(--mantine-radius-xs);
+}
+.diagnostic {
+  margin-top: 8px;
+}
+.diagnostic summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.diagnostic summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
 }
