@@ -1,5 +1,15 @@
 import { VIDEO_MAX_BYTES, VIDEO_MAX_SECONDS } from '@/contracts/workout-videos';
 import { workoutMessages as m } from './messages';
+export class WorkoutVideoCompressionError extends Error {
+  constructor(
+    message: string,
+    readonly diagnostic: string,
+    cause?: unknown,
+  ) {
+    super(message, { cause });
+    this.name = 'WorkoutVideoCompressionError';
+  }
+}
 export async function compressWorkoutVideo(
   file: File,
   signal: AbortSignal,
@@ -23,6 +33,27 @@ export async function compressWorkoutVideo(
   });
   let conversion: Awaited<ReturnType<typeof Conversion.init>> | undefined;
   let completed = false;
+  let stage = 'metadata';
+  const details: Record<string, unknown> = {
+    inputType: file.type,
+    inputBytes: file.size,
+  };
+  const failure = (message: string, cause?: unknown) =>
+    new WorkoutVideoCompressionError(
+      message,
+      JSON.stringify(
+        {
+          ...details,
+          stage,
+          error: cause instanceof Error ? cause.name : undefined,
+          message:
+            cause instanceof Error ? cause.message.slice(0, 500) : undefined,
+        },
+        null,
+        2,
+      ),
+      cause,
+    );
   let cancellation: Promise<void> | undefined;
   const cancel = () => {
     cancellation ??= conversion?.cancel();
@@ -32,9 +63,17 @@ export async function compressWorkoutVideo(
   try {
     signal.throwIfAborted();
     const track = await input.getPrimaryVideoTrack();
-    const duration = await input.computeDuration();
+    if (!track) throw failure(m.videoNoTrack);
+    // iPhone Spatial Audio also carries an auxiliary APAC track. Prefer the
+    // compatible AAC soundtrack and never require its spatial alternative.
+    const audio =
+      (await input.getPrimaryAudioTrack({
+        filter: async (item) => (await item.getCodec()) === 'aac',
+      })) ?? (await input.getPrimaryAudioTrack());
+    const duration = await input.computeDuration(
+      audio ? [track, audio] : [track],
+    );
     if (
-      !track ||
       !Number.isFinite(duration) ||
       duration <= 0 ||
       duration > VIDEO_MAX_SECONDS
@@ -42,6 +81,13 @@ export async function compressWorkoutVideo(
       throw new Error(m.videoDurationLimit);
     const naturalWidth = await track.getDisplayWidth(),
       naturalHeight = await track.getDisplayHeight();
+    details.videoCodec = await track.getCodec();
+    details.videoWidth = naturalWidth;
+    details.videoHeight = naturalHeight;
+    if (audio) {
+      details.audioCodec = await audio.getCodec();
+      details.audioChannels = await audio.getNumberOfChannels();
+    }
     const scale = Math.min(
       1,
       1280 / Math.max(naturalWidth, naturalHeight),
@@ -49,16 +95,19 @@ export async function compressWorkoutVideo(
     );
     const width = Math.max(2, Math.floor((naturalWidth * scale) / 2) * 2),
       height = Math.max(2, Math.floor((naturalHeight * scale) / 2) * 2);
+    stage = 'video_decode';
+    if (!(await track.canDecode())) throw failure(m.videoDecodeError);
+    stage = 'video_encode';
+    const quality = new Quality({ quality: 0.6, preferBitrate: true });
     if (
-      !(await track.canDecode()) ||
       !(await canEncodeVideo('avc', {
         width,
         height,
         frameRate: 30,
-        quality: new Quality(0.6),
+        quality,
       }))
     )
-      throw new Error(m.videoUnsupported);
+      throw failure(m.videoEncodeError);
     const pieces: BlobPart[] = [];
     let size = 0;
     const output = new Output({
@@ -69,7 +118,12 @@ export async function compressWorkoutVideo(
       target: new StreamTarget(
         new WritableStream({
           write({ data, position }) {
-            if (position !== size || size + data.length > VIDEO_MAX_BYTES)
+            if (position !== size)
+              throw failure(
+                m.videoContainerError,
+                new Error('Non-sequential MP4 output'),
+              );
+            if (size + data.length > VIDEO_MAX_BYTES)
               throw new Error(m.videoOutputLimit);
             pieces.push(data);
             size += data.length;
@@ -77,6 +131,7 @@ export async function compressWorkoutVideo(
         }),
       ),
     });
+    stage = 'prepare_conversion';
     conversion = await Conversion.init({
       input,
       output,
@@ -88,35 +143,56 @@ export async function compressWorkoutVideo(
               height,
               fit: 'contain',
               frameRate: 30,
-              quality: new Quality(0.6),
+              quality,
               forceTranscode: true,
               keyFrameInterval: 2,
               allowTransformationMetadata: false,
             }
           : { discard: true },
-      // Copy an existing AAC track without requiring an AAC encoder (unavailable
-      // in Chromium on Linux); other audio codecs still require supported transcoding.
-      audio: { codec: 'aac' },
+      // Keep one compatible soundtrack. AAC can be copied without an encoder;
+      // multichannel primary sound is downmixed, while auxiliary tracks are excluded.
+      audio: async (item) =>
+        item === audio
+          ? {
+              codec: 'aac',
+              numberOfChannels: Math.min(2, await item.getNumberOfChannels()),
+            }
+          : { discard: true },
       tags: {},
     });
-    const audio = await input.getAudioTracks();
-    if (
-      !conversion.isValid ||
-      conversion.discardedTracks.some(
-        (item) =>
-          item.track === track ||
-          audio.includes(item.track as (typeof audio)[number]),
-      )
-    )
-      throw new Error(m.videoUnsupported);
+    const discardedVideo = conversion.discardedTracks.find(
+      (item) => item.track === track,
+    );
+    if (discardedVideo) {
+      details.reason = discardedVideo.reason;
+      throw failure(
+        discardedVideo.reason === 'no_encodable_target_codec'
+          ? m.videoEncodeError
+          : m.videoDecodeError,
+      );
+    }
+    const discardedAudio = conversion.discardedTracks.find(
+      (item) => item.track === audio,
+    );
+    if (discardedAudio) {
+      details.reason = discardedAudio.reason;
+      throw failure(
+        discardedAudio.reason === 'no_encodable_target_codec'
+          ? m.videoAudioEncodeError
+          : m.videoAudioDecodeError,
+      );
+    }
+    if (!conversion.isValid) throw failure(m.videoUnsupported);
     signal.throwIfAborted();
     conversion.onProgress = (value) => progress(value);
+    stage = 'convert';
     await conversion.execute();
     signal.throwIfAborted();
     completed = true;
     return { blob: new Blob(pieces, { type: 'video/mp4' }), duration };
   } catch (error) {
     if (signal.aborted) throw error;
+    if (error instanceof WorkoutVideoCompressionError) throw error;
     if (
       error instanceof Error &&
       (
@@ -129,7 +205,15 @@ export async function compressWorkoutVideo(
       ).includes(error.message)
     )
       throw error;
-    throw new Error(m.videoUnsupported);
+    const message =
+      stage === 'metadata'
+        ? m.videoReadError
+        : stage === 'video_decode'
+          ? m.videoDecodeError
+          : stage === 'video_encode'
+            ? m.videoEncodeError
+            : m.videoUnsupported;
+    throw failure(message, error);
   } finally {
     signal.removeEventListener('abort', cancel);
     try {

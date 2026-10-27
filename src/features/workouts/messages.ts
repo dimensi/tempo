@@ -165,7 +165,20 @@ export const workoutMessages = {
   videoPaused:
     'Работа остановлена. Загрузку можно продолжить с подтверждённой части; сжатие нужно начать заново.',
   videoUnsupported:
-    'Браузер не смог сжать этот файл. Оригинал не загружен. Для HEVC/MOV попробуйте Safari на поддерживаемом iPhone или запишите H.264 и выберите файл снова.',
+    'Не удалось завершить сжатие видео. Исходный файл не загружен; подробности ошибки доступны ниже.',
+  videoNoTrack: 'В файле не найдена видеодорожка.',
+  videoReadError: 'Не удалось открыть видеофайл.',
+  videoDecodeError: 'Не удалось прочитать видеодорожку этого файла.',
+  videoEncodeError: 'Не удалось запустить кодирование видео.',
+  videoAudioDecodeError: 'Не удалось прочитать основную звуковую дорожку.',
+  videoAudioEncodeError: 'Не удалось подготовить звук для загрузки.',
+  videoContainerError: 'Не удалось собрать сжатый видеофайл.',
+  videoErrorDetails: 'Подробности ошибки',
+  videoSaveSelected: 'Сохранить выбранный файл',
+  videoBytes: 'байт',
+  videoKilobytes: 'КБ',
+  videoMegabytes: 'МБ',
+  videoGigabytes: 'ГБ',
   videoInputLimit: 'Исходный файл больше 1 ГиБ. Выберите короткий ролик.',
   videoDurationLimit: 'Выберите видео длительностью до 5 минут.',
   videoOutputLimit:
