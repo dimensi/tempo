@@ -319,7 +319,6 @@ export default function VideoQueue({
           labelFileTypeNotAllowed={m.videoExpectedType}
           fileValidateTypeLabelExpectedTypes={m.videoExpectedType}
           instantUpload
-          allowMinimumUploadDuration={false}
           maxParallelUploads={1}
           maxFiles={capacity}
           allowBrowse={!reinserting && capacity > items.length}
