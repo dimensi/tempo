@@ -528,7 +528,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     name: 'Видео выполнения: Smoke squat',
     exact: true,
   });
-  // Camera-like MOV: primary stereo AAC plus an auxiliary mono PCM track.
+  // Camera-like MOV: primary stereo AAC plus an undecodable auxiliary AC-3 track.
   const videoBuffer = await readFile('tests/fixtures/camera-audio-demo.mov');
   const uploadStarted = page.waitForRequest(
     (request) =>
