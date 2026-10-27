@@ -1,4 +1,6 @@
+import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
+import type { WorkoutVideo } from '@/contracts/workout-videos';
 import { testOrigin } from './origin';
 import type { Workout } from '@/contracts/workouts';
 
@@ -515,6 +517,75 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   expect((await readWorkout())?.exercises[0]?.failure).toBe('partial');
   const completed = (await readWorkout())!;
   expect(completed.status).toBe('completed');
+
+  // Selecting multiple files must retain independent upload identities and players.
+  await page
+    .getByRole('button', { name: 'Техника: Smoke squat', exact: true })
+    .click();
+  await page.getByText('Мои видео', { exact: true }).click();
+  const ownVideos = page.getByRole('region', {
+    name: 'Видео выполнения: Smoke squat',
+    exact: true,
+  });
+  const videoBuffer = await readFile('tests/fixtures/technique-demo.mp4');
+  const uploadStarted = page.waitForRequest(
+    (request) =>
+      new URL(request.url()).pathname === '/api/workouts/videos' &&
+      request.method() === 'POST',
+  );
+  await ownVideos.locator('input[type="file"]').setInputFiles([
+    { name: 'smoke-first.mp4', mimeType: 'video/mp4', buffer: videoBuffer },
+    { name: 'smoke-second.mp4', mimeType: 'video/mp4', buffer: videoBuffer },
+  ]);
+  await uploadStarted;
+  const readVideos = async () => {
+    const response = await page.request.get(
+      `/api/workouts/videos?ownerId=${owner}&sessionId=${completed.id}`,
+    );
+    expect(response.ok()).toBe(true);
+    return ((await response.json()).data as WorkoutVideo[]).filter(
+      (video) => video.exerciseId === completed.exercises[0]!.id,
+    );
+  };
+  await expect
+    .poll(
+      async () => {
+        const videos = await readVideos();
+        return (
+          videos.length === 2 &&
+          videos.every((video) => video.state === 'ready')
+        );
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  const players = ownVideos.locator('video');
+  await expect(players).toHaveCount(2);
+  const playbackSources = await players.evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute('src')!),
+  );
+  expect(new Set(playbackSources).size).toBe(2);
+  const retainedVideo = (await readVideos()).find((video) =>
+    playbackSources[1]!.includes(`/videos/${video.id}/playback`),
+  )!;
+  expect(retainedVideo).toBeTruthy();
+  await ownVideos
+    .getByRole('button', { name: 'Удалить видео', exact: true })
+    .first()
+    .click();
+  await expect(players).toHaveCount(1);
+  await expect(players).toHaveAttribute('src', playbackSources[1]!);
+  await expect
+    .poll(async () => (await readVideos()).map((video) => video.id))
+    .toEqual([retainedVideo.id]);
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Техника: Smoke squat', exact: true })
+    .click();
+  await page.getByText('Мои видео', { exact: true }).click();
+  await expect(players).toHaveCount(1);
+  await expect(players).toHaveAttribute('src', playbackSources[1]!);
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
   await expect(firstReps).toHaveValue('10');
   await expect(firstWeight).toHaveValue('20');
