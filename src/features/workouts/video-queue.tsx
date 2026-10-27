@@ -1,0 +1,614 @@
+'use client';
+import {
+  VIDEO_PART_BYTES,
+  type WorkoutVideo,
+} from '@/contracts/workout-videos';
+import { apiFetch } from '@/lib/api-client';
+import { subscribeLocalDataReset } from '@/lib/local-data';
+import { subscribeSessionReset } from '@/lib/offline-device';
+import { sessionGeneration } from '@/lib/session-state';
+import {
+  createVideoDraftStore,
+  type VideoDraft,
+} from '@/lib/workout-video-draft';
+import { Alert, Button, Group, Stack, Text } from '@mantine/core';
+import type { ActualFileObject, FilePondFile } from 'filepond';
+import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type';
+import { FilePond, registerPlugin } from 'react-filepond';
+import { useEffect, useRef, useState } from 'react';
+import 'filepond/dist/filepond.min.css';
+import { compressWorkoutVideo } from './compress-video';
+import { workoutMessages as m } from './messages';
+import { sendVideoPart } from './video-upload';
+import classes from './video-queue.module.css';
+registerPlugin(FilePondPluginFileValidateType);
+function videoError(cause: unknown) {
+  const known: string[] = [
+    m.forbidden,
+    m.conflict,
+    m.videoInputLimit,
+    m.videoDurationLimit,
+    m.videoUnsupported,
+    m.videoOutputLimit,
+    m.videoLoadError,
+  ];
+  return cause instanceof Error && known.includes(cause.message)
+    ? cause.message
+    : m.videoUploadError;
+}
+type Entry = {
+  id: string;
+  epoch: number;
+  session: number;
+  draft?: VideoDraft;
+  restored?: boolean;
+  completed?: boolean;
+  retained?: boolean;
+  paused?: boolean;
+  controller?: AbortController;
+};
+export default function VideoQueue({
+  ownerId,
+  sessionId,
+  exerciseId,
+  videos,
+  refresh,
+  onUploaded,
+}: {
+  ownerId: string;
+  sessionId: string;
+  exerciseId: string;
+  videos: WorkoutVideo[];
+  refresh: (signal?: AbortSignal) => Promise<WorkoutVideo[]>;
+  onUploaded: (video: WorkoutVideo) => void;
+}) {
+  const pond = useRef<FilePond>(null);
+  const entries = useRef(new Map<string, Entry>());
+  const restoredIds = useRef(new WeakMap<Blob, string>());
+  const store = useRef<ReturnType<typeof createVideoDraftStore> | null>(null);
+  const epoch = useRef(0);
+  const serial = useRef<Promise<void>>(Promise.resolve());
+  const [initialized, setInitialized] = useState(false);
+  const [stage, setStage] = useState('');
+  const alive = useRef(false);
+  const [initial, setInitial] = useState<ActualFileObject[]>([]);
+  const [items, setItems] = useState<FilePondFile[]>([]);
+  const [draftUploads, setDraftUploads] = useState<
+    Record<string, string | undefined>
+  >({});
+  const [warning, setWarning] = useState('');
+  const [resetKey, setResetKey] = useState(0);
+  const [reinserting, setReinserting] = useState(false);
+  const base = '/api/workouts/videos';
+  const query = `?ownerId=${encodeURIComponent(ownerId)}`;
+  const scope = `${ownerId}:${sessionId}:${exerciseId}`;
+  const generation = sessionGeneration();
+  function current(token: number, session: number) {
+    return (
+      alive.current &&
+      token === epoch.current &&
+      session === sessionGeneration()
+    );
+  }
+  function stop() {
+    for (const entry of entries.current.values()) entry.controller?.abort();
+  }
+  useEffect(() => {
+    alive.current = true;
+    const repository = createVideoDraftStore(scope);
+    store.current = repository;
+    const token = epoch.current,
+      session = sessionGeneration();
+    void repository
+      .list()
+      .then((rows) => {
+        if (!current(token, session)) return;
+        const files = rows.map((draft) => {
+          entries.current.set(draft.id, {
+            id: draft.id,
+            epoch: token,
+            session,
+            draft,
+            restored: true,
+            retained: true,
+          });
+          const file = new File([draft.blob], draft.name, {
+            type: 'video/mp4',
+          });
+          restoredIds.current.set(file, draft.id);
+          return file;
+        });
+        setInitial(files);
+        setDraftUploads(
+          Object.fromEntries(rows.map((draft) => [draft.id, draft.uploadId])),
+        );
+        setInitialized(true);
+      })
+      .catch(() => {
+        if (current(token, session)) {
+          setWarning(m.videoNotRetained);
+          setInitialized(true);
+        }
+      });
+    const reset = () => {
+      epoch.current++;
+      stop();
+      entries.current.clear();
+      setInitial([]);
+      setItems([]);
+      setDraftUploads({});
+      setWarning('');
+      setStage('');
+      setReinserting(false);
+      setInitialized(true);
+      setResetKey((key) => key + 1);
+      store.current = createVideoDraftStore(scope);
+    };
+    const sessionReset = () => {
+      stop();
+    };
+    const hidden = () => {
+      if (document.hidden) stop();
+    };
+    const unsubscribe = subscribeLocalDataReset(reset);
+    const unsubscribeSession = subscribeSessionReset(sessionReset);
+    document.addEventListener('visibilitychange', hidden);
+    const cleanup = () => {
+      alive.current = false;
+      epoch.current++;
+      stop();
+      unsubscribe();
+      unsubscribeSession();
+      document.removeEventListener('visibilitychange', hidden);
+    };
+    return cleanup;
+    // Queue lifetime is the exercise/account scope.
+  }, [scope]);
+  useEffect(() => {
+    const readyIds = new Set(
+      videos.filter((row) => row.state === 'ready').map((row) => row.id),
+    );
+    const token = epoch.current,
+      session = sessionGeneration();
+    for (const item of items) {
+      const entry = entries.current.get(item.getMetadata('draftId'));
+      if (
+        !entry?.draft?.uploadId ||
+        entry.completed ||
+        !readyIds.has(entry.draft.uploadId)
+      )
+        continue;
+      // A lost finalize response must not leave a second, retryable copy of a ready video.
+      entry.completed = true;
+      entry.controller?.abort();
+      void store.current
+        ?.remove(entry.id)
+        .catch(() => {
+          if (current(token, session)) setWarning(m.videoNotRetained);
+        })
+        .then(() => {
+          if (current(token, session)) void pond.current?.removeFile(item.id);
+        });
+    }
+  }, [videos, items]);
+  async function call(path: string, init: RequestInit) {
+    const response = await apiFetch(`${base}${path}${query}`, {
+      ...init,
+      cache: 'no-store',
+    });
+    if (!response.ok)
+      throw new Error(
+        response.status === 403
+          ? m.forbidden
+          : response.status === 409
+            ? m.conflict
+            : m.videoUploadError,
+      );
+    return (await response.json()).data as WorkoutVideo;
+  }
+  async function discard(entry: Entry) {
+    const token = epoch.current,
+      session = sessionGeneration();
+    entry.controller?.abort();
+    if (entry.draft?.uploadId) {
+      const response = await apiFetch(
+        `${base}/${entry.draft.uploadId}${query}`,
+        { method: 'DELETE' },
+      );
+      if (!response.ok && response.status !== 404)
+        throw new Error(
+          response.status === 403 ? m.forbidden : m.videoUploadError,
+        );
+    }
+    if (!current(token, session)) return false;
+    if (entry.retained) await store.current?.remove(entry.id);
+    if (!current(token, session)) return false;
+    entries.current.delete(entry.id);
+    forgetUpload(entry.id);
+    void refresh().catch(() => {});
+    return true;
+  }
+  function forgetUpload(id: string) {
+    setDraftUploads((uploads) => {
+      const next = { ...uploads };
+      delete next[id];
+      return next;
+    });
+  }
+  const matched = new Set(Object.values(draftUploads).filter(Boolean));
+  const unmatched = videos.filter(
+    (row) => row.state === 'uploading' && !matched.has(row.id),
+  );
+  const serverOnly = videos.filter((row) => !matched.has(row.id)).length;
+  const capacity = Math.max(items.length, 8 - serverOnly);
+  if (generation !== sessionGeneration()) return null;
+  return (
+    <Stack gap="xs" className={classes.queue}>
+      {warning && (
+        <Alert color="orange" role="alert">
+          {warning}
+        </Alert>
+      )}
+      <Text size="sm" c="dimmed">
+        {m.videoQueueHelp}
+      </Text>
+      <Text size="sm" c="dimmed">
+        {m.videoHelp}
+      </Text>
+      {initialized && (
+        <FilePond
+          key={resetKey}
+          ref={pond}
+          oninit={() => {
+            const token = epoch.current,
+              session = sessionGeneration();
+            if (initial.length)
+              void pond.current?.addFiles(initial).catch(() => {
+                if (current(token, session)) setWarning(m.videoInvalidFiles);
+              });
+          }}
+          allowMultiple
+          acceptedFileTypes={['video/*']}
+          fileValidateTypeDetectType={(file, type) =>
+            Promise.resolve(
+              type ||
+                (/\.(mp4|m4v)$/i.test(file.name)
+                  ? 'video/mp4'
+                  : /\.mov$/i.test(file.name)
+                    ? 'video/quicktime'
+                    : type),
+            )
+          }
+          labelFileTypeNotAllowed={m.videoExpectedType}
+          fileValidateTypeLabelExpectedTypes={m.videoExpectedType}
+          instantUpload
+          maxParallelUploads={1}
+          maxFiles={capacity}
+          allowBrowse={!reinserting && capacity > items.length}
+          allowDrop={!reinserting && capacity > items.length}
+          allowPaste={!reinserting && capacity > items.length}
+          allowRevert={false}
+          allowProcess
+          allowRemove
+          name="videos"
+          credits={false}
+          labelIdle={m.videoQueueSelect}
+          labelFileProcessing={m.videoUploading}
+          labelFileProcessingComplete={m.videoUploaded}
+          labelFileProcessingAborted={m.videoPaused}
+          labelFileProcessingError={(error: { body?: unknown }) =>
+            typeof error.body === 'string' && error.body !== m.videoUploadError
+              ? error.body
+              : m.videoUploadFailed
+          }
+          labelInvalidField={m.videoInvalidFiles}
+          labelFileLoading={m.videoWaiting}
+          labelFileLoadError={m.videoLoadError}
+          labelFileRemoveError={m.videoUploadError}
+          labelFileProcessingRevertError={m.videoUploadError}
+          labelButtonAbortItemLoad={m.videoPause}
+          labelButtonRetryItemLoad={m.videoResume}
+          labelButtonUndoItemProcessing={m.videoDiscard}
+          labelTapToRetry={m.videoResume}
+          labelTapToCancel={m.videoPause}
+          labelTapToUndo=""
+          labelButtonRemoveItem={m.videoDiscard}
+          labelButtonAbortItemProcessing={m.videoPause}
+          labelButtonRetryItemProcessing={m.videoResume}
+          labelButtonProcessItem={m.videoResume}
+          labelFileWaitingForSize={m.videoWaiting}
+          labelFileSizeNotAvailable={m.videoWaiting}
+          beforeAddFile={(item) => {
+            if (!item.getMetadata('draftId'))
+              item.setMetadata(
+                'draftId',
+                restoredIds.current.get(item.file) ?? crypto.randomUUID(),
+              );
+            return true;
+          }}
+          onupdatefiles={setItems}
+          onremovefile={(error, item) => {
+            const entry = entries.current.get(item.getMetadata('draftId'));
+            if (
+              error ||
+              !entry?.paused ||
+              entry.completed ||
+              !current(entry.epoch, entry.session)
+            )
+              return;
+            const token = entry.epoch,
+              session = entry.session;
+            // Instant-upload FilePond removes a cancelled item. Keep our resumable
+            // recording visible by restoring it as an explicitly paused entry.
+            const file = entry.draft
+              ? new File([entry.draft.blob], entry.draft.name, {
+                  type: 'video/mp4',
+                })
+              : item.file;
+            restoredIds.current.set(file, entry.id);
+            entry.restored = true;
+            entry.paused = false;
+            setReinserting(true);
+            void pond.current
+              ?.addFile(file)
+              .catch(() => {
+                if (current(token, session)) setWarning(m.videoInvalidFiles);
+              })
+              .finally(() => {
+                if (current(token, session)) setReinserting(false);
+              });
+          }}
+          beforeRemoveFile={async (item) => {
+            const token = epoch.current,
+              session = sessionGeneration();
+            const entry = entries.current.get(item.getMetadata('draftId'));
+            if (!entry) return true;
+            if (entry.completed) {
+              entries.current.delete(entry.id);
+              forgetUpload(entry.id);
+              return true;
+            }
+            try {
+              return await discard(entry);
+            } catch (cause) {
+              if (current(token, session)) setWarning(videoError(cause));
+              return false;
+            }
+          }}
+          onprocessfile={(error, item) => {
+            if (!error) void pond.current?.removeFile(item.id);
+          }}
+          server={{
+            process: (
+              _field,
+              file,
+              metadata,
+              load,
+              fail,
+              progress,
+              aborted,
+            ) => {
+              const id =
+                typeof metadata.draftId === 'string'
+                  ? metadata.draftId
+                  : crypto.randomUUID();
+              metadata.draftId = id;
+              // FilePond metadata is copied into the item; set explicitly for new selections.
+              const item = pond.current
+                ?.getFiles()
+                .find((candidate) => candidate.file === file);
+              item?.setMetadata('draftId', id);
+              let entry = entries.current.get(id);
+              if (!entry) {
+                entry = {
+                  id,
+                  epoch: epoch.current,
+                  session: sessionGeneration(),
+                };
+                entries.current.set(id, entry);
+              }
+              let paused = false;
+              const pause = () => {
+                if (paused) return;
+                paused = true;
+                aborted();
+              };
+              if (entry.restored) {
+                entry.restored = false;
+                queueMicrotask(pause);
+                const restored = entry;
+                return {
+                  abort: () => {
+                    restored.paused = true;
+                    pause();
+                  },
+                };
+              }
+              const active = entry;
+              active.paused = false;
+              const controller = new AbortController();
+              active.controller = controller;
+              const token = epoch.current,
+                session = sessionGeneration();
+              const valid = () =>
+                current(token, session) &&
+                !controller.signal.aborted &&
+                !document.hidden;
+              const check = () => {
+                if (!valid()) throw new DOMException('Aborted', 'AbortError');
+              };
+              const persist = async (draft: VideoDraft) => {
+                check();
+                active.draft = draft;
+                setDraftUploads((uploads) => ({
+                  ...uploads,
+                  [id]: draft.uploadId,
+                }));
+                try {
+                  await store.current?.save(draft);
+                  active.retained = true;
+                } catch {
+                  if (valid()) setWarning(m.videoNotRetained);
+                }
+                check();
+              };
+              const task = async () => {
+                try {
+                  check();
+                  if (!active.draft) {
+                    setStage(`${file.name}: ${m.videoCompressing}`);
+                    const compressed = await compressWorkoutVideo(
+                      file as File,
+                      controller.signal,
+                      (n) => {
+                        if (valid()) progress(true, n, 2);
+                      },
+                    );
+                    check();
+                    await persist({ ...compressed, id, name: file.name });
+                  }
+                  let draft = active.draft!;
+                  await persist({
+                    ...draft,
+                    uploadId: draft.uploadId ?? crypto.randomUUID(),
+                  });
+                  draft = active.draft!;
+                  setStage(`${file.name}: ${m.videoUploading}`);
+                  const rows = await refresh(controller.signal);
+                  check();
+                  let row = rows.find((row) => row.id === draft.uploadId);
+                  if (!row)
+                    row = await call('', {
+                      method: 'POST',
+                      signal: controller.signal,
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Idempotency-Key': draft.uploadId!,
+                      },
+                      body: JSON.stringify({
+                        sessionId,
+                        exerciseId,
+                        size: draft.blob.size,
+                        duration: draft.duration,
+                      }),
+                    });
+                  check();
+                  await persist({ ...draft, uploadId: row.id });
+                  let acknowledged = row.parts.reduce(
+                    (sum, part) =>
+                      sum +
+                      Math.min(
+                        VIDEO_PART_BYTES,
+                        draft.blob.size - part * VIDEO_PART_BYTES,
+                      ),
+                    0,
+                  );
+                  if (row.state !== 'ready')
+                    for (
+                      let part = 0;
+                      part < Math.ceil(draft.blob.size / VIDEO_PART_BYTES);
+                      part++
+                    ) {
+                      check();
+                      if (row.parts.includes(part)) continue;
+                      const blob = draft.blob.slice(
+                        part * VIDEO_PART_BYTES,
+                        (part + 1) * VIDEO_PART_BYTES,
+                      );
+                      await sendVideoPart(
+                        `${base}/${row.id}/parts/${part}${query}`,
+                        blob,
+                        controller.signal,
+                        (bytes) => {
+                          if (valid())
+                            progress(
+                              true,
+                              1 + (acknowledged + bytes) / draft.blob.size,
+                              2,
+                            );
+                        },
+                      );
+                      check();
+                      acknowledged += blob.size;
+                    }
+                  const saved = await call(`/${row.id}/finalize`, {
+                    method: 'POST',
+                    signal: controller.signal,
+                  });
+                  check();
+                  await store.current?.remove(id).catch(() => {});
+                  check();
+                  active.completed = true;
+                  onUploaded(saved);
+                  await refresh(controller.signal).catch(() => {});
+                  check();
+                  load(row.id);
+                } catch (cause) {
+                  if (!current(token, session)) return;
+                  if (
+                    controller.signal.aborted ||
+                    (cause instanceof DOMException &&
+                      cause.name === 'AbortError')
+                  )
+                    pause();
+                  else fail(videoError(cause));
+                } finally {
+                  if (active.controller === controller)
+                    active.controller = undefined;
+                  if (current(token, session)) setStage('');
+                }
+              };
+              serial.current = serial.current.then(task, task);
+              return {
+                abort: () => {
+                  active.paused = true;
+                  controller.abort();
+                  pause();
+                },
+              };
+            },
+          }}
+        />
+      )}
+      <Text size="xs" c="dimmed">
+        {m.videoLocalDraft}
+      </Text>
+      {stage && (
+        <Text size="sm" aria-live="polite">
+          {stage}
+        </Text>
+      )}
+      {unmatched.map((row) => (
+        <Group key={row.id}>
+          <Text size="sm">{m.videoIncomplete}</Text>
+          <Button
+            mih={44}
+            variant="subtle"
+            color="red"
+            onClick={() => {
+              const token = epoch.current,
+                session = sessionGeneration();
+              const entry = {
+                id: row.id,
+                epoch: token,
+                session,
+                draft: {
+                  id: row.id,
+                  name: '',
+                  blob: new Blob(),
+                  duration: 0,
+                  uploadId: row.id,
+                },
+              };
+              void discard(entry).catch(() => {
+                if (current(token, session)) setWarning(m.videoUploadError);
+              });
+            }}
+          >
+            {m.videoDiscard}
+          </Button>
+        </Group>
+      ))}
+    </Stack>
+  );
+}

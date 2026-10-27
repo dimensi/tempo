@@ -1,0 +1,60 @@
+.queue {
+  min-width: 0;
+}
+.queue :global(.filepond--root) {
+  font-family: inherit;
+  margin-bottom: 0;
+}
+.queue :global(.filepond--panel-root) {
+  background: var(--mantine-color-default);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+}
+.queue :global(.filepond--drop-label) {
+  color: var(--mantine-color-text);
+  min-height: 88px;
+}
+.queue :global(.filepond--label-action) {
+  color: var(--mantine-color-teal-text);
+  text-decoration-color: currentColor;
+  text-underline-offset: 3px;
+}
+.queue :global(.filepond--item-panel) {
+  background: var(--mantine-color-teal-9);
+}
+.queue :global(.filepond--file-action-button) {
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+}
+.queue :global(.filepond--file-action-button:focus-visible),
+.queue :global(.filepond--label-action:focus-visible) {
+  outline: 2px solid var(--mantine-color-teal-6);
+  outline-offset: 3px;
+}
+.queue :global(.filepond--file) {
+  padding-block: 12px;
+  min-height: 68px;
+}
+.queue :global(.filepond--file-info) {
+  min-width: 0;
+  margin-right: 60px;
+}
+.queue :global(.filepond--file-status) {
+  max-width: 50%;
+  margin-right: 52px;
+}
+.queue :global(.filepond--file-status-main),
+.queue :global(.filepond--file-status-sub) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queue :global(.filepond--file-info-sub),
+.queue :global(.filepond--file-status-sub) {
+  opacity: 1;
+}
+.queue :global([data-filepond-item-state*='error'] .filepond--item-panel),
+.queue :global([data-filepond-item-state*='invalid'] .filepond--item-panel) {
+  background: var(--mantine-color-red-9);
+}
