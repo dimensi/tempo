@@ -151,7 +151,7 @@ export const workoutMessages = {
   videoDiscard: 'Удалить черновик',
   videoPause: 'Остановить',
   videoHelp:
-    'До 5 минут, исходный файл до 1 ГиБ; до 8 роликов на упражнение. Сжатие на устройстве: MP4 / H.264, до 720p, 30 кадров/с. Доступ — у вас и разрешённого тренера. Держите экран открытым: при сворачивании работа остановится, загрузку можно продолжить.',
+    'До 8 видео на упражнение, каждое — до 5 минут и 1 ГиБ. Доступ — у вас и разрешённого тренера. При сворачивании страницы загрузка приостанавливается.',
   videoCompressing: 'Сжатие на устройстве…',
   videoUploading: 'Приватная загрузка…',
   videoProgress: 'Прогресс видео',
@@ -171,6 +171,9 @@ export const workoutMessages = {
   videoQueueSelect:
     'Перетащите видео или <span class="filepond--label-action" tabindex="0">выберите файлы</span>',
   videoQueueLimit: 'До 8 видео на упражнение.',
+  videoInvalidFiles: 'Не удалось добавить файлы. До 8 видео на упражнение.',
+  videoExpectedType: 'Выберите видеофайл.',
+  videoUploadFailed: 'Не удалось загрузить',
   videoWaiting: 'Ожидает очереди',
   videoUploaded: 'Загружено',
   videoLocalDraft:

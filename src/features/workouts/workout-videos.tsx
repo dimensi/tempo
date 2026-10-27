@@ -53,20 +53,23 @@ export function ExerciseVideos({
     const abort = new AbortController();
     const reset = () => {
       epoch.current++;
-      setGeneration(sessionGeneration());
-      setVideos([]);
+      if (generation !== sessionGeneration()) {
+        setGeneration(sessionGeneration());
+        setVideos([]);
+      }
       void refresh(abort.signal).catch(() => {});
     };
     void refresh(abort.signal).catch(() => {
       if (!abort.signal.aborted) setError(m.videoLoadError);
     });
     const stop = subscribeSessionReset(reset);
-    return () => {
+    const cleanup = () => {
       mounted.current = false;
       epoch.current++;
       abort.abort();
       stop();
     };
+    return cleanup;
     // Each scope has its own recordings and request generation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerId, sessionId, exerciseId]);
@@ -86,7 +89,11 @@ export function ExerciseVideos({
       }
     } catch (cause) {
       if (mounted.current && session === sessionGeneration())
-        setError(cause instanceof Error ? cause.message : m.videoUploadError);
+        setError(
+          cause instanceof Error && cause.message === m.forbidden
+            ? m.forbidden
+            : m.videoUploadError,
+        );
     }
   }
   if (generation !== sessionGeneration()) return null;
@@ -126,6 +133,13 @@ export function ExerciseVideos({
           exerciseId={exerciseId}
           videos={videos}
           refresh={refresh}
+          onUploaded={(video) => {
+            epoch.current++;
+            setVideos((rows) => [
+              ...rows.filter((row) => row.id !== video.id),
+              video,
+            ]);
+          }}
         />
       )}
     </Stack>

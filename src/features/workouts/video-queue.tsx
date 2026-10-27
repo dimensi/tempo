@@ -12,19 +12,39 @@ import {
   type VideoDraft,
 } from '@/lib/workout-video-draft';
 import { Alert, Button, Group, Stack, Text } from '@mantine/core';
-import type { FilePondFile, FilePondInitialFile } from 'filepond';
-import { FilePond } from 'react-filepond';
+import type { ActualFileObject, FilePondFile } from 'filepond';
+import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type';
+import { FilePond, registerPlugin } from 'react-filepond';
 import { useEffect, useRef, useState } from 'react';
 import 'filepond/dist/filepond.min.css';
 import { compressWorkoutVideo } from './compress-video';
 import { workoutMessages as m } from './messages';
 import { sendVideoPart } from './video-upload';
 import classes from './video-queue.module.css';
+registerPlugin(FilePondPluginFileValidateType);
+function videoError(cause: unknown) {
+  const known: string[] = [
+    m.forbidden,
+    m.conflict,
+    m.videoInputLimit,
+    m.videoDurationLimit,
+    m.videoUnsupported,
+    m.videoOutputLimit,
+    m.videoLoadError,
+  ];
+  return cause instanceof Error && known.includes(cause.message)
+    ? cause.message
+    : m.videoUploadError;
+}
 type Entry = {
   id: string;
+  epoch: number;
+  session: number;
   draft?: VideoDraft;
   restored?: boolean;
   completed?: boolean;
+  retained?: boolean;
+  paused?: boolean;
   controller?: AbortController;
 };
 export default function VideoQueue({
@@ -33,25 +53,32 @@ export default function VideoQueue({
   exerciseId,
   videos,
   refresh,
+  onUploaded,
 }: {
   ownerId: string;
   sessionId: string;
   exerciseId: string;
   videos: WorkoutVideo[];
   refresh: (signal?: AbortSignal) => Promise<WorkoutVideo[]>;
+  onUploaded: (video: WorkoutVideo) => void;
 }) {
   const pond = useRef<FilePond>(null);
   const entries = useRef(new Map<string, Entry>());
+  const restoredIds = useRef(new WeakMap<Blob, string>());
   const store = useRef<ReturnType<typeof createVideoDraftStore> | null>(null);
   const epoch = useRef(0);
   const serial = useRef<Promise<void>>(Promise.resolve());
   const [initialized, setInitialized] = useState(false);
   const [stage, setStage] = useState('');
   const alive = useRef(false);
-  const [initial, setInitial] = useState<FilePondInitialFile[]>([]);
+  const [initial, setInitial] = useState<ActualFileObject[]>([]);
   const [items, setItems] = useState<FilePondFile[]>([]);
+  const [draftUploads, setDraftUploads] = useState<
+    Record<string, string | undefined>
+  >({});
   const [warning, setWarning] = useState('');
   const [resetKey, setResetKey] = useState(0);
+  const [reinserting, setReinserting] = useState(false);
   const base = '/api/workouts/videos';
   const query = `?ownerId=${encodeURIComponent(ownerId)}`;
   const scope = `${ownerId}:${sessionId}:${exerciseId}`;
@@ -79,15 +106,22 @@ export default function VideoQueue({
         const files = rows.map((draft) => {
           entries.current.set(draft.id, {
             id: draft.id,
+            epoch: token,
+            session,
             draft,
             restored: true,
+            retained: true,
           });
-          return {
-            source: new File([draft.blob], draft.name, { type: 'video/mp4' }),
-            options: { metadata: { draftId: draft.id } },
-          };
+          const file = new File([draft.blob], draft.name, {
+            type: 'video/mp4',
+          });
+          restoredIds.current.set(file, draft.id);
+          return file;
         });
         setInitial(files);
+        setDraftUploads(
+          Object.fromEntries(rows.map((draft) => [draft.id, draft.uploadId])),
+        );
         setInitialized(true);
       })
       .catch(() => {
@@ -102,14 +136,15 @@ export default function VideoQueue({
       entries.current.clear();
       setInitial([]);
       setItems([]);
+      setDraftUploads({});
       setWarning('');
       setStage('');
+      setReinserting(false);
       setInitialized(true);
       setResetKey((key) => key + 1);
       store.current = createVideoDraftStore(scope);
     };
     const sessionReset = () => {
-      epoch.current++;
       stop();
     };
     const hidden = () => {
@@ -118,7 +153,7 @@ export default function VideoQueue({
     const unsubscribe = subscribeLocalDataReset(reset);
     const unsubscribeSession = subscribeSessionReset(sessionReset);
     document.addEventListener('visibilitychange', hidden);
-    return () => {
+    const cleanup = () => {
       alive.current = false;
       epoch.current++;
       stop();
@@ -126,9 +161,36 @@ export default function VideoQueue({
       unsubscribeSession();
       document.removeEventListener('visibilitychange', hidden);
     };
+    return cleanup;
     // Queue lifetime is the exercise/account scope.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope]);
+  useEffect(() => {
+    const readyIds = new Set(
+      videos.filter((row) => row.state === 'ready').map((row) => row.id),
+    );
+    const token = epoch.current,
+      session = sessionGeneration();
+    for (const item of items) {
+      const entry = entries.current.get(item.getMetadata('draftId'));
+      if (
+        !entry?.draft?.uploadId ||
+        entry.completed ||
+        !readyIds.has(entry.draft.uploadId)
+      )
+        continue;
+      // A lost finalize response must not leave a second, retryable copy of a ready video.
+      entry.completed = true;
+      entry.controller?.abort();
+      void store.current
+        ?.remove(entry.id)
+        .catch(() => {
+          if (current(token, session)) setWarning(m.videoNotRetained);
+        })
+        .then(() => {
+          if (current(token, session)) void pond.current?.removeFile(item.id);
+        });
+    }
+  }, [videos, items]);
   async function call(path: string, init: RequestInit) {
     const response = await apiFetch(`${base}${path}${query}`, {
       ...init,
@@ -148,28 +210,37 @@ export default function VideoQueue({
     const token = epoch.current,
       session = sessionGeneration();
     entry.controller?.abort();
-    if (entry.draft?.uploadId)
-      await call(`/${entry.draft.uploadId}`, { method: 'DELETE' });
+    if (entry.draft?.uploadId) {
+      const response = await apiFetch(
+        `${base}/${entry.draft.uploadId}${query}`,
+        { method: 'DELETE' },
+      );
+      if (!response.ok && response.status !== 404)
+        throw new Error(
+          response.status === 403 ? m.forbidden : m.videoUploadError,
+        );
+    }
     if (!current(token, session)) return false;
-    await store.current?.remove(entry.id);
+    if (entry.retained) await store.current?.remove(entry.id);
     if (!current(token, session)) return false;
     entries.current.delete(entry.id);
+    forgetUpload(entry.id);
     void refresh().catch(() => {});
     return true;
   }
-  const matched = new Set(
-    [...entries.current.values()]
-      .map((entry) => entry.draft?.uploadId)
-      .filter(Boolean),
-  );
+  function forgetUpload(id: string) {
+    setDraftUploads((uploads) => {
+      const next = { ...uploads };
+      delete next[id];
+      return next;
+    });
+  }
+  const matched = new Set(Object.values(draftUploads).filter(Boolean));
   const unmatched = videos.filter(
     (row) => row.state === 'uploading' && !matched.has(row.id),
   );
-  const ready = videos.filter((row) => row.state === 'ready').length;
-  const pending = items.filter(
-    (item) => !entries.current.get(item.getMetadata('draftId'))?.completed,
-  ).length;
-  const capacity = Math.max(pending, 8 - ready - unmatched.length);
+  const serverOnly = videos.filter((row) => !matched.has(row.id)).length;
+  const capacity = Math.max(items.length, 8 - serverOnly);
   if (generation !== sessionGeneration()) return null;
   return (
     <Stack gap="xs" className={classes.queue}>
@@ -181,18 +252,41 @@ export default function VideoQueue({
       <Text size="sm" c="dimmed">
         {m.videoQueueHelp}
       </Text>
+      <Text size="sm" c="dimmed">
+        {m.videoHelp}
+      </Text>
       {initialized && (
         <FilePond
           key={resetKey}
           ref={pond}
-          files={initial}
+          oninit={() => {
+            const token = epoch.current,
+              session = sessionGeneration();
+            if (initial.length)
+              void pond.current?.addFiles(initial).catch(() => {
+                if (current(token, session)) setWarning(m.videoInvalidFiles);
+              });
+          }}
           allowMultiple
+          acceptedFileTypes={['video/*']}
+          fileValidateTypeDetectType={(file, type) =>
+            Promise.resolve(
+              type ||
+                (/\.(mp4|m4v)$/i.test(file.name)
+                  ? 'video/mp4'
+                  : /\.mov$/i.test(file.name)
+                    ? 'video/quicktime'
+                    : type),
+            )
+          }
+          labelFileTypeNotAllowed={m.videoExpectedType}
+          fileValidateTypeLabelExpectedTypes={m.videoExpectedType}
           instantUpload
           maxParallelUploads={1}
           maxFiles={capacity}
-          allowBrowse={capacity > pending}
-          allowDrop={capacity > pending}
-          allowPaste={capacity > pending}
+          allowBrowse={!reinserting && capacity > items.length}
+          allowDrop={!reinserting && capacity > items.length}
+          allowPaste={!reinserting && capacity > items.length}
           allowRevert={false}
           allowProcess
           allowRemove
@@ -202,7 +296,19 @@ export default function VideoQueue({
           labelFileProcessing={m.videoUploading}
           labelFileProcessingComplete={m.videoUploaded}
           labelFileProcessingAborted={m.videoPaused}
-          labelFileProcessingError={m.videoUploadError}
+          labelFileProcessingError={(error: { body?: unknown }) =>
+            typeof error.body === 'string' && error.body !== m.videoUploadError
+              ? error.body
+              : m.videoUploadFailed
+          }
+          labelInvalidField={m.videoInvalidFiles}
+          labelFileLoading={m.videoWaiting}
+          labelFileLoadError={m.videoLoadError}
+          labelFileRemoveError={m.videoUploadError}
+          labelFileProcessingRevertError={m.videoUploadError}
+          labelButtonAbortItemLoad={m.videoPause}
+          labelButtonRetryItemLoad={m.videoResume}
+          labelButtonUndoItemProcessing={m.videoDiscard}
           labelTapToRetry={m.videoResume}
           labelTapToCancel={m.videoPause}
           labelTapToUndo=""
@@ -214,23 +320,58 @@ export default function VideoQueue({
           labelFileSizeNotAvailable={m.videoWaiting}
           beforeAddFile={(item) => {
             if (!item.getMetadata('draftId'))
-              item.setMetadata('draftId', crypto.randomUUID());
+              item.setMetadata(
+                'draftId',
+                restoredIds.current.get(item.file) ?? crypto.randomUUID(),
+              );
             return true;
           }}
           onupdatefiles={setItems}
+          onremovefile={(error, item) => {
+            const entry = entries.current.get(item.getMetadata('draftId'));
+            if (
+              error ||
+              !entry?.paused ||
+              entry.completed ||
+              !current(entry.epoch, entry.session)
+            )
+              return;
+            const token = entry.epoch,
+              session = entry.session;
+            // Instant-upload FilePond removes a cancelled item. Keep our resumable
+            // recording visible by restoring it as an explicitly paused entry.
+            const file = entry.draft
+              ? new File([entry.draft.blob], entry.draft.name, {
+                  type: 'video/mp4',
+                })
+              : item.file;
+            restoredIds.current.set(file, entry.id);
+            entry.restored = true;
+            entry.paused = false;
+            setReinserting(true);
+            void pond.current
+              ?.addFile(file)
+              .catch(() => {
+                if (current(token, session)) setWarning(m.videoInvalidFiles);
+              })
+              .finally(() => {
+                if (current(token, session)) setReinserting(false);
+              });
+          }}
           beforeRemoveFile={async (item) => {
+            const token = epoch.current,
+              session = sessionGeneration();
             const entry = entries.current.get(item.getMetadata('draftId'));
             if (!entry) return true;
             if (entry.completed) {
               entries.current.delete(entry.id);
+              forgetUpload(entry.id);
               return true;
             }
             try {
               return await discard(entry);
             } catch (cause) {
-              setWarning(
-                cause instanceof Error ? cause.message : m.videoUploadError,
-              );
+              if (current(token, session)) setWarning(videoError(cause));
               return false;
             }
           }}
@@ -259,29 +400,53 @@ export default function VideoQueue({
               item?.setMetadata('draftId', id);
               let entry = entries.current.get(id);
               if (!entry) {
-                entry = { id };
+                entry = {
+                  id,
+                  epoch: epoch.current,
+                  session: sessionGeneration(),
+                };
                 entries.current.set(id, entry);
               }
+              let paused = false;
+              const pause = () => {
+                if (paused) return;
+                paused = true;
+                aborted();
+              };
               if (entry.restored) {
                 entry.restored = false;
-                queueMicrotask(aborted);
-                return { abort: aborted };
+                queueMicrotask(pause);
+                const restored = entry;
+                return {
+                  abort: () => {
+                    restored.paused = true;
+                    pause();
+                  },
+                };
               }
               const active = entry;
+              active.paused = false;
               const controller = new AbortController();
               active.controller = controller;
               const token = epoch.current,
                 session = sessionGeneration();
               const valid = () =>
-                current(token, session) && !controller.signal.aborted;
+                current(token, session) &&
+                !controller.signal.aborted &&
+                !document.hidden;
               const check = () => {
                 if (!valid()) throw new DOMException('Aborted', 'AbortError');
               };
               const persist = async (draft: VideoDraft) => {
                 check();
                 active.draft = draft;
+                setDraftUploads((uploads) => ({
+                  ...uploads,
+                  [id]: draft.uploadId,
+                }));
                 try {
                   await store.current?.save(draft);
+                  active.retained = true;
                 } catch {
                   if (valid()) setWarning(m.videoNotRetained);
                 }
@@ -366,7 +531,7 @@ export default function VideoQueue({
                       check();
                       acknowledged += blob.size;
                     }
-                  await call(`/${row.id}/finalize`, {
+                  const saved = await call(`/${row.id}/finalize`, {
                     method: 'POST',
                     signal: controller.signal,
                   });
@@ -374,29 +539,31 @@ export default function VideoQueue({
                   await store.current?.remove(id).catch(() => {});
                   check();
                   active.completed = true;
+                  onUploaded(saved);
                   await refresh(controller.signal).catch(() => {});
                   check();
                   load(row.id);
                 } catch (cause) {
                   if (!current(token, session)) return;
-                  if (controller.signal.aborted) aborted();
-                  else
-                    fail(
-                      cause instanceof Error
-                        ? cause.message
-                        : m.videoUploadError,
-                    );
+                  if (
+                    controller.signal.aborted ||
+                    (cause instanceof DOMException &&
+                      cause.name === 'AbortError')
+                  )
+                    pause();
+                  else fail(videoError(cause));
                 } finally {
                   if (active.controller === controller)
                     active.controller = undefined;
-                  if (valid()) setStage('');
+                  if (current(token, session)) setStage('');
                 }
               };
               serial.current = serial.current.then(task, task);
               return {
                 abort: () => {
+                  active.paused = true;
                   controller.abort();
-                  aborted();
+                  pause();
                 },
               };
             },
@@ -419,8 +586,12 @@ export default function VideoQueue({
             variant="subtle"
             color="red"
             onClick={() => {
+              const token = epoch.current,
+                session = sessionGeneration();
               const entry = {
                 id: row.id,
+                epoch: token,
+                session,
                 draft: {
                   id: row.id,
                   name: '',
@@ -429,7 +600,9 @@ export default function VideoQueue({
                   uploadId: row.id,
                 },
               };
-              void discard(entry).catch(() => setWarning(m.videoUploadError));
+              void discard(entry).catch(() => {
+                if (current(token, session)) setWarning(m.videoUploadError);
+              });
             }}
           >
             {m.videoDiscard}

@@ -38,7 +38,23 @@
 }
 .queue :global(.filepond--file-info) {
   min-width: 0;
+  margin-right: 60px;
 }
 .queue :global(.filepond--file-status) {
   max-width: 50%;
+  margin-right: 52px;
+}
+.queue :global(.filepond--file-status-main),
+.queue :global(.filepond--file-status-sub) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queue :global(.filepond--file-info-sub),
+.queue :global(.filepond--file-status-sub) {
+  opacity: 1;
+}
+.queue :global([data-filepond-item-state*='error'] .filepond--item-panel),
+.queue :global([data-filepond-item-state*='invalid'] .filepond--item-panel) {
+  background: var(--mantine-color-red-9);
 }
