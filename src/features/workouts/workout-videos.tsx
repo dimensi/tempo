@@ -238,6 +238,10 @@ export function ExerciseVideos({
           exerciseId={exerciseId}
           videos={videos}
           refresh={refresh}
+          onRemoved={(id) => {
+            epoch.current++;
+            setVideos((rows) => rows.filter((row) => row.id !== id));
+          }}
           onUploaded={(video) => {
             epoch.current++;
             setVideos((rows) => [

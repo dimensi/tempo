@@ -51,6 +51,7 @@ export default function VideoQueue({
   videos,
   refresh,
   onUploaded,
+  onRemoved,
 }: {
   ownerId: string;
   sessionId: string;
@@ -58,6 +59,7 @@ export default function VideoQueue({
   videos: WorkoutVideo[];
   refresh: (signal?: AbortSignal) => Promise<WorkoutVideo[]>;
   onUploaded: (video: WorkoutVideo) => void;
+  onRemoved: (id: string) => void;
 }) {
   const pond = useRef<FilePond>(null);
   const entries = useRef(new Map<string, Entry>());
@@ -251,6 +253,7 @@ export default function VideoQueue({
     if (!current(token, session)) return false;
     entries.current.delete(entry.id);
     forgetUpload(entry.id);
+    if (entry.draft?.uploadId) onRemoved(entry.draft.uploadId);
     void refresh().catch(() => {});
     return true;
   }
@@ -673,16 +676,20 @@ export default function VideoQueue({
             color="red"
             mih={44}
             onClick={() => {
+              const token = epoch.current,
+                session = sessionGeneration();
               const entry = entries.current.get(draft.id);
               if (entry)
                 void discard(entry)
                   .then((removed) => {
-                    if (removed)
+                    if (removed && current(token, session))
                       setReselect((rows) =>
                         rows.filter((row) => row.id !== draft.id),
                       );
                   })
-                  .catch(() => setWarning(m.videoUploadError));
+                  .catch(() => {
+                    if (current(token, session)) setWarning(m.videoUploadError);
+                  });
             }}
           >
             {m.videoDiscard}
