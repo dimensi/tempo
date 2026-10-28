@@ -160,19 +160,14 @@ export default function VideoQueue({
     const sessionReset = () => {
       stop();
     };
-    const hidden = () => {
-      if (document.hidden) stop();
-    };
     const unsubscribe = subscribeLocalDataReset(reset);
     const unsubscribeSession = subscribeSessionReset(sessionReset);
-    document.addEventListener('visibilitychange', hidden);
     const cleanup = () => {
       alive.current = false;
       epoch.current++;
       stop();
       unsubscribe();
       unsubscribeSession();
-      document.removeEventListener('visibilitychange', hidden);
     };
     return cleanup;
     // Queue lifetime is the exercise/account scope.
@@ -492,9 +487,7 @@ export default function VideoQueue({
               const token = epoch.current,
                 session = sessionGeneration();
               const valid = () =>
-                current(token, session) &&
-                !controller.signal.aborted &&
-                !document.hidden;
+                current(token, session) && !controller.signal.aborted;
               const check = () => {
                 if (!valid()) throw new DOMException('Aborted', 'AbortError');
               };

@@ -144,7 +144,8 @@ export const workoutMessages = {
   catalogNext: 'Следующие упражнения',
   ownVideos: 'Видео выполнения',
   videoSelect: 'Выбрать видео',
-  videoUpload: 'Загрузить приватно',
+  videoUpload: 'Загрузить видео',
+  uploadedVideos: 'Загруженные видео',
   videoResume: 'Продолжить загрузку',
   videoDelete: 'Удалить видео',
   videoDiscard: 'Удалить черновик',
@@ -157,8 +158,8 @@ export const workoutMessages = {
   videoRetryShort: 'Повторить',
   videoPauseShort: 'Приостановить',
   videoHelp:
-    'Видео видны только вам и разрешённому тренеру. При сворачивании страницы загрузка приостанавливается.',
-  videoUploading: 'Приватная загрузка…',
+    'Видео видны только вам и разрешённому тренеру. При смене вкладки загрузка продолжается, пока браузер позволяет странице работать. Браузер может приостановить её в фоне.',
+  videoUploading: 'Загрузка видео…',
   videoProgress: 'Прогресс видео',
   videoProcessing: 'Сжатие на сервере…',
   videoProcessingFailed:

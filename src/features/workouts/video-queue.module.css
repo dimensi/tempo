@@ -25,11 +25,13 @@
   text-underline-offset: 3px;
 }
 .queue :global(.filepond--item-panel) {
-  background: var(--mantine-color-teal-9);
+  background: var(--mantine-color-default);
+  border: 1px solid var(--mantine-color-default-border);
 }
 /* FilePond animates text positions inline. The queue uses fixed control columns
    instead, so text never moves under an action when a file changes state. */
 .queue :global(.filepond--file) {
+  color: var(--mantine-color-text);
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) 44px;
   grid-template-rows: auto auto;
@@ -72,6 +74,10 @@
   text-overflow: ellipsis;
 }
 .queue :global(.filepond--file .filepond--file-action-button) {
+  color: var(--mantine-color-text);
+  background: var(--mantine-color-default);
+  border: 1px solid var(--mantine-color-default-border);
+  box-shadow: none;
   width: 44px;
   height: 44px;
   top: 12px;
@@ -82,12 +88,34 @@
   transform: none !important;
   cursor: pointer;
 }
+/* FilePond's abort buttons have no SVG: its default layout overlays the progress
+   ring on them. Our separate progress column needs an explicit pause symbol. */
+.queue :global(.filepond--action-abort-item-load)::before,
+.queue :global(.filepond--action-abort-item-processing)::before {
+  content: '';
+  display: block;
+  width: 12px;
+  height: 16px;
+  margin: auto;
+  border-inline: 4px solid currentColor;
+}
+.queue :global(.filepond--file .filepond--file-action-button:hover) {
+  background: var(--mantine-color-default-hover);
+}
+.queue :global(.filepond--file .filepond--file-action-button[disabled]) {
+  color: var(--mantine-color-dimmed);
+  cursor: default;
+}
+.queue :global(.filepond--file-action-button)::after {
+  inset: 0;
+}
 .queue :global(.filepond--file .filepond--action-remove-item) {
   left: 12px;
   right: auto;
 }
 .queue :global(.filepond--file .filepond--progress-indicator),
 .queue :global(.filepond--file .filepond--processing-complete-indicator) {
+  color: var(--mantine-color-text);
   left: 24px;
   right: auto;
   top: 68px;
@@ -101,7 +129,8 @@
 }
 .queue :global([data-filepond-item-state*='error'] .filepond--item-panel),
 .queue :global([data-filepond-item-state*='invalid'] .filepond--item-panel) {
-  background: var(--mantine-color-red-9);
+  background: var(--mantine-color-default);
+  border-color: var(--mantine-color-red-text);
 }
 .filename,
 .error {

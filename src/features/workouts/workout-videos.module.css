@@ -1,0 +1,10 @@
+/* visibility keeps FilePond's layout and scheduler alive; inert excludes controls
+   from keyboard interaction while the dialog is closed or another panel is shown. */
+.backgroundQueue {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 320px;
+  visibility: hidden;
+  pointer-events: none;
+}

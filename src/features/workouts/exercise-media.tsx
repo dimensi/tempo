@@ -8,26 +8,44 @@ import { ExerciseVideos } from './workout-videos';
 import { workoutMessages as m } from './messages';
 
 export function ExerciseMedia({
+  opened = true,
   ownerId,
   exercise,
   actual,
   session,
   canLog,
   onClose,
+  initialTab = 'technique',
+  onVideosChange,
 }: {
+  opened?: boolean;
   ownerId: string;
   exercise: WorkoutExercise;
   actual?: WorkoutExercise;
   session?: Workout;
   canLog: boolean;
   onClose: () => void;
+  initialTab?: 'technique' | 'own';
+  onVideosChange?: (exerciseId: string, hasVideos: boolean) => void;
 }) {
-  const [tab, setTab] = useState('technique');
+  const [tab, setTab] = useState(initialTab);
+  const [ownVisited, setOwnVisited] = useState(initialTab === 'own');
+  const [wasOpened, setWasOpened] = useState(opened);
+  // Reset the selected tab on reopening without remounting the upload queue.
+  if (wasOpened !== opened) {
+    setWasOpened(opened);
+    if (opened) {
+      setTab(initialTab);
+      if (initialTab === 'own') setOwnVisited(true);
+    }
+  }
   const mobile = useMediaQuery('(max-width: 48em)');
   const reduceMotion = useReducedMotion();
   return (
     <Modal
-      opened
+      opened={opened}
+      keepMounted
+      keepMountedMode="display-none"
       onClose={onClose}
       title={exercise.name}
       fullScreen={mobile}
@@ -40,7 +58,10 @@ export function ExerciseMedia({
         <SegmentedControl
           fullWidth
           value={tab}
-          onChange={setTab}
+          onChange={(value) => {
+            setTab(value as 'technique' | 'own');
+            if (value === 'own') setOwnVisited(true);
+          }}
           data={[
             { value: 'technique', label: m.technique },
             { value: 'own', label: m.myVideos },
@@ -54,25 +75,32 @@ export function ExerciseMedia({
             },
           }}
         />
-        {tab === 'technique' ? (
-          exercise.transformMate ? (
+        {opened &&
+          tab === 'technique' &&
+          (exercise.transformMate ? (
             <ExerciseDetails
               ownerId={ownerId}
               exerciseId={exercise.transformMate.exerciseId}
             />
           ) : (
             <Text c="dimmed">{m.noTechnique}</Text>
-          )
-        ) : session && actual?.id ? (
-          <ExerciseVideos
-            ownerId={ownerId}
-            sessionId={session.id}
-            exerciseId={actual.id}
-            name={actual.name}
-            canUpload={canLog && session.status === 'completed'}
-          />
-        ) : (
-          <Text c="dimmed">{m.ownVideoAfterSave}</Text>
+          ))}
+        {(ownVisited || (opened && tab === 'own')) && (
+          <div hidden={!opened || tab !== 'own'}>
+            {session && actual?.id ? (
+              <ExerciseVideos
+                ownerId={ownerId}
+                sessionId={session.id}
+                exerciseId={actual.id}
+                name={actual.name}
+                visible={opened && tab === 'own'}
+                onVideosChange={onVideosChange}
+                canUpload={canLog && session.status === 'completed'}
+              />
+            ) : (
+              <Text c="dimmed">{m.ownVideoAfterSave}</Text>
+            )}
+          </div>
         )}
       </Stack>
     </Modal>
