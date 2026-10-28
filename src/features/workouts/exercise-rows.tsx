@@ -30,6 +30,7 @@ import type {
   Workout,
 } from '@/contracts/workouts';
 import type { DraftExercise } from './workout-draft';
+import { useUploadedVideos } from './use-uploaded-videos';
 import { ExerciseMedia } from './exercise-media';
 import { workoutMessages as m } from './messages';
 import styles from './day-workout.module.css';
@@ -61,10 +62,29 @@ export function ExerciseRows({
   showValidation?: boolean;
   removalPending?: boolean;
 }) {
-  const [media, setMedia] = useState<{
+  type MediaEntry = {
+    key: string;
+    scope: string;
     exercise: DraftExercise;
     actual?: WorkoutExercise;
-  } | null>(null);
+    initialTab: 'technique' | 'own';
+  };
+  const [media, setMedia] = useState<MediaEntry[]>([]);
+  const [openedMedia, setOpenedMedia] = useState<string | null>(null);
+  const mediaScope = `${ownerId}:${session?.id}`;
+  const showMedia = (
+    exercise: DraftExercise,
+    actual: WorkoutExercise | undefined,
+    key: string,
+    initialTab: 'technique' | 'own' = 'technique',
+  ) => {
+    const mediaKey = `${mediaScope}:${key}`;
+    setMedia((rows) => [
+      ...rows.filter((row) => row.scope === mediaScope && row.key !== mediaKey),
+      { key: mediaKey, scope: mediaScope, exercise, actual, initialTab },
+    ]);
+    setOpenedMedia(mediaKey);
+  };
   const mobile = useMediaQuery('(max-width: 47.99em)');
   const [actions, setActions] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -81,6 +101,7 @@ export function ExerciseRows({
     }
   }, [exercises]);
   const online = useReadOnline();
+  const uploaded = useUploadedVideos(ownerId, session?.id);
   const recorded = exercises.map((exercise) =>
     session?.exercises.find((item) => item.id === exercise.id),
   );
@@ -99,7 +120,7 @@ export function ExerciseRows({
       {exercises.map((exercise, index) => {
         const key =
           exercise.id ?? exercise.transformMate?.occurrenceKey ?? `${index}`;
-        const openMedia = () => setMedia({ exercise, actual: recorded[index] });
+        const openMedia = () => showMedia(exercise, recorded[index], key);
         const titleParts = /^(.*?)\s*(\([^)]*\))$/.exec(exercise.name);
         const existingOccurrence = Boolean(
           session &&
@@ -234,6 +255,18 @@ export function ExerciseRows({
                   </Menu>
                 ))}
             </Group>
+            {exercise.id && uploaded.ids.has(exercise.id) && (
+              <Button
+                variant="light"
+                size="sm"
+                mb="xs"
+                leftSection={<IconPlayerPlay size={18} />}
+                aria-label={`${m.uploadedVideos}: ${exercise.name}`}
+                onClick={() => showMedia(exercise, recorded[index], key, 'own')}
+              >
+                {m.uploadedVideos}
+              </Button>
+            )}
             <div
               className={`${styles.setHeading} ${onChange ? styles.withSetActions : ''}`}
               aria-hidden
@@ -493,22 +526,37 @@ export function ExerciseRows({
           </section>
         );
       })}
-      {media && (
-        <ExerciseMedia
-          ownerId={ownerId}
-          exercise={{
-            ...media.exercise,
-            sets: media.exercise.sets.map((set) => ({
-              reps: typeof set.reps === 'number' ? set.reps : 1,
-              weightKg: typeof set.weightKg === 'number' ? set.weightKg : null,
-            })),
-          }}
-          actual={media.actual}
-          session={session}
-          canLog={canLog}
-          onClose={() => setMedia(null)}
-        />
-      )}
+      {media
+        .filter(
+          (entry) =>
+            entry.scope === mediaScope &&
+            exercises.some(
+              (exercise, index) =>
+                `${mediaScope}:${exercise.id ?? exercise.transformMate?.occurrenceKey ?? `${index}`}` ===
+                entry.key,
+            ),
+        )
+        .map((entry) => (
+          <ExerciseMedia
+            key={entry.key}
+            opened={openedMedia === entry.key}
+            ownerId={ownerId}
+            exercise={{
+              ...entry.exercise,
+              sets: entry.exercise.sets.map((set) => ({
+                reps: typeof set.reps === 'number' ? set.reps : 1,
+                weightKg:
+                  typeof set.weightKg === 'number' ? set.weightKg : null,
+              })),
+            }}
+            actual={entry.actual}
+            session={session}
+            canLog={canLog}
+            initialTab={entry.initialTab}
+            onVideosChange={uploaded.update}
+            onClose={() => setOpenedMedia(null)}
+          />
+        ))}
     </Stack>
   );
 }

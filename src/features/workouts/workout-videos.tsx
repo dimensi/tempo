@@ -5,27 +5,77 @@ import { subscribeSessionReset } from '@/lib/offline-device';
 import { sessionGeneration } from '@/lib/session-state';
 import { Alert, Button, Group, Progress, Stack, Text } from '@mantine/core';
 import dynamic from 'next/dynamic';
-import { useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+} from 'react';
+import { createPortal } from 'react-dom';
+import classes from './workout-videos.module.css';
 import { workoutMessages as m } from './messages';
 import { TeachingVideo } from './teaching-video';
 const VideoQueue = dynamic(() => import('./video-queue'), { ssr: false });
+// Keep FilePond laid out even while its dialog is hidden: its scheduler flushes
+// queued work through the view loop. Moving a stable portal host preserves jobs.
+function PersistentVideoQueue({
+  visible,
+  ...props
+}: ComponentProps<typeof VideoQueue> & { visible: boolean }) {
+  const anchor = useRef<HTMLDivElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  const attach = useCallback((node: HTMLDivElement | null) => {
+    anchor.current = node;
+    if (!node) return;
+    const container = document.createElement('div');
+    hostRef.current = container;
+    setHost(container);
+    return () => {
+      hostRef.current = null;
+      container.remove();
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const container = hostRef.current;
+    if (!container) return;
+    container.className = visible ? '' : (classes.backgroundQueue ?? '');
+    container.inert = !visible;
+    if (visible) container.removeAttribute('aria-hidden');
+    else container.setAttribute('aria-hidden', 'true');
+    (visible ? anchor.current : document.body)?.appendChild(container);
+  }, [host, visible]);
+  return (
+    <>
+      <div ref={attach} />
+      {host && createPortal(<VideoQueue {...props} />, host)}
+    </>
+  );
+}
 export function ExerciseVideos({
   ownerId,
   sessionId,
   exerciseId,
   name,
   canUpload,
+  visible = true,
+  onVideosChange,
 }: {
   ownerId: string;
   sessionId: string;
   exerciseId: string;
   name: string;
   canUpload: boolean;
+  visible?: boolean;
+  onVideosChange?: (exerciseId: string, hasVideos: boolean) => void;
 }) {
   const [videos, setVideos] = useState<WorkoutVideo[]>([]);
   const [error, setError] = useState('');
   const [generation, setGeneration] = useState(sessionGeneration);
   const mounted = useRef(false);
+  const loaded = useRef(false);
   const epoch = useRef(0);
   const base = '/api/workouts/videos';
   const query = `?ownerId=${encodeURIComponent(ownerId)}`;
@@ -43,6 +93,7 @@ export function ExerciseVideos({
       token === epoch.current &&
       session === sessionGeneration()
     ) {
+      loaded.current = true;
       setVideos(rows.filter((row) => row.exerciseId === exerciseId));
       setError('');
     }
@@ -50,6 +101,7 @@ export function ExerciseVideos({
   }
   useEffect(() => {
     mounted.current = true;
+    loaded.current = false;
     const abort = new AbortController();
     const reset = () => {
       epoch.current++;
@@ -123,6 +175,16 @@ export function ExerciseVideos({
         setError(m.videoUploadError);
     }
   }
+  useEffect(() => {
+    if (loaded.current && generation === sessionGeneration()) {
+      onVideosChange?.(
+        exerciseId,
+        videos.some(
+          (row) => row.exerciseId === exerciseId && row.state !== 'uploading',
+        ),
+      );
+    }
+  }, [videos, exerciseId, generation, onVideosChange]);
   async function remove(id: string) {
     const token = epoch.current,
       session = sessionGeneration();
@@ -164,74 +226,78 @@ export function ExerciseVideos({
           {error}
         </Alert>
       )}
-      {videos
-        .filter((row) => row.state !== 'uploading')
-        .map((row) => (
-          <Stack key={row.id}>
-            <Text fw={600} style={{ overflowWrap: 'anywhere' }}>
-              {row.name || name}
-            </Text>
-            <Text
-              component="time"
-              dateTime={new Date(row.recordedAt ?? row.createdAt).toISOString()}
-              size="sm"
-              c="dimmed"
-            >
-              {row.recordedAt === null ? m.videoAddedAt : m.videoRecordedAt}:{' '}
-              {new Date(row.recordedAt ?? row.createdAt).toLocaleString(
-                'ru-RU',
-              )}
-            </Text>
-            {row.state === 'ready' && (
-              <TeachingVideo
-                src={`${base}/${row.id}/playback${query}`}
-                label={`${m.ownVideos}: ${name}`}
-                compact
-              />
-            )}
-            {row.state === 'processing' && (
-              <Stack gap={4}>
-                <Text size="sm">
-                  {m.videoProcessing} {Math.round(row.progress * 100)}%
-                </Text>
-                <Progress
-                  value={row.progress * 100}
-                  aria-label={m.videoProgress}
-                />
-              </Stack>
-            )}
-            {row.state === 'failed' && (
-              <Alert color="red">
-                {row.error === 'invalid'
-                  ? m.videoInvalid
-                  : m.videoProcessingFailed}
-              </Alert>
-            )}
-            {canUpload && (
-              <Group>
-                {row.state === 'failed' && (
-                  <Button
-                    variant="default"
-                    mih={44}
-                    onClick={() => void retry(row.id)}
-                  >
-                    {m.videoRetryShort}
-                  </Button>
+      {visible &&
+        videos
+          .filter((row) => row.state !== 'uploading')
+          .map((row) => (
+            <Stack key={row.id}>
+              <Text fw={600} style={{ overflowWrap: 'anywhere' }}>
+                {row.name || name}
+              </Text>
+              <Text
+                component="time"
+                dateTime={new Date(
+                  row.recordedAt ?? row.createdAt,
+                ).toISOString()}
+                size="sm"
+                c="dimmed"
+              >
+                {row.recordedAt === null ? m.videoAddedAt : m.videoRecordedAt}:{' '}
+                {new Date(row.recordedAt ?? row.createdAt).toLocaleString(
+                  'ru-RU',
                 )}
-                <Button
-                  variant="subtle"
-                  color="red"
-                  mih={44}
-                  onClick={() => void remove(row.id)}
-                >
-                  {m.videoDelete}
-                </Button>
-              </Group>
-            )}
-          </Stack>
-        ))}
+              </Text>
+              {row.state === 'ready' && (
+                <TeachingVideo
+                  src={`${base}/${row.id}/playback${query}`}
+                  label={`${m.ownVideos}: ${name}`}
+                  compact
+                />
+              )}
+              {row.state === 'processing' && (
+                <Stack gap={4}>
+                  <Text size="sm">
+                    {m.videoProcessing} {Math.round(row.progress * 100)}%
+                  </Text>
+                  <Progress
+                    value={row.progress * 100}
+                    aria-label={m.videoProgress}
+                  />
+                </Stack>
+              )}
+              {row.state === 'failed' && (
+                <Alert color="red">
+                  {row.error === 'invalid'
+                    ? m.videoInvalid
+                    : m.videoProcessingFailed}
+                </Alert>
+              )}
+              {canUpload && (
+                <Group>
+                  {row.state === 'failed' && (
+                    <Button
+                      variant="default"
+                      mih={44}
+                      onClick={() => void retry(row.id)}
+                    >
+                      {m.videoRetryShort}
+                    </Button>
+                  )}
+                  <Button
+                    variant="subtle"
+                    color="red"
+                    mih={44}
+                    onClick={() => void remove(row.id)}
+                  >
+                    {m.videoDelete}
+                  </Button>
+                </Group>
+              )}
+            </Stack>
+          ))}
       {canUpload && (
-        <VideoQueue
+        <PersistentVideoQueue
+          visible={visible}
           key={`${ownerId}:${sessionId}:${exerciseId}:${generation}`}
           ownerId={ownerId}
           sessionId={sessionId}
@@ -244,6 +310,7 @@ export function ExerciseVideos({
           }}
           onUploaded={(video) => {
             epoch.current++;
+            loaded.current = true;
             setVideos((rows) => [
               ...rows.filter((row) => row.id !== video.id),
               video,

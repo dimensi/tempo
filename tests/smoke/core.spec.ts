@@ -521,6 +521,11 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   const completed = (await readWorkout())!;
   expect(completed.status).toBe('completed');
 
+  const uploadedVideos = page.getByRole('button', {
+    name: 'Загруженные видео: Smoke squat',
+    exact: true,
+  });
+  await expect(uploadedVideos).toHaveCount(0);
   // Selecting multiple files must retain independent upload identities and players.
   await page
     .getByRole('button', { name: 'Техника: Smoke squat', exact: true })
@@ -554,11 +559,23 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   };
   page.on('request', captureVideoRequest);
   page.on('response', captureFinalize);
-  const uploadStarted = page.waitForRequest(
-    (request) =>
-      new URL(request.url()).pathname === '/api/workouts/videos' &&
-      request.method() === 'POST',
-  );
+  let releasePart!: () => void;
+  let partStarted!: () => void;
+  const partGate = new Promise<void>((resolve) => {
+    releasePart = resolve;
+  });
+  const firstPart = new Promise<void>((resolve) => {
+    partStarted = resolve;
+  });
+  let heldPart = false;
+  await page.route('**/api/workouts/videos/*/parts/*', async (route) => {
+    if (!heldPart) {
+      heldPart = true;
+      partStarted();
+      await partGate;
+    }
+    await route.continue();
+  });
   await ownVideos.locator('input[type="file"]').setInputFiles([
     {
       name: 'smoke-first.mov',
@@ -571,7 +588,19 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       buffer: videoBuffer,
     },
   ]);
-  await uploadStarted;
+  await firstPart;
+  // Changing panels, closing the dialog and hiding the browser tab must not abort.
+  await page.getByText('Техника', { exact: true }).click();
+  await page.getByText('Мои видео', { exact: true }).click();
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      value: true,
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  releasePart();
   const readVideos = async () => {
     const response = await page.request.get(
       `/api/workouts/videos?ownerId=${owner}&sessionId=${completed.id}`,
@@ -581,6 +610,17 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       (video) => video.exerciseId === completed.exercises[0]!.id,
     );
   };
+  await expect
+    .poll(async () =>
+      (await readVideos()).some((video) => video.state === 'ready'),
+    )
+    .toBe(true);
+  // A background browser may defer the next upload. Returning must resume
+  // the queue automatically while the media dialog remains closed.
+  await page.evaluate(() => {
+    Reflect.deleteProperty(document, 'hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
   await expect
     .poll(
       async () => {
@@ -593,6 +633,9 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       { timeout: 15_000 },
     )
     .toBe(true);
+  await page.unroute('**/api/workouts/videos/*/parts/*');
+  await expect(uploadedVideos).toBeVisible();
+  await uploadedVideos.click();
   page.off('request', captureVideoRequest);
   page.off('response', captureFinalize);
   expect(createPayloads).toHaveLength(2);
@@ -688,13 +731,18 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .poll(async () => (await readVideos()).map((video) => video.id))
     .toEqual([retainedVideo.id]);
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await page
-    .getByRole('button', { name: 'Техника: Smoke squat', exact: true })
-    .click();
-  await page.getByText('Мои видео', { exact: true }).click();
+  await expect(uploadedVideos).toBeVisible();
+  await page.reload();
+  await expect(uploadedVideos).toBeVisible();
+  await uploadedVideos.click();
   await expect(players).toHaveCount(1);
   await expect(players).toHaveAttribute('src', playbackSources[1]!);
+  await ownVideos
+    .getByRole('button', { name: 'Удалить видео', exact: true })
+    .click();
+  await expect(players).toHaveCount(0);
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await expect(uploadedVideos).toHaveCount(0);
   await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
   await expect(firstReps).toHaveValue('10');
   await expect(firstWeight).toHaveValue('20');
