@@ -616,7 +616,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     expect(video.error).toBeNull();
     expect(video.recordedAt).toBe(Date.parse('2026-10-01T10:00:00Z'));
     await expect(
-      ownVideos.getByText(video.name, { exact: true }),
+      ownVideos.getByRole('paragraph').filter({ hasText: video.name }),
     ).toBeVisible();
   }
   await expect(

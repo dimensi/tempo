@@ -415,20 +415,22 @@ export function kickWorkoutVideoProcessing() {
         ),
       )
       .all();
-    for (const row of expired)
+    for (const row of expired) {
       await withSessionVideoLock(row.ownerId, row.workoutId, () =>
         cleanupVideoRows([row]),
-      );
+      ).catch(() => {}); // Retry cleanup next pass without blocking unrelated uploads.
+    }
     const ready = getDatabase()
       .db.select()
       .from(workoutVideos)
       .where(and(eq(workoutVideos.state, 'ready'), ne(workoutVideos.parts, {})))
       .limit(10)
       .all();
-    for (const row of ready)
+    for (const row of ready) {
       await withSessionVideoLock(row.ownerId, row.workoutId, () =>
         serialize(row.id, () => cleanupReadyVideoParts(row)),
-      );
+      ).catch(() => {});
+    }
     for (;;) {
       const row = getDatabase()
         .db.select()
