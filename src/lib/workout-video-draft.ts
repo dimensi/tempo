@@ -1,9 +1,11 @@
-// Only compressed uploads are retained; original camera files stay in memory.
+// New originals retain metadata only; existing compressed draft blobs remain readable.
 export interface VideoDraft {
   id: string;
   name: string;
-  blob: Blob;
-  duration: number;
+  size: number;
+  lastModified?: number;
+  blob?: Blob;
+  duration?: number;
   uploadId?: string;
 }
 interface StoredVideoDraft extends VideoDraft {
@@ -101,12 +103,14 @@ export function createVideoDraftStore(scope: string) {
       )) as StoredVideoDraft[];
       return rows
         .filter((row) => row.expiresAt > Date.now())
-        .map(({ id, name, blob, duration, uploadId }) => ({
+        .map(({ id, name, blob, duration, uploadId, size, lastModified }) => ({
           id,
           name,
           blob,
           duration,
           uploadId,
+          size: size ?? blob?.size ?? 0,
+          lastModified,
         }));
     },
     async save(value: VideoDraft): Promise<void> {
