@@ -22,7 +22,24 @@ import {
 import { videoRange } from './video-range';
 import { checkWorkoutOrigin, readWorkoutJson } from './http';
 
-const locks = new Map<string, Promise<unknown>>();
+// Instrumentation and route handlers can be emitted as separate module factories.
+// Their queue, cancellation and parent-write locks must still share one process state.
+const host = globalThis as unknown as {
+  workoutVideoRuntime?: {
+    locks: Map<string, Promise<unknown>>;
+    controllers: Map<string, AbortController>;
+    processing?: Promise<void>;
+    initialized: boolean;
+    timer?: ReturnType<typeof setInterval>;
+  };
+};
+const runtime: NonNullable<typeof host.workoutVideoRuntime> =
+  (host.workoutVideoRuntime ??= {
+    locks: new Map(),
+    controllers: new Map(),
+    initialized: false,
+  });
+const locks = runtime.locks;
 async function serialize<T>(id: string, action: () => Promise<T>): Promise<T> {
   const previous = locks.get(id) ?? Promise.resolve();
   const task = previous.catch(() => {}).then(action);
@@ -394,16 +411,14 @@ export async function cleanupVideoRows(rows: Row[]) {
     });
 }
 
-const processingControllers = new Map<string, AbortController>();
-let processing: Promise<void> | undefined;
-let initialized = false;
+const processingControllers = runtime.controllers;
 /** Durable state is the queue; a restart retries processing rows from their verified source parts. */
 export function kickWorkoutVideoProcessing() {
-  if (processing) return;
-  processing = (async () => {
-    if (!initialized) {
+  if (runtime.processing) return;
+  runtime.processing = (async () => {
+    if (!runtime.initialized) {
       await rm(workoutVideoTemporaryRoot(), { recursive: true, force: true });
-      initialized = true;
+      runtime.initialized = true;
     }
     const expired = getDatabase()
       .db.select()
@@ -446,12 +461,13 @@ export function kickWorkoutVideoProcessing() {
       // Storage/DB outages retain the durable queue for the next bounded worker pass.
     })
     .finally(() => {
-      processing = undefined;
+      runtime.processing = undefined;
     });
 }
 export function startWorkoutVideoWorker() {
+  if (runtime.timer) return runtime.timer;
   kickWorkoutVideoProcessing();
-  const timer = setInterval(kickWorkoutVideoProcessing, 5000);
+  const timer = (runtime.timer = setInterval(kickWorkoutVideoProcessing, 5000));
   timer.unref();
   return timer;
 }
