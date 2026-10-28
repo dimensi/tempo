@@ -68,6 +68,38 @@ async function inspect(path: string, signal: AbortSignal): Promise<MediaInfo> {
     throw new VideoProcessingError('invalid');
   }
 }
+async function firstFrameTransfer(
+  path: string,
+  index: number,
+  signal: AbortSignal,
+) {
+  const { stdout } = await exec(
+    'ffprobe',
+    [
+      '-v',
+      'error',
+      '-protocol_whitelist',
+      'file',
+      '-format_whitelist',
+      formats,
+      '-select_streams',
+      String(index),
+      '-read_intervals',
+      '%+#1',
+      '-show_frames',
+      '-show_entries',
+      'frame=color_transfer',
+      '-of',
+      'json',
+      path,
+    ],
+    { signal, timeout: 30_000, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 },
+  );
+  const result = JSON.parse(stdout) as {
+    frames?: { color_transfer?: string }[];
+  };
+  return result.frames?.[0]?.color_transfer;
+}
 function date(value: string | undefined) {
   const time = value ? Date.parse(value) : NaN;
   return Number.isFinite(time) && time >= 0 && time <= Date.now() + 86_400_000
@@ -176,11 +208,16 @@ export async function transcodeWorkoutVideo(
     )
       throw new VideoProcessingError('invalid');
     // Scale after FFmpeg's display-matrix autorotation, including portrait iPhone MOVs.
+    // HEVC can carry HDR transfer tags only in the coded first frame.
+    const transfer =
+      video.color_transfer ??
+      (await firstFrameTransfer(input, video.index, source.signal));
+    const hdr = ['smpte2084', 'arib-std-b67'].includes(transfer ?? '');
     const filters = [
       "scale=w='if(gte(iw,ih),min(1280,iw),min(720,iw))':h='if(gte(iw,ih),min(720,ih),min(1280,ih))':force_original_aspect_ratio=decrease:force_divisible_by=2",
       'setsar=1',
       'fps=30',
-      ...(['smpte2084', 'arib-std-b67'].includes(video.color_transfer ?? '')
+      ...(hdr
         ? [
             'zscale=transfer=linear:npl=100',
             'format=gbrpf32le',
@@ -223,6 +260,16 @@ export async function transcodeWorkoutVideo(
         'veryfast',
         '-crf',
         '24',
+        ...(hdr
+          ? [
+              '-color_trc',
+              'bt709',
+              '-colorspace',
+              'bt709',
+              '-color_primaries',
+              'bt709',
+            ]
+          : []),
         '-maxrate',
         '2500k',
         '-bufsize',
