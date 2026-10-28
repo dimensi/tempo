@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core';
 import { user } from '@/server/db/schema';
 import { workouts } from './workouts';
 export const workoutVideos = sqliteTable(
@@ -14,7 +14,12 @@ export const workoutVideos = sqliteTable(
     exerciseId: text('exercise_id').notNull(),
     size: integer('size').notNull(),
     duration: integer('duration').notNull(),
-    state: text('state', { enum: ['uploading', 'ready'] }).notNull(),
+    state: text('state', { enum: ['uploading', 'processing', 'ready', 'failed'] }).notNull(),
+    name: text('name'),
+    recordedAt: integer('recorded_at'),
+    playbackSize: integer('playback_size'),
+    processingProgress: real('processing_progress').notNull().default(0),
+    processingError: text('processing_error', { enum: ['invalid', 'processing'] }),
     parts: text('parts', { mode: 'json' })
       .$type<Record<string, string>>()
       .notNull(),

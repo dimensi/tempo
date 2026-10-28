@@ -1,6 +1,7 @@
 import 'server-only';
 import { randomUUID, createHash } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, asc } from 'drizzle-orm';
+import { rm } from 'node:fs/promises';
 import { z } from 'zod';
 import { authorize } from '@/server/auth/guards';
 import { getDatabase } from '@/server/db';
@@ -13,7 +14,7 @@ import {
   type WorkoutVideo,
 } from '@/contracts/workout-videos';
 import { WorkoutAccessError, WorkoutError } from './index';
-import { validateWorkoutVideo } from './video-validation';
+import { transcodeWorkoutVideo, VideoProcessingError, workoutVideoTemporaryRoot } from './video-processing';
 import { videoRange } from './video-range';
 import { checkWorkoutOrigin, readWorkoutJson } from './http';
 
@@ -57,6 +58,12 @@ const dto = (row: Row): WorkoutVideo => ({
   duration: row.duration,
   state: row.state,
   parts: Object.keys(row.parts).map(Number),
+  name: row.name ?? '',
+  recordedAt: row.recordedAt,
+  createdAt: row.createdAt,
+  playbackSize: row.playbackSize ?? (row.state === 'ready' ? row.size : null),
+  progress: row.state === 'ready' ? 1 : row.processingProgress,
+  error: row.processingError,
 });
 async function access(request: Request, write: boolean) {
   if (write) checkWorkoutOrigin(request);
@@ -136,7 +143,7 @@ export async function createVideo(request: Request) {
         existing.workoutId !== input.sessionId ||
         existing.exerciseId !== input.exerciseId ||
         existing.size !== input.size ||
-        existing.duration !== Math.ceil(input.duration)
+        (existing.name ?? '') !== input.name
       )
         throw new WorkoutError(409);
       return dto(existing);
@@ -149,7 +156,7 @@ export async function createVideo(request: Request) {
     await cleanupVideoRows(
       rows.filter(
         (row) =>
-          row.state === 'uploading' &&
+          row.state !== 'ready' &&
           row.createdAt < Date.now() - 24 * 60 * 60 * 1000,
       ),
     );
@@ -160,7 +167,7 @@ export async function createVideo(request: Request) {
     );
     // Bounded owner quota, including abandoned attempts; no unbounded private object growth.
     if (
-      currentRows.filter((row) => row.state === 'uploading').length >= 10 ||
+      currentRows.filter((row) => row.state !== 'ready').length >= 10 ||
       currentRows.filter(
         (row) =>
           row.workoutId === input.sessionId &&
@@ -177,7 +184,9 @@ export async function createVideo(request: Request) {
           size: input.size,
           id,
           ownerId,
-          duration: Math.ceil(input.duration),
+          duration: 0,
+          name: input.name,
+          recordedAt: input.lastModified && input.lastModified <= Date.now() + 86_400_000 ? input.lastModified : null,
           state: 'uploading',
           parts: {},
           createdAt: Date.now(),
@@ -249,38 +258,20 @@ export async function finalizeVideo(request: Request, id: string) {
   return serializeVideoWrite(request, id, async () => {
     const row = await rowFor(request, id, true);
     if (row.state === 'ready') return dto(await cleanupReadyVideoParts(row));
+    if (row.state === 'processing') {
+      kickWorkoutVideoProcessing();
+      return dto(row);
+    }
     const count = Math.ceil(row.size / VIDEO_PART_BYTES);
     if (Object.keys(row.parts).length !== count) throw new WorkoutError(409);
-    const storage = getObjectStorage();
-    async function* chunks() {
-      for (let part = 0; part < count; part++) {
-        await rowFor(request, id, true);
-        const bytes = await storage.get(key(row, part));
-        if (
-          createHash('sha256').update(bytes).digest('hex') !== row.parts[part]
-        )
-          throw new WorkoutError(409);
-        yield bytes;
-      }
-    }
-    const duration = await validateWorkoutVideo(row.size, async (part) => {
-      await rowFor(request, id, true);
-      return storage.get(key(row, part));
-    });
-    await storage.putStream(key(row), chunks(), row.size, 'video/mp4');
-    try {
-      await rowFor(request, id, true);
-    } catch (error) {
-      await storage.remove(key(row));
-      throw error;
-    }
     const saved = getDatabase()
       .db.update(workoutVideos)
-      .set({ state: 'ready', duration })
+      .set({ state: 'processing', processingProgress: 0, processingError: null })
       .where(eq(workoutVideos.id, id))
       .returning()
       .get();
-    return dto(await cleanupReadyVideoParts(saved));
+    kickWorkoutVideoProcessing();
+    return dto(saved);
   });
 }
 /** Keep the complete part manifest until all idempotent removals succeed. */
@@ -298,6 +289,7 @@ async function cleanupReadyVideoParts(row: Row) {
 export async function deleteVideo(request: Request, id: string) {
   return serializeVideoWrite(request, id, async () => {
     const row = await rowFor(request, id, true);
+    processingControllers.get(row.id)?.abort();
     const storage = getObjectStorage();
     await storage.remove(key(row));
     for (let part = 0; part < Math.ceil(row.size / VIDEO_PART_BYTES); part++)
@@ -312,6 +304,7 @@ export async function deleteVideo(request: Request, id: string) {
 export async function playbackVideo(request: Request, id: string) {
   const row = await rowFor(request, id, false);
   if (row.state !== 'ready') throw new WorkoutError(404);
+  const size = row.playbackSize ?? row.size;
   const headers = new Headers({
     'Content-Type': 'video/mp4',
     'Cache-Control': 'private, no-store',
@@ -321,19 +314,19 @@ export async function playbackVideo(request: Request, id: string) {
   });
   let range;
   try {
-    range = videoRange(request.headers.get('range'), row.size);
+    range = videoRange(request.headers.get('range'), size);
   } catch {
-    headers.set('Content-Range', `bytes */${row.size}`);
+    headers.set('Content-Range', `bytes */${size}`);
     return new Response(null, { status: 416, headers });
   }
   headers.set(
     'Content-Length',
-    String(range ? range.end - range.start + 1 : row.size),
+    String(range ? range.end - range.start + 1 : size),
   );
   if (range)
     headers.set(
       'Content-Range',
-      `bytes ${range.start}-${range.end}/${row.size}`,
+      `bytes ${range.start}-${range.end}/${size}`,
     );
   if (request.method === 'HEAD')
     return new Response(null, { status: range ? 206 : 200, headers });
@@ -375,6 +368,7 @@ export function sessionVideoRows(ownerId: string, sessionId: string) {
 export async function cleanupVideoRows(rows: Row[]) {
   for (const row of rows)
     await serialize(row.id, async () => {
+      processingControllers.get(row.id)?.abort();
       const storage = getObjectStorage();
       await storage.remove(key(row));
       for (let part = 0; part < Math.ceil(row.size / VIDEO_PART_BYTES); part++)
@@ -389,4 +383,91 @@ export async function cleanupVideoRows(rows: Row[]) {
         )
         .run();
     });
+}
+
+const processingControllers = new Map<string, AbortController>();
+let processing: Promise<void> | undefined;
+let initialized = false;
+/** Durable state is the queue; a restart retries processing rows from their verified source parts. */
+export function kickWorkoutVideoProcessing() {
+  if (processing) return;
+  processing = (async () => {
+    if (!initialized) {
+      await rm(workoutVideoTemporaryRoot(), { recursive: true, force: true });
+      initialized = true;
+    }
+    for (;;) {
+      const row = getDatabase().db.select().from(workoutVideos)
+        .where(eq(workoutVideos.state, 'processing')).orderBy(asc(workoutVideos.createdAt)).get();
+      if (!row) break;
+      await processVideo(row);
+    }
+  })().catch(() => {
+    // Storage/DB outages retain the durable queue for the next bounded worker pass.
+  }).finally(() => { processing = undefined; });
+}
+export function startWorkoutVideoWorker() {
+  kickWorkoutVideoProcessing();
+  const timer = setInterval(kickWorkoutVideoProcessing, 5000);
+  timer.unref();
+  return timer;
+}
+async function processVideo(row: Row) {
+  const controller = new AbortController();
+  processingControllers.set(row.id, controller);
+  const database = getDatabase().db;
+  const storage = getObjectStorage();
+  const predicate = and(eq(workoutVideos.id, row.id), eq(workoutVideos.createdAt, row.createdAt), eq(workoutVideos.state, 'processing'));
+  const assertCurrent = () => {
+    controller.signal.throwIfAborted();
+    const current = database.select().from(workoutVideos).where(predicate).get();
+    if (!current) throw new Error('Video removed');
+    const workout = target(row.ownerId, row.workoutId, row.exerciseId);
+    if (workout.data.status !== 'completed') throw new VideoProcessingError('invalid');
+    return current;
+  };
+  let lastProgress = 0;
+  try {
+    assertCurrent();
+    database.update(workoutVideos).set({ processingProgress: 0 }).where(predicate).run();
+    await transcodeWorkoutVideo({
+      size: row.size,
+      signal: controller.signal,
+      async readPart(part) {
+        assertCurrent();
+        const bytes = await storage.get(key(row, part));
+        if (createHash('sha256').update(bytes).digest('hex') !== row.parts[part]) throw new VideoProcessingError('invalid');
+        return bytes;
+      },
+      progress(value) {
+        if (Date.now() - lastProgress < 500) return;
+        lastProgress = Date.now();
+        // A failed DB update must cancel the encoder rather than escape an event callback.
+        try {
+          assertCurrent();
+          database.update(workoutVideos).set({ processingProgress: value }).where(predicate).run();
+        } catch { controller.abort(); }
+      },
+    }, async (output) => {
+      await withSessionVideoLock(row.ownerId, row.workoutId, () => serialize(row.id, async () => {
+        assertCurrent();
+        await storage.putStream(key(row), output.body, output.size, 'video/mp4');
+        try { assertCurrent(); } catch (error) {
+          await storage.remove(key(row));
+          throw error;
+        }
+        const saved = database.update(workoutVideos).set({
+          state: 'ready', playbackSize: output.size, duration: output.duration,
+          recordedAt: output.recordedAt ?? row.recordedAt, processingProgress: 1, processingError: null,
+        }).where(predicate).returning().get();
+        if (saved) await cleanupReadyVideoParts(saved);
+      }));
+    });
+  } catch (error) {
+    database.update(workoutVideos).set({ state: 'failed', processingProgress: 0,
+      processingError: error instanceof VideoProcessingError ? error.code : 'processing',
+    }).where(predicate).run();
+  } finally {
+    if (processingControllers.get(row.id) === controller) processingControllers.delete(row.id);
+  }
 }
