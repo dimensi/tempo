@@ -111,9 +111,6 @@ export function ExerciseVideos({
       }
       void refresh(abort.signal).catch(() => {});
     };
-    void refresh(abort.signal).catch(() => {
-      if (!abort.signal.aborted) setError(m.videoLoadError);
-    });
     const stop = subscribeSessionReset(reset);
     const cleanup = () => {
       mounted.current = false;
@@ -125,6 +122,23 @@ export function ExerciseVideos({
     // Each scope has its own recordings and request generation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerId, sessionId, exerciseId]);
+  useEffect(() => {
+    if (!visible) return;
+    const abort = new AbortController();
+    const token = epoch.current;
+    const session = sessionGeneration();
+    void refresh(abort.signal).catch(() => {
+      if (
+        !abort.signal.aborted &&
+        token === epoch.current &&
+        session === sessionGeneration()
+      )
+        setError(m.videoLoadError);
+    });
+    return () => abort.abort();
+    // Reopening refreshes the list without restarting the scoped upload queue.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, ownerId, sessionId, exerciseId]);
   const processing = videos.some((row) => row.state === 'processing');
   useEffect(() => {
     if (!processing) return;

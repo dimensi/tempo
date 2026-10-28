@@ -526,6 +526,12 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     exact: true,
   });
   await expect(uploadedVideos).toHaveCount(0);
+  const videoListUrl = '**/api/workouts/videos?*';
+  await page.route(videoListUrl, async (route) => {
+    if (route.request().method() === 'GET')
+      await route.abort('internetdisconnected');
+    else await route.continue();
+  });
   // Selecting multiple files must retain independent upload identities and players.
   await page
     .getByRole('button', { name: 'Техника: Smoke squat', exact: true })
@@ -535,6 +541,25 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     name: 'Видео выполнения: Smoke squat',
     exact: true,
   });
+  await expect(ownVideos.getByRole('alert')).toHaveText(
+    'Не удалось проверить доступ к видео. Обновите страницу.',
+  );
+  await page.unroute(videoListUrl);
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Техника: Smoke squat', exact: true })
+    .click();
+  const recoveredVideoList = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === '/api/workouts/videos' &&
+      url.searchParams.get('sessionId') === completed.id &&
+      response.ok()
+    );
+  });
+  await page.getByText('Мои видео', { exact: true }).click();
+  await recoveredVideoList;
+  await expect(ownVideos.getByRole('alert')).toHaveCount(0);
   // Camera-like MOV: primary stereo AAC plus an undecodable auxiliary AC-3 track.
   const videoBuffer = await readFile('tests/fixtures/camera-audio-demo.mov');
   const originalParts: Buffer[] = [];
