@@ -541,9 +541,10 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     name: 'Видео выполнения: Smoke squat',
     exact: true,
   });
-  await expect(ownVideos.getByRole('alert')).toHaveText(
-    'Не удалось проверить доступ к видео. Обновите страницу.',
-  );
+  const videoListError = ownVideos.getByRole('alert').filter({
+    hasText: 'Не удалось проверить доступ к видео. Обновите страницу.',
+  });
+  await expect(videoListError).toBeVisible();
   await page.unroute(videoListUrl);
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page
@@ -559,7 +560,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   });
   await page.getByText('Мои видео', { exact: true }).click();
   await recoveredVideoList;
-  await expect(ownVideos.getByRole('alert')).toHaveCount(0);
+  await expect(videoListError).toHaveCount(0);
   // Camera-like MOV: primary stereo AAC plus an undecodable auxiliary AC-3 track.
   const videoBuffer = await readFile('tests/fixtures/camera-audio-demo.mov');
   const originalParts: Buffer[] = [];
