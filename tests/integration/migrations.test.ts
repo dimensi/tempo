@@ -425,7 +425,10 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
     expect(() => workoutRepository(database.db).list('owner')).toThrow();
     const beforeTarget = join(directory, 'before-target');
     mkdirSync(join(beforeTarget, 'meta'), { recursive: true });
-    const beforeTargetEntries = journal.entries.slice(0, -1);
+    const beforeTargetEntries = journal.entries.slice(
+      0,
+      journal.entries.findIndex((entry) => entry.tag === '0025_tidy_ma_gnuci'),
+    );
     writeFileSync(
       join(beforeTarget, 'meta/_journal.json'),
       JSON.stringify({ ...journal, entries: beforeTargetEntries }),
@@ -514,9 +517,24 @@ it('applies fresh and upgrade migrations without losing durable access data', ()
     ).toBe(true);
     expect(
       database.sqlite
-        .prepare('SELECT workout_id,exercise_id FROM workout_videos WHERE id=?')
+        .prepare(
+          'SELECT workout_id,exercise_id,size,duration,state,parts,created_at,name,recorded_at,playback_size,processing_progress,processing_error FROM workout_videos WHERE id=?',
+        )
         .get('legacy-video'),
-    ).toEqual({ workout_id: 'legacy-fact', exercise_id: occurrence.id });
+    ).toEqual({
+      workout_id: 'legacy-fact',
+      exercise_id: occurrence.id,
+      size: 12,
+      duration: 1,
+      state: 'ready',
+      parts: '{}',
+      created_at: 1,
+      name: null,
+      recorded_at: null,
+      playback_size: null,
+      processing_progress: 0,
+      processing_error: null,
+    });
     expect(
       database.sqlite
         .prepare('SELECT target_id FROM comments WHERE id=?')
