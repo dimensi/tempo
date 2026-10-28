@@ -1,6 +1,7 @@
 'use client';
 import {
   VIDEO_PART_BYTES,
+  VIDEO_INPUT_MAX_BYTES,
   type WorkoutVideo,
 } from '@/contracts/workout-videos';
 import { apiFetch } from '@/lib/api-client';
@@ -17,23 +18,15 @@ import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type';
 import { FilePond, registerPlugin } from 'react-filepond';
 import { useEffect, useRef, useState } from 'react';
 import 'filepond/dist/filepond.min.css';
-import {
-  compressWorkoutVideo,
-  WorkoutVideoCompressionError,
-} from './compress-video';
 import { workoutMessages as m } from './messages';
 import { sendVideoPart } from './video-upload';
 import classes from './video-queue.module.css';
 registerPlugin(FilePondPluginFileValidateType);
 function videoError(cause: unknown) {
-  if (cause instanceof WorkoutVideoCompressionError) return cause.message;
   const known: string[] = [
     m.forbidden,
     m.conflict,
     m.videoInputLimit,
-    m.videoDurationLimit,
-    m.videoUnsupported,
-    m.videoOutputLimit,
     m.videoLoadError,
   ];
   return cause instanceof Error && known.includes(cause.message)
@@ -58,6 +51,7 @@ export default function VideoQueue({
   videos,
   refresh,
   onUploaded,
+  onRemoved,
 }: {
   ownerId: string;
   sessionId: string;
@@ -65,6 +59,7 @@ export default function VideoQueue({
   videos: WorkoutVideo[];
   refresh: (signal?: AbortSignal) => Promise<WorkoutVideo[]>;
   onUploaded: (video: WorkoutVideo) => void;
+  onRemoved: (id: string) => void;
 }) {
   const pond = useRef<FilePond>(null);
   const entries = useRef(new Map<string, Entry>());
@@ -72,7 +67,6 @@ export default function VideoQueue({
   const store = useRef<ReturnType<typeof createVideoDraftStore> | null>(null);
   const epoch = useRef(0);
   const serial = useRef<Promise<void>>(Promise.resolve());
-  const downloadUrls = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [initialized, setInitialized] = useState(false);
   const [stage, setStage] = useState('');
   const [fileErrors, setFileErrors] = useState<
@@ -81,12 +75,11 @@ export default function VideoQueue({
       {
         name: string;
         message: string;
-        diagnostic?: string;
-        source?: ActualFileObject;
       }
     >
   >({});
   const alive = useRef(false);
+  const [reselect, setReselect] = useState<VideoDraft[]>([]);
   const [initial, setInitial] = useState<ActualFileObject[]>([]);
   const [items, setItems] = useState<FilePondFile[]>([]);
   const [draftUploads, setDraftUploads] = useState<
@@ -111,14 +104,6 @@ export default function VideoQueue({
   }
   useEffect(() => {
     alive.current = true;
-    const urls = downloadUrls.current;
-    const clearDownloads = () => {
-      for (const [url, timer] of urls) {
-        clearTimeout(timer);
-        URL.revokeObjectURL(url);
-      }
-      urls.clear();
-    };
     const repository = createVideoDraftStore(scope);
     store.current = repository;
     const token = epoch.current,
@@ -127,7 +112,8 @@ export default function VideoQueue({
       .list()
       .then((rows) => {
         if (!current(token, session)) return;
-        const files = rows.map((draft) => {
+        setReselect(rows.filter((draft) => !draft.blob));
+        const files = rows.flatMap((draft) => {
           entries.current.set(draft.id, {
             id: draft.id,
             epoch: token,
@@ -136,11 +122,12 @@ export default function VideoQueue({
             restored: true,
             retained: true,
           });
+          if (!draft.blob) return [];
           const file = new File([draft.blob], draft.name, {
             type: 'video/mp4',
           });
           restoredIds.current.set(file, draft.id);
-          return file;
+          return [file];
         });
         setInitial(files);
         setDraftUploads(
@@ -157,9 +144,9 @@ export default function VideoQueue({
     const reset = () => {
       epoch.current++;
       stop();
-      clearDownloads();
       entries.current.clear();
       setInitial([]);
+      setReselect([]);
       setItems([]);
       setDraftUploads({});
       setWarning('');
@@ -172,7 +159,6 @@ export default function VideoQueue({
     };
     const sessionReset = () => {
       stop();
-      clearDownloads();
     };
     const hidden = () => {
       if (document.hidden) stop();
@@ -184,7 +170,6 @@ export default function VideoQueue({
       alive.current = false;
       epoch.current++;
       stop();
-      clearDownloads();
       unsubscribe();
       unsubscribeSession();
       document.removeEventListener('visibilitychange', hidden);
@@ -194,19 +179,25 @@ export default function VideoQueue({
   }, [scope]);
   useEffect(() => {
     const readyIds = new Set(
-      videos.filter((row) => row.state === 'ready').map((row) => row.id),
+      videos
+        .filter(
+          (row) =>
+            row.state === 'ready' ||
+            row.state === 'processing' ||
+            row.state === 'failed',
+        )
+        .map((row) => row.id),
     );
     const token = epoch.current,
       session = sessionGeneration();
-    for (const item of items) {
-      const entry = entries.current.get(item.getMetadata('draftId'));
+    for (const entry of entries.current.values()) {
       if (
-        !entry?.draft?.uploadId ||
+        !entry.draft?.uploadId ||
         entry.completed ||
         !readyIds.has(entry.draft.uploadId)
       )
         continue;
-      // A lost finalize response must not leave a second, retryable copy of a ready video.
+      // A lost finalize response must not leave another retryable upload.
       entry.completed = true;
       entry.controller?.abort();
       void store.current
@@ -215,10 +206,19 @@ export default function VideoQueue({
           if (current(token, session)) setWarning(m.videoNotRetained);
         })
         .then(() => {
-          if (current(token, session)) void pond.current?.removeFile(item.id);
+          if (!current(token, session)) return;
+          setReselect((rows) => rows.filter((row) => row.id !== entry.id));
+          const item = items.find(
+            (item) => item.getMetadata('draftId') === entry.id,
+          );
+          if (item) void pond.current?.removeFile(item.id);
+          else {
+            entries.current.delete(entry.id);
+            forgetUpload(entry.id);
+          }
         });
     }
-  }, [videos, items]);
+  }, [videos, items, reselect]);
   async function call(path: string, init: RequestInit) {
     const response = await apiFetch(`${base}${path}${query}`, {
       ...init,
@@ -253,6 +253,7 @@ export default function VideoQueue({
     if (!current(token, session)) return false;
     entries.current.delete(entry.id);
     forgetUpload(entry.id);
+    if (entry.draft?.uploadId) onRemoved(entry.draft.uploadId);
     void refresh().catch(() => {});
     return true;
   }
@@ -262,20 +263,6 @@ export default function VideoQueue({
       delete next[id];
       return next;
     });
-  }
-  function saveSelected(file: ActualFileObject) {
-    const url = URL.createObjectURL(file);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = file.name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    const timer = setTimeout(() => {
-      URL.revokeObjectURL(url);
-      downloadUrls.current.delete(url);
-    }, 60_000);
-    downloadUrls.current.set(url, timer);
   }
   const matched = new Set(Object.values(draftUploads).filter(Boolean));
   const unmatched = videos.filter(
@@ -356,6 +343,31 @@ export default function VideoQueue({
           labelFileSizeMegabytes={m.videoMegabytes}
           labelFileSizeGigabytes={m.videoGigabytes}
           beforeAddFile={(item) => {
+            if (item.file.size > VIDEO_INPUT_MAX_BYTES) {
+              setWarning(m.videoInputLimit);
+              return false;
+            }
+            const original = item.file as File;
+            const draft = reselect.find(
+              (candidate) =>
+                candidate.name === original.name &&
+                candidate.size === original.size &&
+                candidate.lastModified === original.lastModified,
+            );
+            if (
+              !draft &&
+              !restoredIds.current.has(item.file) &&
+              items.length + reselect.length + serverOnly >= 8
+            ) {
+              setWarning(m.videoQueueLimit);
+              return false;
+            }
+            if (draft) {
+              item.setMetadata('draftId', draft.id);
+              const entry = entries.current.get(draft.id);
+              if (entry) entry.restored = false;
+              setReselect((rows) => rows.filter((row) => row.id !== draft.id));
+            }
             if (!item.getMetadata('draftId'))
               item.setMetadata(
                 'draftId',
@@ -377,7 +389,7 @@ export default function VideoQueue({
               session = entry.session;
             // Instant-upload FilePond removes a cancelled item. Keep our resumable
             // recording visible by restoring it as an explicitly paused entry.
-            const file = entry.draft
+            const file = entry.draft?.blob
               ? new File([entry.draft.blob], entry.draft.name, {
                   type: 'video/mp4',
                 })
@@ -513,17 +525,14 @@ export default function VideoQueue({
                 try {
                   check();
                   if (!active.draft) {
-                    phase(m.videoCompressing);
-                    const compressed = await compressWorkoutVideo(
-                      file as File,
-                      controller.signal,
-                      (n) => {
-                        if (valid()) progress(true, n, 1);
-                      },
-                    );
-                    check();
-                    await persist({ ...compressed, id, name: file.name });
+                    await persist({
+                      id,
+                      name: file.name,
+                      size: file.size,
+                      lastModified: (file as File).lastModified,
+                    });
                   }
+                  const source = active.draft!.blob ?? file;
                   let draft = active.draft!;
                   await persist({
                     ...draft,
@@ -545,8 +554,9 @@ export default function VideoQueue({
                       body: JSON.stringify({
                         sessionId,
                         exerciseId,
-                        size: draft.blob.size,
-                        duration: draft.duration,
+                        size: source.size,
+                        name: draft.name.slice(0, 240),
+                        lastModified: draft.lastModified,
                       }),
                     });
                   check();
@@ -556,19 +566,19 @@ export default function VideoQueue({
                       sum +
                       Math.min(
                         VIDEO_PART_BYTES,
-                        draft.blob.size - part * VIDEO_PART_BYTES,
+                        source.size - part * VIDEO_PART_BYTES,
                       ),
                     0,
                   );
-                  if (row.state !== 'ready')
+                  if (row.state === 'uploading')
                     for (
                       let part = 0;
-                      part < Math.ceil(draft.blob.size / VIDEO_PART_BYTES);
+                      part < Math.ceil(source.size / VIDEO_PART_BYTES);
                       part++
                     ) {
                       check();
                       if (row.parts.includes(part)) continue;
-                      const blob = draft.blob.slice(
+                      const blob = source.slice(
                         part * VIDEO_PART_BYTES,
                         (part + 1) * VIDEO_PART_BYTES,
                       );
@@ -580,7 +590,7 @@ export default function VideoQueue({
                           if (valid())
                             progress(
                               true,
-                              (acknowledged + bytes) / draft.blob.size,
+                              (acknowledged + bytes) / source.size,
                               1,
                             );
                         },
@@ -588,10 +598,13 @@ export default function VideoQueue({
                       check();
                       acknowledged += blob.size;
                     }
-                  const saved = await call(`/${row.id}/finalize`, {
-                    method: 'POST',
-                    signal: controller.signal,
-                  });
+                  const saved =
+                    row.state === 'ready' || row.state === 'processing'
+                      ? row
+                      : await call(`/${row.id}/finalize`, {
+                          method: 'POST',
+                          signal: controller.signal,
+                        });
                   check();
                   await store.current?.remove(id).catch(() => {});
                   check();
@@ -615,11 +628,6 @@ export default function VideoQueue({
                       [id]: {
                         name: file.name,
                         message,
-                        diagnostic:
-                          cause instanceof WorkoutVideoCompressionError
-                            ? cause.diagnostic
-                            : undefined,
-                        source: active.draft ? undefined : file,
                       },
                     }));
                     fail(message);
@@ -648,28 +656,6 @@ export default function VideoQueue({
             {error.name}
           </Text>
           <Text mt={4}>{error.message}</Text>
-          {error.source && (
-            <Button
-              variant="default"
-              mt="sm"
-              mih={44}
-              onClick={() => saveSelected(error.source!)}
-            >
-              {m.videoSaveSelected}
-            </Button>
-          )}
-          {error.diagnostic && (
-            <details className={classes.diagnostic}>
-              <summary>{m.videoErrorDetails}</summary>
-              <Text
-                component="pre"
-                size="xs"
-                style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
-              >
-                {error.diagnostic}
-              </Text>
-            </details>
-          )}
         </Alert>
       ))}
       <details className={classes.help}>
@@ -680,9 +666,41 @@ export default function VideoQueue({
           <Text size="sm">{m.videoLocalDraft}</Text>
         </Stack>
       </details>
+      {reselect.map((draft) => (
+        <Group key={draft.id}>
+          <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+            {draft.name}: {m.videoReselect}
+          </Text>
+          <Button
+            variant="subtle"
+            color="red"
+            mih={44}
+            onClick={() => {
+              const token = epoch.current,
+                session = sessionGeneration();
+              const entry = entries.current.get(draft.id);
+              if (entry)
+                void discard(entry)
+                  .then((removed) => {
+                    if (removed && current(token, session))
+                      setReselect((rows) =>
+                        rows.filter((row) => row.id !== draft.id),
+                      );
+                  })
+                  .catch(() => {
+                    if (current(token, session)) setWarning(m.videoUploadError);
+                  });
+            }}
+          >
+            {m.videoDiscard}
+          </Button>
+        </Group>
+      ))}
       {unmatched.map((row) => (
         <Group key={row.id}>
-          <Text size="sm">{m.videoIncomplete}</Text>
+          <Text size="sm">
+            {row.name}: {m.videoIncomplete}
+          </Text>
           <Button
             mih={44}
             variant="subtle"
@@ -697,8 +715,7 @@ export default function VideoQueue({
                 draft: {
                   id: row.id,
                   name: '',
-                  blob: new Blob(),
-                  duration: 0,
+                  size: row.size,
                   uploadId: row.id,
                 },
               };

@@ -8,6 +8,8 @@ export async function register() {
   const { startTransformMateReplicaWorker } =
     await import('@/server/transformmate/replica-worker');
   startTransformMateReplicaWorker();
+  const { startWorkoutVideoWorker } = await import('@/server/workouts/videos');
+  startWorkoutVideoWorker();
   if (process.env.ENABLE_NUTRITION_SCHEDULER === 'true') {
     const { startNutritionScheduler } =
       await import('@/server/jobs/nutrition-scheduler');

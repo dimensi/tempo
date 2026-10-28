@@ -1,5 +1,7 @@
-import { readFile } from 'node:fs/promises';
-import { ALL_FORMATS, BufferSource, Input } from 'mediabunny';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { expect, test, type Page } from '@playwright/test';
 import type { WorkoutVideo } from '@/contracts/workout-videos';
 import { testOrigin } from './origin';
@@ -530,6 +532,28 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   });
   // Camera-like MOV: primary stereo AAC plus an undecodable auxiliary AC-3 track.
   const videoBuffer = await readFile('tests/fixtures/camera-audio-demo.mov');
+  const originalParts: Buffer[] = [];
+  const createPayloads: Record<string, unknown>[] = [];
+  const finalizeStates: string[] = [];
+  const captureVideoRequest = (request: import('@playwright/test').Request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/workouts/videos' && request.method() === 'POST')
+      createPayloads.push(request.postDataJSON());
+    if (/\/api\/workouts\/videos\/[^/]+\/parts\/0$/.test(path))
+      originalParts.push(request.postDataBuffer()!);
+  };
+  const captureFinalize = async (
+    response: import('@playwright/test').Response,
+  ) => {
+    if (
+      /\/api\/workouts\/videos\/[^/]+\/finalize$/.test(
+        new URL(response.url()).pathname,
+      )
+    )
+      finalizeStates.push((await response.json()).data.state);
+  };
+  page.on('request', captureVideoRequest);
+  page.on('response', captureFinalize);
   const uploadStarted = page.waitForRequest(
     (request) =>
       new URL(request.url()).pathname === '/api/workouts/videos' &&
@@ -569,6 +593,35 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       { timeout: 15_000 },
     )
     .toBe(true);
+  page.off('request', captureVideoRequest);
+  page.off('response', captureFinalize);
+  expect(createPayloads).toHaveLength(2);
+  expect(createPayloads.map(({ name }) => name).sort()).toEqual([
+    'smoke-first.mov',
+    'smoke-second.mov',
+  ]);
+  for (const payload of createPayloads) {
+    expect(payload.size).toBe(videoBuffer.length);
+    expect(payload).not.toHaveProperty('duration');
+  }
+  expect(originalParts).toHaveLength(2);
+  for (const bytes of originalParts)
+    expect(bytes.equals(videoBuffer)).toBe(true);
+  expect(finalizeStates).toEqual(['processing', 'processing']);
+  const readyVideos = await readVideos();
+  for (const video of readyVideos) {
+    expect(video.size).toBe(videoBuffer.length);
+    expect(video.playbackSize).toBeGreaterThan(0);
+    expect(video.progress).toBe(1);
+    expect(video.error).toBeNull();
+    expect(video.recordedAt).toBe(Date.parse('2026-10-01T10:00:00Z'));
+    await expect(
+      ownVideos.getByRole('paragraph').filter({ hasText: video.name }),
+    ).toBeVisible();
+  }
+  await expect(
+    ownVideos.locator('time[datetime="2026-10-01T10:00:00.000Z"]'),
+  ).toHaveCount(2);
   const players = ownVideos.locator('video');
   await expect(players).toHaveCount(2);
   const playbackSources = await players.evaluateAll((elements) =>
@@ -583,17 +636,48 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     `/api/workouts/videos/${retainedVideo.id}/playback?ownerId=${owner}`,
   );
   expect(playback.ok()).toBe(true);
-  const recorded = new Input({
-    formats: ALL_FORMATS,
-    source: new BufferSource(await playback.body()),
-  });
+  const playbackDirectory = await mkdtemp(join(tmpdir(), 'tempo-video-smoke-'));
+  let probe: {
+    streams: {
+      codec_type: string;
+      codec_name: string;
+      width?: number;
+      height?: number;
+      avg_frame_rate?: string;
+      channels?: number;
+    }[];
+  };
   try {
-    const audioTracks = await recorded.getAudioTracks();
-    expect(audioTracks).toHaveLength(1);
-    expect(await audioTracks[0]!.getNumberOfChannels()).toBe(2);
+    const playbackPath = join(playbackDirectory, 'playback.mp4');
+    await writeFile(playbackPath, await playback.body());
+    probe = JSON.parse(
+      execFileSync('ffprobe', [
+        '-v',
+        'error',
+        '-show_streams',
+        '-of',
+        'json',
+        playbackPath,
+      ]).toString(),
+    );
   } finally {
-    recorded.dispose();
+    await rm(playbackDirectory, { recursive: true, force: true });
   }
+  const videoTracks = probe.streams.filter(
+    (stream) => stream.codec_type === 'video',
+  );
+  const audioTracks = probe.streams.filter(
+    (stream) => stream.codec_type === 'audio',
+  );
+  expect(videoTracks).toHaveLength(1);
+  expect(videoTracks[0]!.codec_name).toBe('h264');
+  const { width, height, avg_frame_rate } = videoTracks[0]!;
+  expect(Math.max(width!, height!)).toBeLessThanOrEqual(1280);
+  expect(Math.min(width!, height!)).toBeLessThanOrEqual(720);
+  const [numerator, denominator] = avg_frame_rate!.split('/').map(Number);
+  expect(numerator! / denominator!).toBeLessThanOrEqual(30);
+  expect(audioTracks).toHaveLength(1);
+  expect(audioTracks[0]).toMatchObject({ codec_name: 'aac', channels: 2 });
   await ownVideos
     .getByRole('button', { name: 'Удалить видео', exact: true })
     .first()

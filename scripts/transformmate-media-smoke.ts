@@ -10,6 +10,7 @@ import {
   validateReplicaVideo,
 } from '../src/server/transformmate/replica-media';
 import { getObjectStorage } from '../src/server/storage';
+import { transcodeWorkoutVideo } from '../src/server/workouts/video-processing';
 // Synthetic, disposable runtime rehearsal. Never uses TransformMate credentials.
 const directory = await mkdtemp(join(tmpdir(), 'replica-smoke-'));
 try {
@@ -42,6 +43,23 @@ try {
   const bytes = await readFile(video),
     storage = getObjectStorage(),
     key = 'transformmate/smoke/synthetic.mp4';
+  let converted = false;
+  await transcodeWorkoutVideo(
+    {
+      size: bytes.length,
+      readPart: async () => bytes,
+      signal: new AbortController().signal,
+      progress: () => {},
+    },
+    async (output) => {
+      let count = 0;
+      for await (const part of output.body) count += part.length;
+      assert.equal(count, output.size);
+      assert.ok(output.duration >= 1 && output.duration <= 2);
+      converted = true;
+    },
+  );
+  assert.ok(converted);
   try {
     await storage.putStream(
       key,
@@ -58,7 +76,7 @@ try {
     await storage.remove(key);
   }
   console.log(
-    'TransformMate media smoke: FFmpeg poster and persisted Range passed',
+    'Media smoke: FFmpeg poster, workout transcode and persisted Range passed',
   );
 } finally {
   await rm(directory, { recursive: true, force: true });

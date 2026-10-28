@@ -87,3 +87,35 @@ Connect/import starts selected-history backfill within the server handler after 
 Current verification tiers and exact pre-merge commands are defined in [AGENTS.md](../AGENTS.md). Use [deployment-cd](deployment-cd.md) for the release workflow; do not infer merge or deploy permission from documentation of an earlier task. The previous CI section described an obsolete workflow and offline smoke contract and has been removed.
 
 The accepted [ADR 002](decisions/002-resilient-client-reads.md) drops cold offline boot, shell readiness, synchronous private-photo conceal and the shell refill/purge race as product acceptance requirements. The current test files may still exercise these old behaviors until the runtime refactor lands. Keep real-session server permission tests, queue integrity, synthetic fixture isolation and exact report accounting. Documentation changes do not claim that suites or workflows were changed or executed.
+
+### Workout video processing
+
+Exercise videos upload the selected source in 4 MiB resumable parts (maximum 1 GiB,
+5 minutes, 8 videos per exercise). Finalization records a durable `processing`
+state and returns immediately. The single in-process worker runs FFprobe/FFmpeg
+with local files only, two codec threads, a ten-minute deadline and bounded output
+(720p, 30 fps, H.264/AAC, maximum 256 MiB). It preserves one compatible soundtrack,
+autorotates camera footage and maps tagged HDR to SDR for playback.
+
+`src/instrumentation.ts` starts the worker automatically. Processing resumes from
+verified source parts after a restart; failures retain their parts for explicit
+retry. Ready videos keep only the playback MP4. Unfinished/failed uploads expire
+after 24 hours, including when no new upload is started. Temporary conversion
+files live under the OS temporary directory (`tempo-workout-video/<cwd hash>`),
+are removed after each attempt and cleared on worker startup. Allow at least
+1.3 GiB of temporary disk space for the active job, in addition to uploaded parts.
+
+Migration 0026 adds optional filename/date/playback-size and processing fields;
+existing ready MP4s keep their identifiers, storage keys and original range size.
+No existing videos are automatically reencoded. Their original filename/date was
+not previously stored, so the UI uses the exercise name and upload date for them.
+Browser storage retains only bounded resumable metadata for new sources; users
+must reselect an interrupted original after closing the page. A completed upload
+continues processing after logout or closing the browser. Playback and all user
+operations still require owner or explicitly granted trainer access.
+
+The existing disposable image smoke includes workout transcoding using the
+shipped FFmpeg. Check failed jobs through the authenticated exercise UI; errors
+are stored as bounded codes without filenames, command output or media contents
+in logs. Deployment remains stop-first for the single SQLite writer. Before
+applying migration 0026, take the normal consistent application database backup.

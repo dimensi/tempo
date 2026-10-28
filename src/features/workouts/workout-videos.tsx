@@ -3,7 +3,7 @@ import type { WorkoutVideo } from '@/contracts/workout-videos';
 import { apiFetch } from '@/lib/api-client';
 import { subscribeSessionReset } from '@/lib/offline-device';
 import { sessionGeneration } from '@/lib/session-state';
-import { Alert, Button, Stack } from '@mantine/core';
+import { Alert, Button, Group, Progress, Stack, Text } from '@mantine/core';
 import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import { workoutMessages as m } from './messages';
@@ -73,8 +73,59 @@ export function ExerciseVideos({
     // Each scope has its own recordings and request generation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerId, sessionId, exerciseId]);
+  const processing = videos.some((row) => row.state === 'processing');
+  useEffect(() => {
+    if (!processing) return;
+    const controller = new AbortController();
+    let pending = false;
+    const timer = setInterval(() => {
+      if (document.hidden || pending) return;
+      pending = true;
+      void refresh(controller.signal)
+        .catch(() => {})
+        .finally(() => {
+          pending = false;
+        });
+    }, 1500);
+    return () => {
+      clearInterval(timer);
+      controller.abort();
+    };
+    // Poll only while a server job is active in this scope.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processing, ownerId, sessionId, exerciseId]);
+  async function retry(id: string) {
+    const token = epoch.current,
+      session = sessionGeneration();
+    try {
+      const response = await apiFetch(`${base}/${id}/finalize${query}`, {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error(m.videoUploadError);
+      const row: WorkoutVideo = (await response.json()).data;
+      if (
+        mounted.current &&
+        token === epoch.current &&
+        session === sessionGeneration()
+      ) {
+        epoch.current++;
+        setVideos((rows) =>
+          rows.map((video) => (video.id === id ? row : video)),
+        );
+        setError('');
+      }
+    } catch {
+      if (
+        mounted.current &&
+        token === epoch.current &&
+        session === sessionGeneration()
+      )
+        setError(m.videoUploadError);
+    }
+  }
   async function remove(id: string) {
-    const session = sessionGeneration();
+    const token = epoch.current,
+      session = sessionGeneration();
     try {
       const response = await apiFetch(`${base}/${id}${query}`, {
         method: 'DELETE',
@@ -83,12 +134,21 @@ export function ExerciseVideos({
         throw new Error(
           response.status === 403 ? m.forbidden : m.videoUploadError,
         );
-      if (mounted.current && session === sessionGeneration()) {
+      if (
+        mounted.current &&
+        token === epoch.current &&
+        session === sessionGeneration()
+      ) {
+        epoch.current++;
         setVideos((rows) => rows.filter((row) => row.id !== id));
         void refresh().catch(() => {});
       }
     } catch (cause) {
-      if (mounted.current && session === sessionGeneration())
+      if (
+        mounted.current &&
+        token === epoch.current &&
+        session === sessionGeneration()
+      )
         setError(
           cause instanceof Error && cause.message === m.forbidden
             ? m.forbidden
@@ -105,23 +165,68 @@ export function ExerciseVideos({
         </Alert>
       )}
       {videos
-        .filter((row) => row.state === 'ready')
+        .filter((row) => row.state !== 'uploading')
         .map((row) => (
           <Stack key={row.id}>
-            <TeachingVideo
-              src={`${base}/${row.id}/playback${query}`}
-              label={`${m.ownVideos}: ${name}`}
-              compact
-            />
+            <Text fw={600} style={{ overflowWrap: 'anywhere' }}>
+              {row.name || name}
+            </Text>
+            <Text
+              component="time"
+              dateTime={new Date(row.recordedAt ?? row.createdAt).toISOString()}
+              size="sm"
+              c="dimmed"
+            >
+              {row.recordedAt === null ? m.videoAddedAt : m.videoRecordedAt}:{' '}
+              {new Date(row.recordedAt ?? row.createdAt).toLocaleString(
+                'ru-RU',
+              )}
+            </Text>
+            {row.state === 'ready' && (
+              <TeachingVideo
+                src={`${base}/${row.id}/playback${query}`}
+                label={`${m.ownVideos}: ${name}`}
+                compact
+              />
+            )}
+            {row.state === 'processing' && (
+              <Stack gap={4}>
+                <Text size="sm">
+                  {m.videoProcessing} {Math.round(row.progress * 100)}%
+                </Text>
+                <Progress
+                  value={row.progress * 100}
+                  aria-label={m.videoProgress}
+                />
+              </Stack>
+            )}
+            {row.state === 'failed' && (
+              <Alert color="red">
+                {row.error === 'invalid'
+                  ? m.videoInvalid
+                  : m.videoProcessingFailed}
+              </Alert>
+            )}
             {canUpload && (
-              <Button
-                variant="subtle"
-                color="red"
-                mih={44}
-                onClick={() => void remove(row.id)}
-              >
-                {m.videoDelete}
-              </Button>
+              <Group>
+                {row.state === 'failed' && (
+                  <Button
+                    variant="default"
+                    mih={44}
+                    onClick={() => void retry(row.id)}
+                  >
+                    {m.videoRetryShort}
+                  </Button>
+                )}
+                <Button
+                  variant="subtle"
+                  color="red"
+                  mih={44}
+                  onClick={() => void remove(row.id)}
+                >
+                  {m.videoDelete}
+                </Button>
+              </Group>
             )}
           </Stack>
         ))}
@@ -133,6 +238,10 @@ export function ExerciseVideos({
           exerciseId={exerciseId}
           videos={videos}
           refresh={refresh}
+          onRemoved={(id) => {
+            epoch.current++;
+            setVideos((rows) => rows.filter((row) => row.id !== id));
+          }}
           onUploaded={(video) => {
             epoch.current++;
             setVideos((rows) => [
