@@ -155,34 +155,21 @@ function ExerciseCard({
           </ExerciseShare>
         )}
         {onChoose && (
-          <>
-            {enrichedItem.publicationCapability.state !== 'supported' && (
-              <Text size="sm" c="dimmed">
-                {enrichedItem.publicationCapability.state === 'unsupported'
-                  ? m.catalogLocalOnly
-                  : m.catalogPublicationUnknown}
-              </Text>
-            )}
-            <Button
-              variant={checked ? 'filled' : 'light'}
-              className={checked ? styles.solid : undefined}
-              mih={44}
-              fullWidth
-              disabled={disabled}
-              leftSection={
-                checked ? <IconCheck size={18} /> : <IconPlus size={18} />
-              }
-              aria-pressed={checked}
-              aria-label={`${checked ? m.unchooseCard : m.chooseCard}: ${item.name}`}
-              onClick={onChoose}
-            >
-              {checked
-                ? m.selected
-                : disabled
-                  ? m.catalogReadOnly
-                  : m.chooseCard}
-            </Button>
-          </>
+          <Button
+            variant={checked ? 'filled' : 'light'}
+            className={checked ? styles.solid : undefined}
+            mih={44}
+            fullWidth
+            disabled={disabled}
+            leftSection={
+              checked ? <IconCheck size={18} /> : <IconPlus size={18} />
+            }
+            aria-pressed={checked}
+            aria-label={`${checked ? m.unchooseCard : m.chooseCard}: ${item.name}`}
+            onClick={onChoose}
+          >
+            {checked ? m.selected : disabled ? m.catalogReadOnly : m.chooseCard}
+          </Button>
         )}
       </Stack>
     </Paper>
@@ -279,7 +266,10 @@ function ExerciseResults({
             onPlay={() => onPlay(item.id)}
             checked={checked}
             disabled={
-              !checked && (item.name.length > 160 || chosen.length >= capacity)
+              !checked &&
+              (!item.canPlan ||
+                item.name.length > 160 ||
+                chosen.length >= capacity)
             }
             onChoose={onChoose ? () => onChoose(item) : undefined}
           />

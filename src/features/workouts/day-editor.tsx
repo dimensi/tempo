@@ -965,11 +965,6 @@ export function DayEditor({
           change({ ...current.current, note: e.currentTarget.value })
         }
       />
-      {canLog && value.status === 'completed' && (
-        <Text size="sm" c="dimmed">
-          {m.completedResultsHint}
-        </Text>
-      )}
       <ExerciseRows
         onFeedbackChange={feedbackEditable ? changeFeedback : undefined}
         removalPending={pendingWrites}
