@@ -62,12 +62,9 @@ test('real login reaches core sections, recovers a cached workout offline, purge
           id: 501,
           name: 'Downloaded technique',
           description: 'Synthetic technique instructions',
-          canPlan: false,
+          canPlan: true,
           hasVideo: true,
-          publicationCapability: {
-            state: 'unsupported',
-            reason: 'weight_metric',
-          },
+          publicationCapability: { state: 'supported', reason: null },
           snippet: null,
           preview: { coverage: 'absent', path: null, revision: 'a'.repeat(64) },
           detailCoverage: 'available',
@@ -131,11 +128,8 @@ test('real login reaches core sections, recovers a cached workout offline, purge
           {
             id: 501,
             name: 'Downloaded technique',
-            canPlan: false,
-            publicationCapability: {
-              state: 'unsupported',
-              reason: 'weight_metric',
-            },
+            canPlan: true,
+            publicationCapability: { state: 'supported', reason: null },
             snippet: null,
             preview: {
               coverage: 'absent',
@@ -205,6 +199,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .getByRole('link', { name: 'Каталог упражнений', exact: true })
     .click();
   await expect(page).toHaveURL('/workouts/catalog');
+  await page.unroute('**/api/workouts/transformmate/exercises?*');
   const owner = (await (await page.request.get('/api/auth/get-session')).json())
     .user.id as string;
   for (const route of [
@@ -289,35 +284,12 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       (item) => item.title === title,
     );
   };
-  let checkedUnsupportedSelection = false;
   const fillPlan = async () => {
     await titleInput.fill(title);
     await note.fill('Planned note');
     await page
       .getByRole('button', { name: 'Добавить упражнения', exact: true })
       .click();
-    if (!checkedUnsupportedSelection) {
-      await expect(
-        page.getByText(
-          'Можно добавить с весом и повторениями. Публикация этого упражнения в TransformMate недоступна.',
-          { exact: true },
-        ),
-      ).toBeVisible();
-      await page
-        .getByRole('button', {
-          name: 'Выбрать упражнение: Downloaded technique',
-          exact: true,
-        })
-        .click();
-      await page
-        .getByRole('button', {
-          name: 'Убрать из выбранных: Downloaded technique',
-          exact: true,
-        })
-        .click();
-      checkedUnsupportedSelection = true;
-      await page.unroute('**/api/workouts/transformmate/exercises?*');
-    }
     await page
       .getByRole('textbox', { name: 'Поиск по названию', exact: true })
       .fill('Smoke squat');
