@@ -55,10 +55,6 @@ export const workoutMessages = {
   chooseCard: 'Выбрать упражнение',
   unchooseCard: 'Убрать из выбранных',
   capacityReached: 'Больше упражнений в эту тренировку добавить нельзя.',
-  catalogLocalOnly:
-    'Можно добавить с весом и повторениями. Публикация этого упражнения в TransformMate недоступна.',
-  catalogPublicationUnknown:
-    'Можно добавить с весом и повторениями. Возможность публикации в TransformMate пока не проверена.',
   library: 'Упражнения',
   addExercises: 'Добавить упражнения',
   newResult: 'Записать тренировку',
@@ -367,9 +363,7 @@ export const workoutMessages = {
   actual: 'Факт',
   actualDetails: 'Все сохранённые результаты',
   nativeReadonly:
-    'План и факт из TransformMate. Результаты доступны для просмотра. Чтобы изменить вес, повторения или другие результаты, откройте тренировку в TransformMate.',
-  completedResultsHint:
-    'Чтобы изменить вес или повторения, нажмите «Продолжить».',
+    'План и факт из TransformMate. Результаты доступны для просмотра.',
   nativeEmptySets: 'В TransformMate пока нет подходов.',
   nativeFetched: 'Данные получены',
   nativeError:
