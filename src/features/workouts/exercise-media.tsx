@@ -95,7 +95,11 @@ export function ExerciseMedia({
                 name={actual.name}
                 visible={opened && tab === 'own'}
                 onVideosChange={onVideosChange}
-                canUpload={canLog && session.status === 'completed'}
+                canUpload={
+                  canLog &&
+                  (session.status === 'in_progress' ||
+                    session.status === 'completed')
+                }
               />
             ) : (
               <Text c="dimmed">{m.ownVideoAfterSave}</Text>

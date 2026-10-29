@@ -152,7 +152,7 @@ export async function createVideo(request: Request) {
   return withSessionVideoLock(ownerId, input.sessionId, async () => {
     await access(request, true);
     const session = target(ownerId, input.sessionId, input.exerciseId);
-    if (session.data.status !== 'completed') throw new WorkoutError(409);
+    if (session.data.status === 'planned') throw new WorkoutError(409);
     const existing = getDatabase()
       .db.select()
       .from(workoutVideos)
@@ -490,7 +490,7 @@ async function processVideo(row: Row) {
       .get();
     if (!current) throw new Error('Video removed');
     const workout = target(row.ownerId, row.workoutId, row.exerciseId);
-    if (workout.data.status !== 'completed')
+    if (workout.data.status === 'planned')
       throw new VideoProcessingError('invalid');
     return current;
   };

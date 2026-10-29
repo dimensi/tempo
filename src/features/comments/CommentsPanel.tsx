@@ -6,6 +6,7 @@ import { useReadOnline } from '@/lib/use-read-online';
 import { useReadResource } from '@/lib/use-read-resource';
 import { useViewState } from '@/lib/use-view-state';
 import {
+  ActionIcon,
   Alert,
   Button,
   Group,
@@ -13,7 +14,9 @@ import {
   Text,
   Textarea,
   Title,
+  Tooltip,
 } from '@mantine/core';
+import { IconArrowBackUp, IconPencil, IconTrash } from '@tabler/icons-react';
 import { useRef, useState } from 'react';
 import { commentMessages as m } from './messages';
 import { CommentReadContent } from './read';
@@ -128,11 +131,12 @@ function TargetCommentsPanel({
                 : undefined
             }
           >
-            <Group>
+            <Group gap={4}>
               {!row.parentId && (
                 <Button
                   mih={44}
                   variant="subtle"
+                  leftSection={<IconArrowBackUp size={18} aria-hidden="true" />}
                   disabled={!online || busy}
                   onClick={() => {
                     draftRevision.current++;
@@ -145,30 +149,37 @@ function TargetCommentsPanel({
                 </Button>
               )}
               {row.canEdit && (
-                <>
-                  <Button
-                    mih={44}
-                    variant="subtle"
-                    disabled={!online || busy}
-                    onClick={() => {
-                      draftRevision.current++;
-                      setEditing(row.id);
-                      setParentId(undefined);
-                      setBody(row.body);
-                    }}
-                  >
-                    {m.edit}
-                  </Button>
-                  <Button
-                    mih={44}
-                    variant="subtle"
-                    color="red"
-                    disabled={!online || busy}
-                    onClick={() => void remove(row.id)}
-                  >
-                    {m.remove}
-                  </Button>
-                </>
+                <Group gap={4} ml="auto">
+                  <Tooltip label={m.edit}>
+                    <ActionIcon
+                      size={44}
+                      variant="subtle"
+                      color="gray"
+                      aria-label={m.edit}
+                      disabled={!online || busy}
+                      onClick={() => {
+                        draftRevision.current++;
+                        setEditing(row.id);
+                        setParentId(undefined);
+                        setBody(row.body);
+                      }}
+                    >
+                      <IconPencil size={18} aria-hidden="true" />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label={m.remove}>
+                    <ActionIcon
+                      size={44}
+                      variant="subtle"
+                      color="red"
+                      aria-label={m.remove}
+                      disabled={!online || busy}
+                      onClick={() => void remove(row.id)}
+                    >
+                      <IconTrash size={18} aria-hidden="true" />
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
               )}
             </Group>
           </CommentReadContent>
