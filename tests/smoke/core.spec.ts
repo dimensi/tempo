@@ -62,9 +62,12 @@ test('real login reaches core sections, recovers a cached workout offline, purge
           id: 501,
           name: 'Downloaded technique',
           description: 'Synthetic technique instructions',
-          canPlan: true,
+          canPlan: false,
           hasVideo: true,
-          publicationCapability: { state: 'supported', reason: null },
+          publicationCapability: {
+            state: 'unsupported',
+            reason: 'weight_metric',
+          },
           snippet: null,
           preview: { coverage: 'absent', path: null, revision: 'a'.repeat(64) },
           detailCoverage: 'available',
@@ -128,8 +131,11 @@ test('real login reaches core sections, recovers a cached workout offline, purge
           {
             id: 501,
             name: 'Downloaded technique',
-            canPlan: true,
-            publicationCapability: { state: 'supported', reason: null },
+            canPlan: false,
+            publicationCapability: {
+              state: 'unsupported',
+              reason: 'weight_metric',
+            },
             snippet: null,
             preview: {
               coverage: 'absent',
@@ -199,7 +205,6 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     .getByRole('link', { name: 'Каталог упражнений', exact: true })
     .click();
   await expect(page).toHaveURL('/workouts/catalog');
-  await page.unroute('**/api/workouts/transformmate/exercises?*');
   const owner = (await (await page.request.get('/api/auth/get-session')).json())
     .user.id as string;
   for (const route of [
@@ -284,12 +289,35 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       (item) => item.title === title,
     );
   };
+  let checkedUnsupportedSelection = false;
   const fillPlan = async () => {
     await titleInput.fill(title);
     await note.fill('Planned note');
     await page
       .getByRole('button', { name: 'Добавить упражнения', exact: true })
       .click();
+    if (!checkedUnsupportedSelection) {
+      await expect(
+        page.getByText(
+          'Можно добавить с весом и повторениями. Публикация этого упражнения в TransformMate недоступна.',
+          { exact: true },
+        ),
+      ).toBeVisible();
+      await page
+        .getByRole('button', {
+          name: 'Выбрать упражнение: Downloaded technique',
+          exact: true,
+        })
+        .click();
+      await page
+        .getByRole('button', {
+          name: 'Убрать из выбранных: Downloaded technique',
+          exact: true,
+        })
+        .click();
+      checkedUnsupportedSelection = true;
+      await page.unroute('**/api/workouts/transformmate/exercises?*');
+    }
     await page
       .getByRole('textbox', { name: 'Поиск по названию', exact: true })
       .fill('Smoke squat');
@@ -521,6 +549,11 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   const completed = (await readWorkout())!;
   expect(completed.status).toBe('completed');
 
+  // Personal videos are available during execution, including after Resume.
+  await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+  await expect(firstReps).toBeEditable();
+  expect((await readWorkout())?.status).toBe('in_progress');
+
   const uploadedVideos = page.getByRole('button', {
     name: 'Загруженные видео: Smoke squat',
     exact: true,
@@ -626,6 +659,13 @@ test('real login reaches core sections, recovers a cached workout offline, purge
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  // The same queued upload survives completion and resuming the workout.
+  await page.getByRole('button', { name: 'Завершить', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Продолжить', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+  await expect(firstReps).toBeEditable();
   releasePart();
   const readVideos = async () => {
     const response = await page.request.get(
@@ -769,6 +809,10 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect(players).toHaveCount(0);
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await expect(uploadedVideos).toHaveCount(0);
+  await page.getByRole('button', { name: 'Завершить', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Продолжить', exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
   await expect(firstReps).toHaveValue('10');
   await expect(firstWeight).toHaveValue('20');

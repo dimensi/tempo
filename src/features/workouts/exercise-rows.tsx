@@ -24,11 +24,7 @@ import { useMediaQuery } from '@mantine/hooks';
 import { BottomSheet } from '@/components/shared/bottom-sheet';
 import { useReadOnline } from '@/lib/use-read-online';
 import { ExerciseOrder } from './exercise-order';
-import type {
-  ExerciseFeedback,
-  WorkoutExercise,
-  Workout,
-} from '@/contracts/workouts';
+import type { ExerciseFeedback, Workout } from '@/contracts/workouts';
 import type { DraftExercise } from './workout-draft';
 import { useUploadedVideos } from './use-uploaded-videos';
 import { ExerciseMedia } from './exercise-media';
@@ -66,7 +62,6 @@ export function ExerciseRows({
     key: string;
     scope: string;
     exercise: DraftExercise;
-    actual?: WorkoutExercise;
     initialTab: 'technique' | 'own';
   };
   const [media, setMedia] = useState<MediaEntry[]>([]);
@@ -74,14 +69,13 @@ export function ExerciseRows({
   const mediaScope = `${ownerId}:${session?.id}`;
   const showMedia = (
     exercise: DraftExercise,
-    actual: WorkoutExercise | undefined,
     key: string,
     initialTab: 'technique' | 'own' = 'technique',
   ) => {
     const mediaKey = `${mediaScope}:${key}`;
     setMedia((rows) => [
       ...rows.filter((row) => row.scope === mediaScope && row.key !== mediaKey),
-      { key: mediaKey, scope: mediaScope, exercise, actual, initialTab },
+      { key: mediaKey, scope: mediaScope, exercise, initialTab },
     ]);
     setOpenedMedia(mediaKey);
   };
@@ -102,9 +96,6 @@ export function ExerciseRows({
   }, [exercises]);
   const online = useReadOnline();
   const uploaded = useUploadedVideos(ownerId, session?.id);
-  const recorded = exercises.map((exercise) =>
-    session?.exercises.find((item) => item.id === exercise.id),
-  );
   const update = (index: number, next: DraftExercise) =>
     onChange?.(exercises.map((exercise, i) => (i === index ? next : exercise)));
   if (reordering && onChange)
@@ -120,7 +111,7 @@ export function ExerciseRows({
       {exercises.map((exercise, index) => {
         const key =
           exercise.id ?? exercise.transformMate?.occurrenceKey ?? `${index}`;
-        const openMedia = () => showMedia(exercise, recorded[index], key);
+        const openMedia = () => showMedia(exercise, key);
         const titleParts = /^(.*?)\s*(\([^)]*\))$/.exec(exercise.name);
         const existingOccurrence = Boolean(
           session &&
@@ -262,7 +253,7 @@ export function ExerciseRows({
                 mb="xs"
                 leftSection={<IconPlayerPlay size={18} />}
                 aria-label={`${m.uploadedVideos}: ${exercise.name}`}
-                onClick={() => showMedia(exercise, recorded[index], key, 'own')}
+                onClick={() => showMedia(exercise, key, 'own')}
               >
                 {m.uploadedVideos}
               </Button>
@@ -549,7 +540,9 @@ export function ExerciseRows({
                   typeof set.weightKg === 'number' ? set.weightKg : null,
               })),
             }}
-            actual={entry.actual}
+            actual={session?.exercises.find(
+              (exercise) => exercise.id === entry.exercise.id,
+            )}
             session={session}
             canLog={canLog}
             initialTab={entry.initialTab}
