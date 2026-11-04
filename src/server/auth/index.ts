@@ -42,6 +42,8 @@ function createAuth() {
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
+      // Refresh only through the browser POST so DB expiry and its cookie move together.
+      deferSessionRefresh: true,
       cookieCache: { enabled: false },
     },
     advanced: { useSecureCookies: env.BETTER_AUTH_URL.startsWith('https://') },
