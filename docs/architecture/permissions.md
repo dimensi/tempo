@@ -2,6 +2,8 @@
 
 Better Auth provides password hashing, server-side sessions, HttpOnly cookies and HTTPS Secure cookies. Sessions live in SQLite; client cookie caching is disabled so revoked access and role changes are evaluated server-side. Registration is disabled and role cannot be provided through user input.
 
+Sessions and their cookies last seven days, with renewal due after one day. `deferSessionRefresh` keeps server-side session reads from extending the database expiry without delivering a cookie. The mounted Better Auth `useSession` hook checks on entry, focus, reconnect and hourly; when a refresh is due, its standard `POST /api/auth/get-session` renews both the session and the HttpOnly cookie. Network failures do not trigger client logout; the common API layer still handles confirmed session-wide denials. Existing sessions use the same cookie and token, with no migration or forced sign-out.
+
 | Permission           | OWNER | TRAINER          |
 | -------------------- | ----- | ---------------- |
 | nutrition:read       | yes   | with owner grant |

@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import { apiFetch } from './api-client';
+import { authClient } from './auth-client';
 import { observeReadResources, revalidateVisibleReads } from './client-read';
 import { finishPendingLogout, hasPendingLogout } from './local-logout';
 import { observeLocalDataReset } from './local-data';
@@ -34,6 +35,8 @@ export function ClientSession({
   initial: ReadContext;
   children: ReactNode;
 }) {
+  // Better Auth follows needsRefresh with a POST that renews the HttpOnly cookie.
+  authClient.useSession();
   const [loggedOut, setLoggedOut] = useState(() => {
     if (typeof window === 'undefined') return false;
     if (hasPendingLogout()) return true;
