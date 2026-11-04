@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import Database from 'better-sqlite3';
 import { expect, test, type Page } from '@playwright/test';
 import type { WorkoutVideo } from '@/contracts/workout-videos';
 import { testOrigin } from './origin';
@@ -99,6 +100,38 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect(
     page.getByText('Synthetic technique instructions', { exact: true }),
   ).toBeVisible();
+  // Age the real session and its cookie: the mounted client must renew both over HTTP.
+  const day = 86400;
+  const now = Date.now() / 1000;
+  const cookie = (await context.cookies()).find((item) =>
+    item.name.endsWith('session_token'),
+  )!;
+  const database = new Database('.data/e2e.sqlite');
+  try {
+    database
+      .prepare('UPDATE session SET expires_at=?, updated_at=?')
+      .run((now + 5 * day) * 1000, (now - 2 * day) * 1000);
+  } finally {
+    database.close();
+  }
+  await context.addCookies([{ ...cookie, expires: now + 5 * day }]);
+  const renewal = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/auth/get-session') &&
+      response.request().method() === 'POST',
+  );
+  await page.reload();
+  expect((await renewal).status()).toBe(200);
+  await expect
+    .poll(
+      async () =>
+        (await context.cookies()).find((item) => item.name === cookie.name)
+          ?.expires,
+    )
+    .toBeGreaterThan(now + 6 * day);
+  expect(
+    (await context.cookies()).find((item) => item.name === cookie.name),
+  ).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Lax' });
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page
     .getByRole('button', { name: 'Скопировать ссылку', exact: true })

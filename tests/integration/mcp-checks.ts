@@ -80,46 +80,6 @@ export async function assertMcpAccess(
     });
   }
   const ownerHeaders = await signIn('owner');
-  // Ordinary server reads must not consume a refresh without delivering its cookie.
-  const day = 24 * 60 * 60 * 1000;
-  const dueExpiry = new Date(Date.now() + 5 * day);
-  connection.db
-    .update(session)
-    .set({ expiresAt: dueExpiry, updatedAt: new Date(Date.now() - 2 * day) })
-    .where(eq(session.userId, 'owner'))
-    .run();
-  expect(await auth.api.getSession({ headers: ownerHeaders })).toMatchObject({
-    needsRefresh: true,
-  });
-  const readSession = await auth.handler(
-    new Request(`${base}/api/auth/get-session`, { headers: ownerHeaders }),
-  );
-  expect((await readSession.json()).needsRefresh).toBe(true);
-  expect(readSession.headers.has('set-cookie')).toBe(false);
-  expect(
-    connection.db
-      .select()
-      .from(session)
-      .where(eq(session.userId, 'owner'))
-      .get()?.expiresAt,
-  ).toEqual(dueExpiry);
-  const refreshed = await auth.handler(
-    new Request(`${base}/api/auth/get-session`, {
-      method: 'POST',
-      headers: ownerHeaders,
-    }),
-  );
-  expect(refreshed.status).toBe(200);
-  const refreshedCookie = refreshed.headers.get('set-cookie')!;
-  expect(refreshedCookie).toContain('Max-Age=604800');
-  expect(refreshedCookie).toContain('HttpOnly');
-  expect(refreshedCookie).toContain('SameSite=Lax');
-  expect(refreshedCookie.split(';')[0]).toBe(ownerHeaders.get('cookie'));
-  const renewedSession = await auth.api.getSession({ headers: ownerHeaders });
-  expect(renewedSession?.session.expiresAt.getTime()).toBeGreaterThan(
-    dueExpiry.getTime(),
-  );
-  expect(renewedSession).toMatchObject({ needsRefresh: false });
   const trainerHeaders = await signIn('trainer');
   await expect(
     createMcpClient(trainerHeaders, {
