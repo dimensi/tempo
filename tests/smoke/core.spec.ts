@@ -240,13 +240,9 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect(page).toHaveURL('/workouts/catalog');
   const owner = (await (await page.request.get('/api/auth/get-session')).json())
     .user.id as string;
-  for (const route of [
-    '/',
-    '/measurements',
-    '/analytics',
-    '/reports',
-    '/settings',
-  ])
+  await page.goto('/');
+  await expect(page).toHaveURL('/overview');
+  for (const route of ['/measurements', '/analytics', '/reports', '/settings'])
     expect((await page.goto(route))?.ok()).toBe(true);
 
   const chartErrors: string[] = [];
@@ -889,9 +885,14 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   await expect(secondReps).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
   expect((await readWorkout())?.status).toBe('in_progress');
-  const dayUrl = page.url();
-  await page.goto('/diary');
-  await page.goto(dayUrl);
+  await page.getByRole('link', { name: 'Обзор', exact: true }).click();
+  await expect(page).toHaveURL('/overview');
+  await page.goto('/');
+  const query = new URLSearchParams({
+    date: started.date,
+    workout: started.id,
+  });
+  await expect(page).toHaveURL(`/workouts?${query}`);
   await expect(secondWeight).toHaveValue('25');
   await expect(secondReps).toHaveValue('');
   await expect(firstReps).toHaveValue('');
@@ -1127,6 +1128,9 @@ test('real login reaches core sections, recovers a cached workout offline, purge
       })
     ).ok(),
   ).toBe(true);
+
+  await page.goto('/');
+  await expect(page).toHaveURL('/overview');
 
   await page.addInitScript(() => {
     const NativeEventSource = window.EventSource;

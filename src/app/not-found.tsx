@@ -8,7 +8,7 @@ export default function NotFound() {
       <Stack>
         <Title>Страница не найдена</Title>
         <Text>Проверьте адрес или вернитесь к обзору.</Text>
-        <Button component={Link} href="/">
+        <Button component={Link} href="/overview">
           К обзору
         </Button>
       </Stack>

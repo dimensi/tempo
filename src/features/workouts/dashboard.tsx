@@ -169,7 +169,11 @@ export function WorkoutsDashboard({
         label: workoutTitle(remote.actual.title, date),
         remote,
       });
-  const entry = entries.find((item) => item.id === active) ?? entries[0];
+  const requestedWorkout = params.get('workout');
+  const entry =
+    entries.find((item) => item.id === active) ??
+    entries.find((item) => item.workout?.id === requestedWorkout) ??
+    entries[0];
   const linkedIncomplete =
     sync.linkedIncomplete ||
     entries.some(

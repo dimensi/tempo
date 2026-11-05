@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, eq, asc } from 'drizzle-orm';
+import { and, eq, asc, desc, sql } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import type { getDatabase } from '@/server/db';
 import { workouts } from '@/server/db/schema/workouts';
@@ -225,6 +225,20 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
     assertRevision,
     validateUpdate,
     replayUpdate,
+    findActive(ownerId: string) {
+      return db
+        .select({ id: workouts.id, date: workouts.date })
+        .from(workouts)
+        .where(
+          and(
+            eq(workouts.ownerId, ownerId),
+            sql`json_extract(${workouts.data}, '$.status') = 'in_progress'`,
+          ),
+        )
+        .orderBy(desc(workouts.updatedAt), desc(workouts.id))
+        .limit(1)
+        .get();
+    },
     list(ownerId: string): WorkoutsData {
       return {
         contractVersion: 2,
