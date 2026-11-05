@@ -12,7 +12,7 @@ import {
 } from '@tabler/icons-react';
 import { ru } from '@/config/messages';
 const icons = {
-  '/': IconHome,
+  '/overview': IconHome,
   '/diary': IconToolsKitchen2,
   '/workouts': IconBarbell,
   '/measurements': IconRuler,
@@ -32,7 +32,7 @@ export const sections = (Object.keys(icons) as (keyof typeof icons)[]).map(
   section,
 );
 export const mobileSections = [
-  section('/'),
+  section('/overview'),
   { ...section('/diary'), title: ru.mobileNavigation.food },
   section('/workouts'),
   { href: '/more', title: ru.mobileNavigation.more, icon: IconDots },
@@ -56,5 +56,5 @@ export function isSectionActive(pathname: string, href: string): boolean {
     );
   if (href === '/workouts' && pathname.startsWith('/workouts/catalog'))
     return false;
-  return pathname === href || (href !== '/' && pathname.startsWith(`${href}/`));
+  return pathname === href || pathname.startsWith(`${href}/`);
 }

@@ -34,6 +34,14 @@ export async function listWorkouts(headers: Headers, ownerId: string) {
     ownerId,
   );
 }
+export async function findActiveWorkoutForOwner(
+  headers: Headers,
+  ownerId: string,
+) {
+  const result = await authorize(headers, 'workouts:read', ownerId);
+  if (!result.ok || result.session.user.role !== 'OWNER') return;
+  return workoutRepository(getDatabase().db).findActive(ownerId);
+}
 export async function createWorkout(
   headers: Headers,
   ownerId: string,

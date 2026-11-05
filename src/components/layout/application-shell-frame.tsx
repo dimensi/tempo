@@ -118,7 +118,7 @@ export function ApplicationShellFrame({
               >
                 <UnstyledButton
                   component={linkComponent as 'a'}
-                  href="/"
+                  href="/overview"
                   className={classes.mobileBrand}
                 >
                   <Image src={brandSrc} w={44} h={44} alt="" />
@@ -143,7 +143,7 @@ export function ApplicationShellFrame({
                 <Group gap="sm">
                   <UnstyledButton
                     component={linkComponent as 'a'}
-                    href="/"
+                    href="/overview"
 
                     mih={44}
                   >

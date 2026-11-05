@@ -32,7 +32,7 @@ export const ru = {
   },
   sections: [
     {
-      href: '/',
+      href: '/overview',
       title: 'Обзор',
       description: 'Ваше пространство для питания, здоровья и движения.',
       area: 'dashboard',
