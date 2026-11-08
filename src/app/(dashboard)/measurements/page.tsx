@@ -20,13 +20,14 @@ export default function Page() {
   );
   if (!weight.data) return <ResourcePending {...weight} />;
   return (
-    <Stack>
+    <Stack data-content-width="wide" gap="lg">
       {context.role === 'OWNER' && <OfflineWrites kind="measurement" />}
       <MeasurementsPanel
         ownerId={context.ownerId}
         writable={context.role === 'OWNER'}
         deviceWrites={context.role === 'OWNER'}
         weightHistory={weight.data}
+        weightDetails={<WeightHistoryPanel history={weight.data} />}
         renderComments={(id) => (
           <CommentsPanel
             ownerId={context.ownerId}
@@ -34,7 +35,6 @@ export default function Page() {
           />
         )}
       />
-      <WeightHistoryPanel history={weight.data} />
     </Stack>
   );
 }
