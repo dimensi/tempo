@@ -1,8 +1,8 @@
 'use client';
 import { PageHeader } from '@/components/layout/page-header';
+import { browserToday } from '@/components/shared/date-navigation-dates';
 import { offlineMessages } from '@/config/offline';
 import { writeMessages } from '@/config/offline-write-messages';
-import { readWorkspaceMessages } from '@/config/read-workspace';
 import type { WeightHistory } from '@/contracts/health';
 import {
   measurementInputSchema,
@@ -27,21 +27,30 @@ import { LineChart } from '@mantine/charts';
 import {
   Alert,
   Button,
+  CloseButton,
   Group,
+  Modal,
   Paper,
   Select,
-  SimpleGrid,
   Stack,
-  Table,
   Text,
-  Textarea,
-  TextInput,
   Title,
 } from '@mantine/core';
-import { useEffect, useState, type ReactNode } from 'react';
-import { measurementChange, weightTrendChart } from './history';
+import { useMediaQuery } from '@mantine/hooks';
+import { IconPencil, IconPlus } from '@tabler/icons-react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { MeasurementFields, type MeasurementDraftValues } from './editor';
+import { weightTrendChart } from './history';
 import { measurementMessages as m } from './messages';
 import { MeasurementPrecisionWarnings } from './precision-warnings';
+import { MeasurementRecords } from './records';
+import styles from './measurements.module.css';
+const shortChartDate = new Intl.DateTimeFormat('ru-RU', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+});
+
 function chartDate(value: unknown) {
   if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim()))
     return '';
@@ -54,32 +63,43 @@ function chartDate(value: unknown) {
     timeZone: 'UTC',
   }).format(date);
 }
-function responseError(status: number) {
+function responseError(status: number, fallback = m.error) {
   return status === 401
     ? m.sessionExpired
     : status === 403
       ? m.forbidden
       : status === 400
         ? m.validation
-        : m.error;
+        : fallback;
 }
 export function MeasurementsPanel({
   ownerId,
   deviceWrites = false,
   writable,
   weightHistory,
+  weightDetails,
   renderComments,
 }: {
   ownerId: string;
   writable: boolean;
   deviceWrites?: boolean;
   weightHistory: WeightHistory;
+  weightDetails: ReactNode;
   renderComments?: (measurementId: string) => ReactNode;
 }) {
   const [issues, setIssues] = useState<MeasurementPrecisionIssue[]>([]);
   const [retrying, setRetrying] = useState<string>();
   const [error, setError] = useState<string>();
+  const [formError, setFormError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [formVisibility, setFormVisibility] = useState<boolean>();
+  const mobile = useMediaQuery('(max-width: 47.99em)');
+  const wide = useMediaQuery('(min-width: 72em)');
+  const formOpened = writable && (formVisibility ?? wide);
+  const editorId = useId();
+  const editorHeading = useRef<HTMLHeadingElement>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
+  const trendHeading = useId();
   const [editingOriginal, setEditingOriginal] = useViewState<
     Measurement | undefined
   >(`measurements:original`, undefined);
@@ -88,21 +108,26 @@ export function MeasurementsPanel({
     undefined,
   );
   const [deleting, setDeleting] = useState<string>();
-  const [date, setDate] = useViewState(
-    `measurements:date`,
-    new Date().toISOString().slice(0, 10),
-  );
+  const [date, setDate] = useViewState(`measurements:date`, browserToday);
   const [note, setNote] = useViewState(`measurements:note`, '');
-  const [values, setValues] = useViewState<
-    Partial<Record<MeasurementMetric, string>>
-  >(`measurements:values`, {});
+  const [values, setValues] = useViewState<MeasurementDraftValues>(
+    `measurements:values`,
+    {},
+  );
   const [metric, setMetric] = useViewState<MeasurementMetric>(
     `measurements:metric`,
     'weight',
   );
   const url = `/api/measurements?ownerId=${encodeURIComponent(ownerId)}`;
   const measurements = useReadResource(readResources.measurements(url));
-  const items = measurements.data ?? [];
+  const items = [...(measurements.data ?? [])].sort((a, b) =>
+    b.measuredAt.localeCompare(a.measuredAt),
+  );
+  const hasDraft = Boolean(
+    editing || note || Object.keys(values).length || date !== browserToday(),
+  );
+  const editBlocked = (id: string) => hasDraft && editing !== id;
+  const confirmed = measurements.coverage === 'complete';
   const refresh = measurements.refresh;
   const loading = measurements.data === undefined && !measurements.error;
   const hasPendingSync = items.some((item) =>
@@ -120,6 +145,7 @@ export function MeasurementsPanel({
     });
   const conflict =
     !!editingOriginal &&
+    measurements.data !== undefined &&
     (!currentEdited || content(currentEdited) !== content(editingOriginal));
   useEffect(() => {
     const controller = new AbortController();
@@ -143,6 +169,9 @@ export function MeasurementsPanel({
     }, 5000);
     return () => clearInterval(timer);
   }, [hasPendingSync, refresh]);
+  useEffect(() => {
+    if (wide && formVisibility) editorHeading.current?.focus();
+  }, [wide, formVisibility]);
   async function retrySync(id: string) {
     const generation = sessionGeneration();
     setRetrying(id);
@@ -153,14 +182,26 @@ export function MeasurementsPanel({
         { method: 'POST' },
       );
       if (!response.ok) {
-        setError(responseError(response.status));
+        setError(responseError(response.status, m.syncError));
         return;
       }
       if (generation === sessionGeneration()) await refresh();
     } catch {
-      setError(m.error);
+      setError(m.syncError);
     } finally {
       setRetrying(undefined);
+    }
+  }
+  function closeForm() {
+    setFormError(undefined);
+    setFormVisibility(false);
+    if (wide && formOpened) addButton.current?.focus();
+  }
+  function openForm() {
+    if (formOpened) editorHeading.current?.focus();
+    else {
+      setFormError(undefined);
+      setFormVisibility(true);
     }
   }
   function reset() {
@@ -168,6 +209,23 @@ export function MeasurementsPanel({
     setEditingOriginal(undefined);
     setValues({});
     setNote('');
+    setDate(browserToday());
+    closeForm();
+  }
+  function edit(item: Measurement) {
+    if (editBlocked(item.id)) return;
+    if (editing !== item.id) {
+      setEditing(item.id);
+      setEditingOriginal(item);
+      setDate(item.measuredAt);
+      setNote(item.note ?? '');
+      setValues(
+        Object.fromEntries(
+          item.values.map(({ metric, value }) => [metric, value]),
+        ),
+      );
+    }
+    openForm();
   }
   async function save() {
     const parsed = measurementInputSchema.safeParse({
@@ -182,12 +240,12 @@ export function MeasurementsPanel({
         })),
     });
     if (!parsed.success) {
-      setError(m.validation);
+      setFormError(m.validation);
       return;
     }
     const generation = sessionGeneration();
     setBusy(true);
-    setError(undefined);
+    setFormError(undefined);
     try {
       if (deviceWrites) {
         let base: string | undefined;
@@ -239,19 +297,20 @@ export function MeasurementsPanel({
         },
       );
       if (!r.ok) {
-        setError(responseError(r.status));
+        setFormError(responseError(r.status));
         return;
       }
       if (generation !== sessionGeneration()) return;
       await refresh();
       if (generation === sessionGeneration()) reset();
     } catch {
-      setError(deviceWrites ? writeMessages.error : m.error);
+      setFormError(deviceWrites ? writeMessages.error : m.error);
     } finally {
       setBusy(false);
     }
   }
   async function remove(id: string) {
+    if (!confirmed) return;
     const generation = sessionGeneration();
     setBusy(true);
     setError(undefined);
@@ -261,7 +320,7 @@ export function MeasurementsPanel({
         { method: 'DELETE' },
       );
       if (!r.ok) {
-        setError(responseError(r.status));
+        setError(responseError(r.status, m.deleteError));
         return;
       }
       if (generation !== sessionGeneration()) return;
@@ -271,7 +330,7 @@ export function MeasurementsPanel({
         if (editing === id) reset();
       }
     } catch {
-      setError(m.error);
+      setError(m.deleteError);
     } finally {
       setBusy(false);
     }
@@ -295,260 +354,301 @@ export function MeasurementsPanel({
           const v = item.values.find((v) => v.metric === metric);
           return v ? [{ date: item.measuredAt, value: Number(v.value) }] : [];
         });
+  const unit = m.units[metric === 'weight' ? 'kg' : 'cm'];
+  const latest = chart.findLast((point) => point.value !== null);
+  const pageError = deleting ? undefined : error;
+  const editorTitle = editing ? m.editTitle : m.add;
+  const editor = (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!busy) void save();
+      }}
+    >
+      <Stack gap="md">
+        {conflict && (
+          <Alert color="orange">{offlineMessages.draftConflict}</Alert>
+        )}
+        {formError && (
+          <Alert color="red" role="alert">
+            {formError}
+          </Alert>
+        )}
+        <fieldset className={styles.formFields} disabled={busy}>
+          <MeasurementFields
+            date={date}
+            full={wide}
+            values={values}
+            note={note}
+            onDateChange={setDate}
+            onValuesChange={setValues}
+            onNoteChange={setNote}
+          />
+        </fieldset>
+        <Group justify="space-between" gap="xs">
+          <Button type="submit" loading={busy} mih={44}>
+            {m.save}
+          </Button>
+          {hasDraft && (
+            <Button
+              size="sm"
+              variant="subtle"
+              color="gray"
+              onClick={reset}
+              disabled={busy}
+              mih={44}
+            >
+              {m.discard}
+            </Button>
+          )}
+        </Group>
+      </Stack>
+    </form>
+  );
+
   return (
-    <Stack data-testid="measurements-panel">
-      <PageHeader>{m.title}</PageHeader>
-      {conflict && (
-        <Alert color="orange">{offlineMessages.draftConflict}</Alert>
-      )}
-      {(error || measurements.error) && (
+    <Stack gap="lg" data-testid="measurements-panel">
+      <PageHeader
+        actions={
+          writable && (
+            <Button
+              ref={addButton}
+              className={styles.headerAction}
+              aria-controls={wide && formOpened ? editorId : undefined}
+              aria-expanded={wide ? formOpened : undefined}
+              size="sm"
+              mih={44}
+              leftSection={
+                hasDraft ? (
+                  <IconPencil size={18} aria-hidden />
+                ) : (
+                  <IconPlus size={18} aria-hidden />
+                )
+              }
+              onClick={openForm}
+            >
+              {hasDraft ? m.resume : m.add}
+            </Button>
+          )
+        }
+      >
+        {m.title}
+      </PageHeader>
+      {(pageError || measurements.error) && (
         <Alert color="red" role="alert">
-          {error ?? m.loadError}
+          {pageError ?? m.loadError}
         </Alert>
       )}
-      {!writable && <Text>{m.readOnly}</Text>}
-      {loading && <Text>{m.loading}</Text>}
-      {writable && (
-        <Paper withBorder p="md">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void save();
-            }}
-          >
-            <Stack>
-              <TextInput
-                type="date"
-                label={m.date}
-                value={date}
-                onChange={(e) => setDate(e.currentTarget.value)}
-                required
-              />
-              <Text size="sm">{m.valueHint}</Text>
-              <Text size="sm" c="dimmed">
-                {m.syncHint}
-              </Text>
-              <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-                {measurementMetrics.map((key) => (
-                  <TextInput
-                    key={key}
-                    label={`${m.metrics[key]} (${m.units[key === 'weight' ? 'kg' : 'cm']})`}
-                    inputMode="decimal"
-                    value={values[key] ?? ''}
-                    onChange={(e) => {
-                      const value = e.currentTarget.value;
-                      setValues((old) => ({ ...old, [key]: value }));
-                    }}
-                  />
-                ))}
-              </SimpleGrid>
-              <Textarea
-                label={m.note}
-                value={note}
-                maxLength={2000}
-                onChange={(e) => setNote(e.currentTarget.value)}
-              />
-              <Group>
-                <Button type="submit" loading={busy} mih={44}>
-                  {m.save}
-                </Button>
-                {editing && (
-                  <Button
-                    variant="default"
-                    onClick={reset}
-                    disabled={busy}
-                    mih={44}
-                  >
-                    {m.cancel}
-                  </Button>
-                )}
-              </Group>
-            </Stack>
-          </form>
-        </Paper>
+      {!writable && (
+        <Text size="sm" c="dimmed">
+          {m.readOnly}
+        </Text>
       )}
-      <Title order={2}>{m.trend}</Title>
-      <Select
-        label={m.trend}
-        data={measurementMetrics.map((value) => ({
-          value,
-          label: m.metrics[value],
-        }))}
-        value={metric}
-        onChange={(v) => {
-          if (v) setMetric(v as MeasurementMetric);
-        }}
-      />
-      {chart.length ? (
-        <LineChart
-          data-testid="measurement-trend-chart"
-          h={260}
-          data={chart.map((point) => ({
-            ...point,
-            time: Date.parse(point.date),
-          }))}
-          dataKey="time"
-          xAxisProps={{
-            type: 'number',
-            scale: 'time',
-            domain: ['dataMin', 'dataMax'],
-            tickFormatter: (value: number) => chartDate(value),
-            minTickGap: 24,
-          }}
-          tooltipProps={{ labelFormatter: chartDate }}
-          withLegend={false}
-          connectNulls
-          valueFormatter={(value) =>
-            `${formatDecimal(value)} ${m.units[metric === 'weight' ? 'kg' : 'cm']}`
-          }
-          series={[
-            { name: 'value', label: m.metrics[metric], color: 'gray.7' },
-          ]}
-        />
-      ) : (
-        <Text>{m.empty}</Text>
-      )}
-      <MeasurementPrecisionWarnings issues={issues} />
-      <Title order={2}>{m.history}</Title>
-      {!loading && !items.length && <Text>{m.empty}</Text>}
-      <Table.ScrollContainer minWidth={580}>
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>{m.date}</Table.Th>
-              <Table.Th>{m.title}</Table.Th>
-              <Table.Th>{m.note}</Table.Th>
-              {writable && <Table.Th />}
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {items.map((item) => (
-              <Table.Tr key={item.id}>
-                <Table.Td>{item.measuredAt}</Table.Td>
-                <Table.Td>
-                  {item.values.map((v) => (
-                    <Stack key={v.metric} gap={0}>
-                      <Text size="sm">
-                        {m.metrics[v.metric]}: {v.value} {m.units[v.unit]}{' '}
-                        {measurementChange(items, item, v.metric) !== null &&
-                          `(${measurementChange(items, item, v.metric)})`}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        {item.sync.find((status) => status.metric === v.metric)
-                          ? m.sync[
-                              item.sync.find(
-                                (status) => status.metric === v.metric,
-                              )!.state
-                            ]
-                          : m.localOnly}
-                      </Text>
-                      {item.sync.find((status) => status.metric === v.metric)
-                        ?.state === 'conflict' && (
-                        <Text size="xs">
-                          {m.remoteValue}:{' '}
-                          {
-                            item.sync.find(
-                              (status) => status.metric === v.metric,
-                            )!.remoteValue
-                          }
-                        </Text>
-                      )}
-                    </Stack>
-                  ))}
-                </Table.Td>
-                <Table.Td style={{ overflowWrap: 'anywhere', maxWidth: 240 }}>
-                  {item.note}
-                </Table.Td>
-                {writable && (
-                  <Table.Td>
-                    <Group>
-                      {item.sync.some((status) =>
-                        ['failed', 'uncertain', 'conflict'].includes(
-                          status.state,
-                        ),
-                      ) && (
-                        <Button
-                          variant="default"
-                          mih={44}
-                          loading={retrying === item.id}
-                          onClick={() => void retrySync(item.id)}
-                        >
-                          {m.retrySync}
-                        </Button>
-                      )}
-                      <Button
-                        variant="default"
-                        mih={44}
-                        disabled={busy || measurements.coverage !== 'complete'}
-                        title={
-                          measurements.coverage !== 'complete'
-                            ? readWorkspaceMessages.recordUnconfirmed
-                            : undefined
-                        }
-                        onClick={() => {
-                          setEditing(item.id);
-                          setEditingOriginal(item);
-                          setDate(item.measuredAt);
-                          setNote(item.note ?? '');
-                          setValues(
-                            Object.fromEntries(
-                              item.values.map((v) => [v.metric, v.value]),
-                            ),
-                          );
-                        }}
-                      >
-                        {m.edit}
-                      </Button>
-                      <Button
-                        color="red"
-                        mih={44}
-                        disabled={busy || measurements.coverage !== 'complete'}
-                        title={
-                          measurements.coverage !== 'complete'
-                            ? readWorkspaceMessages.recordUnconfirmed
-                            : undefined
-                        }
-                        onClick={() =>
-                          deleting === item.id
-                            ? void remove(item.id)
-                            : setDeleting(item.id)
-                        }
-                      >
-                        {deleting === item.id ? m.confirm : m.remove}
-                      </Button>
-                      {deleting === item.id && (
-                        <Button
-                          variant="default"
-                          onClick={() => setDeleting(undefined)}
-                        >
-                          {m.cancel}
-                        </Button>
-                      )}
-                    </Group>
-                  </Table.Td>
-                )}
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Table.ScrollContainer>
-      {renderComments &&
-        items.map((item) => (
+      <div
+        className={styles.workspace}
+        data-editing={(wide && formOpened) || undefined}
+      >
+        {wide && writable && formOpened && (
           <Paper
-            key={item.id}
+            component="section"
             withBorder
             p="md"
-            data-testid={`measurement-comments-${item.id}`}
+            radius="lg"
+            id={editorId}
+            aria-labelledby={`${editorId}-title`}
+            className={styles.editor}
           >
-            <Stack>
-              <Text fw={600}>{item.measuredAt}</Text>
-              {item.note && (
-                <Text style={{ overflowWrap: 'anywhere' }}>{item.note}</Text>
-              )}
-              {renderComments(item.id)}
+            <Stack gap="sm">
+              <Group justify="space-between" wrap="nowrap">
+                <Title
+                  order={2}
+                  size="h4"
+                  id={`${editorId}-title`}
+                  ref={editorHeading}
+                  tabIndex={-1}
+                  className={styles.editorHeading}
+                >
+                  {editorTitle}
+                </Title>
+                <CloseButton
+                  aria-label={m.close}
+                  size={44}
+                  onClick={closeForm}
+                  disabled={busy}
+                />
+              </Group>
+              {editor}
             </Stack>
           </Paper>
-        ))}
+        )}
+        <Paper
+          component="section"
+          withBorder
+          p="md"
+          radius="lg"
+          aria-labelledby={trendHeading}
+          className={styles.chart}
+        >
+          <Stack gap="sm">
+            <Group justify="space-between" align="center" gap="xs">
+              <Title order={2} size="h4" id={trendHeading}>
+                {m.trend}
+              </Title>
+              <Select
+                className={styles.trendSelect}
+                aria-label={m.trend}
+                allowDeselect={false}
+                data={measurementMetrics.map((value) => ({
+                  value,
+                  label: m.metrics[value],
+                }))}
+                value={metric}
+                onChange={(value) => {
+                  if (value) setMetric(value as MeasurementMetric);
+                }}
+              />
+            </Group>
+            {latest && (
+              <Group gap="xs" align="baseline">
+                <Text fw={650} className={styles.number}>
+                  {formatDecimal(latest.value)} {unit}
+                </Text>
+                <Text size="sm" c="dimmed">
+                  {m.lastReading} · {chartDate(Date.parse(latest.date))}
+                </Text>
+              </Group>
+            )}
+            {latest ? (
+              <LineChart
+                data-testid="measurement-trend-chart"
+                h={216}
+                data={chart.map((point) => ({
+                  ...point,
+                  time: Date.parse(point.date),
+                }))}
+                dataKey="time"
+                xAxisProps={{
+                  type: 'number',
+                  scale: 'time',
+                  domain: ['dataMin', 'dataMax'],
+                  tickFormatter: (value: number) =>
+                    shortChartDate.format(value),
+                  minTickGap: 24,
+                }}
+                yAxisProps={{
+                  domain: [
+                    (min: number) => Math.max(0, Math.floor(min - 1)),
+                    (max: number) => Math.ceil(max + 1),
+                  ],
+                  tickCount: 4,
+                }}
+                tooltipProps={{ labelFormatter: chartDate }}
+                withLegend={false}
+                connectNulls
+                valueFormatter={(value) => `${formatDecimal(value)} ${unit}`}
+                series={[
+                  { name: 'value', label: m.metrics[metric], color: 'teal.6' },
+                ]}
+              />
+            ) : (
+              <Text size="sm" c="dimmed">
+                {loading
+                  ? m.loading
+                  : measurements.error
+                    ? m.loadError
+                    : m.noMetric}
+              </Text>
+            )}
+          </Stack>
+        </Paper>
+        <div className={styles.records}>
+          <MeasurementRecords
+            items={items}
+            loading={loading}
+            loadError={Boolean(measurements.error)}
+            writable={writable}
+            confirmed={confirmed}
+            busy={busy}
+            retrying={retrying}
+            editBlocked={editBlocked}
+            onEdit={edit}
+            onDelete={(id) => {
+              setError(undefined);
+              setDeleting(id);
+            }}
+            onRetry={(id) => void retrySync(id)}
+            renderComments={renderComments}
+          />
+        </div>
+        <Stack className={styles.sources} gap="sm">
+          <MeasurementPrecisionWarnings issues={issues} />
+          {weightDetails}
+        </Stack>
+      </div>
+      {!wide && writable && (
+        <Modal
+          opened={formOpened}
+          onClose={closeForm}
+          title={editorTitle}
+          centered
+          fullScreen={mobile}
+          size="lg"
+          withCloseButton={!busy}
+          closeOnEscape={!busy}
+          closeOnClickOutside={!busy}
+          closeButtonProps={{ 'aria-label': m.close, size: 44 }}
+        >
+          {editor}
+        </Modal>
+      )}
+      {writable && (
+        <Modal
+          opened={Boolean(deleting)}
+          onClose={() => {
+            setError(undefined);
+            setDeleting(undefined);
+          }}
+          title={m.confirm}
+          centered
+          withCloseButton={!busy}
+          closeOnEscape={!busy}
+          closeOnClickOutside={!busy}
+          closeButtonProps={{ 'aria-label': m.close, size: 44 }}
+        >
+          <Stack>
+            <Text size="sm">{m.deleteHint}</Text>
+            {error && (
+              <Alert color="red" role="alert">
+                {error}
+              </Alert>
+            )}
+            <Group justify="end">
+              <Button
+                size="sm"
+                variant="default"
+                mih={44}
+                disabled={busy}
+                onClick={() => {
+                  setError(undefined);
+                  setDeleting(undefined);
+                }}
+              >
+                {m.cancel}
+              </Button>
+              <Button
+                size="sm"
+                color="red"
+                mih={44}
+                loading={busy}
+                disabled={!confirmed}
+                onClick={() => deleting && void remove(deleting)}
+              >
+                {m.remove}
+              </Button>
+            </Group>
+          </Stack>
+        </Modal>
+      )}
     </Stack>
   );
 }

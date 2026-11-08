@@ -1,0 +1,163 @@
+.workspace {
+  display: grid;
+  min-width: 0;
+  gap: var(--mantine-spacing-lg);
+}
+
+.editor,
+.records,
+.sources {
+  min-width: 0;
+}
+
+.editorHeading {
+  scroll-margin-top: calc(
+    var(--tempo-header-height) + var(--mantine-spacing-md)
+  );
+}
+
+@media (min-width: 72em) {
+  .workspace {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    grid-template-areas:
+      'trend records'
+      'sources records';
+    grid-template-rows: auto 1fr;
+    align-items: start;
+  }
+
+  .workspace[data-editing] {
+    grid-template-areas:
+      'editor records'
+      'trend records'
+      'sources records';
+    grid-template-rows: auto auto 1fr;
+  }
+
+  .editor {
+    grid-area: editor;
+  }
+
+  .chart {
+    grid-area: trend;
+  }
+
+  .records {
+    grid-area: records;
+  }
+
+  .sources {
+    grid-area: sources;
+  }
+}
+
+.chart,
+.recordRow {
+  min-width: 0;
+}
+
+.trendSelect {
+  width: min(100%, 14rem);
+}
+
+.trendSelect input,
+.dateInput input,
+.metricInput input {
+  min-height: 44px;
+  font-size: var(--mantine-font-size-md);
+}
+
+.number,
+.metricInput input,
+.recordPreview {
+  font-variant-numeric: tabular-nums;
+}
+
+.recordControl {
+  flex: 1;
+  min-width: 0;
+  min-height: 54px;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+}
+
+.recordLabel {
+  padding: 0;
+}
+
+.recordMenu {
+  color: var(--mantine-color-text);
+}
+
+.recordMenu:hover {
+  background: var(--mantine-color-default-hover);
+}
+
+.recordSummary {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.25rem var(--mantine-spacing-sm);
+}
+
+.recordPreview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.125rem var(--mantine-spacing-sm);
+  overflow-wrap: anywhere;
+}
+
+.recordContent {
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm)
+    var(--mantine-spacing-md);
+}
+
+.note {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dateInput {
+  width: min(100%, 15rem);
+}
+
+.metricInput {
+  min-width: 0;
+  flex: 1;
+}
+
+.formFields {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.fieldAction {
+  align-self: flex-start;
+}
+
+.pickerOption {
+  padding-inline: var(--mantine-spacing-xs);
+}
+
+.pickerInner {
+  justify-content: flex-start;
+}
+
+@media (max-width: 24em) {
+  .headerAction {
+    padding-inline: var(--mantine-spacing-xs);
+  }
+}
+
+@media (max-width: 47.99em) {
+  .recordSummary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recordControl,
+  .recordContent {
+    padding-inline: var(--mantine-spacing-xs);
+  }
+}

@@ -11,6 +11,11 @@ export const healthMessages = {
     'Пропущенные дни показаны разрывами и не считаются нулевыми. Записанный ноль учитывается в среднем.',
   emptySteps: 'За этот период нет данных о шагах.',
   weight: 'История веса',
+  weightCount: (count: number) => `· ${count}`,
+  weightPageRange: (from: number, to: number, total: number) =>
+    `${from}–${to} из ${total}`,
+  weightPreviousPage: 'Предыдущая страница истории веса',
+  weightNextPage: 'Следующая страница истории веса',
   local: 'Вручную',
   value: 'Значение',
   kg: 'кг',
