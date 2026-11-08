@@ -9,9 +9,11 @@ import {
   Textarea,
   TextInput,
 } from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
 import {
   IconBarbell,
   IconBodyScan,
+  IconCalendar,
   IconChevronDown,
   IconNote,
   IconPlus,
@@ -23,6 +25,8 @@ import {
   IconX,
 } from '@tabler/icons-react';
 import { useId, useState } from 'react';
+import 'dayjs/locale/ru';
+import { dateNavigationMessages } from '@/config/date-navigation';
 import {
   measurementMetrics,
   type MeasurementMetric,
@@ -40,11 +44,17 @@ const metricIcons = {
   thigh: IconRun,
 };
 
+const dayLabel = new Intl.DateTimeFormat('ru', {
+  dateStyle: 'full',
+  timeZone: 'UTC',
+});
+
 export type MeasurementDraftValues = Partial<Record<MeasurementMetric, string>>;
 
 export function MeasurementFields({
   date,
   full,
+  nativeDate,
   note,
   values,
   onDateChange,
@@ -53,6 +63,7 @@ export function MeasurementFields({
 }: {
   date: string;
   full: boolean;
+  nativeDate: boolean;
   note: string;
   values: MeasurementDraftValues;
   onDateChange: (value: string) => void;
@@ -69,14 +80,33 @@ export function MeasurementFields({
       ? included
       : ['weight'];
   const available = measurementMetrics.filter((key) => !selected.includes(key));
-  const dateInput = (
+  const dateInput = nativeDate ? (
     <TextInput
       className={styles.dateInput}
+      classNames={{ input: styles.dateControl }}
       type="date"
       label={m.date}
       value={date}
       onChange={(e) => onDateChange(e.currentTarget.value)}
       required
+    />
+  ) : (
+    <DatePickerInput
+      className={styles.dateInput}
+      classNames={{ input: styles.dateControl }}
+      label={m.date}
+      placeholder={m.pickDate}
+      withAsterisk
+      locale="ru"
+      firstDayOfWeek={1}
+      valueFormat="DD.MM.YYYY"
+      value={date || null}
+      onChange={(value) => onDateChange(value ?? '')}
+      rightSection={<IconCalendar size={18} aria-hidden />}
+      rightSectionPointerEvents="none"
+      popoverProps={{ withinPortal: false, returnFocus: true }}
+      ariaLabels={dateNavigationMessages.calendar}
+      getDayAriaLabel={(value) => dayLabel.format(new Date(value))}
     />
   );
 

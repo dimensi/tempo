@@ -1,6 +1,7 @@
 export const measurementMessages = {
   title: 'Замеры',
   date: 'Дата замера',
+  pickDate: 'Выбрать дату',
   note: 'Заметка',
   save: 'Сохранить',
   add: 'Добавить замер',
