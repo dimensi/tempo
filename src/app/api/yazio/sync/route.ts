@@ -3,7 +3,11 @@ import {
   syncRequestSchema,
 } from '@/contracts/nutrition-sync';
 import { withApiErrors } from '@/server/auth/api-response';
-import { runNutritionSync } from '@/server/jobs/nutrition-scheduler';
+import {
+  getNutritionLiveStatus,
+  refreshRecentNutrition,
+  runNutritionSync,
+} from '@/server/jobs/nutrition-scheduler';
 import { json, readBody, respond, sameOrigin } from '@/server/nutrition/http';
 import { refreshYazioAccount, yazioOwner } from '@/server/yazio/settings';
 async function POSTHandler(request: Request) {
@@ -13,11 +17,13 @@ async function POSTHandler(request: Request) {
     const input = syncRequestSchema.parse(
       JSON.parse((await readBody(request, 2048)).toString()),
     );
-    const period = resolveSyncPeriod(input);
-    const sync = await runNutritionSync(ownerId, period, {
-      mode: 'manual',
-      timezone: input.timezone ?? 'UTC',
-    });
+    const sync =
+      input.mode === 'history'
+        ? await runNutritionSync(ownerId, resolveSyncPeriod(input), {
+            mode: 'manual',
+            timezone: input.timezone,
+          })
+        : await refreshRecentNutrition(ownerId, input.timezone);
     if (
       (sync.state === 'completed' && sync.completedDates.length > 0) ||
       (sync.state === 'partial' &&
@@ -30,4 +36,9 @@ async function POSTHandler(request: Request) {
   });
 }
 
+export const GET = withApiErrors(async (request: Request) =>
+  respond(async () =>
+    json(getNutritionLiveStatus(await yazioOwner(request.headers))),
+  ),
+);
 export const POST = withApiErrors(POSTHandler);

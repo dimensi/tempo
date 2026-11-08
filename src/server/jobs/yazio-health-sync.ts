@@ -1,86 +1,94 @@
 import 'server-only';
-import type {
-  HealthSyncResult,
-  ImportedWeight,
-  DailySteps,
-} from '@/contracts/yazio-health';
+import type { ImportedWeight } from '@/contracts/yazio-health';
 import type { NutritionUpstream } from '@/server/yazio/adapter';
 import type { yazioHealthRepository } from '@/server/yazio/health-repository';
 import { deduplicateYazioWeights } from '@/server/yazio/health-normalize';
-import { periodDates } from './nutrition-sync';
 import type { DayWork } from '@/server/yazio/sync-progress';
 import { syncReadFailure } from '@/server/yazio/sync-diagnostics';
 
-export async function syncYazioHealthPeriod(
+type HealthRepository = Pick<
+  ReturnType<typeof yazioHealthRepository>,
+  'upsert'
+>;
+
+export async function syncYazioSteps(
   ownerId: string,
-  period: { from: string; to: string },
-  upstream: Pick<NutritionUpstream, 'healthSummary' | 'weight'>,
-  repository: Pick<ReturnType<typeof yazioHealthRepository>, 'upsert'>,
+  work: ReadonlyMap<string, DayWork>,
+  upstream: Pick<NutritionUpstream, 'healthSummary'>,
+  repository: HealthRepository,
   assertCurrent: () => void,
   observedAt: string,
-  work?: ReadonlyMap<string, DayWork>,
-): Promise<HealthSyncResult> {
-  const result: HealthSyncResult = {
-    completedStepsDates: [],
-    failedStepsDates: [],
-    completedWeightDates: [],
-    failedWeightDates: [],
-    error: null,
-  };
-  const dailySteps: DailySteps[] = [];
-  const weights: ImportedWeight[] = [];
-  for (const date of work ? work.keys() : periodDates(period)) {
+  onSettled: (date: string) => void,
+) {
+  const completedStepsDates: string[] = [];
+  const failedStepsDates: string[] = [];
+  for (const [date, selected] of work) {
+    if (!selected.steps) continue;
     assertCurrent();
-    const selected = work?.get(date) ?? { steps: true, weight: true };
-    if (!selected.steps && !selected.weight) continue;
     const started = Date.now();
-    let unitContext: string | null = null;
     try {
-      const summary = await upstream.healthSummary(date);
+      const { dailySteps } = await upstream.healthSummary(date);
       assertCurrent();
-      if (selected.steps) dailySteps.push(summary.dailySteps);
-      unitContext = summary.unitContext;
-      if (selected.steps) result.completedStepsDates.push(date);
+      repository.upsert(
+        ownerId,
+        { dailySteps: [dailySteps], weights: [] },
+        observedAt,
+        {
+          steps: [date],
+          weight: [],
+        },
+      );
+      completedStepsDates.push(date);
     } catch (error) {
       assertCurrent();
       syncReadFailure('steps-summary', date, started, error);
-      if (selected.steps) result.failedStepsDates.push(date);
+      failedStepsDates.push(date);
     }
-    if (!selected.weight) continue;
+    onSettled(date);
+  }
+  return { completedStepsDates, failedStepsDates };
+}
+
+export async function syncYazioWeight(
+  ownerId: string,
+  work: ReadonlyMap<string, DayWork>,
+  upstream: Pick<NutritionUpstream, 'healthSummary' | 'weight'>,
+  repository: HealthRepository,
+  assertCurrent: () => void,
+  observedAt: string,
+) {
+  const completedWeightDates: string[] = [];
+  const failedWeightDates: string[] = [];
+  const weights: ImportedWeight[] = [];
+  // Last-entry responses may repeat the same measurement for several days.
+  for (const date of [...work.keys()].sort()) {
+    if (!work.get(date)?.weight) continue;
+    assertCurrent();
+    const started = Date.now();
+    const summary = await upstream.healthSummary(date).catch(() => null);
+    assertCurrent();
     try {
-      const weight = await upstream.weight(date, unitContext);
+      const weight = await upstream.weight(date, summary?.unitContext ?? null);
       assertCurrent();
       if (weight) weights.push(weight);
-      result.completedWeightDates.push(date);
+      completedWeightDates.push(date);
     } catch (error) {
       assertCurrent();
       syncReadFailure('weight', date, started, error);
-      result.failedWeightDates.push(date);
+      failedWeightDates.push(date);
     }
   }
   try {
     assertCurrent();
     repository.upsert(
       ownerId,
-      {
-        weights: deduplicateYazioWeights(weights),
-        dailySteps,
-      },
+      { weights: deduplicateYazioWeights(weights), dailySteps: [] },
       observedAt,
-      {
-        steps: result.completedStepsDates,
-        weight: result.completedWeightDates,
-      },
+      { steps: [], weight: completedWeightDates },
     );
   } catch {
     assertCurrent();
-    // The repository transaction rolls the complete health batch back.
-    result.failedStepsDates.push(...result.completedStepsDates);
-    result.failedWeightDates.push(...result.completedWeightDates);
-    result.completedStepsDates = [];
-    result.completedWeightDates = [];
+    failedWeightDates.push(...completedWeightDates.splice(0));
   }
-  if (result.failedStepsDates.length || result.failedWeightDates.length)
-    result.error = 'HEALTH_IMPORT_FAILED';
-  return result;
+  return { completedWeightDates, failedWeightDates };
 }

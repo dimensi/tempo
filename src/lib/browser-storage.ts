@@ -41,3 +41,26 @@ export async function clearReadStorage() {
     tx.objectStore('resources').clear();
   });
 }
+
+/** Retire file downloads without touching cached reads, drafts, or queued writes. */
+export async function retireOfflineDownloads() {
+  await browserStore<void>(['files', 'metadata'], 'readwrite', (tx) => {
+    tx.objectStore('files').clear();
+    const request = tx
+      .objectStore('metadata')
+      .openCursor(
+        IDBKeyRange.bound(
+          'workout-download:',
+          'workout-download;',
+          false,
+          true,
+        ),
+      );
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      cursor.delete();
+      cursor.continue();
+    };
+  });
+}

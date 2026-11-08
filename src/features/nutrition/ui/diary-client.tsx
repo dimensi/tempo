@@ -6,13 +6,14 @@ import { revalidateVisibleReads } from '@/lib/client-read';
 import { useReadOnline } from '@/lib/use-read-online';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
-import { Stack } from '@mantine/core';
+import { Group, Loader, Stack, Text } from '@mantine/core';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 import { DayNavigation } from './day-navigation';
 import { DayRefreshControl } from './day-refresh-control';
 import { DiaryView, type DiaryViewProps } from './diary-view';
 import { createPhotoActions, diaryPhotos } from './photo-actions';
+import { diaryMessages as m } from './messages';
 
 export interface DiaryClientProps extends Omit<
   DiaryViewProps,
@@ -22,6 +23,8 @@ export interface DiaryClientProps extends Omit<
   photos: SafeMealPhotoView[];
   canWrite: boolean;
   loading?: boolean;
+  syncingPhotos?: boolean;
+  photoSyncFailed?: boolean;
 }
 
 export function DiaryClient({
@@ -29,6 +32,8 @@ export function DiaryClient({
   photos,
   canWrite,
   loading = false,
+  syncingPhotos = false,
+  photoSyncFailed = false,
   ...props
 }: DiaryClientProps) {
   const goals = useReadResource(
@@ -52,6 +57,23 @@ export function DiaryClient({
     <DiaryView
       {...props}
       day={props.day}
+      photosPendingSlot={
+        syncingPhotos ? (
+          <Group gap="xs" role="status">
+            <Loader size="xs" aria-hidden="true" />
+            <Text size="sm" c="dimmed">
+              {m.photoSyncRunning}
+            </Text>
+          </Group>
+        ) : (
+          (props.photosPendingSlot ??
+          (photoSyncFailed ? (
+            <Text size="sm" c="dimmed" role="status">
+              {m.photoSyncFailed}
+            </Text>
+          ) : undefined))
+        )
+      }
       goals={goals.data}
       navigationSlot={
         <Stack gap="sm">

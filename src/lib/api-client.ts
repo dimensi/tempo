@@ -1,3 +1,4 @@
+import { nutritionLiveStatusSchema } from '@/contracts/nutrition-sync';
 import {
   isCacheableReadUrl,
   readResponseSchema,
@@ -131,12 +132,39 @@ export async function apiFetch(
   return response.clone();
 }
 
-export async function requestOverviewRefresh(timezone: string) {
-  const response = await apiFetch('/api/yazio/overview-refresh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ timezone }),
+export const nutritionSyncRequestEvent = 'tempo:nutrition-sync-request';
+const nutritionSyncRequests = new Map<symbol, number>();
+export function nutritionSyncRequested() {
+  return [...nutritionSyncRequests.values()].includes(sessionGeneration());
+}
+export async function trackNutritionSyncRequest<T>(request: () => Promise<T>) {
+  const id = Symbol();
+  nutritionSyncRequests.set(id, sessionGeneration());
+  window.dispatchEvent(new Event(nutritionSyncRequestEvent));
+  try {
+    return await request();
+  } finally {
+    nutritionSyncRequests.delete(id);
+    window.dispatchEvent(new Event(nutritionSyncRequestEvent));
+  }
+}
+export async function fetchNutritionSyncStatus(signal: AbortSignal) {
+  const response = await apiFetch('/api/yazio/sync', {
+    cache: 'no-store',
+    signal,
   });
+  if (!response.ok) throw new Error('Nutrition sync status unavailable');
+  return nutritionLiveStatusSchema.parse(await response.json());
+}
+
+export async function requestOverviewRefresh(timezone: string) {
+  const response = await trackNutritionSyncRequest(() =>
+    apiFetch('/api/yazio/overview-refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timezone }),
+    }),
+  );
   if (!response.ok) throw new Error('Overview refresh unavailable');
   return apiResults.overviewRefresh(await response.json());
 }

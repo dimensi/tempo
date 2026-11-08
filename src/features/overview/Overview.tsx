@@ -9,6 +9,8 @@ import { shiftDate } from '@/contracts/nutrition-sync-dates';
 import { formatDecimal, toChartNumber } from '@/lib/number-display';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
+import { useReadOnline } from '@/lib/use-read-online';
+import { useNutritionSyncStatus } from '@/lib/use-nutrition-sync-status';
 import { workoutTitle } from '@/lib/workout-title';
 import { LineChart } from '@mantine/charts';
 import {
@@ -16,19 +18,14 @@ import {
   Anchor,
   Button,
   Group,
+  Loader,
   Skeleton,
   Stack,
   Text,
 } from '@mantine/core';
 import { IconChevronRight } from '@tabler/icons-react';
 import Link from 'next/link';
-import {
-  createElement,
-  useEffect,
-  useState,
-  useRef,
-  type ElementType,
-} from 'react';
+import { createElement, useEffect, useState, type ElementType } from 'react';
 import { localCalendar, nextMidnightDelay } from './calendar';
 import { overviewMessages as m } from './messages';
 import classes from './overview.module.css';
@@ -96,24 +93,34 @@ export function Overview({
     data.timezone === calendar.timezone
       ? data
       : null);
-  const [automaticPending, setAutomaticPending] = useState(false);
   const owner = !saved && !!current?.sync;
+  const online = useReadOnline();
+  const live = useNutritionSyncStatus(owner);
+  const activity = live?.activity;
+  const stages = activity
+    ? [
+        activity.steps.length && m.syncSteps,
+        activity.food.length && m.syncFood,
+        activity.photos.length && m.syncPhotos,
+        activity.other && m.syncOther,
+      ].filter(Boolean)
+    : [];
   const syncTimezone = calendar?.timezone;
   const syncToday = calendar?.today;
   useEffect(() => {
-    if (!owner || !syncTimezone) return;
+    if (!owner || !syncTimezone || !online) return;
     let inFlight = false;
     function sync() {
       if (!syncTimezone || inFlight || document.visibilityState !== 'visible')
         return;
       inFlight = true;
-      setAutomaticPending(true);
       void requestOverviewRefresh(syncTimezone)
-        .then(() => revalidateVisibleReads())
+        .then(({ started }) => {
+          if (started) revalidateVisibleReads();
+        })
         .catch(() => {})
         .finally(() => {
           inFlight = false;
-          setAutomaticPending(false);
         });
     }
     sync();
@@ -123,35 +130,7 @@ export function Overview({
       document.removeEventListener('visibilitychange', sync);
       window.removeEventListener('focus', sync);
     };
-  }, [owner, syncToday, syncTimezone]);
-  const wasRunning = useRef(false);
-  useEffect(() => {
-    const running = !!current?.sync?.running;
-    if (wasRunning.current && !running) revalidateVisibleReads();
-    wasRunning.current = running;
-  }, [current?.sync?.running]);
-  useEffect(() => {
-    if (!current?.sync?.running && !automaticPending) return;
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout>;
-    async function poll() {
-      await refreshResource();
-      if (!disposed && document.visibilityState === 'visible')
-        timer = setTimeout(() => void poll(), 2000);
-    }
-    function visible() {
-      clearTimeout(timer);
-      if (document.visibilityState === 'visible')
-        timer = setTimeout(() => void poll(), 2000);
-    }
-    visible();
-    document.addEventListener('visibilitychange', visible);
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-      document.removeEventListener('visibilitychange', visible);
-    };
-  }, [current?.sync?.running, automaticPending, refreshResource]);
+  }, [owner, online, syncToday, syncTimezone]);
   const analyticsHref = current
     ? `/analytics?from=${shiftDate(current.today, -6)}&to=${current.today}`
     : '/analytics';
@@ -184,6 +163,14 @@ export function Overview({
         </Stack>
       ) : (
         <>
+          {stages.length > 0 && (
+            <Group gap="xs" role="status" wrap="nowrap">
+              <Loader size="xs" aria-hidden="true" />
+              <Text size="sm" c="dimmed">
+                {m.updating(stages.join(', '))}
+              </Text>
+            </Group>
+          )}
           <div className={classes.rows}>
             <Anchor
               renderRoot={(props) => createElement(linkComponent, props)}
@@ -338,9 +325,13 @@ export function Overview({
               <div className={classes.sync}>
                 <Text size="xs" c="dimmed">
                   {m.sync}:{' '}
-                  {current.sync.running
+                  {activity
                     ? m.syncRunning
-                    : current.sync.hasError
+                    : live?.schedule.hasError ||
+                        !!live?.last.failedStepsDates?.length ||
+                        !!live?.last.failedGoalsDates?.length ||
+                        !!live?.last.failedWeightDates?.length ||
+                        (!live && current.sync.hasError)
                       ? m.syncError
                       : current.sync.lastSuccess
                         ? m.syncSuccess

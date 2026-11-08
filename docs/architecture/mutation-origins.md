@@ -10,7 +10,7 @@ The 23 explicit application mutation handlers are covered by direct foreign-orig
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Measurements  | POST `/api/measurements`; PUT, DELETE `/api/measurements/[id]`                                                                                                                   |
 | Workouts      | POST `/api/workouts/plans`; PUT, DELETE `/api/workouts/plans/[id]`; POST `/api/workouts/sessions`; PUT, DELETE `/api/workouts/sessions/[id]`; POST `/api/workouts/transformmate` |
-| Nutrition     | POST `/api/nutrition/photos`; DELETE `/api/nutrition/photos/[id]`; POST `/api/yazio/connect`, `/api/yazio/disconnect`, `/api/yazio/sync`, `/api/yazio/token`                     |
+| Nutrition     | POST `/api/nutrition/photos`; DELETE `/api/nutrition/photos/[id]`; POST `/api/yazio/connect`, `/api/yazio/disconnect`, `/api/yazio/sync`                                         |
 | Collaboration | POST `/api/comments`; PATCH, DELETE `/api/comments/[id]`; POST, DELETE `/api/trainers`; POST `/api/trainers/invitations`, `/api/trainers/invitations/accept`                     |
 
 The Better Auth catch-all uses the SDK's own configured origin policy and is excluded from this application-wrapper refactor. Regression tests also cover public HTTPS origins with internal HTTP URLs, foreign and missing origins, and spoofed forwarding headers. Real-auth measurements E2E covers owner CRUD, trainer read-only UI and denied writes, foreign owner scope, and retained drafts on access errors.

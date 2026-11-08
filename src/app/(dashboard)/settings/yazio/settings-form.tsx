@@ -8,12 +8,11 @@ import {
   type YazioAccount,
 } from '@/contracts/nutrition-sync';
 import { dateInTimezone, shiftDate } from '@/contracts/nutrition-sync-dates';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, trackNutritionSyncRequest } from '@/lib/api-client';
 import { networkReachable } from '@/lib/network-state';
 import { refreshAfterMutation } from '@/lib/provider-mutation';
 import { useReadOnline } from '@/lib/use-read-online';
 import {
-  Accordion,
   Alert,
   Avatar,
   Badge,
@@ -25,7 +24,6 @@ import {
   Stack,
   Text,
   TextInput,
-  Textarea,
   Title,
 } from '@mantine/core';
 import {
@@ -65,13 +63,11 @@ export function YazioSettingsForm({
     clientReady,
     serverReady,
   );
-  const [token, setToken] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [httpsError, setHttpsError] = useState(false);
   const [from, setFrom] = useState<string | null>(initial.schedule.initialFrom);
-  const [to, setTo] = useState('');
   const timezone = ready
     ? Intl.DateTimeFormat().resolvedOptions().timeZone
     : 'UTC';
@@ -87,15 +83,15 @@ export function YazioSettingsForm({
     | 'connectionSyncFailed'
     | 'syncLoaded'
     | 'syncFailed'
+    | 'syncBusy'
     | 'rangeInvalid'
     | null
   >(null);
-  function periodRequest(end?: string) {
+  function periodRequest() {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     return {
-      mode: 'period',
+      mode: 'history' as const,
       from: from ?? shiftDate(dateInTimezone(new Date(), zone), -6),
-      ...(end ? { to: end } : {}),
       timezone: zone,
     };
   }
@@ -139,13 +135,15 @@ export function YazioSettingsForm({
       controller.abort();
     };
   }, [ready, status.configured, busy]);
-  async function submit(path: string, body: unknown) {
+  async function submit(
+    path: '/api/yazio/connect' | '/api/yazio/sync' | '/api/yazio/disconnect',
+    body: unknown,
+    history = false,
+  ) {
     if (!navigator.onLine || !networkReachable()) return;
-    if (path === '/api/yazio/connect' || path === '/api/yazio/sync') {
+    if (path === '/api/yazio/connect' || history) {
       try {
-        resolveSyncPeriod(
-          path === '/api/yazio/connect' ? periodRequest() : body,
-        );
+        resolveSyncPeriod(periodRequest());
       } catch {
         setPassword('');
         setResult('rangeInvalid');
@@ -156,7 +154,7 @@ export function YazioSettingsForm({
     setResult(null);
     setHttpsError(false);
     if (
-      (path === '/api/yazio/connect' || path === '/api/yazio/token') &&
+      path === '/api/yazio/connect' &&
       window.location.protocol !== 'https:' &&
       !(
         process.env.NODE_ENV === 'development' &&
@@ -164,7 +162,6 @@ export function YazioSettingsForm({
       )
     ) {
       setPassword('');
-      setToken('');
       setHttpsError(true);
       setBusy(false);
       return;
@@ -177,14 +174,17 @@ export function YazioSettingsForm({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-      const response =
-        path === '/api/yazio/connect' ||
-        path === '/api/yazio/token' ||
+      const response = await refreshAfterMutation(() =>
         path === '/api/yazio/disconnect'
-          ? await refreshAfterMutation(request)
-          : await request();
+          ? request()
+          : trackNutritionSyncRequest(request),
+      );
+      if (path === '/api/yazio/sync' && response.status === 409) {
+        outcome = 'syncBusy';
+        return;
+      }
       if (!response.ok) throw new Error();
-      if (path === '/api/yazio/connect' || path === '/api/yazio/token') {
+      if (path === '/api/yazio/connect') {
         const connected: {
           configured: boolean;
           account: YazioAccount | null;
@@ -220,7 +220,7 @@ export function YazioSettingsForm({
       } else {
         setStatus((current) => ({
           ...current,
-          configured: path === '/api/yazio/token',
+          configured: false,
         }));
         outcome = 'success';
       }
@@ -228,33 +228,51 @@ export function YazioSettingsForm({
       outcome = path === '/api/yazio/sync' ? 'syncFailed' : 'failure';
     } finally {
       setPassword('');
-      setToken('');
       await refreshStatus();
       setBusy(false);
       setResult(outcome);
     }
   }
   const startControl = (
-    <>
-      <TextInput
-        readOnly={!online}
-        label={messages.from}
-        type="date"
-        value={start}
-        onChange={(event) => setFrom(event.currentTarget.value)}
-        required
-        onInvalid={(event) => {
-          event.preventDefault();
-          setPassword('');
-          setResult('rangeInvalid');
-        }}
-        max={today || undefined}
-        disabled={!online || !ready || busy}
-      />
-      <Text size="sm" c="dimmed">
-        {messages.today}. {messages.rangeHelp}
-      </Text>
-    </>
+    <TextInput
+      label={messages.from}
+      description={`${messages.historyHelp} ${messages.rangeHelp}`}
+      type="date"
+      value={start}
+      onChange={(event) => setFrom(event.currentTarget.value)}
+      required
+      onInvalid={(event) => {
+        event.preventDefault();
+        setPassword('');
+        setResult('rangeInvalid');
+      }}
+      max={today || undefined}
+      disabled={!online || !ready || busy}
+    />
+  );
+  const syncResult =
+    result?.startsWith('sync') ||
+    (result === 'rangeInvalid' && status.configured);
+  const resultAlert = result && (
+    <Alert
+      color={
+        [
+          'failure',
+          'syncFailed',
+          'connectionSyncFailed',
+          'rangeInvalid',
+        ].includes(result)
+          ? 'red'
+          : ['connectionPhotoWarning', 'syncPhotoWarning', 'syncBusy'].includes(
+                result,
+              )
+            ? 'yellow'
+            : 'teal'
+      }
+      role="status"
+    >
+      {messages[result]}
+    </Alert>
   );
   const connectionForm = (
     <>
@@ -323,27 +341,7 @@ export function YazioSettingsForm({
         <Badge color={status.configured ? 'teal' : 'gray'}>
           {status.configured ? messages.configured : messages.absent}
         </Badge>
-        {result && (
-          <Alert
-            color={
-              [
-                'failure',
-                'syncFailed',
-                'connectionSyncFailed',
-                'rangeInvalid',
-              ].includes(result)
-                ? 'red'
-                : ['connectionPhotoWarning', 'syncPhotoWarning'].includes(
-                      result,
-                    )
-                  ? 'yellow'
-                  : 'teal'
-            }
-            role="status"
-          >
-            {messages[result]}
-          </Alert>
-        )}
+        {!syncResult && resultAlert}
         {httpsError && (
           <Alert color="red" role="alert">
             {messages.httpsRequired}
@@ -420,104 +418,54 @@ export function YazioSettingsForm({
       </Stack>
       <Stack component="section" id="sync" tabIndex={-1}>
         <Title order={2}>{messages.syncTitle}</Title>
-        {status.configured && startControl}
-        {status.configured && (
-          <Button
-            disabled={!online || !ready || busy}
-            loading={busy}
-            onClick={() => void submit('/api/yazio/sync', periodRequest())}
-          >
-            {messages.recent}
-          </Button>
-        )}
-        <Accordion onChange={() => setToken('')}>
-          <Accordion.Item value="token">
-            <Accordion.Control>{messages.advanced}</Accordion.Control>
-            <Accordion.Panel>
-              <Stack>
-                <Text size="sm" c="dimmed" mb="sm">
-                  {messages.tokenHelp}
-                </Text>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (!ready || busy || !status.tokenFileConfigured) {
-                      setToken('');
-                      return;
-                    }
-                    try {
-                      void submit('/api/yazio/token', {
-                        token: JSON.parse(token),
-                        ...connectionSchedule(),
-                      });
-                    } catch {
-                      setToken('');
-                      setResult('failure');
-                    }
-                  }}
+        {status.configured ? (
+          <Stack>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!ready || busy) return;
+                void submit('/api/yazio/sync', periodRequest(), true);
+              }}
+            >
+              <Stack gap="sm">
+                {startControl}
+                <Button
+                  type="submit"
+                  disabled={!online || !ready || busy}
+                  loading={busy}
                 >
-                  <Stack>
-                    <Textarea
-                      readOnly={!online}
-                      label={messages.token}
-                      value={token}
-                      onChange={(event) => setToken(event.currentTarget.value)}
-                      autoComplete="off"
-                      spellCheck={false}
-                      minRows={4}
-                      required
-                      disabled={
-                        !online || !ready || busy || !status.tokenFileConfigured
-                      }
-                    />
-                    <Button
-                      type="submit"
-                      loading={busy}
-                      disabled={
-                        !online ||
-                        !ready ||
-                        !status.tokenFileConfigured ||
-                        !token
-                      }
-                    >
-                      {messages.save}
-                    </Button>
-                  </Stack>
-                </form>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (!ready || busy || !status.configured) return;
-                    void submit(
-                      '/api/yazio/sync',
-                      periodRequest(to || undefined),
-                    );
-                  }}
-                >
-                  <Stack>
-                    <TextInput
-                      readOnly={!online}
-                      label={messages.to}
-                      description={messages.today}
-                      type="date"
-                      value={to}
-                      onChange={(event) => setTo(event.currentTarget.value)}
-                      max={today || undefined}
-                      disabled={!online || !ready || busy}
-                    />
-                    <Button
-                      type="submit"
-                      loading={busy}
-                      disabled={!online || !ready || !status.configured}
-                    >
-                      {messages.period}
-                    </Button>
-                  </Stack>
-                </form>
+                  {messages.history}
+                </Button>
               </Stack>
-            </Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
+            </form>
+            <Stack gap="xs">
+              <Text size="sm" c="dimmed">
+                {messages.recentHelp}
+              </Text>
+              <Button
+                variant="light"
+                disabled={!online || !ready || busy}
+                onClick={() =>
+                  void submit('/api/yazio/sync', { mode: 'recent', timezone })
+                }
+              >
+                {messages.recent}
+              </Button>
+            </Stack>
+          </Stack>
+        ) : (
+          <Text size="sm" c="dimmed">
+            {messages.recentDisabled}
+          </Text>
+        )}
+        {syncResult && resultAlert}
+        {(!!status.sync.failedStepsDates?.length ||
+          !!status.sync.failedWeightDates?.length ||
+          !!status.sync.failedGoalsDates?.length) && (
+          <Alert color="yellow" role="status">
+            {messages.auxiliaryWarning}
+          </Alert>
+        )}
         {status.sync.photoFailedDates.length > 0 && (
           <Alert color="yellow" role="status">
             {messages.photoWarning} ({status.sync.photoFailedDates.length})
@@ -528,9 +476,11 @@ export function YazioSettingsForm({
             <Text size="sm">
               {!status.schedule.enabled
                 ? messages.scheduleDisabled
-                : status.schedule.automaticAvailable
+                : status.schedule.scheduled
                   ? messages.automatic
-                  : messages.schedulerInactive}
+                  : status.schedule.automaticAvailable
+                    ? messages.overviewAutomatic
+                    : messages.schedulerInactive}
             </Text>
             {status.schedule.running && (
               <Text role="status">{messages.scheduledLoading}</Text>

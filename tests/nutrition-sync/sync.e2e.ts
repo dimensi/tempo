@@ -1,7 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { expect, test, type Page } from '@playwright/test';
 import { nutritionDaySchema } from '@/contracts/nutrition';
-import type { SyncStatus } from '@/contracts/nutrition-sync';
+import {
+  nutritionLiveStatusSchema,
+  type SyncStatus,
+} from '@/contracts/nutrition-sync';
 import { testOrigin } from '../smoke/origin';
 
 const date = '2026-01-01';
@@ -49,8 +52,14 @@ test('durable YAZIO data remains readable after a failed refresh and ungranted t
   const scope = `ownerId=${encodeURIComponent(initial.ownerId)}`;
   const dayUrl = `/api/nutrition/days/${date}?${scope}`;
   expect((await request.get(dayUrl)).status()).toBe(401);
+  expect((await request.get('/api/yazio/sync')).status()).toBe(401);
 
   await login(page, 'owner');
+  expect(
+    nutritionLiveStatusSchema.parse(
+      await (await page.request.get('/api/yazio/sync')).json(),
+    ).activity,
+  ).toBeNull();
   const before = nutritionDaySchema.parse(
     await (await page.request.get(dayUrl)).json(),
   );
@@ -78,6 +87,9 @@ test('durable YAZIO data remains readable after a failed refresh and ungranted t
     );
     expect(trainerLogin.status()).toBe(200);
     expect((await trainerContext.request.get(dayUrl)).status()).toBe(403);
+    expect((await trainerContext.request.get('/api/yazio/sync')).status()).toBe(
+      403,
+    );
   } finally {
     await trainerContext.close();
   }

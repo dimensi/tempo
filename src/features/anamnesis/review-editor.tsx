@@ -22,7 +22,6 @@ import {
   IconExternalLink,
 } from '@tabler/icons-react';
 import { PageHeader } from '@/components/layout/page-header';
-import { OfflineFile } from '@/components/shared/offline-file';
 import { anamnesisMessages as m } from '@/config/anamnesis-messages';
 import {
   anamnesisComparators,
@@ -641,16 +640,6 @@ export function ReviewEditor({
               <Text c="dimmed">
                 {online ? m.reviews.loading : m.reviews.originalOffline}
               </Text>
-              {document && (
-                <OfflineFile
-                  id={`medical-document:${document.id}`}
-                  label={document.filename}
-                  kind="pdf"
-                  size={document.sizeBytes}
-                  href={fileHref}
-                  offline={!online}
-                />
-              )}
             </Stack>
           )}
         </Paper>

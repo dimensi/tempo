@@ -13,7 +13,7 @@ export function diaryPhotos(
 ): DiaryPhoto[] {
   return photos.map((photo) => ({
     ...photo,
-    href: mealPhotoUrl(ownerId, photo.id),
+    href: `${mealPhotoUrl(ownerId, photo.id)}&at=${encodeURIComponent(photo.observedAt)}`,
   }));
 }
 

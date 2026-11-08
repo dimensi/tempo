@@ -3,7 +3,6 @@ import { diaryDateSchema } from '@/contracts/nutrition';
 import {
   timezoneSchema,
   dateInTimezone,
-  shiftDate,
 } from '@/contracts/nutrition-sync-dates';
 
 export const ownerIdSchema = z.string().min(1).max(128);
@@ -19,36 +18,27 @@ export const periodSchema = z
       });
   });
 export const syncRequestSchema = z.discriminatedUnion('mode', [
-  z
-    .object({
-      mode: z.literal('period'),
-      from: diaryDateSchema,
-      to: diaryDateSchema.optional(),
-      timezone: timezoneSchema.optional(),
-    })
-    .strict(),
-  z
-    .object({
-      mode: z.literal('recent'),
-      days: z.number().int().min(1).max(31),
-      through: diaryDateSchema,
-      timezone: timezoneSchema.optional(),
-    })
-    .strict(),
+  z.strictObject({
+    mode: z.literal('history'),
+    from: diaryDateSchema,
+    timezone: timezoneSchema,
+  }),
+  z.strictObject({
+    mode: z.literal('recent'),
+    timezone: timezoneSchema,
+  }),
 ]);
-export function resolveSyncPeriod(request: unknown, now = new Date()) {
-  const input = syncRequestSchema.parse(request);
+export function resolveSyncPeriod(
+  input: { from: string; to?: string; timezone: string },
+  now = new Date(),
+) {
   const today = dateInTimezone(now, input.timezone);
-  const period =
-    input.mode === 'period'
-      ? { from: input.from, to: input.to ?? today }
-      : { from: shiftDate(input.through, 1 - input.days), to: input.through };
   return periodSchema
     .refine(
       (value) => value.from <= today && value.to <= today,
       'Future dates are not allowed',
     )
-    .parse(period);
+    .parse({ from: input.from, to: input.to ?? today });
 }
 export const syncStatusSchema = z.object({
   state: z.enum(['idle', 'running', 'completed', 'partial', 'failed']),
@@ -58,8 +48,32 @@ export const syncStatusSchema = z.object({
   skippedDates: z.array(diaryDateSchema),
   failedDates: z.array(diaryDateSchema),
   photoFailedDates: z.array(diaryDateSchema),
+  failedStepsDates: z.array(diaryDateSchema).optional(),
+  failedWeightDates: z.array(diaryDateSchema).optional(),
+  failedGoalsDates: z.array(diaryDateSchema).optional(),
 });
 export type SyncStatus = z.infer<typeof syncStatusSchema>;
+export const nutritionActivitySchema = z.object({
+  id: z.string(),
+  revision: z.number(),
+  steps: z.array(diaryDateSchema),
+  food: z.array(diaryDateSchema),
+  photos: z.array(diaryDateSchema),
+  other: z.boolean(),
+});
+export type NutritionActivity = z.infer<typeof nutritionActivitySchema>;
+export const nutritionLiveStatusSchema = z.object({
+  activity: nutritionActivitySchema.nullable(),
+  last: syncStatusSchema,
+  schedule: z.object({
+    lastSuccess: z.iso.datetime().nullable(),
+    lastAttempt: z.iso.datetime().nullable(),
+    hasError: z.boolean(),
+    scheduled: z.boolean(),
+  }),
+});
+export type NutritionLiveStatus = z.infer<typeof nutritionLiveStatusSchema>;
+
 export function syncResultKind(sync: SyncStatus) {
   const foodLoaded =
     (sync.state === 'completed' || sync.state === 'partial') &&
@@ -84,20 +98,13 @@ export const yazioCredentialsSchema = z
   })
   .strict();
 export type YazioCredentialsInput = z.infer<typeof yazioCredentialsSchema>;
-export const yazioTokenImportSchema = z
-  .object({
-    token: z.unknown(),
-    timezone: timezoneSchema,
-    initialFrom: diaryDateSchema,
-  })
-  .strict();
 export function resolveConnectionSchedule(
   input: { timezone: string; initialFrom: string },
   now = new Date(),
 ) {
   const timezone = timezoneSchema.parse(input.timezone);
   const initialFrom = diaryDateSchema.parse(input.initialFrom);
-  resolveSyncPeriod({ mode: 'period', from: initialFrom, timezone }, now);
+  resolveSyncPeriod({ from: initialFrom, timezone }, now);
   return { timezone, initialFrom };
 }
 export const yazioConfirmationSchema = z
@@ -107,8 +114,6 @@ export const nutritionSyncMessages = {
   title: 'Подключение YAZIO',
   configured: 'YAZIO подключён',
   absent: 'YAZIO не подключён',
-  token: 'Существующий токен JSON',
-  save: 'Подключить токен',
   email: 'Email аккаунта YAZIO',
   password: 'Пароль YAZIO',
   connect: 'Подключить и загрузить дневник',
@@ -128,9 +133,6 @@ export const nutritionSyncMessages = {
   storeUnavailable:
     'Подключение пока недоступно: администратору нужно настроить защищённое хранение подключения YAZIO.',
   httpsRequired: 'Для подключения YAZIO откройте приложение по HTTPS.',
-  advanced: 'Дополнительные настройки',
-  tokenHelp:
-    'Необязательный импорт существующего JSON: token_type, access_token, refresh_token, expires_in, expires_at. Используйте значения из существующего токена; не заполняйте сроки вручную.',
   connectionLoaded: 'YAZIO подключён. Дневник загружен.',
   connectionPhotoWarning:
     'YAZIO подключён. Еда загружена; часть фотографий пока недоступна.',
@@ -138,22 +140,29 @@ export const nutritionSyncMessages = {
   photoWarning: 'Некоторые фотографии пока недоступны.',
   foodStatus: 'Загрузка еды',
   connectionSyncFailed:
-    'YAZIO подключён. Не удалось полностью загрузить дневник. Нажмите «Обновить сейчас», чтобы повторить.',
+    'YAZIO подключён. Не удалось полностью загрузить дневник. Повторите загрузку в разделе «Синхронизация дневника».',
   syncLoaded: 'Дневник обновлён.',
   syncFailed:
     'Не удалось полностью обновить дневник. Подключение сохранено. Попробуйте ещё раз.',
-  today: 'По сегодня',
-  from: 'Загрузить данные начиная с…',
-  to: 'Конец периода',
-  period: 'Синхронизировать период',
-  recent: 'Обновить сейчас',
+  from: 'С какой даты загружать данные',
+  history: 'Сохранить и загрузить историю',
+  recent: 'Перепроверить последние 7 дней',
+  historyHelp:
+    'Загрузим историю с выбранной даты по сегодня. Ранее загруженные записи сохранятся.',
+  recentHelp:
+    'Повторно проверим данные за сегодня и шесть предыдущих дней, начиная не раньше сохранённой даты.',
+  syncBusy: 'Синхронизация уже идёт. Дождитесь завершения и повторите.',
+  recentDisabled: 'Сначала подключите YAZIO.',
+  auxiliaryWarning: 'Часть шагов, целей или веса не удалось обновить.',
+
   failure: 'Не удалось выполнить запрос',
   success: 'Запрос выполнен',
   automatic:
-    'При открытии обзора обновляем сегодня и вчера не чаще раза в час. Историю за выбранный период можно загрузить вручную, отдельный день — кнопкой в дневнике.',
+    'Сервер проверяет сегодня и вчера раз в час, даже когда Tempo закрыт.',
+  overviewAutomatic:
+    'При открытии обзора проверяем сегодня и вчера не чаще раза в час.',
   skipped: 'Уже загружено ранее',
-  schedulerInactive:
-    'Автоматическое обновление пока не включено на сервере. Можно обновить сейчас.',
+  schedulerInactive: 'Плановое обновление на сервере выключено.',
   scheduleDisabled: 'Автоматическое обновление отключено.',
   lastSuccess: 'Последнее успешное обновление',
   noRuns: 'Ещё не было',

@@ -3,24 +3,6 @@ export const offlineDeviceMessages = {
   title: 'Данные на устройстве',
   cleanupWarning: 'Не удалось полностью очистить данные устройства.',
 } as const;
-export interface CacheFence {
-  partition: string;
-  generation: number;
-  deviceEpoch: string;
-}
-export interface StoredOfflineFile {
-  id: string;
-  label: string;
-  kind: 'pdf' | 'video';
-  bytes: Blob;
-  savedAt: number;
-  fence: CacheFence;
-}
-export const offlineFileLimits = {
-  bytes: 300 * 1024 * 1024,
-  count: 30,
-  singleBytes: 256 * 1024 * 1024,
-} as const;
 export const sessionResetEvent = 'tempo:session-reset';
 export function notifySessionReset() {
   window.dispatchEvent(new Event(sessionResetEvent));
@@ -64,55 +46,5 @@ export class OfflineStorage {
           tx.objectStore(name).clear();
       },
     );
-  }
-  async files(partition: string): Promise<StoredOfflineFile[]> {
-    return browserStore(['files'], 'readonly', (tx, done) => {
-      const request = tx.objectStore('files').getAll();
-      request.onsuccess = () =>
-        done(
-          (request.result as StoredOfflineFile[]).filter(
-            (file) => file.fence.partition === partition,
-          ),
-        );
-    });
-  }
-  async writeFile(
-    file: StoredOfflineFile | { id: string; fence: CacheFence },
-    isCurrent = () => true,
-  ) {
-    await browserStore<void>(['files'], 'readwrite', (tx) => {
-      if (!isCurrent()) {
-        tx.abort();
-        return;
-      }
-      const store = tx.objectStore('files');
-      if (!('bytes' in file)) {
-        store.delete(file.id);
-        return;
-      }
-      const request = store.getAll();
-      request.onsuccess = () => {
-        if (!isCurrent()) {
-          tx.abort();
-          return;
-        }
-        const rows = (request.result as StoredOfflineFile[]).filter(
-          (row) => row.id !== file.id,
-        );
-        if (
-          file.bytes.size > offlineFileLimits.singleBytes ||
-          rows.length >= offlineFileLimits.count ||
-          rows.reduce((sum, row) => sum + row.bytes.size, file.bytes.size) >
-            offlineFileLimits.bytes
-        ) {
-          tx.abort();
-          return;
-        }
-        store.put(file, file.id);
-      };
-    });
-  }
-  async close() {
-    /* Connections close after each transaction. */
   }
 }

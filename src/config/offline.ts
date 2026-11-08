@@ -3,8 +3,6 @@ import { offlineDeviceMessages } from '@/lib/offline-device';
 export const offlineMessages = {
   ...offlineDeviceMessages,
   signInAgain: 'Войти заново',
-  fileRequiresSave:
-    'Файл доступен без сети только после явного сохранения на устройство.',
   draftConflict:
     'Данные на сервере изменились. Введённые значения сохранены; проверьте изменения перед отправкой.',
   unknown: 'Нет сохранённых данных, нужна сеть',
@@ -24,26 +22,6 @@ export const offlineMessages = {
   yes: 'Да',
   no: 'Нет',
   files: 'Файлы на устройстве',
-  downloads: {
-    title: 'Скачанные файлы',
-    description: 'Видео и PDF, сохранённые для доступа без сети.',
-    usage: (count: number, bytes: number) => {
-      const unit = bytes >= 1024 * 1024 ? 'МБ' : bytes >= 1024 ? 'КБ' : 'Б';
-      const divisor =
-        bytes >= 1024 * 1024 ? 1024 * 1024 : bytes >= 1024 ? 1024 : 1;
-      const size = new Intl.NumberFormat('ru', {
-        maximumFractionDigits: 1,
-      }).format(bytes / divisor);
-      return `Файлов: ${count} · ${size} ${unit}`;
-    },
-    loading: 'Считаем объём скачанных файлов…',
-    empty: 'На этом устройстве нет скачанных файлов.',
-    remove: 'Удалить скачанные файлы',
-    help: 'Кеш страниц очищается автоматически. Удаление файлов не затронет черновики и неотправленные записи.',
-    unavailable: 'Не удалось прочитать файлы на устройстве. Повторите попытку.',
-    removeFailed: 'Не удалось удалить скачанные файлы. Повторите попытку.',
-    retry: 'Повторить',
-  },
   reportsDescription:
     'Сохранённые отчёты и сводки доступны для чтения. Для создания нового PDF нужна сеть.',
   findExercise: 'Поиск по каталогу',
