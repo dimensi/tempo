@@ -1,3 +1,4 @@
+import { techniqueContent } from './technique-store';
 import 'server-only';
 import { z } from 'zod';
 import { transformMateMessages } from '@/server/transformmate/messages';
@@ -65,6 +66,7 @@ export async function catalogScope(
     accountScope: binding.accountScope,
     locale: 'ru',
     client: fence?.client ?? null,
+    authorId: binding.authorId,
     assertCurrent,
     assertUpstreamCurrent: async () => {
       await assertCurrent();
@@ -220,11 +222,25 @@ export async function exerciseInfo(
   headers: Headers,
   ownerId: string,
   id: number,
+  verifyOwnership = false,
 ) {
   const scope = await catalogScope(headers, ownerId);
-  const row = await cachedDetail(scope, id);
+  let row = await cachedDetail(scope, id);
+  if (
+    verifyOwnership &&
+    (row.detail?.ownedCustom === undefined ||
+      (row.detail.ownedCustom && !fresh(row.detailFetchedAt))) &&
+    scope.client
+  ) {
+    try {
+      row = await cachedDetail(scope, id, true);
+    } catch {
+      // A definitive deletion may have cleared the cached ownership flag.
+      row = catalogStore().record(scope, id) ?? row;
+    }
+  }
   await scope.assertCurrent();
-  return detailInfo(
+  const info = detailInfo(
     row.summary,
     row.fetchedAt,
     row.detail!,
@@ -234,6 +250,22 @@ export async function exerciseInfo(
       selectMediaUrl(row.detail!) !== null,
     scope,
   );
+  if (!row.detail?.ownedCustom) return info;
+  const {
+    scope: token,
+    videoId,
+    description,
+  } = techniqueContent({
+    ownerId,
+    accountScope: scope.accountScope,
+    exerciseId: id,
+  });
+  return {
+    ...info,
+    hasVideo: Boolean(videoId) || info.hasVideo,
+    description: description || info.description,
+    technique: { scope: token, videoId },
+  };
 }
 export async function muscleDictionary(headers: Headers, ownerId: string) {
   const scope = await catalogScope(headers, ownerId);

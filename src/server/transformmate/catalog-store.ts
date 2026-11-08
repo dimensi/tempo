@@ -151,6 +151,13 @@ export function createCatalogStore(sqlite: Database.Database) {
           .run(JSON.stringify(parsed), at, ...values(scope), parsed.id);
       })();
     },
+    clearCustomOwnership(scope: CatalogIdentity, id: number) {
+      sqlite
+        .prepare(
+          `UPDATE transformmate_catalog_exercise SET detail=json_set(detail,'$.ownedCustom',json('false')) WHERE ${WHERE} AND exercise_id=? AND json_extract(detail,'$.ownedCustom')=1`,
+        )
+        .run(...values(scope), id);
+    },
     preview(
       scope: CatalogIdentity,
       id: number,

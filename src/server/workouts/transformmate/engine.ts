@@ -505,12 +505,7 @@ export function syncEngine(options: SyncEngineOptions) {
                 accountScope: options.accountScope!,
                 locale: 'ru',
               },
-              {
-                ...projectDetail(detail),
-                ownedCustom:
-                  detail.author === options.authorId &&
-                  detail.exercise_type?.id === 4,
-              },
+              projectDetail(detail, options.authorId),
               new Date().toISOString(),
             );
           },

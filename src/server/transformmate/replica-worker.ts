@@ -139,6 +139,7 @@ async function runtimeScope(ownerId: string): Promise<CatalogScope | null> {
     accountScope: fence.accountScope,
     locale: 'ru',
     client: fence.client,
+    authorId: fence.authorId,
     assertCurrent,
     assertUpstreamCurrent: assertCurrent,
   };

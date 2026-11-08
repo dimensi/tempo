@@ -13,14 +13,16 @@ export function ExerciseDetails({
   exerciseId,
   compactVideo = false,
   autoPlay = false,
+  verifyOwnership = false,
 }: {
   ownerId: string;
   exerciseId: number;
   compactVideo?: boolean;
   autoPlay?: boolean;
+  verifyOwnership?: boolean;
 }) {
   const read = useReadResource(
-    readResources.exercise(exerciseHref(ownerId, exerciseId)),
+    readResources.exercise(exerciseHref(ownerId, exerciseId, verifyOwnership)),
   );
   const info = read.data;
   const preview = useExercisePreview(ownerId, info ?? null);
@@ -39,11 +41,11 @@ export function ExerciseDetails({
     <Stack gap="md" data-testid={`exercise-details-${exerciseId}`}>
       {info.hasVideo ? (
         <TeachingVideo
-          key={`${ownerId}:${exerciseId}`}
+          key={`${ownerId}:${exerciseId}:${info.technique?.videoId ?? 'provider'}`}
           autoPlay={autoPlay}
           compact={compactVideo}
           poster={preview?.src}
-          src={techniqueHref(ownerId, exerciseId)}
+          src={techniqueHref(ownerId, exerciseId, info.technique?.videoId)}
         />
       ) : (
         <Text c="dimmed">{m.noTechnique}</Text>

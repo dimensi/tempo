@@ -9,11 +9,13 @@ async function GETHandler(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
+  const query = new URL(request.url).searchParams;
   return catalogResponse(() =>
     exerciseInfo(
       request.headers,
-      new URL(request.url).searchParams.get('ownerId') ?? '',
+      query.get('ownerId') ?? '',
       exerciseId(id),
+      query.get('verifyOwnership') === '1',
     ),
   );
 }

@@ -119,7 +119,7 @@ function ExerciseCard({
               muted
               playsInline
               preload="metadata"
-              src={`${techniqueHref(ownerId, item.id)}#t=0.1`}
+              src={`${techniqueHref(ownerId, item.id, info.technique?.videoId)}#t=0.1`}
               className={styles.poster}
             />
           )}
