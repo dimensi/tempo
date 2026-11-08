@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { videoCreateSchema } from './workout-videos';
 
-export const techniqueDescriptionMax = 20000;
+export const techniqueDescriptionMax = 5000;
 export const techniqueScopeSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const techniqueSummarySchema = z.object({
   scope: techniqueScopeSchema,

@@ -17,25 +17,21 @@ import {
 } from '@mantine/core';
 import {
   techniqueDescriptionMax,
-  techniqueEditorSchema,
   type TechniqueEditorData,
 } from '@/contracts/exercise-technique';
 import {
   VIDEO_INPUT_MAX_BYTES,
   VIDEO_PART_BYTES,
 } from '@/contracts/workout-videos';
-import { apiFetch } from '@/lib/api-client';
+import {
+  requestExerciseTechnique,
+  techniqueEditorHref,
+  TechniqueRequestError,
+} from '@/lib/exercise-technique-client';
+import { useViewState } from '@/lib/use-view-state';
 import { revalidateVisibleReads } from '@/lib/client-read';
-import { sessionGeneration } from '@/lib/session-state';
 import { workoutMessages as m } from './messages';
-import { techniqueEditorHref } from './transformmate-exercises';
 import { sendVideoPart } from './video-upload';
-
-class EditorError extends Error {
-  constructor(readonly status: number) {
-    super();
-  }
-}
 
 export function ExerciseTechniqueEditor({
   ownerId,
@@ -51,8 +47,11 @@ export function ExerciseTechniqueEditor({
   close: () => void;
 }) {
   const [state, setState] = useState<TechniqueEditorData>();
-  const [draft, setDraft] = useState<string>();
+  const [draft, setDraft] = useViewState<
+    { text: string; revision: number } | undefined
+  >(`exercise-technique-description:${scope}`, undefined);
   const [descriptionError, setDescriptionError] = useState('');
+  const [conflictRevision, setConflictRevision] = useState<number>();
   const [notice, setNotice] = useState('');
   const [videoError, setVideoError] = useState('');
   const [unavailable, setUnavailable] = useState(false);
@@ -67,25 +66,12 @@ export function ExerciseTechniqueEditor({
   const epoch = useRef(0);
 
   const request = useCallback(
-    async (path = '', init: RequestInit = {}, query = '') => {
-      const generation = sessionGeneration();
-      const signal = active.current?.signal;
-      signal?.throwIfAborted();
-      const response = await apiFetch(
+    (path = '', init: RequestInit = {}, query = '') =>
+      requestExerciseTechnique(
         techniqueEditorHref(ownerId, exerciseId, path) + query,
-        {
-          ...init,
-          cache: 'no-store',
-          signal,
-        },
-      );
-      if (!response.ok) throw new EditorError(response.status);
-      const next = techniqueEditorSchema.parse((await response.json()).data);
-      if (generation !== sessionGeneration() || signal?.aborted)
-        throw new DOMException('', 'AbortError');
-      if (next.scope !== scope) throw new EditorError(409);
-      return next;
-    },
+        scope,
+        { ...init, signal: active.current?.signal },
+      ),
     [ownerId, exerciseId, scope],
   );
 
@@ -97,6 +83,7 @@ export function ExerciseTechniqueEditor({
       if (token !== epoch.current) return;
       setState(next);
       setUnavailable(false);
+      return next;
     } catch {
       if (token === epoch.current && !signal?.aborted) setUnavailable(true);
     }
@@ -154,18 +141,20 @@ export function ExerciseTechniqueEditor({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             scope,
-            revision: state.revision,
-            description: draft,
+            revision: conflictRevision ?? draft.revision,
+            description: draft.text,
           }),
         }),
       );
       setDraft(undefined);
+      setConflictRevision(undefined);
       setNotice(m.techniqueSaved);
       revalidateVisibleReads(true);
     } catch (error) {
-      if (error instanceof EditorError && error.status === 409) {
+      if (error instanceof TechniqueRequestError && error.status === 409) {
         setDescriptionError(m.techniqueDescriptionConflict);
-        await refresh();
+        const current = await refresh();
+        setConflictRevision(current?.revision);
       } else {
         setDescriptionError(m.error);
       }
@@ -186,7 +175,7 @@ export function ExerciseTechniqueEditor({
       setConfirmRemoval(false);
     } catch (error) {
       setVideoError(
-        error instanceof EditorError && error.status === 409
+        error instanceof TechniqueRequestError && error.status === 409
           ? m.conflict
           : m.videoUploadError,
       );
@@ -231,7 +220,7 @@ export function ExerciseTechniqueEditor({
         body: JSON.stringify({ scope, size: file.size, name, lastModified }),
       });
       if (started.videoId === id) return started;
-      if (started.candidate?.id !== id) throw new EditorError(409);
+      if (started.candidate?.id !== id) throw new TechniqueRequestError(409);
       if (started.candidate.state === 'uploading') {
         // On a reselected file, resend acknowledged parts so the server compares
         // their digest before accepting the remaining bytes.
@@ -267,7 +256,7 @@ export function ExerciseTechniqueEditor({
   }
 
   const candidate = state?.candidate;
-  const draftValue = draft ?? state?.description ?? '';
+  const draftValue = draft?.text ?? state?.description ?? '';
   return (
     <div hidden={!opened}>
       <Paper
@@ -305,7 +294,12 @@ export function ExerciseTechniqueEditor({
                     label={m.techniqueDescription}
                     description={m.techniqueDescriptionHint}
                     value={draftValue}
-                    onChange={(event) => setDraft(event.currentTarget.value)}
+                    onChange={(event) =>
+                      setDraft({
+                        text: event.currentTarget.value,
+                        revision: draft?.revision ?? state.revision,
+                      })
+                    }
                     disabled={busy === 'description'}
                     maxLength={techniqueDescriptionMax}
                     autosize

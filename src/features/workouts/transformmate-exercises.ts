@@ -1,3 +1,4 @@
+import { techniqueEditorHref } from '@/lib/exercise-technique-client';
 import type {
   TransformMateActual,
   TransformMateCatalogItem,
@@ -39,8 +40,6 @@ export function actualSetForExercise(
     ?.sets.find((set) => set.order === order);
 }
 
-export const techniqueEditorHref = (ownerId: string, id: number, path = '') =>
-  `/api/workouts/transformmate/exercises/${id}/technique${path}?ownerId=${encodeURIComponent(ownerId)}`;
 export const techniqueHref = (
   ownerId: string,
   id: number,
