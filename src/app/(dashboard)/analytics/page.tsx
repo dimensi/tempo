@@ -28,7 +28,7 @@ export default function Page() {
     params.has('from') || params.has('to')
       ? { from: params.get('from'), to: params.get('to') }
       : today
-        ? presetRange('week', today)
+        ? presetRange('previousWeek', today)
         : undefined,
   );
   const resource = useReadResource(

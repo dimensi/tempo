@@ -22,7 +22,7 @@ export function AnalyticsTimezone({
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const range =
       from === undefined && to === undefined
-        ? presetRange('week', dateInTimezone(new Date(), timezone))
+        ? presetRange('previousWeek', dateInTimezone(new Date(), timezone))
         : {
             from: Array.isArray(from) ? '' : (from ?? ''),
             to: Array.isArray(to) ? '' : (to ?? ''),

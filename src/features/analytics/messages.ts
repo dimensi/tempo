@@ -9,8 +9,12 @@ const dayWord = (count: number) =>
 export const analyticsMessages = {
   title: 'Аналитика',
   description: 'Питание, вес и активность',
-  week: '7 дней',
-  month: '30 дней',
+  previousWeek: 'Прошлая неделя',
+  currentWeek: 'Текущая неделя',
+  previousMonth: 'Прошлый месяц',
+  currentMonth: 'Текущий месяц',
+  calendarPeriods: 'Календарные периоды',
+  calendarPeriodHint: 'Неделя — с понедельника. Текущие периоды — по сегодня.',
   custom: 'Свой период',
   from: 'С',
   to: 'По',
@@ -51,7 +55,6 @@ export const analyticsMessages = {
   cm: 'см',
   explanation:
     'Средние рассчитаны отдельно по дням с полностью известным значением каждого показателя. Пропущенные дни не считаются нулевыми. Известная часть неполного дня не входит в сумму и среднее.',
-  quarter: '90 дней',
   period: 'Период',
   overview: 'Главное за период',
   highlights: 'Что изменилось',

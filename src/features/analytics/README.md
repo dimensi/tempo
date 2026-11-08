@@ -4,7 +4,7 @@ The selected-period screen follows summary → changes → trends → disclosed 
 
 ## Period and comparisons
 
-Browser timezone is resolved before loading user-facing data and is included in the URL. Presets cover 7, 30 and 90 inclusive days; custom periods contain 1–366 days. The previous period ends the day before the selected period and has the same length. Navigation preserves browser history. A mean comparison requires at least 70% fully filled nutrition days (or observed steps days) in **both** periods. Absolute change remains available if the prior mean is zero; percentage change is unknown.
+Browser timezone is resolved before loading user-facing data and is included in the URL. Calendar presets cover the previous Monday–Sunday week, current week through today, previous full month and current month through today. The default is the previous calendar week; custom periods contain 1–366 days. The previous period ends the day before the selected period and has the same length. Navigation preserves browser history. A mean comparison requires at least 70% fully filled nutrition days (or observed steps days) in **both** periods. Absolute change remains available if the prior mean is zero; percentage change is unknown.
 
 ## Nutrition and quality
 

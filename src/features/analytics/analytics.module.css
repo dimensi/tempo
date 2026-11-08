@@ -39,8 +39,9 @@
 .toolbar {
   gap: var(--mantine-spacing-sm);
 }
-.periodButtons {
-  flex-wrap: wrap;
+.periodSelect {
+  width: 280px;
+  max-width: 100%;
 }
 .dateField {
   flex: 1 1 150px;
@@ -65,7 +66,7 @@
   min-width: 0;
 }
 @media (max-width: 64em) {
-  .periodButtons {
+  .periodSelect {
     width: 100%;
   }
   .section {
