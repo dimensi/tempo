@@ -6,6 +6,7 @@ import { DiaryClient } from '@/features/nutrition';
 import { useReadContext } from '@/lib/client-session';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
+import { useNutritionSyncStatus } from '@/lib/use-nutrition-sync-status';
 import { useSearchParams } from 'next/navigation';
 import { z } from 'zod';
 function useSelectedDate() {
@@ -15,6 +16,8 @@ function useSelectedDate() {
 }
 export default function Page() {
   const context = useReadContext();
+  const owner = context.role === 'OWNER';
+  const sync = useNutritionSyncStatus(owner);
   const date = useSelectedDate();
   const query = new URLSearchParams({
     ownerId: context.ownerId,
@@ -33,8 +36,12 @@ export default function Page() {
       date={date}
       day={day.data?.[0] ?? null}
       photos={photos.data ?? []}
-      canWrite={context.role === 'OWNER'}
-      loading={day.data === undefined || photos.data === undefined}
+      canWrite={owner}
+      loading={day.data === undefined}
+      syncingPhotos={sync?.activity?.photos.includes(date) ?? false}
+      photoSyncFailed={
+        !sync?.activity && !!sync?.last.photoFailedDates.includes(date)
+      }
       unavailableSlot={
         day.data === undefined ? <ResourcePending {...day} /> : undefined
       }

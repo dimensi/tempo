@@ -3,7 +3,6 @@ import { PageHeader } from '@/components/layout/page-header';
 import { ru } from '@/config/messages';
 import { useReadContext } from '@/lib/client-session';
 import { AccessPanel } from '@/features/anamnesis';
-import { OfflineSettings } from '@/features/offline';
 import { TrainerSettings } from '@/features/trainer';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
@@ -74,7 +73,6 @@ export default function Page() {
                 </Stack>
               </section>
               <McpSettings />
-              <OfflineSettings />
             </>
           )}
         </Stack>

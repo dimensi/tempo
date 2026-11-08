@@ -132,8 +132,10 @@ export const clientReads = new ReadResourceStore<string>(
   resourceCoverage,
 );
 export const readRevalidateEvent = 'tempo:read-revalidate';
-export function revalidateVisibleReads() {
-  window.dispatchEvent(new Event(readRevalidateEvent));
+export function revalidateVisibleReads(afterCurrent = false) {
+  window.dispatchEvent(
+    new CustomEvent(readRevalidateEvent, { detail: afterCurrent }),
+  );
 }
 export async function seedClientRead(
   key: string,
@@ -217,28 +219,6 @@ export async function refreshClientRead(key: string) {
         }
       : undefined,
   );
-}
-/** Explicit downloads must confirm disk persistence, unlike best-effort live reads. */
-export async function retainClientRead(
-  resource: Pick<ReadDescriptor<unknown>, 'href'>,
-) {
-  if (!resource.href) throw new Error('Resource unavailable');
-  const generation = sessionGeneration();
-  const key = canonicalReadKey(new URL(resource.href, 'https://tempo.local'));
-  await clientReads.restore(key);
-  const state = clientReads.snapshot(key);
-  if (state.data === undefined || generation !== sessionGeneration())
-    throw new Error('Resource unavailable');
-  await persistence.write(key, {
-    data: state.data,
-    savedAt: state.savedAt ?? Date.now(),
-    touchedAt: Date.now(),
-    coverage: state.coverage === 'partial' ? 'partial' : 'complete',
-  });
-  const saved = await persistence.read(key);
-  if (saved?.data !== state.data || generation !== sessionGeneration())
-    throw new Error('Storage unavailable');
-  return { key, body: state.data };
 }
 export function observeReadResources() {
   return subscribeSessionReset(() => {

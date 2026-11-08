@@ -1,4 +1,6 @@
 export const diaryMessages = {
+  photoSyncRunning: 'Догружаем фото из YAZIO…',
+  photoSyncFailed: 'Часть фото из YAZIO пока недоступна.',
   photoNotSaved: 'Фотография не сохранена на этом устройстве.',
   title: 'Дневник питания',
   refreshDay: 'Обновить день',

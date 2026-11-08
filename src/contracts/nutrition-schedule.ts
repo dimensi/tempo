@@ -16,6 +16,7 @@ export type NutritionScheduleInput = z.infer<
 export const nutritionScheduleStatusSchema = z.object({
   enabled: z.boolean(),
   automaticAvailable: z.boolean(),
+  scheduled: z.boolean().optional(),
   timezone: nutritionTimezoneSchema,
   initialFrom: diaryDateSchema.nullable(),
   lastSuccess: z.iso.datetime().nullable(),

@@ -1,12 +1,10 @@
 import { clientReads } from './client-read';
 import { OfflineStorage } from './offline-device';
-import { savedFiles } from './saved-files';
 import { clearVideoDrafts } from './workout-video-draft';
 
 const localDataReset = 'tempo:local-data-reset';
 async function clearLocalMemory() {
   clientReads.clear();
-  savedFiles.clear();
   await clearVideoDrafts();
 }
 export function subscribeLocalDataReset(listener: () => void) {

@@ -1,5 +1,5 @@
 'use client';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, trackNutritionSyncRequest } from '@/lib/api-client';
 import { apiResults } from '@/lib/api-results';
 
 import { readWorkspaceMessages } from '@/config/read-workspace';
@@ -34,16 +34,15 @@ export function DayRefreshControl({
     setPending(true);
     setOutcome(null);
     try {
-      const response = await apiFetch(
-        `/api/nutrition/days/${encodeURIComponent(date)}/refresh`,
-        {
+      const response = await trackNutritionSyncRequest(() =>
+        apiFetch(`/api/nutrition/days/${encodeURIComponent(date)}/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           }),
           signal: controller.signal,
-        },
+        }),
       );
       if (controller.signal.aborted || !selected()) return;
       if (response.status === 409) {

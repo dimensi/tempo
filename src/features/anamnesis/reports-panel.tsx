@@ -1,5 +1,4 @@
 'use client';
-import { OfflineFile } from '@/components/shared/offline-file';
 import { apiFetch } from '@/lib/api-client';
 import { useReadOnline } from '@/lib/use-read-online';
 import { useReadRefresh } from '@/lib/use-read-refresh';
@@ -438,14 +437,6 @@ export function ReportsPanel({ ownerId }: { ownerId: string }) {
                 {m.reports.download}
               </Button>
             )}
-            <OfflineFile
-              id={`medical-report:${item.id}`}
-              label={item.filename ?? m.reports.download}
-              kind="pdf"
-              size={item.sizeBytes ?? undefined}
-              href={`/api/anamnesis/reports/${item.id}/file?${query}`}
-              offline={!online}
-            />
           </Group>
         </Group>
       ))}

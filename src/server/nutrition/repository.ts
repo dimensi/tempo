@@ -13,7 +13,7 @@ import {
   type NutritionDay,
 } from '@/contracts/nutrition';
 import { syncStatusSchema, type SyncStatus } from '@/contracts/nutrition-sync';
-import { syncProgress, type DayWork } from '@/server/yazio/sync-progress';
+import { syncProgress } from '@/server/yazio/sync-progress';
 
 export type PhotoRow = typeof nutritionPhotos.$inferInsert;
 export function nutritionRepository(database = getDatabase()) {
@@ -88,22 +88,8 @@ export function nutritionRepository(database = getDatabase()) {
           .get() ?? null
       );
     },
-    replaceDay(
-      ownerId: string,
-      day: NutritionDay,
-      photos: PhotoRow[],
-      progress?: Partial<DayWork>,
-    ) {
+    saveDay(ownerId: string, day: NutritionDay) {
       nutritionDaySchema.parse(day);
-      if (
-        photos.some(
-          (p) =>
-            p.ownerId !== ownerId ||
-            p.date !== day.date ||
-            p.source !== 'yazio',
-        )
-      )
-        throw new Error('Invalid photo grouping');
       db.transaction((tx) => {
         tx.insert(nutritionDays)
           .values({
@@ -117,16 +103,32 @@ export function nutritionRepository(database = getDatabase()) {
             set: { snapshot: JSON.stringify(day), fetchedAt: day.fetchedAt },
           })
           .run();
+        syncProgress(database).set(ownerId, day.date, { food: true });
+      });
+    },
+    replaceYazioPhotos(
+      ownerId: string,
+      date: string,
+      photos: PhotoRow[],
+      complete: boolean,
+    ) {
+      if (
+        photos.some(
+          (photo) =>
+            photo.ownerId !== ownerId ||
+            photo.date !== date ||
+            photo.source !== 'yazio',
+        )
+      )
+        throw new Error('Invalid photo grouping');
+      db.transaction((tx) => {
         tx.delete(nutritionPhotos)
           .where(
-            and(
-              photoWhere(ownerId, day.date),
-              eq(nutritionPhotos.source, 'yazio'),
-            ),
+            and(photoWhere(ownerId, date), eq(nutritionPhotos.source, 'yazio')),
           )
           .run();
         if (photos.length) tx.insert(nutritionPhotos).values(photos).run();
-        if (progress) syncProgress(database).set(ownerId, day.date, progress);
+        syncProgress(database).set(ownerId, date, { photos: complete });
       });
     },
     addPhoto(photo: PhotoRow) {

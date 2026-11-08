@@ -10,6 +10,7 @@ import {
 } from './client-read';
 import type { ReadDescriptor } from './read-descriptors';
 import type { ReadResource } from './read-resource';
+import { sessionGeneration } from './session-state';
 export function useReadResource<T>(
   resource: ReadDescriptor<T>,
   initialSeed?: T,
@@ -36,12 +37,16 @@ export function useReadResource<T>(
     }
   }, [state.data, decode]);
   const refresh = useMemo(
-    () => async () => {
-      if (!key) return;
-      bindReadScope();
-      await clientReads.restore(key);
-      await refreshClientRead(key).catch(() => {});
-    },
+    () =>
+      async (afterCurrent = false) => {
+        if (!key) return;
+        const generation = sessionGeneration();
+        bindReadScope();
+        await clientReads.restore(key);
+        if (afterCurrent) await clientReads.waitForCurrentRead(key);
+        if (generation !== sessionGeneration()) return;
+        await refreshClientRead(key).catch(() => {});
+      },
     [key],
   );
   useEffect(() => {
@@ -53,8 +58,10 @@ export function useReadResource<T>(
     )
       void seedClientRead(key, initialSeed);
     void refresh();
-    window.addEventListener(readRevalidateEvent, refresh);
-    return () => window.removeEventListener(readRevalidateEvent, refresh);
+    const revalidate = (event: Event) =>
+      void refresh(event instanceof CustomEvent && event.detail === true);
+    window.addEventListener(readRevalidateEvent, revalidate);
+    return () => window.removeEventListener(readRevalidateEvent, revalidate);
   }, [key, initialSeed, refresh]);
   return {
     data: data ?? initialSeed,

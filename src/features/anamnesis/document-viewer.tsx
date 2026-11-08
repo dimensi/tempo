@@ -1,7 +1,5 @@
 'use client';
 import { PageHeader } from '@/components/layout/page-header';
-import { OfflineFile } from '@/components/shared/offline-file';
-import { offlineMessages } from '@/config/offline';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadOnline } from '@/lib/use-read-online';
 import { useReadResource } from '@/lib/use-read-resource';
@@ -157,17 +155,9 @@ export function DocumentViewer({
           {m.imports.partialHint}
         </Alert>
       )}
-      {document && (
-        <OfflineFile
-          id={`medical-document:${document.id}`}
-          label={document.filename}
-          kind="pdf"
-          size={document.sizeBytes}
-          href={`/api/anamnesis/documents/${documentId}/file?${query}`}
-          offline={!online}
-        />
+      {!online && document && (
+        <Text c="dimmed">{m.reviews.originalOffline}</Text>
       )}
-      {!online && <Text c="dimmed">{offlineMessages.fileRequiresSave}</Text>}
       {document && online && (
         <Paper withBorder style={{ height: '70vh' }}>
           <object

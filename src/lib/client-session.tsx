@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { apiFetch } from './api-client';
 import { authClient } from './auth-client';
+import { retireOfflineDownloads } from './browser-storage';
 import { observeReadResources, revalidateVisibleReads } from './client-read';
 import { finishPendingLogout, hasPendingLogout } from './local-logout';
 import { observeLocalDataReset } from './local-data';
@@ -43,6 +44,9 @@ export function ClientSession({
     bindSession(initial);
     return false;
   });
+  useEffect(() => {
+    void retireOfflineDownloads().catch(() => {});
+  }, []);
   useEffect(() => {
     const stopReads = observeReadResources();
     const stopLocalData = observeLocalDataReset();

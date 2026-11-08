@@ -20,7 +20,6 @@ export async function loadConnectedDiary(
     const sync = await runNutritionSync(
       ownerId,
       resolveSyncPeriod({
-        mode: 'period',
         from: schedule.initialFrom,
         timezone: schedule.timezone,
       }),

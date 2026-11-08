@@ -37,7 +37,6 @@ import { useReadOnline } from '@/lib/use-read-online';
 import { workoutTitle } from '@/lib/workout-title';
 import { DayEditor } from './day-editor';
 import { clearWorkoutDraft, dayWorkoutDraftKey } from './draft-storage';
-import { DownloadWorkoutButton } from './download-workout-button';
 import { copyWorkoutToDate } from './copy-workout';
 import { NativeWorkout } from './native-workout';
 import { WorkoutSync, useTransformMateSync } from './transformmate-sync';
@@ -183,31 +182,6 @@ export function WorkoutsDashboard({
         item.remote.status !== 'started',
     );
   const pendingWrites = usePendingWorkoutWrites(entry?.workout?.id, canLog);
-  const downloadExercises = [...(entry?.workout?.exercises ?? [])].flatMap(
-    (exercise) =>
-      exercise.transformMate
-        ? [{ id: exercise.transformMate.exerciseId, name: exercise.name }]
-        : [],
-  );
-  if (entry?.native)
-    downloadExercises.push(
-      ...entry.native.exercises.map((exercise) => ({
-        id: exercise.exerciseId,
-        name: exercise.name,
-      })),
-    );
-  if (!downloadExercises.length && entry?.remote?.actual)
-    downloadExercises.push(
-      ...entry.remote.actual.exercises.map((exercise) => ({
-        id: exercise.exerciseId,
-        name: exercise.name,
-      })),
-    );
-  const downloadSignature = JSON.stringify([
-    entry?.workout,
-    entry?.native,
-    entry?.remote?.actual,
-  ]);
   const create = creating?.date === date;
   const done = async (background = false) => {
     await Promise.all([resource.refresh(), sync.reload()]);
@@ -503,30 +477,6 @@ export function WorkoutsDashboard({
           onReorderDone={() => setReorderTarget(null)}
           onCancel={() => setCreating(null)}
         />
-      )}
-      {!create && entry && (
-        <div hidden>
-          <DownloadWorkoutButton
-            key={`${entry.id}:${downloadSignature}`}
-            ownerId={ownerId}
-            blocked={draftDirty}
-            workoutKey={`${ownerId}:${entry.id}`}
-            signature={downloadSignature}
-            resources={[
-              readResources.workouts(
-                `/api/workouts?ownerId=${encodeURIComponent(ownerId)}`,
-              ),
-              ...(entry.native || entry.remote
-                ? [
-                    readResources.transformMate(
-                      `/api/workouts/transformmate?${new URLSearchParams({ ownerId, from: date, to: date, limit: '20' })}`,
-                    ),
-                  ]
-                : []),
-            ]}
-            exercises={downloadExercises}
-          />
-        </div>
       )}
       {!create && entry && entry.workout && (
         <DayEditor

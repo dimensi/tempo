@@ -124,6 +124,9 @@ export class ReadResourceStore<T> {
     if (value && valid() && this.snapshot(key).data === undefined)
       this.seed(key, value.data, value.savedAt, 'storage', value.coverage);
   }
+  async waitForCurrentRead(key: string) {
+    await this.flights.get(key)?.catch(() => {});
+  }
   async read(key: string, loader?: () => Promise<T>): Promise<T> {
     const existing = loader ? this.flights.get(key) : undefined;
     if (existing) return existing;

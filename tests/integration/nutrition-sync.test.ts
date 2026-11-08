@@ -6,6 +6,7 @@ import { nutritionRepository } from '@/server/nutrition/repository';
 import { syncNutritionPeriod } from '@/server/jobs/nutrition-sync';
 import { createNutritionScheduler } from '@/server/jobs/nutrition-scheduler';
 import { dailyGoalsRepository } from '@/server/yazio/goals';
+import { yazioHealthRepository } from '@/server/yazio/health-repository';
 import { nutritionSchedule } from '@/server/db/schema/nutrition-schedule';
 import type { NutritionDayUpstream } from '@/server/yazio/adapter';
 
@@ -98,6 +99,10 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
 
   let clock = Date.parse('2026-01-02T12:00:00Z');
   let failGoals = false;
+  const foodGate = Promise.withResolvers<void>();
+  const photoGate = Promise.withResolvers<void>();
+  const photosStarted = Promise.withResolvers<void>();
+  let holdReads = true;
   const goalRead = vi.fn(async (day: string) => {
     if (failGoals) throw new Error('Synthetic goal outage');
     return { date: day, calories: '2000', steps: 8000, weight: '72.5' };
@@ -120,7 +125,12 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
       source: async () => ({
         ...upstream(),
         goals: goalRead,
+        images: async () =>
+          holdReads
+            ? { lunch: 'https://images.yazio-cdn.com/fixture.jpg' }
+            : {},
         items: async (day) => {
+          if (holdReads) await foodGate.promise;
           const value = await upstream().items(day);
           return {
             ...value,
@@ -136,14 +146,69 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
         }),
         weight: async () => null,
       }),
+      images: {
+        fetch: async () => {
+          photosStarted.resolve();
+          await photoGate.promise;
+          throw new Error('Synthetic photo outage');
+        },
+        store: async () => {
+          throw new Error('Unexpected image write');
+        },
+      },
       repository,
     });
   scheduler().enable('owner', { initialFrom: date, timezone: 'UTC' });
-  // A lease race across scheduler instances creates exactly one two-date read.
-  await Promise.all([
-    scheduler().overview('owner', 'UTC'),
-    scheduler().overview('owner', 'UTC'),
+  // A server tick can run without an open page, and shares the lease with the overview.
+  const today = '2026-01-02';
+  const previousPhotoId = `owner:${today}:lunch:yazio`;
+  repository.addPhoto({
+    id: previousPhotoId,
+    ownerId: 'owner',
+    date: today,
+    daytime: 'lunch',
+    source: 'yazio',
+    sourceUrl: 'https://images.yazio-cdn.com/previous.jpg',
+    observedAt: '2026-01-02T10:00:00Z',
+    storageKey: 'synthetic',
+    contentHash: 'synthetic',
+    mime: 'image/jpeg',
+  });
+  const scheduled = scheduler().scheduled();
+  try {
+    await expect(scheduler().overview('owner', 'UTC')).resolves.toEqual({
+      started: false,
+    });
+    await vi.waitFor(() => {
+      expect(
+        yazioHealthRepository(database.db).steps('owner', {
+          from: today,
+          to: today,
+        })[0]?.steps,
+      ).toBe(5000);
+    });
+    expect(repository.day('owner', today)).toBeNull();
+    foodGate.resolve();
+    await photosStarted.promise;
+    expect(repository.day('owner', today)?.totals.calories).toBe('10');
+    expect(scheduler().liveStatus('owner').activity).toMatchObject({
+      food: [],
+      steps: [],
+      photos: [today, date],
+    });
+  } finally {
+    holdReads = false;
+    foodGate.resolve();
+    photoGate.resolve();
+    await scheduled;
+  }
+  expect(scheduler().liveStatus('owner').activity).toBeNull();
+  expect(scheduler().liveStatus('owner').last.photoFailedDates).toEqual([
+    today,
   ]);
+  expect(repository.photo('owner', previousPhotoId)?.sourceUrl).toContain(
+    '/previous.jpg',
+  );
   expect(goalRead).toHaveBeenCalledTimes(2);
   expect(dailyGoalsRepository(database).day('owner', date)).toMatchObject({
     calories: '2000',
@@ -154,7 +219,7 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
   expect(goalRead).toHaveBeenCalledTimes(2);
   clock += 3600001;
   failGoals = true;
-  await scheduler().overview('owner', 'UTC');
+  await scheduler().overview('owner', 'Pacific/Honolulu');
   expect(goalRead).toHaveBeenCalledTimes(4);
   expect(dailyGoalsRepository(database).day('owner', date).calories).toBe(
     '2000',
@@ -186,4 +251,43 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
   const afterManualSuccess = goalRead.mock.calls.length;
   await scheduler().overview('owner', 'UTC');
   expect(goalRead).toHaveBeenCalledTimes(afterManualSuccess);
+
+  clock += 10 * 86400000;
+  const beforeRepair = database.db.select().from(nutritionSchedule).get();
+  await scheduler().recent('owner', 'Pacific/Honolulu');
+  expect(
+    goalRead.mock.calls.slice(afterManualSuccess).map(([day]) => day),
+  ).toEqual([
+    '2026-01-12',
+    '2026-01-11',
+    '2026-01-10',
+    '2026-01-09',
+    '2026-01-08',
+    '2026-01-07',
+    '2026-01-06',
+  ]);
+  expect(database.db.select().from(nutritionSchedule).get()).toMatchObject({
+    initialFrom: date,
+    timezone: 'UTC',
+    automaticAttemptAt: beforeRepair?.automaticAttemptAt,
+    recentSuccessDate: '2026-01-12',
+  });
+  await scheduler().scheduled();
+  expect(goalRead).toHaveBeenCalledTimes(afterManualSuccess + 7);
+
+  // A new history anchor limits server refresh to that date, without erasing history.
+  clock += 3600001;
+  await scheduler().run(
+    'owner',
+    { from: '2026-01-12', to: '2026-01-12' },
+    {
+      mode: 'manual',
+      timezone: 'UTC',
+    },
+  );
+  expect(repository.day('owner', date)).not.toBeNull();
+  clock += 3600001;
+  const beforeLimitedRun = goalRead.mock.calls.length;
+  await scheduler().scheduled();
+  expect(goalRead.mock.calls.slice(beforeLimitedRun)).toEqual([['2026-01-12']]);
 });

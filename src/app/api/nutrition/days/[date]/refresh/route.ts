@@ -21,7 +21,6 @@ async function POSTHandler(
       JSON.parse((await readBody(request, 2048)).toString()),
     );
     const period = resolveSyncPeriod({
-      mode: 'period',
       from: date,
       to: date,
       timezone: input.timezone,

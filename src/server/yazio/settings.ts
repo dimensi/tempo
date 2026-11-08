@@ -1,5 +1,4 @@
 import 'server-only';
-import { loadConnectedDiary } from './backfill';
 import {
   disableNutritionSchedule,
   getNutritionSchedule,
@@ -15,13 +14,8 @@ import {
   getYazioAccount,
 } from './account';
 import { fileTokenStore } from './token-store';
-import { tokenSchema } from './client';
 import { resolve, sep } from 'node:path';
-import {
-  yazioTokenImportSchema,
-  yazioConfirmationSchema,
-  resolveConnectionSchedule,
-} from '@/contracts/nutrition-sync';
+import { yazioConfirmationSchema } from '@/contracts/nutrition-sync';
 
 export async function yazioOwner(headers: Headers) {
   const access = await authorize(headers, 'yazio:manage');
@@ -86,25 +80,6 @@ export async function refreshYazioAccount(headers: Headers) {
     if (error instanceof NutritionAccessError) throw error;
     // Optional profile lookup never turns a completed diary load into a failure.
   }
-}
-export async function saveExistingToken(headers: Headers, input: unknown) {
-  const ownerId = await yazioOwner(headers);
-  const parsed = yazioTokenImportSchema.parse(input);
-  const schedule = resolveConnectionSchedule(parsed);
-  const token = tokenSchema.parse(parsed.token);
-  const store = configuredStore(ownerId);
-  await store.load();
-  if ((await yazioOwner(headers)) !== ownerId)
-    throw new NutritionAccessError(403);
-  const account = await readYazioAccount(token);
-  if ((await yazioOwner(headers)) !== ownerId)
-    throw new NutritionAccessError(403);
-  await store.save(token);
-  cacheYazioAccount(ownerId, account);
-  const result = await loadConnectedDiary(ownerId, schedule, account);
-  if ((await yazioOwner(headers)) !== ownerId)
-    throw new NutritionAccessError(403);
-  return result;
 }
 export async function disconnectYazio(headers: Headers, input: unknown) {
   const ownerId = await yazioOwner(headers);
