@@ -9,6 +9,7 @@ import { analyticsRangeSchema } from '@/contracts/analytics';
 import {
   AnalyticsDashboard,
   AnalyticsTimezone,
+  parseAnalyticsPeriod,
   PeriodControl,
   presetRange,
 } from '@/features/analytics';
@@ -24,8 +25,12 @@ export default function Page() {
   const today = zone.success
     ? dateInTimezone(new Date(), zone.data)
     : undefined;
+  const hasExplicitRange = params.has('from') || params.has('to');
+  const period = hasExplicitRange
+    ? parseAnalyticsPeriod(params.get('period'))
+    : 'previousWeek';
   const range = analyticsRangeSchema.safeParse(
-    params.has('from') || params.has('to')
+    hasExplicitRange
       ? { from: params.get('from'), to: params.get('to') }
       : today
         ? presetRange('previousWeek', today)
@@ -43,6 +48,7 @@ export default function Page() {
       <AnalyticsTimezone
         from={params.get('from') ?? undefined}
         to={params.get('to') ?? undefined}
+        period={period}
       />
     );
   if (!range.success || !zone.success) return <Text>{m.invalidRange}</Text>;
@@ -53,6 +59,7 @@ export default function Page() {
         <PeriodControl
           range={resource.data.range}
           previous={resource.data.previousRange}
+          period={period}
           today={resource.data.today}
           timezone={timezone}
         />

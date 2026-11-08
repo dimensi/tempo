@@ -15,6 +15,8 @@ export const analyticsMessages = {
   currentMonth: 'Текущий месяц',
   calendarPeriods: 'Календарные периоды',
   calendarPeriodHint: 'Неделя — с понедельника. Текущие периоды — по сегодня.',
+  selectedDates: 'Даты отчёта',
+  cancel: 'Отмена',
   custom: 'Свой период',
   from: 'С',
   to: 'По',

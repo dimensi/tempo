@@ -2,8 +2,20 @@ import {
   analyticsRangeSchema,
   type AnalyticsRange,
 } from '@/contracts/analytics';
-export type AnalyticsPreset =
-  'previousWeek' | 'currentWeek' | 'previousMonth' | 'currentMonth';
+export const calendarPresets = [
+  'previousWeek',
+  'currentWeek',
+  'previousMonth',
+  'currentMonth',
+] as const;
+type AnalyticsPreset = (typeof calendarPresets)[number];
+export type AnalyticsPeriod = AnalyticsPreset | 'custom';
+
+export function parseAnalyticsPeriod(value: string | null) {
+  return value === 'custom'
+    ? value
+    : calendarPresets.find((preset) => preset === value);
+}
 
 export function presetRange(
   preset: AnalyticsPreset,

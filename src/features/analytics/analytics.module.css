@@ -36,9 +36,6 @@
 .chart {
   min-width: 0;
 }
-.toolbar {
-  gap: var(--mantine-spacing-sm);
-}
 .periodSelect {
   width: 280px;
   max-width: 100%;
