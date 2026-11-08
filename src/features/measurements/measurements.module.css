@@ -61,7 +61,7 @@
 }
 
 .trendSelect input,
-.dateInput input,
+.dateControl,
 .metricInput input {
   min-height: 44px;
   font-size: var(--mantine-font-size-md);

@@ -94,6 +94,7 @@ export function MeasurementsPanel({
   const [busy, setBusy] = useState(false);
   const [formVisibility, setFormVisibility] = useState<boolean>();
   const mobile = useMediaQuery('(max-width: 47.99em)');
+  const touch = useMediaQuery('(pointer: coarse)');
   const wide = useMediaQuery('(min-width: 72em)');
   const formOpened = writable && (formVisibility ?? wide);
   const editorId = useId();
@@ -378,6 +379,7 @@ export function MeasurementsPanel({
           <MeasurementFields
             date={date}
             full={wide}
+            nativeDate={mobile || touch}
             values={values}
             note={note}
             onDateChange={setDate}
