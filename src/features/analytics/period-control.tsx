@@ -9,13 +9,15 @@ import {
   PeriodControlView,
   type PeriodControlProps,
 } from './period-control-view';
-import { presetRange } from './range';
+import { presetRange, type AnalyticsPeriod } from './range';
 export function AnalyticsTimezone({
   from,
   to,
+  period,
 }: {
   from?: string | string[];
   to?: string | string[];
+  period?: AnalyticsPeriod;
 }) {
   const router = useRouter();
   useEffect(() => {
@@ -28,8 +30,9 @@ export function AnalyticsTimezone({
             to: Array.isArray(to) ? '' : (to ?? ''),
           };
     const query = new URLSearchParams({ ...range, timezone });
+    if (period) query.set('period', period);
     router.replace(`/analytics?${query.toString()}`);
-  }, [router, from, to]);
+  }, [router, from, to, period]);
   return (
     <Stack aria-label={m.loading}>
       <PageHeader>{m.title}</PageHeader>
@@ -45,8 +48,8 @@ export function PeriodControl(props: PeriodControlProps) {
   return (
     <PeriodControlView
       {...props}
-      onNavigate={(range) => {
-        const href = `/analytics?${new URLSearchParams({ ...range, timezone: props.timezone })}`;
+      onNavigate={(range, period) => {
+        const href = `/analytics?${new URLSearchParams({ ...range, timezone: props.timezone, period })}`;
         router.push(href, { scroll: false });
       }}
     />

@@ -13,4 +13,6 @@ export const dateLabel = (date: string) =>
     timeZone: 'UTC',
   }).format(new Date(`${date}T00:00:00Z`));
 export const rangeLabel = (range: { from: string; to: string }) =>
-  `${dateLabel(range.from)} — ${dateLabel(range.to)}`;
+  range.from === range.to
+    ? dateLabel(range.from)
+    : `${dateLabel(range.from)} — ${dateLabel(range.to)}`;
