@@ -3,10 +3,12 @@ import type { TransformMateClient } from './client';
 import type { CatalogIdentity } from './catalog-store';
 import { catalogStore } from './catalog-store';
 import { projectDetail } from './catalog-projection';
+import { TransformMateApiError } from './errors';
 import { replicaRequest } from './replica-gate';
 import { replicaStore, monthFrom } from './replica-store';
 export type CatalogScope = CatalogIdentity & {
   client: TransformMateClient | null;
+  authorId?: number | null;
   assertCurrent: () => Promise<void>;
   assertUpstreamCurrent: () => Promise<void>;
 };
@@ -71,9 +73,17 @@ export async function cachedDetail(
   if (!force && current?.detail) return current;
   if (!scope.client) throw new Error('Not connected');
   await coalesce(scope, ':detail:' + id, async () => {
-    const { body } = await scope.client!.getExercise(id);
+    const { body } = await scope
+      .client!.getExercise(id)
+      .catch(async (error: unknown) => {
+        if (error instanceof TransformMateApiError && error.status === 404) {
+          await scope.assertUpstreamCurrent();
+          catalogStore().clearCustomOwnership(scope, id);
+        }
+        throw error;
+      });
     if (body.id !== id) throw new Error('Catalog exercise mismatch');
-    const detail = projectDetail(body);
+    const detail = projectDetail(body, scope.authorId ?? undefined);
     await scope.assertUpstreamCurrent();
     catalogStore().detail(scope, detail, new Date().toISOString());
     const store = replicaStore();

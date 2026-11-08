@@ -1,3 +1,4 @@
+import { techniqueSummarySchema } from './exercise-technique';
 import { z } from 'zod';
 import { publicationWorkoutSchema } from '@/contracts/workout-publication';
 import type {
@@ -118,6 +119,7 @@ export const transformMateExerciseInfoSchema = z.object({
   description: z.string().max(20000),
   canPlan: z.boolean(),
   hasVideo: z.boolean(),
+  technique: techniqueSummarySchema.optional(),
   ...catalogRichFields,
   muscles: z
     .array(

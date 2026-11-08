@@ -19,7 +19,7 @@ import {
   VideoProcessingError,
   workoutVideoTemporaryRoot,
 } from './video-processing';
-import { videoRange } from './video-range';
+import { readVideoPart, streamPrivateVideo } from './video-io';
 import { checkWorkoutOrigin, readWorkoutJson } from './http';
 
 // Instrumentation and route handlers can be emitted as separate module factories.
@@ -29,6 +29,7 @@ const host = globalThis as unknown as {
     locks: Map<string, Promise<unknown>>;
     controllers: Map<string, AbortController>;
     processing?: Promise<void>;
+    rerun?: boolean;
     initialized: boolean;
     timer?: ReturnType<typeof setInterval>;
   };
@@ -236,29 +237,10 @@ export async function uploadVideoPart(
       part >= count
     )
       throw new WorkoutError(409);
-    const expected = Math.min(
-      VIDEO_PART_BYTES,
-      row.size - part * VIDEO_PART_BYTES,
+    const bytes = await readVideoPart(
+      request,
+      Math.min(VIDEO_PART_BYTES, row.size - part * VIDEO_PART_BYTES),
     );
-    const reader = request.body?.getReader();
-    if (!reader) throw new SyntaxError();
-    const bytes = new Uint8Array(expected);
-    let offset = 0;
-    try {
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        if (offset + chunk.value.length > expected) {
-          await reader.cancel();
-          throw new SyntaxError();
-        }
-        bytes.set(chunk.value, offset);
-        offset += chunk.value.length;
-      }
-    } finally {
-      reader.releaseLock();
-    }
-    if (offset !== expected) throw new SyntaxError();
     await rowFor(request, id, true);
     const digest = createHash('sha256').update(bytes).digest('hex');
     if (row.parts[part] && row.parts[part] !== digest)
@@ -334,48 +316,9 @@ export async function playbackVideo(request: Request, id: string) {
   const row = await rowFor(request, id, false);
   if (row.state !== 'ready') throw new WorkoutError(404);
   const size = row.playbackSize ?? row.size;
-  const headers = new Headers({
-    'Content-Type': 'video/mp4',
-    'Cache-Control': 'private, no-store',
-    'Accept-Ranges': 'bytes',
-    'X-Content-Type-Options': 'nosniff',
-    Vary: 'Cookie',
-  });
-  let range;
-  try {
-    range = videoRange(request.headers.get('range'), size);
-  } catch {
-    headers.set('Content-Range', `bytes */${size}`);
-    return new Response(null, { status: 416, headers });
-  }
-  headers.set(
-    'Content-Length',
-    String(range ? range.end - range.start + 1 : size),
+  return streamPrivateVideo(request, key(row), size, () =>
+    rowFor(request, id, false),
   );
-  if (range)
-    headers.set('Content-Range', `bytes ${range.start}-${range.end}/${size}`);
-  if (request.method === 'HEAD')
-    return new Response(null, { status: range ? 206 : 200, headers });
-  const source = await getObjectStorage().readStream(
-    key(row),
-    range ?? undefined,
-  );
-  const reader = source.body.getReader();
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        await rowFor(request, id, false);
-        const chunk = await reader.read();
-        if (chunk.done) controller.close();
-        else controller.enqueue(chunk.value);
-      } catch (error) {
-        await reader.cancel();
-        controller.error(error);
-      }
-    },
-    cancel: () => reader.cancel(),
-  });
-  return new Response(body, { status: range ? 206 : 200, headers });
 }
 
 /** Internal cleanup; callers must authorize the parent workout before capturing rows. */
@@ -414,7 +357,10 @@ export async function cleanupVideoRows(rows: Row[]) {
 const processingControllers = runtime.controllers;
 /** Durable state is the queue; a restart retries processing rows from their verified source parts. */
 export function kickWorkoutVideoProcessing() {
-  if (runtime.processing) return;
+  if (runtime.processing) {
+    runtime.rerun = true;
+    return;
+  }
   runtime.processing = (async () => {
     if (!runtime.initialized) {
       await rm(workoutVideoTemporaryRoot(), { recursive: true, force: true });
@@ -446,6 +392,10 @@ export function kickWorkoutVideoProcessing() {
         serialize(row.id, () => cleanupReadyVideoParts(row)),
       ).catch(() => {});
     }
+    const { kickTechniqueCleanup, processNextTechniqueVideo } =
+      await import('@/server/transformmate/technique-videos');
+    kickTechniqueCleanup();
+    let processedAnyTechnique = false;
     for (;;) {
       const row = getDatabase()
         .db.select()
@@ -453,15 +403,22 @@ export function kickWorkoutVideoProcessing() {
         .where(eq(workoutVideos.state, 'processing'))
         .orderBy(asc(workoutVideos.createdAt))
         .get();
-      if (!row) break;
-      await processVideo(row);
+      if (row) await processVideo(row);
+      const processedTechnique = await processNextTechniqueVideo();
+      processedAnyTechnique ||= processedTechnique;
+      if (!row && !processedTechnique) break;
     }
+    if (processedAnyTechnique) kickTechniqueCleanup();
   })()
     .catch(() => {
       // Storage/DB outages retain the durable queue for the next bounded worker pass.
     })
     .finally(() => {
       runtime.processing = undefined;
+      if (runtime.rerun) {
+        runtime.rerun = false;
+        kickWorkoutVideoProcessing();
+      }
     });
 }
 export function startWorkoutVideoWorker() {

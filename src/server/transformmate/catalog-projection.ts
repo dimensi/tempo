@@ -63,10 +63,14 @@ export type PersistedDetail = z.infer<typeof persistedDetailSchema>;
 export type Summary = z.infer<typeof transformMateCatalogSchema>[number];
 export function projectDetail(
   detail: TransformMateExerciseDetail,
+  authorId?: number,
 ): PersistedDetail {
   return persistedDetailSchema.parse({
     ...detail,
-    ownedCustom: undefined,
+    ownedCustom:
+      authorId === undefined
+        ? undefined
+        : detail.author === authorId && detail.exercise_type?.id === 4,
     description:
       detail.exercise_type?.id === 4 &&
       /^\[tempo-exercise:[a-f0-9]{64}\]$/.test(detail.description)

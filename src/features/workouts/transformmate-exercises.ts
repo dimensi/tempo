@@ -1,3 +1,4 @@
+import { techniqueEditorHref } from '@/lib/exercise-technique-client';
 import type {
   TransformMateActual,
   TransformMateCatalogItem,
@@ -39,7 +40,17 @@ export function actualSetForExercise(
     ?.sets.find((set) => set.order === order);
 }
 
-export const techniqueHref = (ownerId: string, id: number) =>
-  `/api/workouts/transformmate/exercises/${id}/video?ownerId=${encodeURIComponent(ownerId)}`;
-export const exerciseHref = (ownerId: string, id: number) =>
-  `/api/workouts/transformmate/exercises/${id}?ownerId=${encodeURIComponent(ownerId)}`;
+export const techniqueHref = (
+  ownerId: string,
+  id: number,
+  videoId?: string | null,
+) =>
+  videoId
+    ? techniqueEditorHref(ownerId, id, `/videos/${videoId}/playback`)
+    : `/api/workouts/transformmate/exercises/${id}/video?ownerId=${encodeURIComponent(ownerId)}`;
+export const exerciseHref = (
+  ownerId: string,
+  id: number,
+  verifyOwnership = false,
+) =>
+  `/api/workouts/transformmate/exercises/${id}?ownerId=${encodeURIComponent(ownerId)}${verifyOwnership ? '&verifyOwnership=1' : ''}`;

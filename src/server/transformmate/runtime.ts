@@ -201,6 +201,7 @@ export async function getTransformMateCatalogBindingFence(ownerId: string) {
   return {
     configured: Boolean(initial.token),
     accountScope: identity,
+    authorId: initial.binding?.account.id ?? null,
     assertBindingCurrent: () => store.assertBindingRevision(revision),
     assertCurrent: async () => {
       const current = await store.load();
