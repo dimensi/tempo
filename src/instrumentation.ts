@@ -10,11 +10,10 @@ export async function register() {
   startTransformMateReplicaWorker();
   const { startWorkoutVideoWorker } = await import('@/server/workouts/videos');
   startWorkoutVideoWorker();
-  if (process.env.ENABLE_NUTRITION_SCHEDULER === 'true') {
-    const { startNutritionScheduler } =
-      await import('@/server/jobs/nutrition-scheduler');
-    startNutritionScheduler();
-  }
+  // Let the scheduler report why it is disabled as well as successful registration.
+  const { startNutritionScheduler } =
+    await import('@/server/jobs/nutrition-scheduler');
+  startNutritionScheduler();
   if (process.env.ENABLE_ANAMNESIS_WORKER === 'true') {
     const { startAnamnesisWorkerLoop } =
       await import('@/server/anamnesis/worker');

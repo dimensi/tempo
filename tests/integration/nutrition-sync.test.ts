@@ -4,13 +4,28 @@ import { openDatabase } from '@/server/db/connection';
 import { user } from '@/server/db/schema';
 import { nutritionRepository } from '@/server/nutrition/repository';
 import { syncNutritionPeriod } from '@/server/jobs/nutrition-sync';
-import { createNutritionScheduler } from '@/server/jobs/nutrition-scheduler';
+import {
+  createNutritionScheduler,
+  stopNutritionScheduler,
+} from '@/server/jobs/nutrition-scheduler';
+import { register } from '@/instrumentation';
+import * as databaseRuntime from '@/server/db';
+import * as adapterRuntime from '@/server/yazio/adapter';
+import * as tokenRuntime from '@/server/yazio/token-store';
+import * as bodyAdapterRuntime from '@/server/yazio/body-adapter';
 import { dailyGoalsRepository } from '@/server/yazio/goals';
 import { yazioHealthRepository } from '@/server/yazio/health-repository';
 import { nutritionSchedule } from '@/server/db/schema/nutrition-schedule';
 import type { NutritionDayUpstream } from '@/server/yazio/adapter';
 
 vi.mock('server-only', () => ({}));
+vi.mock('@/server/transformmate/replica-worker', () => ({
+  startTransformMateReplicaWorker: vi.fn(),
+}));
+vi.mock('@/server/workouts/videos', () => ({
+  startWorkoutVideoWorker: vi.fn(),
+}));
+
 let database: ReturnType<typeof openDatabase>;
 let repository: ReturnType<typeof nutritionRepository>;
 const date = '2026-01-01';
@@ -65,9 +80,17 @@ beforeEach(() => {
     .run();
   repository = nutritionRepository(database);
 });
-afterEach(() => database.sqlite.close());
+afterEach(() => {
+  stopNutritionScheduler();
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+  database.sqlite.close();
+});
 
 it('persists a completed day once and keeps the last durable snapshot on an upstream failure', async () => {
+  const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const source = upstream();
   expect(
     (
@@ -290,4 +313,199 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
   const beforeLimitedRun = goalRead.mock.calls.length;
   await scheduler().scheduled();
   expect(goalRead.mock.calls.slice(beforeLimitedRun)).toEqual([['2026-01-12']]);
+  // Exercise the real Next.js registration and interval, not scheduled() directly.
+  // Only outside workers, the DB handle and upstream/token IO are synthetic.
+  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+  vi.setSystemTime(clock);
+  const getDatabase = vi
+    .spyOn(databaseRuntime, 'getDatabase')
+    .mockReturnValue(database);
+  const privateMarker = 'private-owner-token-path-error-must-not-appear';
+  const load = vi.fn(async () => ({
+    access_token: privateMarker,
+    refresh_token: privateMarker,
+    expires_in: 3600,
+    expires_at: clock + 3600000,
+    token_type: 'Bearer',
+  }));
+  vi.spyOn(tokenRuntime, 'fileTokenStore').mockReturnValue({
+    load,
+    save: async () => {},
+    disconnect: async () => {},
+  });
+  const bodySummary = vi.fn(async () => ({}));
+  const bodySource = vi
+    .spyOn(bodyAdapterRuntime, 'bodyUpstream')
+    .mockResolvedValue({
+      summary: bodySummary,
+      range: async () => [],
+      create: async () => {},
+      update: async () => {},
+    });
+  const runtimeSource = vi
+    .spyOn(adapterRuntime, 'nutritionUpstream')
+    .mockResolvedValue({
+      ...upstream(),
+      items: async () => ({
+        products: [],
+        recipe_portions: [],
+        simple_products: [],
+      }),
+      goals: goalRead,
+      healthSummary: async (day) => ({
+        dailySteps: { source: 'yazio', date: day, steps: 5000 },
+        unitContext: null,
+      }),
+      weight: async () => null,
+    });
+  const events = (name: string) =>
+    [info, warn]
+      .flatMap((spy) =>
+        spy.mock.calls.map((call, index) => ({
+          call,
+          order: spy.mock.invocationCallOrder[index]!,
+        })),
+      )
+      .sort((a, b) => a.order - b.order)
+      .filter(({ call: [event] }) => event === `yazio_${name}`)
+      .map(({ call: [, data] }) => JSON.parse(String(data)));
+  vi.stubEnv('NODE_ENV', 'production');
+  vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+  vi.stubEnv('NEXT_PHASE', 'phase-production-build');
+  vi.stubEnv('ENABLE_NUTRITION_SCHEDULER', 'true');
+  vi.stubEnv('ENABLE_ANAMNESIS_WORKER', 'false');
+  vi.stubEnv('BETTER_AUTH_SECRET', privateMarker);
+  vi.stubEnv('BETTER_AUTH_URL', 'https://synthetic.example.test');
+  vi.stubEnv('DEMO_MODE', 'false');
+  vi.stubEnv('YAZIO_TOKEN_FILE', `.data/private/${privateMarker}`);
+  await register();
+  expect(vi.getTimerCount()).toBe(0);
+  vi.stubEnv('NEXT_PHASE', '');
+  vi.stubEnv('ENABLE_NUTRITION_SCHEDULER', 'false');
+  await register();
+  await register();
+  expect(events('scheduler_disabled')).toEqual([
+    expect.objectContaining({ reason: 'feature_flag_disabled' }),
+  ]);
+  vi.stubEnv('ENABLE_NUTRITION_SCHEDULER', 'true');
+  vi.stubEnv('YAZIO_TOKEN_FILE', '');
+  await register();
+  expect(vi.getTimerCount()).toBe(0);
+  expect(events('scheduler_disabled').at(-1)).toMatchObject({
+    reason: 'connection_not_configured',
+  });
+  vi.stubEnv('YAZIO_TOKEN_FILE', `.data/private/${privateMarker}`);
+  await register();
+  await register();
+  expect(vi.getTimerCount()).toBe(1);
+  expect(events('scheduler_started')).toHaveLength(1);
+  expect(runtimeSource).not.toHaveBeenCalled();
+
+  scheduler().disable('owner');
+  await vi.advanceTimersByTimeAsync(90000);
+  expect(
+    events('scheduler_skipped').filter(
+      (event) => event.reason === 'no_enabled_owners',
+    ),
+  ).toHaveLength(1);
+  // A synchronous factory/DB failure must be caught by the actual timer, sanitized,
+  // and must not stop the next tick. Identical failures do not flood runtime logs.
+  getDatabase.mockImplementationOnce(() => {
+    throw new Error(privateMarker);
+  });
+  await vi.advanceTimersByTimeAsync(30000);
+  getDatabase.mockImplementationOnce(() => {
+    throw new Error(privateMarker);
+  });
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(
+    events('scheduler_failed').filter((event) => event.stage === 'tick'),
+  ).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(30000);
+  getDatabase.mockImplementationOnce(() => {
+    throw new Error(privateMarker);
+  });
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(
+    events('scheduler_failed').filter((event) => event.stage === 'tick'),
+  ).toHaveLength(2);
+
+  scheduler().enable('owner', { initialFrom: '2026-01-12', timezone: 'UTC' });
+  load.mockRejectedValueOnce(new Error(privateMarker));
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(events('sync_failed').at(-1)).toMatchObject({
+    trigger: 'timer',
+    code: 'SYNC_FAILED',
+  });
+  await vi.advanceTimersByTimeAsync(90000);
+  expect(runtimeSource).not.toHaveBeenCalled();
+  const cooldowns = events('scheduler_skipped').filter(
+    (event) => event.trigger === 'timer' && event.reason === 'attempt_cooldown',
+  );
+  expect(cooldowns).toHaveLength(1);
+  expect(cooldowns[0].nextEligibleAt).toBeTruthy();
+  await vi.advanceTimersByTimeAsync(3600000);
+  expect(runtimeSource).toHaveBeenCalledTimes(1);
+  expect(events('sync_completed').at(-1)).toMatchObject({
+    trigger: 'timer',
+    outcome: 'success',
+  });
+  // The real body runtime absorbs read/auth errors for persistence safety, but
+  // must report them to lifecycle diagnostics instead of claiming full success.
+  bodySummary.mockRejectedValueOnce(new Error(privateMarker));
+  await vi.advanceTimersByTimeAsync(3600000);
+  expect(events('sync_completed').at(-1)).toMatchObject({
+    trigger: 'timer',
+    outcome: 'partial',
+    bodyFailed: true,
+  });
+  bodySource.mockRejectedValueOnce(new Error(privateMarker));
+  await vi.advanceTimersByTimeAsync(3600000);
+  expect(events('sync_completed').at(-1)).toMatchObject({
+    trigger: 'timer',
+    outcome: 'partial',
+    bodyFailed: true,
+  });
+
+  // An actual successful queued delivery resets owner-failure dedup. A busy
+  // skip must not reset it while the previous operation is still in flight.
+  const deliver = vi.fn(async () => {
+    throw new Error(privateMarker);
+  });
+  const deliveries = createNutritionScheduler({
+    database,
+    configured: () => true,
+    now: () => clock,
+    store: () => ({ load, save: async () => {} }),
+    hasDueBodyWrites: () => true,
+    deliverBodyWrites: deliver,
+  });
+  const ownerFailures = () =>
+    events('scheduler_failed').filter((event) => event.stage === 'owner')
+      .length;
+  const beforeDeliveryFailure = ownerFailures();
+  await deliveries.scheduled();
+  await deliveries.scheduled();
+  expect(ownerFailures()).toBe(beforeDeliveryFailure + 1);
+  deliver.mockImplementationOnce(async () => undefined as never);
+  await deliveries.scheduled();
+  await deliveries.scheduled();
+  expect(ownerFailures()).toBe(beforeDeliveryFailure + 2);
+
+  expect(
+    events('sync_started').some((event) => event.trigger === 'overview'),
+  ).toBe(true);
+  expect(
+    events('sync_completed').some(
+      (event) => event.outcome === 'partial' && event.goalsFailures > 0,
+    ),
+  ).toBe(true);
+  const allOutput = JSON.stringify([...info.mock.calls, ...warn.mock.calls]);
+  expect(allOutput).not.toContain(privateMarker);
+  expect(events('sync_started').at(-1)).not.toHaveProperty('ownerId');
+  stopNutritionScheduler();
+  expect(vi.getTimerCount()).toBe(0);
+  const readCount = runtimeSource.mock.calls.length;
+  await vi.advanceTimersByTimeAsync(3600000);
+  expect(runtimeSource).toHaveBeenCalledTimes(readCount);
 });
