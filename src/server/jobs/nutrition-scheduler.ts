@@ -1,4 +1,9 @@
 import 'server-only';
+import {
+  nutritionDiagnostic,
+  NutritionDiagnosticTransitions,
+  type NutritionDiagnosticFields,
+} from './nutrition-diagnostics';
 import { dailyGoalsRepository } from '@/server/yazio/goals';
 import { syncReadFailure } from '@/server/yazio/sync-diagnostics';
 import { runBodySync } from '@/server/yazio/body-runtime';
@@ -51,6 +56,7 @@ type Period = { from: string; to: string };
 type RunOptions = {
   mode: 'manual' | 'recent' | 'day-refresh' | 'automatic';
   timezone?: string;
+  trigger?: 'timer' | 'overview';
 };
 type ErrorCode = NonNullable<NutritionScheduleStatus['lastError']>;
 type ActiveRun = {
@@ -61,12 +67,16 @@ type ActiveRun = {
 type SchedulerActivity = {
   runs: Map<string, ActiveRun>;
   deliveries: Set<string>;
+  diagnostics: NutritionDiagnosticTransitions;
 };
 // Instrumentation and API handlers can load separate module factories.
 const globalScheduler = globalThis as typeof globalThis & {
   nutritionSchedulerTimer?: ReturnType<typeof setInterval>;
   nutritionSchedulerActivity?: WeakMap<object, SchedulerActivity>;
+  nutritionSchedulerDiagnostics?: NutritionDiagnosticTransitions;
 };
+const runtimeDiagnostics = (globalScheduler.nutritionSchedulerDiagnostics ??=
+  new NutritionDiagnosticTransitions());
 const schedulerActivity = (globalScheduler.nutritionSchedulerActivity ??=
   new WeakMap());
 
@@ -121,10 +131,20 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
   const now = deps.now ?? Date.now;
   const repository = deps.repository ?? nutritionRepository(deps.database);
   const progress = syncProgress(deps.database);
-  const { runs: active, deliveries } = schedulerActivity.get(
-    deps.database.sqlite,
-  ) ?? { runs: new Map<string, ActiveRun>(), deliveries: new Set<string>() };
-  schedulerActivity.set(deps.database.sqlite, { runs: active, deliveries });
+  const {
+    runs: active,
+    deliveries,
+    diagnostics,
+  } = schedulerActivity.get(deps.database.sqlite) ?? {
+    runs: new Map<string, ActiveRun>(),
+    deliveries: new Set<string>(),
+    diagnostics: new NutritionDiagnosticTransitions(),
+  };
+  schedulerActivity.set(deps.database.sqlite, {
+    runs: active,
+    deliveries,
+    diagnostics,
+  });
   const ownerScope = (ownerId: string) =>
     eq(nutritionSchedule.ownerId, ownerId);
   function requireOwner(ownerId: string) {
@@ -286,6 +306,14 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       activity: null,
     };
     active.set(ownerId, activeRun);
+    diagnostics.clear(`skip:timer:${ownerId}`);
+    diagnostics.clear(`skip:overview:${ownerId}`);
+    const context = {
+      runId: leaseId,
+      mode: options.mode,
+      trigger: options.trigger ?? ('request' as const),
+    };
+    nutritionDiagnostic('sync_started', context);
     const pending = new Set<Promise<unknown>>();
     function track<T>(operation: () => Promise<T>) {
       const promise = Promise.resolve().then(operation);
@@ -382,6 +410,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       });
     }
     let foodCompleted = false;
+    let heartbeatFailed = false;
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
     try {
       if (options.mode === 'manual') {
@@ -397,8 +426,15 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       heartbeatTimer = setInterval(() => {
         try {
           heartbeat();
-        } catch {
-          /* A failed heartbeat expires/fences the lease. */
+        } catch (error) {
+          // A failed heartbeat still expires/fences the lease; report once per run.
+          if (!heartbeatFailed)
+            nutritionDiagnostic(
+              'sync_auxiliary_failed',
+              { ...context, stage: 'heartbeat' },
+              error,
+            );
+          heartbeatFailed = true;
         }
       }, HEARTBEAT_MS);
       heartbeatTimer.unref();
@@ -582,6 +618,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       assertCurrent();
       // Body sync uses its own auth client. Start it after the nutrition client
       // has finished upstream reads so both cannot refresh the same token at once.
+      let bodyFailed = false;
       await deps
         .bodySync?.(
           ownerId,
@@ -589,7 +626,14 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
           acquired.epoch,
           assertCurrent,
         )
-        .catch(() => {});
+        .catch((error: unknown) => {
+          bodyFailed = true;
+          nutritionDiagnostic(
+            'sync_auxiliary_failed',
+            { ...context, stage: 'body' },
+            error,
+          );
+        });
       assertCurrent();
       activity.other = false;
       activity.revision++;
@@ -637,10 +681,33 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
           recentSucceeded ? today : null,
         );
       foodCompleted = true;
+      const failures = {
+        foodFailures: result.failedDates.length,
+        photoFailures: result.photoFailedDates.length,
+        stepsFailures: health.failedStepsDates.length,
+        weightFailures: health.failedWeightDates.length,
+        goalsFailures: failedGoalsDates.length,
+        bodyFailed,
+      };
+      nutritionDiagnostic('sync_completed', {
+        ...context,
+        durationMs: now() - started,
+        outcome: !foodSucceeded
+          ? 'failed'
+          : Object.values(failures).some(Boolean) || heartbeatFailed
+            ? 'partial'
+            : 'success',
+        ...failures,
+      });
       return { ...status, health };
     } catch (error) {
       const code =
         error instanceof NutritionScheduleError ? error.code : 'SYNC_FAILED';
+      nutritionDiagnostic(
+        'sync_failed',
+        { ...context, code, durationMs: now() - started },
+        error,
+      );
       if (!foodCompleted) complete(code);
       throw new NutritionScheduleError(code);
     } finally {
@@ -656,6 +723,13 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
             and(ownerScope(ownerId), eq(nutritionSchedule.leaseId, leaseId)),
           )
           .run();
+      } catch (error) {
+        nutritionDiagnostic(
+          'sync_auxiliary_failed',
+          { ...context, stage: 'lease_release' },
+          error,
+        );
+        throw error;
       } finally {
         active.delete(ownerId);
       }
@@ -664,7 +738,13 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
   async function overview(ownerId: string, timezone: string) {
     nutritionTimezoneSchema.parse(timezone);
     requireOwner(ownerId);
-    if (!deps.configured()) return { started: false };
+    if (!deps.configured()) {
+      diagnostics.log(`skip:overview:${ownerId}`, 'scheduler_skipped', {
+        trigger: 'overview',
+        reason: 'connection_not_configured',
+      });
+      return { started: false };
+    }
     // Adopt a saved token only when this owner has no connection row. An explicit
     // disconnect already has a disabled row and can never be re-enabled here.
     if (!row(ownerId)) {
@@ -675,20 +755,57 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         .onConflictDoNothing()
         .run();
     }
-    return automatic(ownerId);
+    return automatic(ownerId, 'overview');
   }
-  async function automatic(ownerId: string) {
+  async function automatic(ownerId: string, trigger: 'timer' | 'overview') {
+    const skip = (
+      reason: NutritionDiagnosticFields['reason'],
+      nextEligibleAt?: number,
+    ) => {
+      diagnostics.log(`skip:${trigger}:${ownerId}`, 'scheduler_skipped', {
+        trigger,
+        reason,
+        ...(nextEligibleAt === undefined
+          ? {}
+          : { nextEligibleAt: new Date(nextEligibleAt).toISOString() }),
+      });
+      return { started: false };
+    };
     const current = row(ownerId);
-    if (!current?.enabled) return { started: false };
+    if (!current?.enabled) return skip('connection_disabled');
     const timezone = current.timezone;
     const today = nutritionLocalDate(now(), timezone);
     const period = recentPeriod(today, 2, current.initialFrom);
-    if (period.from > period.to) return { started: false };
+    if (period.from > period.to) return skip('history_start_in_future');
     try {
-      await run(ownerId, period, { mode: 'automatic', timezone });
+      await run(ownerId, period, { mode: 'automatic', timezone, trigger });
       return { started: true };
     } catch (error) {
-      if (error instanceof NutritionSyncBusyError) return { started: false };
+      if (error instanceof NutritionSyncBusyError) {
+        // Classify only after the authoritative atomic claim rejects; logging must
+        // not introduce a second eligibility gate or change lease/cooldown rules.
+        const latest = row(ownerId);
+        const time = now();
+        if (
+          active.has(ownerId) ||
+          deliveries.has(ownerId) ||
+          (latest?.leaseExpiresAt ?? 0) > time
+        )
+          return skip('run_in_progress');
+        if (!latest?.enabled) return skip('connection_disabled');
+        const attemptDue =
+          latest.automaticAttemptAt === null
+            ? 0
+            : latest.automaticAttemptAt + HOUR;
+        const successDue =
+          latest.recentSuccessAt !== null && latest.recentSuccessDate === today
+            ? latest.recentSuccessAt + HOUR
+            : 0;
+        if (attemptDue > time)
+          return skip('attempt_cooldown', Math.max(attemptDue, successDue));
+        if (successDue > time) return skip('recent_success', successDue);
+        return skip('lease_conflict');
+      }
       throw error;
     }
   }
@@ -708,26 +825,55 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       .from(nutritionSchedule)
       .where(eq(nutritionSchedule.enabled, true))
       .all();
-    await Promise.allSettled(
-      owners.map(async ({ ownerId }) => {
-        const refresh = await automatic(ownerId).catch(() => null);
-        const current = row(ownerId);
-        if (
-          refresh?.started ||
-          !current?.enabled ||
-          active.has(ownerId) ||
-          deliveries.has(ownerId) ||
-          (current.leaseExpiresAt ?? 0) > now() ||
-          !deps.hasDueBodyWrites?.(ownerId, current.epoch)
-        )
-          return;
-        deliveries.add(ownerId);
-        try {
-          await deps.deliverBodyWrites?.(ownerId);
-        } finally {
-          deliveries.delete(ownerId);
-        }
-      }),
+    if (!owners.length)
+      diagnostics.log('owners', 'scheduler_skipped', {
+        trigger: 'timer',
+        reason: 'no_enabled_owners',
+      });
+    else diagnostics.clear('owners');
+    await Promise.all(
+      owners
+        .map(async ({ ownerId }) => {
+          const reportFailure = (error: unknown) =>
+            diagnostics.log(
+              `failure:${ownerId}`,
+              'scheduler_failed',
+              { trigger: 'timer', stage: 'owner' },
+              error,
+            );
+          const refresh = await automatic(ownerId, 'timer').catch(
+            (error: unknown) => {
+              reportFailure(error);
+              return null;
+            },
+          );
+          const current = row(ownerId);
+          if (
+            refresh?.started ||
+            !current?.enabled ||
+            active.has(ownerId) ||
+            deliveries.has(ownerId) ||
+            (current.leaseExpiresAt ?? 0) > now() ||
+            !deps.hasDueBodyWrites?.(ownerId, current.epoch)
+          )
+            return;
+          deliveries.add(ownerId);
+          try {
+            await deps.deliverBodyWrites?.(ownerId);
+          } finally {
+            deliveries.delete(ownerId);
+          }
+        })
+        .map((operation) =>
+          operation.catch((error: unknown) => {
+            diagnostics.log(
+              'owner_failure',
+              'scheduler_failed',
+              { trigger: 'timer', stage: 'owner' },
+              error,
+            );
+          }),
+        ),
     );
   }
   return {
@@ -800,22 +946,48 @@ export function startNutritionScheduler() {
     process.env.NEXT_PHASE === 'phase-production-build'
   )
     return;
-  const env = readServerEnv();
-  if (
-    env.ENABLE_NUTRITION_SCHEDULER !== 'true' ||
-    !env.YAZIO_TOKEN_FILE ||
-    !env.BETTER_AUTH_SECRET
-  )
+  if (process.env.ENABLE_NUTRITION_SCHEDULER !== 'true') {
+    runtimeDiagnostics.log('registration', 'scheduler_disabled', {
+      reason: 'feature_flag_disabled',
+    });
     return;
-  // Registration only installs a timer; no YAZIO request runs during startup.
-  globalScheduler.nutritionSchedulerTimer = setInterval(() => {
-    void runtimeScheduler()
-      .scheduled()
-      .catch(() => {});
-  }, 30000);
-  globalScheduler.nutritionSchedulerTimer.unref();
+  }
+  try {
+    const env = readServerEnv();
+    if (!env.YAZIO_TOKEN_FILE || !env.BETTER_AUTH_SECRET) {
+      runtimeDiagnostics.log('registration', 'scheduler_disabled', {
+        reason: 'connection_not_configured',
+      });
+      return;
+    }
+    // Registration only installs a timer; no YAZIO request runs during startup.
+    // Promise.resolve also catches synchronous composition/DB errors on a tick.
+    globalScheduler.nutritionSchedulerTimer = setInterval(() => {
+      void Promise.resolve()
+        .then(() => runtimeScheduler().scheduled())
+        .then(
+          () => runtimeDiagnostics.clear('tick'),
+          (error: unknown) =>
+            runtimeDiagnostics.log(
+              'tick',
+              'scheduler_failed',
+              { trigger: 'timer', stage: 'tick' },
+              error,
+            ),
+        );
+    }, 30000);
+    globalScheduler.nutritionSchedulerTimer.unref();
+    runtimeDiagnostics.clear('registration');
+    nutritionDiagnostic('scheduler_started', { intervalMs: 30000 });
+  } catch (error) {
+    nutritionDiagnostic('scheduler_failed', { stage: 'registration' }, error);
+    throw error;
+  }
 }
 export function stopNutritionScheduler() {
+  if (!globalScheduler.nutritionSchedulerTimer) return;
   clearInterval(globalScheduler.nutritionSchedulerTimer);
   delete globalScheduler.nutritionSchedulerTimer;
+  runtimeDiagnostics.clear('tick');
+  nutritionDiagnostic('scheduler_stopped');
 }
