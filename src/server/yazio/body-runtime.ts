@@ -1,4 +1,7 @@
 import 'server-only';
+import { NutritionDiagnosticTransitions } from '@/server/jobs/nutrition-diagnostics';
+export type BodySyncResult = { failed: boolean };
+const diagnostics = new NutritionDiagnosticTransitions();
 import { resolve, sep } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '@/server/db';
@@ -9,7 +12,7 @@ import { bodyUpstream } from './body-adapter';
 import { bodyRepository } from './body-repository';
 import { syncBodyJobs, pullBodyDates } from '@/server/jobs/yazio-body-sync';
 type Work = {
-  promise: Promise<void>;
+  promise: Promise<BodySyncResult>;
   dates: Set<string>;
   manual: Set<string>;
   again: boolean;
@@ -23,7 +26,7 @@ export function runBodySync(
   measurementId?: string,
   expectedEpoch?: number,
   assertPullCurrent?: () => void,
-): Promise<void> {
+): Promise<BodySyncResult> {
   const requestedEpoch =
     expectedEpoch ?? bodyRepository().schedule(ownerId)?.epoch;
   const existing = active.get(ownerId);
@@ -48,7 +51,7 @@ export function runBodySync(
     return existing.promise;
   }
   const work: Work = {
-    promise: Promise.resolve(),
+    promise: Promise.resolve({ failed: false }),
     dates: new Set(dates),
     manual: new Set(measurementId ? [measurementId] : []),
     again: true,
@@ -61,6 +64,7 @@ export function runBodySync(
   };
   work.promise = Promise.resolve()
     .then(async () => {
+      const result: BodySyncResult = { failed: false };
       while (work.again) {
         work.again = false;
         const requestedDates = [...work.dates],
@@ -72,7 +76,8 @@ export function runBodySync(
         const database = getDatabase(),
           repo = bodyRepository(database),
           schedule = repo.schedule(ownerId);
-        if (!schedule?.enabled || schedule.epoch !== requestedEpoch) return;
+        if (!schedule?.enabled || schedule.epoch !== requestedEpoch)
+          return { failed: true };
         const epoch = schedule.epoch;
         const logicalFence = () => {
           repo.assertEpoch(ownerId, epoch);
@@ -113,7 +118,7 @@ export function runBodySync(
             },
             assertCurrent: fence,
           });
-          await syncBodyJobs(
+          const writesIncomplete = await syncBodyJobs(
             ownerId,
             epoch,
             source,
@@ -121,7 +126,7 @@ export function runBodySync(
             fence,
             requestedManual,
           );
-          await pullBodyDates(
+          const readsFailed = await pullBodyDates(
             ownerId,
             epoch,
             requestedDates,
@@ -130,7 +135,21 @@ export function runBodySync(
             fence,
             (date) => requestedGuards.get(date)?.(),
           );
-        } catch {
+          if (writesIncomplete || readsFailed) {
+            result.failed = true;
+            diagnostics.log(ownerId, 'sync_auxiliary_failed', {
+              stage: 'body',
+              bodyFailed: true,
+            });
+          } else diagnostics.clear(ownerId);
+        } catch (error) {
+          result.failed = true;
+          diagnostics.log(
+            ownerId,
+            'sync_auxiliary_failed',
+            { stage: 'body', bodyFailed: true },
+            error,
+          );
           logicalFence();
           for (const job of repo.due(ownerId, epoch))
             if (job.state === 'pending' || job.state === 'failed')
@@ -140,6 +159,7 @@ export function runBodySync(
               });
         }
       }
+      return result;
     })
     .finally(() => {
       if (active.get(ownerId) === work) active.delete(ownerId);

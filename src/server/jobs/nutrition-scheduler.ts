@@ -6,7 +6,7 @@ import {
 } from './nutrition-diagnostics';
 import { dailyGoalsRepository } from '@/server/yazio/goals';
 import { syncReadFailure } from '@/server/yazio/sync-diagnostics';
-import { runBodySync } from '@/server/yazio/body-runtime';
+import { runBodySync, type BodySyncResult } from '@/server/yazio/body-runtime';
 import { bodyRepository } from '@/server/yazio/body-repository';
 import { randomUUID } from 'node:crypto';
 import { resolve, sep } from 'node:path';
@@ -110,7 +110,7 @@ export interface NutritionSchedulerDependencies {
   configured: () => boolean;
   scheduled?: () => boolean;
   hasDueBodyWrites?: (ownerId: string, epoch: number) => boolean;
-  deliverBodyWrites?: (ownerId: string) => Promise<void>;
+  deliverBodyWrites?: (ownerId: string) => Promise<BodySyncResult | void>;
   store: (ownerId: string) => YazioTokenStore;
   source?: (store: YazioTokenStore) => Promise<NutritionUpstream>;
   repository?: NutritionRepository;
@@ -119,7 +119,7 @@ export interface NutritionSchedulerDependencies {
     dates: string[],
     epoch: number,
     assertCurrent: () => void,
-  ) => Promise<void>;
+  ) => Promise<BodySyncResult | void>;
   healthRepository?: Pick<ReturnType<typeof yazioHealthRepository>, 'upsert'>;
   images?: { fetch: typeof fetchCdnImage; store: typeof storeImage };
 }
@@ -619,7 +619,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       // Body sync uses its own auth client. Start it after the nutrition client
       // has finished upstream reads so both cannot refresh the same token at once.
       let bodyFailed = false;
-      await deps
+      const bodyResult = await deps
         .bodySync?.(
           ownerId,
           [...work].filter(([, parts]) => parts.body).map(([date]) => date),
@@ -634,6 +634,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
             error,
           );
         });
+      bodyFailed ||= bodyResult?.failed ?? false;
       assertCurrent();
       activity.other = false;
       activity.revision++;
@@ -832,21 +833,26 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       });
     else diagnostics.clear('owners');
     await Promise.all(
-      owners
-        .map(async ({ ownerId }) => {
-          const reportFailure = (error: unknown) =>
-            diagnostics.log(
-              `failure:${ownerId}`,
-              'scheduler_failed',
-              { trigger: 'timer', stage: 'owner' },
-              error,
-            );
+      owners.map(async ({ ownerId }) => {
+        const scope = `failure:${ownerId}`;
+        const reportFailure = (error?: unknown) =>
+          diagnostics.log(
+            scope,
+            'scheduler_failed',
+            { trigger: 'timer', stage: 'owner' },
+            error,
+          );
+        let automaticFailed = false;
+        try {
           const refresh = await automatic(ownerId, 'timer').catch(
             (error: unknown) => {
+              automaticFailed = true;
               reportFailure(error);
               return null;
             },
           );
+          // Busy/cooldown ticks are not recovery of an in-flight failed operation.
+          if (refresh?.started) diagnostics.clear(scope);
           const current = row(ownerId);
           if (
             refresh?.started ||
@@ -859,23 +865,19 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
             return;
           deliveries.add(ownerId);
           try {
-            await deps.deliverBodyWrites?.(ownerId);
+            const result = await deps.deliverBodyWrites?.(ownerId);
+            if (result?.failed) reportFailure();
+            else if (!automaticFailed) diagnostics.clear(scope);
           } finally {
             deliveries.delete(ownerId);
           }
-        })
-        .map((operation) =>
-          operation.catch((error: unknown) => {
-            diagnostics.log(
-              'owner_failure',
-              'scheduler_failed',
-              { trigger: 'timer', stage: 'owner' },
-              error,
-            );
-          }),
-        ),
+        } catch (error) {
+          reportFailure(error);
+        }
+      }),
     );
   }
+
   return {
     enable,
     disable,

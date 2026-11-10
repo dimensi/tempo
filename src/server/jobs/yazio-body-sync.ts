@@ -14,6 +14,7 @@ export async function syncBodyJobs(
   assertCurrent: () => Promise<void>,
   manualMeasurements: ReadonlySet<string> = new Set(),
 ) {
+  let incomplete = 0;
   for (const job of repo.due(ownerId, epoch, manualMeasurements.size > 0)) {
     await assertCurrent();
     const link = repo.link(job.linkId);
@@ -163,8 +164,12 @@ export async function syncBodyJobs(
         attempt: job.attempt + 1,
         nextAttemptAt: Date.now() + delay(job.attempt),
       });
+    } finally {
+      const state = repo.job(job.id)?.state;
+      if (state && state !== 'done' && state !== 'cancelled') incomplete++;
     }
   }
+  return incomplete;
 }
 export async function pullBodyDates(
   ownerId: string,
@@ -175,6 +180,7 @@ export async function pullBodyDates(
   assertCurrent: () => Promise<void>,
   assertPullCurrent: (date: string) => void = () => {},
 ) {
+  let failures = 0;
   for (const date of dates) {
     const started = Date.now();
     await assertCurrent();
@@ -192,7 +198,9 @@ export async function pullBodyDates(
       repo.importDay(ownerId, epoch, date, entries);
     } catch (error) {
       await assertCurrent();
+      failures++;
       syncReadFailure('body', date, started, error);
     } // Existing local data survives an incomplete read.
   }
+  return failures;
 }
