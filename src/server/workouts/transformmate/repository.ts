@@ -13,7 +13,7 @@ import { projectionFingerprint } from './mapping';
 export function syncRepository(
   db: Pick<
     ReturnType<typeof getDatabase>['db'],
-    'select' | 'insert' | 'update'
+    'select' | 'insert' | 'update' | 'delete'
   >,
 ) {
   const encode = (state: SyncState) => {
@@ -224,6 +224,21 @@ export function syncRepository(
           .onConflictDoNothing()
           .run();
       }
+    },
+    remove(link: SyncLink) {
+      validateLink(link);
+      return (
+        db
+          .delete(links)
+          .where(
+            and(
+              eq(links.ownerId, link.ownerId),
+              eq(links.id, link.id),
+              eq(links.revision, link.revision),
+            ),
+          )
+          .run().changes === 1
+      );
     },
     cas(
       link: SyncLink,

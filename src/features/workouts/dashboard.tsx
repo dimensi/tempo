@@ -152,6 +152,7 @@ export function WorkoutsDashboard({
   for (const native of sync.nativePage.items)
     if (
       native.date === date &&
+      !deletedIds.has(`native:${native.remoteTrainingId}`) &&
       !sync.items.some(
         (item) =>
           item.remoteTrainingId === native.remoteTrainingId &&
@@ -166,6 +167,8 @@ export function WorkoutsDashboard({
   for (const remote of sync.items)
     if (
       remote.actual?.date === date &&
+      !deletedIds.has(`remote:${remote.id}`) &&
+      !deletedIds.has(remote.workoutId) &&
       !entries.some(
         (entry) =>
           entry.remote?.id === remote.id ||
@@ -198,15 +201,16 @@ export function WorkoutsDashboard({
   async function remove() {
     const workout = entry?.workout;
     if (
-      !workout ||
+      !entry ||
       entry.id !== deletion?.entryId ||
-      (!canLog && workout.status !== 'planned')
+      (!workout && !entry.remote) ||
+      (workout && !canLog && workout.status !== 'planned')
     )
       return;
     setBusy(true);
     setError(null);
     try {
-      if (canLog) {
+      if (canLog && workout) {
         const writes = await readDeviceWrites();
         if (
           writes.operations.some(
@@ -218,19 +222,36 @@ export function WorkoutsDashboard({
           throw new Error(m.removalPending);
       }
       const response = await apiFetch(
-        `/api/workouts/${workout.id}?ownerId=${encodeURIComponent(ownerId)}`,
+        workout
+          ? `/api/workouts/${workout.id}?ownerId=${encodeURIComponent(ownerId)}`
+          : `/api/workouts/transformmate/${entry.remote!.id}`,
         {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ownerId, revision: workout.revision }),
+          body: JSON.stringify(
+            workout ? { ownerId, revision: workout.revision } : { ownerId },
+          ),
         },
       );
-      if (!response.ok)
-        throw new Error(response.status === 409 ? m.conflict : m.error);
-      clearWorkoutDraft(
-        dayWorkoutDraftKey(`${userId}:${ownerId}`, date, workout.id),
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error ?? m.deleteSyncError);
+      }
+      if (workout)
+        clearWorkoutDraft(
+          dayWorkoutDraftKey(`${userId}:${ownerId}`, date, workout.id),
+        );
+      setDeletedIds(
+        (previous) =>
+          new Set([
+            ...previous,
+            entry.id,
+            ...(entry.remote ? [`remote:${entry.remote.id}`] : []),
+            ...(entry.remote?.remoteTrainingId != null
+              ? [`native:${entry.remote.remoteTrainingId}`]
+              : []),
+          ]),
       );
-      setDeletedIds((previous) => new Set([...previous, workout.id]));
       setCreating(null);
       setCopied(null);
       setActive(null);
@@ -238,7 +259,7 @@ export function WorkoutsDashboard({
       setEditorVersion((version) => version + 1);
       setDraftDirty(false);
       setDeletion(null);
-      void resource.refresh();
+      void Promise.all([resource.refresh(), sync.reload()]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.error);
     } finally {
@@ -287,9 +308,10 @@ export function WorkoutsDashboard({
         void sync.refresh();
       },
     },
-    ...(entry?.workout &&
-    entry.workout.status !== 'completed' &&
-    (canLog || entry.workout.status === 'planned')
+    ...((entry?.workout &&
+      entry.workout.status !== 'completed' &&
+      (canLog || entry.workout.status === 'planned')) ||
+    (entry?.remote && !entry.workout)
       ? [
           {
             label: m.removeWorkout,
@@ -562,9 +584,7 @@ export function WorkoutsDashboard({
       >
         <Stack>
           <Text>{m.confirmResultDelete}</Text>
-          {entry?.remote?.remoteTrainingId != null && (
-            <Text size="sm">{m.deleteLinkedWorkoutHint}</Text>
-          )}
+          <Text size="sm">{m.deleteLinkedWorkoutHint}</Text>
           {error && <Alert color="red">{error}</Alert>}
           <Group justify="flex-end">
             <Button

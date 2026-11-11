@@ -21,6 +21,8 @@ import { syncRepository } from './repository';
 import { nativeRepository } from './native-repository';
 import { nativeService } from './native-service';
 import { serializeOwner, syncEngine } from './engine';
+import { deleteLinkedTraining, WorkoutDeletionError } from './delete-training';
+import { TransformMateStaleConnectionError } from '@/server/transformmate/token-store';
 
 export class SyncAccessError extends Error {
   constructor(public status: number) {
@@ -272,5 +274,81 @@ export async function refreshTransformMateSync(
       },
       nativeRefresh,
     };
+  });
+}
+
+/** Run inside the owner queue. The returned cleanup must share the local delete transaction. */
+export async function deleteWorkoutLinks(
+  headers: Headers,
+  ownerId: string,
+  links: ReturnType<ReturnType<typeof syncRepository>['list']>,
+  assertLocal: () => void,
+) {
+  const { access, repository } = context(headers, ownerId);
+  const guard = async () => {
+    await access('workouts:plan');
+    assertLocal();
+  };
+  const removed: Awaited<ReturnType<typeof deleteLinkedTraining>>[] = [];
+  try {
+    for (const link of links) {
+      await guard();
+      if (link.ownerId !== ownerId) throw new WorkoutDeletionError(409);
+      removed.push(
+        await deleteLinkedTraining(link, {
+          repository,
+          connection: () => getTransformMateConnectionFence(ownerId),
+          guard,
+        }),
+      );
+    }
+  } catch (error) {
+    await guard();
+    if (
+      error instanceof SyncAccessError ||
+      error instanceof WorkoutDeletionError ||
+      error instanceof TransformMateStaleConnectionError
+    )
+      throw error;
+    throw new WorkoutDeletionError();
+  }
+  await guard();
+  return () => {
+    for (const { link, accountScope } of removed) {
+      if (!repository.remove(link)) throw new WorkoutDeletionError(409);
+      if (accountScope && link.remoteTrainingId !== null)
+        nativeRepository(getDatabase().db).remove(
+          ownerId,
+          accountScope,
+          link.remoteTrainingId,
+        );
+    }
+  };
+}
+
+export async function deletePreservedWorkout(
+  headers: Headers,
+  ownerId: string,
+  id: string,
+) {
+  z.uuid().parse(id);
+  return serializeOwner(ownerId, async () => {
+    const { access, repository, workouts } = context(headers, ownerId);
+    await access('workouts:plan');
+    const link = repository.list(ownerId).find((item) => item.id === id);
+    if (!link) throw new SyncAccessError(404);
+    const assertLocal = () => {
+      if (workouts().some((item) => item.id === link.planId))
+        throw new WorkoutDeletionError(409);
+    };
+    const cleanup = await deleteWorkoutLinks(
+      headers,
+      ownerId,
+      [link],
+      assertLocal,
+    );
+    await access('workouts:plan');
+    assertLocal();
+    getDatabase().db.transaction(cleanup);
   });
 }

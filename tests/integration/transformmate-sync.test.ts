@@ -205,6 +205,7 @@ it('recovers provider creates and completed results across restarts without dupl
     expect(posts).toBe(1);
     await assertCustomExecutionRecovery(database, url);
     await assertReplicaRecovery(database, url, directory);
+    await assertLinkedDeletion(database, url);
   } finally {
     replicaTest.database = null;
     replicaTest.storage = null;
@@ -930,4 +931,201 @@ async function assertCustomExecutionRecovery(
   ).toMatchObject({ status: 'conflict', reason: 'remote_changed' });
   expect(patches).toBe(4);
   expect(customPosts).toBe(1);
+}
+
+/** Deletion must preserve local data until absence is confirmed, even across restart. */
+async function assertLinkedDeletion(
+  database: ReturnType<typeof openDatabase>,
+  url: string,
+) {
+  const guards = await import('@/server/auth/guards');
+  const runtime = await import('@/server/transformmate/runtime');
+  const { createTransformMateClient } =
+    await import('@/server/transformmate/client');
+  const { deleteWorkout } = await import('@/server/workouts');
+  const { deletePreservedWorkout } =
+    await import('@/server/workouts/transformmate/service');
+  const { nativeRepository } =
+    await import('@/server/workouts/transformmate/native-repository');
+  const { nativeProjection } =
+    await import('@/server/workouts/transformmate/native-projection');
+  if (!database.sqlite.open) Object.assign(database, openDatabase(url));
+  replicaTest.database = database;
+  const accountScope = 'a'.repeat(64);
+  let allowed = true;
+  let tokens = 0;
+  let revokeAt = Infinity;
+  let deletes = 0;
+  let mode: 'unauthorized' | 'lost-response' | 'success' = 'unauthorized';
+  let remote: ReturnType<typeof trainingDetailFixture> | null = {
+    ...trainingDetailFixture(),
+    id: 908001,
+  };
+  let failVerification = false;
+  const authorization = vi
+    .spyOn(guards, 'authorize')
+    .mockImplementation(
+      async (_headers, _permission, ownerId) =>
+        (allowed && ownerId === 'owner'
+          ? { ok: true, session: { user: { id: 'owner', role: 'OWNER' } } }
+          : { ok: false, status: 403 }) as Awaited<
+          ReturnType<typeof guards.authorize>
+        >,
+    );
+  const client = createTransformMateClient({
+    baseUrl: 'https://provider.example.test/api/',
+    tokenProvider: {
+      getIdToken: async () => {
+        if (++tokens === revokeAt) allowed = false;
+        return 'synthetic-token';
+      },
+    },
+    fetch: async (request, init) => {
+      if (init?.method === 'DELETE') {
+        deletes++;
+        if (mode === 'unauthorized') return new Response('', { status: 401 });
+        remote = null;
+        if (mode === 'lost-response') {
+          failVerification = true;
+          throw new Error('Synthetic committed DELETE timeout');
+        }
+        return new Response(null, { status: 204 });
+      }
+      if (failVerification) return new Response('', { status: 503 });
+      if (new URL(String(request)).pathname.endsWith('/trainings/'))
+        return Response.json(
+          remote
+            ? [
+                {
+                  ...trainingSummaryFixture(),
+                  id: 908001,
+                  description: remote.description,
+                },
+              ]
+            : [],
+        );
+      return remote ? Response.json(remote) : new Response('', { status: 404 });
+    },
+  });
+  const connection = {
+    client,
+    accountScope,
+    authorId: 201,
+    generation: randomUUID(),
+    assertCurrent: async () => {},
+    assertBindingCurrent: () => {},
+  };
+  const fence = vi
+    .spyOn(runtime, 'getTransformMateConnectionFence')
+    .mockResolvedValue(connection);
+  try {
+    const workout = workoutRepository(database.db).create('owner', input());
+    let link = syncRepository(database.db)
+      .list('owner')
+      .find((row) => row.planId === workout.id)!;
+    remote!.description = link.state.marker;
+    link = syncRepository(database.db).cas(
+      link,
+      { ...link.state, attempted: true },
+      908001,
+    )!;
+    nativeRepository(database.db).save(
+      'owner',
+      accountScope,
+      nativeProjection(transformMateTrainingDetailSchema.parse(remote)),
+      new Date().toISOString(),
+    );
+    // A 401 is never replayed, and an existing provider record prevents local deletion.
+    await expect(
+      deleteWorkout(new Headers(), 'owner', workout.id, workout.revision),
+    ).rejects.toMatchObject({ status: 502 });
+    expect(deletes).toBe(1);
+    expect(
+      workoutRepository(database.db).get('owner', workout.id),
+    ).toBeDefined();
+    fence.mockResolvedValueOnce({
+      ...connection,
+      accountScope: 'b'.repeat(64),
+    });
+    await expect(
+      deleteWorkout(new Headers(), 'owner', workout.id, workout.revision),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(deletes).toBe(1);
+    mode = 'lost-response';
+    await expect(
+      deleteWorkout(new Headers(), 'owner', workout.id, workout.revision),
+    ).rejects.toMatchObject({ status: 502 });
+    expect(deletes).toBe(2);
+    expect(
+      workoutRepository(database.db).get('owner', workout.id),
+    ).toBeDefined();
+    database.sqlite.close();
+    Object.assign(database, openDatabase(url));
+    failVerification = false;
+    await deleteWorkout(new Headers(), 'owner', workout.id, workout.revision);
+    expect(deletes).toBe(2); // GET 404 settles the committed delete without another DELETE.
+    expect(
+      workoutRepository(database.db)
+        .list('owner')
+        .workouts.some((row) => row.id === workout.id),
+    ).toBe(false);
+    expect(
+      syncRepository(database.db)
+        .list('owner')
+        .some((row) => row.id === link.id),
+    ).toBe(false);
+    expect(
+      nativeRepository(database.db).get('owner', accountScope, 908001),
+    ).toBeNull();
+
+    // An old orphaned publication with an unresolved ID is recovered by its marker.
+    const orphan = workoutRepository(database.db).create('owner', input());
+    link = syncRepository(database.db)
+      .list('owner')
+      .find((row) => row.planId === orphan.id)!;
+    link = syncRepository(database.db).cas(link, {
+      ...link.state,
+      attempted: true,
+    })!;
+    workoutRepository(database.db).delete('owner', orphan.id, orphan.revision);
+    remote = { ...trainingDetailFixture(), id: 908001 };
+    remote.description = link.state.marker;
+    const marker = remote.description;
+    // The listing can match while a changed detail must still prevent DELETE.
+    remote.author = 999;
+    await expect(
+      deletePreservedWorkout(new Headers(), 'owner', link.id),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(deletes).toBe(2);
+    remote.author = 201;
+    remote.description = 'changed externally';
+    await expect(
+      deletePreservedWorkout(new Headers(), 'owner', link.id),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(deletes).toBe(2);
+    remote.description = marker;
+    revokeAt = tokens + 2; // Token acquisition revokes access immediately before DELETE.
+    await expect(
+      deletePreservedWorkout(new Headers(), 'owner', link.id),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(deletes).toBe(2);
+    allowed = true;
+    revokeAt = Infinity;
+    await expect(
+      deletePreservedWorkout(new Headers(), 'another-owner', link.id),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(deletes).toBe(2);
+    mode = 'success';
+    await deletePreservedWorkout(new Headers(), 'owner', link.id);
+    expect(deletes).toBe(3);
+    expect(
+      syncRepository(database.db)
+        .list('owner')
+        .some((row) => row.id === link.id),
+    ).toBe(false);
+  } finally {
+    authorization.mockRestore();
+    fence.mockRestore();
+    replicaTest.database = null;
+  }
 }

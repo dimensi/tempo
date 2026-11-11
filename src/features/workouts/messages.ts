@@ -381,7 +381,9 @@ export const workoutMessages = {
   deletedLocalWorkout:
     'Локальная тренировка удалена. В TransformMate она сохранилась и доступна для просмотра.',
   deleteLinkedWorkoutHint:
-    'Тренировка в TransformMate не удалится и останется доступна здесь для просмотра.',
+    'Если тренировка связана с TransformMate, она и её результаты будут удалены и там. Это действие нельзя отменить.',
+  deleteSyncError:
+    'Не удалось подтвердить удаление из TransformMate. Тренировка в Tempo сохранена. Проверьте подключение и повторите удаление.',
   nativeReadonly:
     'План и факт из TransformMate. Результаты доступны для просмотра. Чтобы изменить вес, повторения или другие результаты, откройте тренировку в TransformMate.',
   completedResultsHint:
