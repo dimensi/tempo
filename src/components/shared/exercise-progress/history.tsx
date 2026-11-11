@@ -3,16 +3,20 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
   Accordion,
+  ActionIcon,
   Button,
   Drawer,
   Group,
   SegmentedControl,
   Skeleton,
   Stack,
+  Table,
   Text,
+  Tooltip,
   Title,
 } from '@mantine/core';
 import { useMediaQuery, useReducedMotion } from '@mantine/hooks';
+import { IconArrowUpRight } from '@tabler/icons-react';
 import type { ProgressOccurrence } from '@/contracts/exercise-progress';
 import { progressRange, repeatExerciseSets } from '@/lib/exercise-progress';
 import { readResources } from '@/lib/read-descriptors';
@@ -20,7 +24,13 @@ import { useReadResource } from '@/lib/use-read-resource';
 import { useReadOnline } from '@/lib/use-read-online';
 import { ProgressChart } from './chart';
 import { progressMessages as m } from './messages';
-import { dateLabel, setsLabel, metricLabel } from './format';
+import {
+  dateLabel,
+  setsLabel,
+  metricLabel,
+  originalMetricLabel,
+  numberLabel,
+} from './format';
 import styles from './progress.module.css';
 
 export function ProgressReadState({
@@ -55,38 +65,75 @@ export function ProgressReadState({
 function RecordDetails({
   row,
   onRepeat,
-  compact = false,
+  heading,
 }: {
   row: ProgressOccurrence;
   onRepeat?: (row: ProgressOccurrence) => void;
-  compact?: boolean;
+  heading?: string;
 }) {
   const repeatable =
     row.status === 'completed' &&
     repeatExerciseSets({ sets: [] }, row) !== null;
   return (
-    <Stack gap="xs" className={styles.numbers}>
-      <Text size="sm">
-        {m.status[row.status]} · {m.source[row.source]}
-      </Text>
-      {compact ? (
-        <Text size="sm">{setsLabel(row)}</Text>
+    <Stack gap="sm" className={styles.numbers}>
+      <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+        <Stack gap={2} miw={0}>
+          {heading && <Text fw={600}>{heading}</Text>}
+          <Text size="sm" c="var(--progress-muted)">
+            {dateLabel(row.date)} · {m.source[row.source]}
+            {row.status !== 'completed' && ` · ${m.status[row.status]}`}
+          </Text>
+        </Stack>
+        <Tooltip label={m.openWorkout}>
+          <ActionIcon
+            component={Link}
+            href={row.href}
+            variant="subtle"
+            size={44}
+            aria-label={m.openWorkout}
+            style={{ flexShrink: 0 }}
+          >
+            <IconArrowUpRight size={20} />
+          </ActionIcon>
+        </Tooltip>
+      </Group>
+      {row.sets.every((set) => set.value !== null) ? (
+        <Table
+          layout="fixed"
+          horizontalSpacing="xs"
+          verticalSpacing={6}
+          fz="sm"
+        >
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>{m.set}</Table.Th>
+              <Table.Th>{m.weightKg}</Table.Th>
+              <Table.Th>{m.reps}</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {row.sets.map((set) => (
+              <Table.Tr key={set.order}>
+                <Table.Td>{set.order}</Table.Td>
+                <Table.Td>
+                  {set.value!.weightKg === null
+                    ? '—'
+                    : numberLabel(set.value!.weightKg)}
+                </Table.Td>
+                <Table.Td>{set.value!.reps}</Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
       ) : (
         <Stack gap={4}>
           {row.sets.map((set) => (
-            <Stack gap={4} key={set.order}>
-              <Text size="sm">
-                {set.order}.{' '}
-                {set.value
-                  ? setsLabel({ ...row, sets: [set] })
-                  : set.metrics.map(metricLabel).join('; ') || '—'}
-              </Text>
-              {set.value && set.metrics.length > 0 && (
-                <Text size="sm" c="var(--progress-muted)">
-                  {m.original}: {set.metrics.map(metricLabel).join('; ')}
-                </Text>
-              )}
-            </Stack>
+            <Text size="sm" key={set.order}>
+              {set.order}.{' '}
+              {set.value
+                ? setsLabel({ ...row, sets: [set] })
+                : set.metrics.map(metricLabel).join('; ') || '—'}
+            </Text>
           ))}
         </Stack>
       )}
@@ -107,30 +154,47 @@ function RecordDetails({
             .join(' · ')}
         </Text>
       )}
-      {row.possibleOverlap && (
-        <Text size="sm" c="var(--progress-muted)">
-          {m.overlap}
-        </Text>
-      )}
-      <Group className={styles.actions}>
-        {onRepeat && repeatable && (
-          <Button
-            variant="transparent"
-            className={styles.action}
-            onClick={() => onRepeat(row)}
-          >
-            {m.repeat}
-          </Button>
-        )}
+      {onRepeat && repeatable && (
         <Button
-          component={Link}
-          href={row.href}
-          variant="transparent"
-          className={styles.action}
+          fullWidth
+          variant="light"
+          size="sm"
+          mih={44}
+          h="auto"
+          py="xs"
+          styles={{ label: { whiteSpace: 'normal' } }}
+          onClick={() => onRepeat(row)}
         >
-          {m.openWorkout}
+          {m.repeat}
         </Button>
-      </Group>
+      )}
+      {row.sets.some((set) => set.metrics.length > 0) && (
+        <Accordion
+          classNames={{
+            item: styles.metadataItem,
+            control: styles.metadataControl,
+          }}
+        >
+          <Accordion.Item value="original">
+            <Accordion.Control>{m.original}</Accordion.Control>
+            <Accordion.Panel>
+              <Stack gap={4}>
+                {row.sets.map((set) => (
+                  <Text key={set.order} size="sm" c="var(--progress-muted)">
+                    {set.order}.{' '}
+                    {set.metrics.map(originalMetricLabel).join('; ')}
+                  </Text>
+                ))}
+                {row.possibleOverlap && (
+                  <Text size="sm" c="var(--progress-muted)">
+                    {m.overlap}
+                  </Text>
+                )}
+              </Stack>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
+      )}
     </Stack>
   );
 }
@@ -253,14 +317,10 @@ function HistoryBody({
                         .filter((row) => row.source === source)
                         .map((row, index) => (
                           <div className={styles.record} key={row.key}>
-                            <Text fw={600} mb={6}>
-                              {index ? m.previousExecution : m.previous} ·{' '}
-                              {dateLabel(row.date)}
-                            </Text>
                             <RecordDetails
                               row={row}
                               onRepeat={onRepeat}
-                              compact
+                              heading={index ? m.previousExecution : m.previous}
                             />
                           </div>
                         ))}
@@ -290,9 +350,21 @@ function HistoryBody({
               </Stack>
             </>
           )}
-          <Text size="sm" c="var(--progress-muted)">
-            {m.sourcesHint} {m.savedHint}
-          </Text>
+          <Accordion
+            classNames={{
+              item: styles.metadataItem,
+              control: styles.metadataControl,
+            }}
+          >
+            <Accordion.Item value="about">
+              <Accordion.Control>{m.about}</Accordion.Control>
+              <Accordion.Panel>
+                <Text size="sm" c="var(--progress-muted)">
+                  {m.sourcesHint} {m.savedHint}
+                </Text>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
         </>
       )}
     </Stack>

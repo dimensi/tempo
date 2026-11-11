@@ -29,8 +29,18 @@ function scalarSet(set: SetData) {
     });
     return value.success ? value.data : null;
   }
-  // Saved linked projections without metric keys remain readable, never guessed by display name.
-  const metrics = set.metrics;
+  // Linked snapshots retain the provider's exact Russian measure labels, not its keys.
+  // Recognize only these observed scalar measures; arbitrary names/units stay original-only.
+  const metrics = set.metrics.map((metric) => ({
+    ...metric,
+    key:
+      metric.key ??
+      (metric.name === 'Вес' && metric.unit === 'Вес'
+        ? 'weight'
+        : metric.name === 'Повторения' && metric.unit === 'Повт'
+          ? 'reps'
+          : undefined),
+  }));
   if (
     metrics.some(
       (m) =>
@@ -46,7 +56,7 @@ function scalarSet(set: SetData) {
     reps.length !== 1 ||
     weight.length > 1 ||
     (weight.length &&
-      !['kg', 'кг'].includes(weight[0]!.unit.trim().toLowerCase()))
+      !['kg', 'кг', 'вес'].includes(weight[0]!.unit.trim().toLowerCase()))
   )
     return null;
   const number = (v: string) =>

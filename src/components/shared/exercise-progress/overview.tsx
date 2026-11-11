@@ -163,9 +163,6 @@ export function ExerciseProgressOverview({
                 </Button>
               </Group>
             )}
-            <Text size="sm" c="var(--progress-muted)">
-              {m.sourcesHint}
-            </Text>
           </>
         )}
         {selected && (
