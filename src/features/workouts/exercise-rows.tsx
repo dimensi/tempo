@@ -93,6 +93,7 @@ export function ExerciseRows({
   const [note, setNote] = useState<string | null>(null);
   const pendingFocus = useRef<{ exercise: number; set: number } | null>(null);
   const weightInputs = useRef(new Map<string, HTMLInputElement>());
+  const actionButtons = useRef(new Map<string, HTMLButtonElement>());
   useLayoutEffect(() => {
     const target = pendingFocus.current;
     if (!target) return;
@@ -209,6 +210,10 @@ export function ExerciseRows({
                     variant="subtle"
                     color="gray"
                     disabled={disabled}
+                    ref={(button) => {
+                      if (button) actionButtons.current.set(key, button);
+                      else actionButtons.current.delete(key);
+                    }}
                     aria-label={`${m.exerciseOptions}: ${exercise.name}`}
                     onClick={() => setActions(key)}
                   >
@@ -257,6 +262,10 @@ export function ExerciseRows({
                       variant="subtle"
                       color="gray"
                       disabled={disabled}
+                      ref={(button) => {
+                        if (button) actionButtons.current.set(key, button);
+                        else actionButtons.current.delete(key);
+                      }}
                       aria-label={`${m.exerciseOptions}: ${exercise.name}`}
                     >
                       <IconDots size={18} />
@@ -567,7 +576,12 @@ export function ExerciseRows({
           ownerId={ownerId}
           {...history}
           anchorDate={date}
-          onClose={() => setHistory(null)}
+          onClose={() => {
+            setHistory(null);
+            actionButtons.current
+              .get(history.occurrenceKey)
+              ?.focus({ preventScroll: true });
+          }}
           onRepeat={
             onChange && !disabled
               ? (row) => {
