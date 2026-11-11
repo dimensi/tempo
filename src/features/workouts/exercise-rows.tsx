@@ -21,6 +21,7 @@ import {
   IconPlus,
   IconX,
   IconPlayerPlay,
+  IconHistory,
 } from '@tabler/icons-react';
 import { useMediaQuery } from '@mantine/hooks';
 import { repeatExerciseSets } from '@/lib/exercise-progress';
@@ -145,18 +146,37 @@ export function ExerciseRows({
             disabled,
             run: openMedia,
           },
-          {
-            label: m.exerciseComment,
-            disabled,
-            run: () => setNote(note === key ? null : key),
-          },
-          {
-            label: m.removeExercise,
-            color: 'red',
-            icon: <IconTrash size={20} />,
-            disabled: disabled || lockedRemoval,
-            run: () => onChange?.(exercises.filter((_, i) => i !== index)),
-          },
+          ...(exercise.transformMate
+            ? [
+                {
+                  label: pm.history,
+                  icon: <IconHistory size={20} />,
+                  disabled: false,
+                  run: () =>
+                    setHistory({
+                      exerciseId: exercise.transformMate!.exerciseId,
+                      name: exercise.name,
+                      occurrenceKey: key,
+                    }),
+                },
+              ]
+            : []),
+          ...(onChange
+            ? [
+                {
+                  label: m.exerciseComment,
+                  disabled,
+                  run: () => setNote(note === key ? null : key),
+                },
+                {
+                  label: m.removeExercise,
+                  color: 'red',
+                  icon: <IconTrash size={20} />,
+                  disabled: disabled || lockedRemoval,
+                  run: () => onChange(exercises.filter((_, i) => i !== index)),
+                },
+              ]
+            : []),
         ];
         return (
           <section
@@ -182,108 +202,90 @@ export function ExerciseRows({
                   </span>
                 </span>
               </UnstyledButton>
-              {onChange &&
-                (mobile ? (
-                  <>
+              {mobile ? (
+                <>
+                  <ActionIcon
+                    size={44}
+                    variant="subtle"
+                    color="gray"
+                    disabled={disabled}
+                    aria-label={`${m.exerciseOptions}: ${exercise.name}`}
+                    onClick={() => setActions(key)}
+                  >
+                    <IconDots size={18} />
+                  </ActionIcon>
+                  <BottomSheet
+                    opened={actions === key}
+                    onClose={() => setActions(null)}
+                    title={exercise.name}
+                    closeLabel={m.close}
+                  >
+                    <Stack gap="xs">
+                      {options.map((option) => (
+                        <Button
+                          key={option.label}
+                          variant="default"
+                          leftSection={option.icon}
+                          color={option.color}
+                          c={option.color ? 'red.7' : undefined}
+                          justify="start"
+                          mih={52}
+                          disabled={option.disabled}
+                          onClick={() => {
+                            setActions(null);
+                            option.run();
+                          }}
+                        >
+                          {option.label}
+                        </Button>
+                      ))}
+                      {onChange && lockedRemoval && (
+                        <Text size="sm" c="dimmed">
+                          {removalPending
+                            ? m.removalPending
+                            : m.removeExerciseOffline}
+                        </Text>
+                      )}
+                    </Stack>
+                  </BottomSheet>
+                </>
+              ) : (
+                <Menu position="bottom-end">
+                  <Menu.Target>
                     <ActionIcon
                       size={44}
                       variant="subtle"
                       color="gray"
                       disabled={disabled}
                       aria-label={`${m.exerciseOptions}: ${exercise.name}`}
-                      onClick={() => setActions(key)}
                     >
                       <IconDots size={18} />
                     </ActionIcon>
-                    <BottomSheet
-                      opened={actions === key}
-                      onClose={() => setActions(null)}
-                      title={exercise.name}
-                      closeLabel={m.close}
-                    >
-                      <Stack gap="xs">
-                        {options.map((option) => (
-                          <Button
-                            key={option.label}
-                            variant="default"
-                            leftSection={option.icon}
-                            color={option.color}
-                            c={option.color ? 'red.7' : undefined}
-                            justify="start"
-                            mih={52}
-                            disabled={option.disabled}
-                            onClick={() => {
-                              setActions(null);
-                              option.run();
-                            }}
-                          >
-                            {option.label}
-                          </Button>
-                        ))}
-                        {lockedRemoval && (
-                          <Text size="sm" c="dimmed">
-                            {removalPending
-                              ? m.removalPending
-                              : m.removeExerciseOffline}
-                          </Text>
-                        )}
-                      </Stack>
-                    </BottomSheet>
-                  </>
-                ) : (
-                  <Menu position="bottom-end">
-                    <Menu.Target>
-                      <ActionIcon
-                        size={44}
-                        variant="subtle"
-                        color="gray"
-                        disabled={disabled}
-                        aria-label={`${m.exerciseOptions}: ${exercise.name}`}
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    {options.map((option) => (
+                      <Menu.Item
+                        key={option.label}
+                        leftSection={option.icon}
+                        color={option.color}
+                        disabled={option.disabled}
+                        onClick={option.run}
                       >
-                        <IconDots size={18} />
-                      </ActionIcon>
-                    </Menu.Target>
-                    <Menu.Dropdown>
-                      {options.map((option) => (
-                        <Menu.Item
-                          key={option.label}
-                          color={option.color}
-                          disabled={option.disabled}
-                          onClick={option.run}
-                        >
-                          {option.label}
-                        </Menu.Item>
-                      ))}
-                      {lockedRemoval && (
-                        <Menu.Label>
-                          {removalPending
-                            ? m.removalPending
-                            : m.removeExerciseOffline}
-                        </Menu.Label>
-                      )}
-                    </Menu.Dropdown>
-                  </Menu>
-                ))}
+                        {option.label}
+                      </Menu.Item>
+                    ))}
+                    {onChange && lockedRemoval && (
+                      <Menu.Label>
+                        {removalPending
+                          ? m.removalPending
+                          : m.removeExerciseOffline}
+                      </Menu.Label>
+                    )}
+                  </Menu.Dropdown>
+                </Menu>
+              )}
             </Group>
-            {exercise.transformMate ? (
-              <Button
-                variant="transparent"
-                size="sm"
-                p={0}
-                mb="xs"
-                mih={44}
-                w="fit-content"
-                onClick={() =>
-                  setHistory({
-                    exerciseId: exercise.transformMate!.exerciseId,
-                    name: exercise.name,
-                    occurrenceKey: key,
-                  })
-                }
-              >
-                {pm.history}
-              </Button>
-            ) : (
+            {!exercise.transformMate && (
               <Text size="sm" c="dimmed" mb="sm">
                 {pm.manual}
               </Text>
