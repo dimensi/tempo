@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import {
+  progressSummarySchema,
+  progressHistorySchema,
+} from './exercise-progress';
+import {
   anamnesisMarkerSummarySchema,
   anamnesisOverviewSchema,
   medicalDocumentSchema,
@@ -111,6 +115,10 @@ export const muscleDictionaryReadSchema = z.object({
 });
 /** Only these explicit view contracts may reach disk. Never settings credentials, jobs or upstream payloads. */
 export function readResponseSchema(path: string): z.ZodType | undefined {
+  if (path === '/api/read/exercise-progress/summary')
+    return progressSummarySchema;
+  if (path === '/api/read/exercise-progress/history')
+    return progressHistorySchema;
   if (path === '/api/read/settings') return readSettingsSchema;
   if (path === '/api/read/analytics') return analyticsDataSchema;
   if (path === '/api/workouts/transformmate/exercises')
@@ -207,6 +215,8 @@ export function offlineReadBody(key: string, body: string): string | undefined {
 export function isCacheableReadUrl(url: URL) {
   if (!readResponseSchema(url.pathname)) return false;
   const allowed = [
+    'exerciseIds',
+    'exerciseId',
     'ownerId',
     'from',
     'to',
@@ -225,7 +235,7 @@ export function isCacheableReadUrl(url: URL) {
   for (const [name, value] of url.searchParams) {
     if (
       !allowed.includes(name) ||
-      value.length > 200 ||
+      value.length > (name === 'exerciseIds' ? 1000 : 200) ||
       url.searchParams.getAll(name).length !== 1
     )
       return false;

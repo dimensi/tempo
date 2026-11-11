@@ -13,13 +13,17 @@ export async function requireOwnerWorkoutRead(
   if (!access.ok || access.session.user.role !== 'OWNER')
     throw new WorkoutAccessError(access.ok ? 403 : access.status);
 }
+export async function requireWorkoutRead(headers: Headers, ownerId: string) {
+  const access = await authorize(headers, 'workouts:read', ownerId);
+  if (!access.ok) throw new WorkoutAccessError(access.status);
+}
 /** Saved provider projections only, including existing linked/native exclusions. */
 export async function listSavedWorkouts(
   headers: Headers,
   ownerId: string,
   input: unknown,
 ) {
-  await requireOwnerWorkoutRead(headers, ownerId);
+  await requireWorkoutRead(headers, ownerId);
   const range = analyticsRangeSchema.parse(input);
   const local = await listWorkouts(headers, ownerId);
   const remote = await listTransformMateSync(headers, ownerId, {
@@ -41,7 +45,7 @@ export async function listSavedWorkouts(
     native.push(...page.items);
     cursor = page.nextCursor;
   }
-  await requireOwnerWorkoutRead(headers, ownerId);
+  await requireWorkoutRead(headers, ownerId);
   // A local publication intent is not another saved provider workout.
   const linked = remote.items.filter((item) => item.remoteTrainingId !== null);
   return { local, linked, native };

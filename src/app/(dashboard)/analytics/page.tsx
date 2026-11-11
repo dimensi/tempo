@@ -15,10 +15,12 @@ import {
 } from '@/features/analytics';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
+import { ExerciseProgressOverview } from '@/components/shared/exercise-progress/overview';
 import { Text } from '@mantine/core';
 import { useSearchParams } from 'next/navigation';
 export default function Page() {
   const params = useSearchParams();
+  const context = useReadResource(readResources.context('/api/read/context'));
   const timezone =
     params.get('timezone') ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const zone = timezoneSchema.safeParse(timezone);
@@ -54,6 +56,16 @@ export default function Page() {
   if (!range.success || !zone.success) return <Text>{m.invalidRange}</Text>;
   return resource.data ? (
     <AnalyticsDashboard
+      workoutProgressSlot={
+        context.data?.ownerId ? (
+          <ExerciseProgressOverview
+            key={context.data.ownerId}
+            ownerId={context.data.ownerId}
+            from={resource.data.range.from}
+            to={resource.data.range.to}
+          />
+        ) : undefined
+      }
       data={resource.data}
       navigationSlot={
         <PeriodControl

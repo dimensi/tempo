@@ -12,6 +12,7 @@ import {
   mcpExerciseHistoryInput,
 } from '@/contracts/mcp';
 import { workoutRepository } from '@/server/workouts/repository';
+import { trainerAccess } from '@/server/db/schema';
 import { workouts } from '@/server/db/schema/workouts';
 import { workoutTransformMateLinks } from '@/server/db/schema/transformmate';
 import { workoutTransformMateNative } from '@/server/db/schema/transformmate-native';
@@ -22,6 +23,11 @@ import {
 import { nativeRepository } from '@/server/workouts/transformmate/native-repository';
 import { syncStateSchema } from '@/server/workouts/transformmate/state';
 import { readMcpWorkout, readMcpExerciseHistory } from '@/server/mcp/workouts';
+import {
+  readProgressSummary,
+  readProgressHistory,
+} from '@/server/workouts/progress';
+import { repeatExerciseSets, occurrenceStats } from '@/lib/exercise-progress';
 
 /** Extends the existing real-OAuth MCP scenario; does not add a test case. */
 export async function assertWorkoutTools(
@@ -508,6 +514,176 @@ export async function assertWorkoutTools(
         }),
       ]),
     );
+    // The web history shares saved facts but permits explicitly granted trainers.
+    const progressInput = { ownerId: 'owner', ...range, exerciseId: 501 };
+    const webHistory = await readProgressHistory(trainerHeaders, progressInput);
+    expect(webHistory.records).toHaveLength(6);
+    expect(webHistory.records.every((row) => row.exerciseId === 501)).toBe(
+      true,
+    );
+    expect(webHistory.records.some((row) => row.possibleOverlap)).toBe(true);
+    const linkedHistory = webHistory.records.find((row) =>
+      row.key.startsWith('linked:'),
+    )!;
+    expect(
+      new URL(linkedHistory.href, 'https://tempo.test').searchParams.get(
+        'workout',
+      ),
+    ).toBe(completed.id);
+    state.actual!.date = '2026-08-03';
+    connection.db
+      .update(workoutTransformMateLinks)
+      .set({ state: JSON.stringify(state) })
+      .where(eq(workoutTransformMateLinks.id, linkId))
+      .run();
+    try {
+      const shiftedHistory = (
+        await readProgressHistory(headers, progressInput)
+      ).records.find((row) => row.key.startsWith('linked:'))!;
+      const shiftedHref = new URL(shiftedHistory.href, 'https://tempo.test');
+      expect(shiftedHref.searchParams.get('date')).toBe('2026-08-03');
+      expect(shiftedHref.searchParams.get('workout')).toBe(`remote:${linkId}`);
+    } finally {
+      state.actual!.date = '2026-08-01';
+      connection.db
+        .update(workoutTransformMateLinks)
+        .set({ state: JSON.stringify(state) })
+        .where(eq(workoutTransformMateLinks.id, linkId))
+        .run();
+    }
+    expect(
+      webHistory.records
+        .filter((row) => row.source === 'TransformMate')
+        .every((row) => row.sets.every((set) => set.value === null)),
+    ).toBe(true);
+    const webSummary = await readProgressSummary(trainerHeaders, progressInput);
+    const localSummary = webSummary.exercises[0]!.sources.find(
+      (row) => row.source === 'LOCAL',
+    )!;
+    expect(localSummary).toMatchObject({
+      completedCount: 2,
+      latest: { status: 'completed' },
+    });
+    expect(localSummary.latest.key).not.toContain(partial.id);
+    const original = {
+      id: 'occurrence',
+      comment: 'Keep note',
+      fatigue: 8,
+      failure: 'partial',
+      sets: [{ reps: 1, weightKg: null }],
+    };
+    const copied = repeatExerciseSets(original, localSummary.latest)!;
+    expect(copied).toMatchObject({
+      id: original.id,
+      comment: original.comment,
+      fatigue: 8,
+      failure: 'partial',
+    });
+    expect(copied.sets).toEqual(
+      localSummary.latest.sets.map((set) => set.value),
+    );
+    expect(original.sets).toEqual([{ reps: 1, weightKg: null }]);
+    const zero = webHistory.records.find(
+      (row) => row.source === 'LOCAL' && row.sets[0]?.value?.weightKg === 0,
+    )!;
+    expect(occurrenceStats(zero).volume).toBe(0);
+    expect(
+      occurrenceStats({
+        ...zero,
+        sets: zero.sets.map((set) => ({
+          ...set,
+          value: { reps: 5, weightKg: null },
+        })),
+      }).volume,
+    ).toBeNull();
+    expect(
+      repeatExerciseSets(
+        original,
+        webHistory.records.find((row) => row.source === 'TransformMate')!,
+      ),
+    ).toBeNull();
+    await expect(
+      readProgressHistory(headers, { ...progressInput, ownerId: 'trainer' }),
+    ).rejects.toMatchObject({ status: 403 });
+    const excluded = await readProgressHistory(headers, {
+      ...progressInput,
+      workoutId: completed.id,
+    });
+    expect(
+      excluded.records.every(
+        (row) => !row.key.includes(completed.id) && !row.key.includes(linkId),
+      ),
+    ).toBe(true);
+    const beforeDay = await readProgressSummary(headers, {
+      ...progressInput,
+      to: '2026-08-01',
+    });
+    expect(beforeDay.exercises[0]!.sources[0]!.latest.date).toBe('2026-08-01');
+    const historyGrant = connection.db
+      .select()
+      .from(trainerAccess)
+      .where(eq(trainerAccess.trainerId, 'trainer'))
+      .get()!;
+    connection.db
+      .delete(trainerAccess)
+      .where(eq(trainerAccess.trainerId, 'trainer'))
+      .run();
+    try {
+      await expect(
+        readProgressHistory(trainerHeaders, progressInput),
+      ).rejects.toMatchObject({ status: 403 });
+    } finally {
+      connection.db.insert(trainerAccess).values(historyGrant).run();
+    }
+    // Native scalar keys permit numeric progress; extra/range metrics remain original-only.
+    native.save(
+      'owner',
+      binding.accountScope,
+      {
+        ...snapshot,
+        exercises: snapshot.exercises.map((exercise, index) => ({
+          ...exercise,
+          metrics: [
+            {
+              type: 'fact' as const,
+              sets: [
+                {
+                  order: 1,
+                  done: true,
+                  metrics: [
+                    {
+                      key: 'weight',
+                      name: 'Weight',
+                      unit: 'kg',
+                      type: 'straight',
+                      values: ['30'],
+                    },
+                    {
+                      key: 'reps',
+                      name: 'Reps',
+                      unit: 'repetitions',
+                      type: 'straight',
+                      values: index ? ['8', '12'] : ['12'],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        })),
+      },
+      '2026-08-05T00:00:00Z',
+    );
+    const scalarHistory = await readProgressHistory(headers, progressInput);
+    const nativeRows = scalarHistory.records.filter((row) =>
+      row.key.startsWith('native:'),
+    );
+    expect(
+      nativeRows.filter((row) => row.sets[0]!.value !== null),
+    ).toHaveLength(1);
+    expect(
+      nativeRows.find((row) => row.sets[0]!.value)?.sets[0]!.value,
+    ).toEqual({ reps: 12, weightKg: 30 });
     // Dense valid history must fail safely before materializing all output rows.
     native.save(
       'owner',

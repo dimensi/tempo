@@ -14,9 +14,11 @@ import classes from './analytics.module.css';
 export function AnalyticsDashboard({
   data,
   navigationSlot,
+  workoutProgressSlot,
 }: {
   data: AnalyticsData;
   navigationSlot: ReactNode;
+  workoutProgressSlot?: ReactNode;
 }) {
   const context = {
     goals: data.goals,
@@ -38,6 +40,7 @@ export function AnalyticsDashboard({
       <NutritionAnalytics block={data.nutrition} context={context} />
       <BodyAnalytics block={data.body} />
       <ActivityAnalytics block={data.activity} context={context} />
+      {workoutProgressSlot}
       <AnalyticsDataQuality data={data} />
     </Stack>
   );
