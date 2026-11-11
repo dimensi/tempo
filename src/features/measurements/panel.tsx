@@ -232,12 +232,12 @@ export function MeasurementsPanel({
     const parsed = measurementInputSchema.safeParse({
       measuredAt: date,
       note: note || null,
-      values: measurementMetrics
-        .filter((key) => values[key]?.trim())
-        .map((key) => ({
-          metric: key,
-          value: values[key]!.trim().replace(',', '.'),
-          unit: key === 'weight' ? 'kg' : 'cm',
+      values: Object.entries(values)
+        .filter(([, value]) => value?.trim())
+        .map(([metric, value]) => ({
+          metric,
+          value: value!.trim().replace(',', '.'),
+          unit: metric === 'weight' ? 'kg' : 'cm',
         })),
     });
     if (!parsed.success) {

@@ -73,12 +73,11 @@ export function MeasurementFields({
   const [pickerOpened, setPickerOpened] = useState(false);
   const pickerId = useId();
   const [noteOpened, setNoteOpened] = useState(Boolean(note));
-  const included = measurementMetrics.filter((key) => key in values);
-  const selected: readonly MeasurementMetric[] = full
+  const selected = full
     ? measurementMetrics
-    : included.length
-      ? included
-      : ['weight'];
+    : Object.keys(values).filter((key): key is MeasurementMetric =>
+        measurementMetrics.includes(key as MeasurementMetric),
+      );
   const available = measurementMetrics.filter((key) => !selected.includes(key));
   const dateInput = nativeDate ? (
     <TextInput
@@ -120,64 +119,74 @@ export function MeasurementFields({
             {m.valueHint}
           </Text>
         </div>
-        <SimpleGrid
-          cols={full ? 2 : selected.length > 1 ? { base: 1, xs: 2 } : 1}
-          spacing="xs"
-        >
-          {full && dateInput}
-          {selected.map((key) => {
-            const Icon = metricIcons[key];
-            const unit = m.units[key === 'weight' ? 'kg' : 'cm'];
-            return (
-              <Group key={key} wrap="nowrap" align="end" gap={4}>
-                <TextInput
-                  className={styles.metricInput}
-                  label={m.metrics[key]}
-                  aria-label={`${m.metrics[key]}, ${unit}`}
-                  leftSection={<Icon size={18} aria-hidden />}
-                  inputMode="decimal"
-                  value={values[key] ?? ''}
-                  rightSection={unit}
-                  rightSectionPointerEvents="none"
-                  onChange={(e) =>
-                    onValuesChange({ ...values, [key]: e.currentTarget.value })
-                  }
-                />
-                {!full && selected.length > 1 && (
-                  <ActionIcon
-                    size={44}
-                    variant="subtle"
-                    color="gray"
-                    aria-label={m.removeMetric(m.metrics[key])}
-                    onClick={() => {
-                      const next = { ...values };
-                      delete next[key];
-                      onValuesChange(next);
-                    }}
-                  >
-                    <IconX size={17} aria-hidden />
-                  </ActionIcon>
-                )}
-              </Group>
-            );
-          })}
-        </SimpleGrid>
+        {(full || selected.length > 0) && (
+          <SimpleGrid
+            cols={full ? 2 : selected.length > 1 ? { base: 1, xs: 2 } : 1}
+            spacing="xs"
+          >
+            {full && dateInput}
+            {selected.map((key) => {
+              const Icon = metricIcons[key];
+              const unit = m.units[key === 'weight' ? 'kg' : 'cm'];
+              return (
+                <Group key={key} wrap="nowrap" align="end" gap={4}>
+                  <TextInput
+                    className={styles.metricInput}
+                    label={m.metrics[key]}
+                    aria-label={`${m.metrics[key]}, ${unit}`}
+                    leftSection={<Icon size={18} aria-hidden />}
+                    inputMode="decimal"
+                    value={values[key] ?? ''}
+                    rightSection={unit}
+                    rightSectionPointerEvents="none"
+                    onChange={(e) =>
+                      onValuesChange({
+                        ...values,
+                        [key]: e.currentTarget.value,
+                      })
+                    }
+                  />
+                  {!full && (
+                    <ActionIcon
+                      size={44}
+                      variant="subtle"
+                      color="gray"
+                      aria-label={m.removeMetric(m.metrics[key])}
+                      onClick={() => {
+                        const next = { ...values };
+                        delete next[key];
+                        onValuesChange(next);
+                      }}
+                    >
+                      <IconX size={17} aria-hidden />
+                    </ActionIcon>
+                  )}
+                </Group>
+              );
+            })}
+          </SimpleGrid>
+        )}
         {available.length > 0 && (
           <>
-            <Button
-              className={styles.fieldAction}
-              mih={44}
-              size="sm"
-              variant="light"
-              leftSection={<IconPlus size={18} aria-hidden />}
-              rightSection={<IconChevronDown size={15} aria-hidden />}
-              aria-expanded={pickerOpened}
-              aria-controls={pickerId}
-              onClick={() => setPickerOpened(!pickerOpened)}
+            {selected.length > 0 && (
+              <Button
+                className={styles.fieldAction}
+                mih={44}
+                size="sm"
+                variant="light"
+                leftSection={<IconPlus size={18} aria-hidden />}
+                rightSection={<IconChevronDown size={15} aria-hidden />}
+                aria-expanded={pickerOpened}
+                aria-controls={pickerId}
+                onClick={() => setPickerOpened(!pickerOpened)}
+              >
+                {m.addMetric}
+              </Button>
+            )}
+            <Collapse
+              expanded={pickerOpened || selected.length === 0}
+              id={pickerId}
             >
-              {m.addMetric}
-            </Button>
-            <Collapse expanded={pickerOpened} id={pickerId}>
               <SimpleGrid cols={2} spacing={6}>
                 {available.map((key) => {
                   const Icon = metricIcons[key];
@@ -195,7 +204,6 @@ export function MeasurementFields({
                       onClick={() => {
                         onValuesChange({
                           ...values,
-                          ...(included.length === 0 ? { weight: '' } : {}),
                           [key]: '',
                         });
                         setPickerOpened(false);
