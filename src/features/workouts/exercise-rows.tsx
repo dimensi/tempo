@@ -4,6 +4,7 @@ import {
   ActionIcon,
   Button,
   Group,
+  getDefaultZIndex,
   Menu,
   Modal,
   NumberInput,
@@ -589,6 +590,7 @@ export function ExerciseRows({
       )}
       <Modal
         opened={repeat !== null}
+        zIndex={getDefaultZIndex('modal') + 1}
         onClose={() => setRepeat(null)}
         title={pm.replace}
         centered

@@ -10,31 +10,18 @@
   color: var(--progress-muted);
   opacity: 1;
 }
-.disclosure summary {
-  cursor: pointer;
+.metadataItem {
+  border: 0;
+}
+.metadataControl {
+  padding-inline: 0;
   min-height: 44px;
-  align-content: center;
   font-size: var(--mantine-font-size-sm);
   color: var(--progress-muted);
 }
 .numbers {
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
-}
-.actions {
-  gap: 4px 12px;
-}
-.action {
-  padding-inline: 0;
-  height: auto;
-  min-height: 44px;
-  font-size: var(--mantine-font-size-sm);
-  font-weight: 600;
-  line-height: 1.4;
-}
-.action:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 .drawerHeader {
   padding-top: calc(16px + var(--tempo-safe-top));
@@ -51,6 +38,7 @@
 }
 .record {
   padding-block: 12px;
+  min-width: 0;
 }
 .record + .record {
   border-top: 1px solid var(--mantine-color-default-border);

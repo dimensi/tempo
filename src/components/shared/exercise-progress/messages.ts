@@ -28,6 +28,8 @@ export const progressMessages = {
   fatigue: 'Тяжесть',
   failure: 'Отказ',
   failures: { full: 'Полный', partial: 'Частичный', none: 'Без отказа' },
+  set: 'Подход',
+  weightKg: 'Вес, кг',
   weight: 'Вес',
   reps: 'Повторения',
   volume: 'Объём',
