@@ -19,6 +19,16 @@ export function setLabel(set: WorkoutSet) {
 export function metricLabel(
   metric: ProgressOccurrence['sets'][number]['metrics'][number],
 ) {
+  const unit =
+    metric.unit.toLocaleLowerCase('ru') ===
+      metric.name.toLocaleLowerCase('ru') || metric.unit === 'Повт'
+      ? ''
+      : ` ${metric.unit}`;
+  return `${metric.name}: ${metric.values.join(' / ') || '—'}${unit}`;
+}
+export function originalMetricLabel(
+  metric: ProgressOccurrence['sets'][number]['metrics'][number],
+) {
   return `${metric.name}: ${metric.values.join(' / ') || '—'} ${metric.unit} · ${m.metricType}: ${metric.type}`;
 }
 export function setsLabel(row: ProgressOccurrence) {

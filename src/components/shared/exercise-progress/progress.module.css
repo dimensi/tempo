@@ -1,4 +1,3 @@
-.previous,
 .drawerHeader,
 .drawerBody,
 .overview {
@@ -11,10 +10,12 @@
   color: var(--progress-muted);
   opacity: 1;
 }
-.previous {
-  margin: 0 0 12px;
-  padding: 8px 0;
-  min-height: 70px;
+.disclosure summary {
+  cursor: pointer;
+  min-height: 44px;
+  align-content: center;
+  font-size: var(--mantine-font-size-sm);
+  color: var(--progress-muted);
 }
 .numbers {
   font-variant-numeric: tabular-nums;

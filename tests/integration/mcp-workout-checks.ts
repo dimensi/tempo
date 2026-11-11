@@ -684,6 +684,56 @@ export async function assertWorkoutTools(
     expect(
       nativeRows.find((row) => row.sets[0]!.value)?.sets[0]!.value,
     ).toEqual({ reps: 12, weightKg: 30 });
+    // Saved linked Russian measure labels are scalar; an extra/range measure is not.
+    const linkedMetrics = [
+      { name: 'Вес', unit: 'Вес', type: 'straight', values: ['10'] },
+      { name: 'Повторения', unit: 'Повт', type: 'straight', values: ['15'] },
+    ];
+    connection.db
+      .update(workoutTransformMateLinks)
+      .set({
+        state: JSON.stringify({
+          ...state,
+          actual: {
+            ...state.actual!,
+            finished: '2026-08-01T12:00:00Z',
+            exercises: [false, true].map((complex) => ({
+              ...state.actual!.exercises[0]!,
+              sets: [
+                {
+                  order: 1,
+                  done: true,
+                  metrics: complex
+                    ? [
+                        ...linkedMetrics,
+                        {
+                          name: 'Время',
+                          unit: 'с',
+                          type: 'range',
+                          values: ['10', '20'],
+                        },
+                      ]
+                    : linkedMetrics,
+                },
+              ],
+            })),
+          },
+        }),
+      })
+      .where(eq(workoutTransformMateLinks.id, linkId))
+      .run();
+    const linkedRows = (
+      await readProgressHistory(headers, progressInput)
+    ).records.filter((row) => row.key.startsWith('linked:'));
+    const reusable = linkedRows.find((row) => row.sets[0]!.value)!;
+    expect(reusable.sets[0]!.value).toEqual({ weightKg: 10, reps: 15 });
+    expect(repeatExerciseSets(original, reusable)).toEqual({
+      ...original,
+      sets: [{ weightKg: 10, reps: 15 }],
+    });
+    expect(
+      linkedRows.find((row) => !row.sets[0]!.value)?.sets[0]!.metrics,
+    ).toHaveLength(3);
     // Dense valid history must fail safely before materializing all output rows.
     native.save(
       'owner',

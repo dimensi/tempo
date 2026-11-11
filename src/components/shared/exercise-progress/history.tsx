@@ -20,7 +20,12 @@ import { useReadResource } from '@/lib/use-read-resource';
 import { useReadOnline } from '@/lib/use-read-online';
 import { ProgressChart } from './chart';
 import { progressMessages as m } from './messages';
-import { dateLabel, setsLabel, metricLabel } from './format';
+import {
+  dateLabel,
+  setsLabel,
+  metricLabel,
+  originalMetricLabel,
+} from './format';
 import styles from './progress.module.css';
 
 export function ProgressReadState({
@@ -66,8 +71,9 @@ function RecordDetails({
     repeatExerciseSets({ sets: [] }, row) !== null;
   return (
     <Stack gap="xs" className={styles.numbers}>
-      <Text size="sm">
-        {m.status[row.status]} · {m.source[row.source]}
+      <Text size="sm" c="var(--progress-muted)">
+        {m.source[row.source]}
+        {row.status !== 'completed' && ` · ${m.status[row.status]}`}
       </Text>
       {compact ? (
         <Text size="sm">{setsLabel(row)}</Text>
@@ -81,11 +87,6 @@ function RecordDetails({
                   ? setsLabel({ ...row, sets: [set] })
                   : set.metrics.map(metricLabel).join('; ') || '—'}
               </Text>
-              {set.value && set.metrics.length > 0 && (
-                <Text size="sm" c="var(--progress-muted)">
-                  {m.original}: {set.metrics.map(metricLabel).join('; ')}
-                </Text>
-              )}
             </Stack>
           ))}
         </Stack>
@@ -107,18 +108,9 @@ function RecordDetails({
             .join(' · ')}
         </Text>
       )}
-      {row.possibleOverlap && (
-        <Text size="sm" c="var(--progress-muted)">
-          {m.overlap}
-        </Text>
-      )}
       <Group className={styles.actions}>
         {onRepeat && repeatable && (
-          <Button
-            variant="transparent"
-            className={styles.action}
-            onClick={() => onRepeat(row)}
-          >
+          <Button variant="light" mih={44} onClick={() => onRepeat(row)}>
             {m.repeat}
           </Button>
         )}
@@ -131,6 +123,23 @@ function RecordDetails({
           {m.openWorkout}
         </Button>
       </Group>
+      {row.sets.some((set) => set.metrics.length > 0) && (
+        <details className={styles.disclosure}>
+          <summary>{m.original}</summary>
+          <Stack gap={4}>
+            {row.sets.map((set) => (
+              <Text key={set.order} size="sm" c="var(--progress-muted)">
+                {set.order}. {set.metrics.map(originalMetricLabel).join('; ')}
+              </Text>
+            ))}
+            {row.possibleOverlap && (
+              <Text size="sm" c="var(--progress-muted)">
+                {m.overlap}
+              </Text>
+            )}
+          </Stack>
+        </details>
+      )}
     </Stack>
   );
 }
@@ -290,9 +299,12 @@ function HistoryBody({
               </Stack>
             </>
           )}
-          <Text size="sm" c="var(--progress-muted)">
-            {m.sourcesHint} {m.savedHint}
-          </Text>
+          <details className={styles.disclosure}>
+            <summary>{m.about}</summary>
+            <Text size="sm" c="var(--progress-muted)">
+              {m.sourcesHint} {m.savedHint}
+            </Text>
+          </details>
         </>
       )}
     </Stack>

@@ -12,9 +12,6 @@ export function progressRange(to: string, days: number) {
     to,
   };
 }
-export function previousDate(date: string) {
-  return new Date(Date.parse(date) - 86400000).toISOString().slice(0, 10);
-}
 export function bestSet(sets: WorkoutSet[]): WorkoutSet | null {
   return (
     [...sets].sort(

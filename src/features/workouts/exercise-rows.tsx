@@ -22,16 +22,9 @@ import {
   IconPlayerPlay,
 } from '@tabler/icons-react';
 import { useMediaQuery } from '@mantine/hooks';
-import { readResources } from '@/lib/read-descriptors';
-import { useReadResource } from '@/lib/use-read-resource';
-import {
-  previousDate,
-  progressRange,
-  repeatExerciseSets,
-} from '@/lib/exercise-progress';
+import { repeatExerciseSets } from '@/lib/exercise-progress';
 import type { ProgressOccurrence } from '@/contracts/exercise-progress';
 import { ExerciseHistory } from '@/components/shared/exercise-progress/history';
-import { PreviousExercise } from '@/components/shared/exercise-progress/previous';
 import { progressMessages as pm } from '@/components/shared/exercise-progress/messages';
 import { BottomSheet } from '@/components/shared/bottom-sheet';
 import { useReadOnline } from '@/lib/use-read-online';
@@ -117,26 +110,6 @@ export function ExerciseRows({
     key: string;
     row: ProgressOccurrence;
   } | null>(null);
-  const ids = [
-    ...new Set(
-      exercises.flatMap((exercise) =>
-        exercise.transformMate ? [exercise.transformMate.exerciseId] : [],
-      ),
-    ),
-  ].sort((a, b) => a - b);
-  const summaryQuery = new URLSearchParams({
-    ownerId,
-    ...progressRange(previousDate(date), 366),
-    exerciseIds: ids.join(','),
-  });
-  if (session?.id) summaryQuery.set('workoutId', session.id);
-  const progress = useReadResource(
-    readResources.exerciseProgress(
-      ids.length
-        ? `/api/read/exercise-progress/summary?${summaryQuery}`
-        : undefined,
-    ),
-  );
   const requestRepeat = (key: string, row: ProgressOccurrence) =>
     setRepeat({ key, row });
   const online = useReadOnline();
@@ -292,28 +265,23 @@ export function ExerciseRows({
                 ))}
             </Group>
             {exercise.transformMate ? (
-              <PreviousExercise
-                sources={
-                  progress.data?.exercises.find(
-                    (row) =>
-                      row.exerciseId === exercise.transformMate!.exerciseId,
-                  )?.sources
-                }
-                loaded={!!progress.data}
-                error={!!progress.error || !online}
-                onOpen={() =>
+              <Button
+                variant="transparent"
+                size="sm"
+                p={0}
+                mb="xs"
+                mih={44}
+                w="fit-content"
+                onClick={() =>
                   setHistory({
                     exerciseId: exercise.transformMate!.exerciseId,
                     name: exercise.name,
                     occurrenceKey: key,
                   })
                 }
-                onRepeat={
-                  onChange && !disabled
-                    ? (row) => requestRepeat(key, row)
-                    : undefined
-                }
-              />
+              >
+                {pm.history}
+              </Button>
             ) : (
               <Text size="sm" c="dimmed" mb="sm">
                 {pm.manual}
