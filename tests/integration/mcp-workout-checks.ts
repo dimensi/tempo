@@ -522,6 +522,35 @@ export async function assertWorkoutTools(
       true,
     );
     expect(webHistory.records.some((row) => row.possibleOverlap)).toBe(true);
+    const linkedHistory = webHistory.records.find((row) =>
+      row.key.startsWith('linked:'),
+    )!;
+    expect(
+      new URL(linkedHistory.href, 'https://tempo.test').searchParams.get(
+        'workout',
+      ),
+    ).toBe(completed.id);
+    state.actual!.date = '2026-08-03';
+    connection.db
+      .update(workoutTransformMateLinks)
+      .set({ state: JSON.stringify(state) })
+      .where(eq(workoutTransformMateLinks.id, linkId))
+      .run();
+    try {
+      const shiftedHistory = (
+        await readProgressHistory(headers, progressInput)
+      ).records.find((row) => row.key.startsWith('linked:'))!;
+      const shiftedHref = new URL(shiftedHistory.href, 'https://tempo.test');
+      expect(shiftedHref.searchParams.get('date')).toBe('2026-08-03');
+      expect(shiftedHref.searchParams.get('workout')).toBe(`remote:${linkId}`);
+    } finally {
+      state.actual!.date = '2026-08-01';
+      connection.db
+        .update(workoutTransformMateLinks)
+        .set({ state: JSON.stringify(state) })
+        .where(eq(workoutTransformMateLinks.id, linkId))
+        .run();
+    }
     expect(
       webHistory.records
         .filter((row) => row.source === 'TransformMate')

@@ -109,7 +109,12 @@ async function occurrences(headers: Headers, input: ProgressQuery) {
         params.set('workout', w.workoutRef.id);
       else if (w.workoutRef.kind === 'native')
         params.set('workout', `native:${w.workoutRef.id}`);
-      else params.set('workout', `remote:${w.workoutRef.id}`);
+      else {
+        const local = saved.local.workouts.find(
+          (workout) => workout.id === w.workoutId && workout.date === w.date,
+        );
+        params.set('workout', local?.id ?? `remote:${w.workoutRef.id}`);
+      }
       rows.push({
         key: `${w.workoutRef.kind}:${w.workoutRef.id}:${e.occurrenceId}`,
         exerciseId: id,

@@ -112,7 +112,15 @@ export function WorkoutsDashboard({
     date: string;
     workout: WorkoutInput;
   } | null>(null);
-  const [active, setActive] = useState<string | null>(null);
+  const requestedWorkout = params.get('workout');
+  const selectionScope = `${date}:${requestedWorkout ?? ''}`;
+  const [selection, setSelection] = useState<{
+    scope: string;
+    id: string | null;
+  }>({ scope: selectionScope, id: null });
+  const active = selection.scope === selectionScope ? selection.id : null;
+  const setActive = (id: string | null) =>
+    setSelection({ scope: selectionScope, id });
   const [syncRequested, setSyncRequested] = useState<string | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyDate, setCopyDate] = useState(date);
@@ -168,7 +176,6 @@ export function WorkoutsDashboard({
         label: workoutTitle(remote.actual.title, date),
         remote,
       });
-  const requestedWorkout = params.get('workout');
   const entry =
     entries.find((item) => item.id === active) ??
     entries.find((item) => item.id === requestedWorkout) ??
