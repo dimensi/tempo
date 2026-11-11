@@ -28,9 +28,10 @@ type NativeSet = Omit<
 > & { metrics: NativeMetric[] };
 export type NativeWorkoutReadItem = Omit<
   TransformMateNativeItem,
-  'remoteTrainingId' | 'exercises'
+  'remoteTrainingId' | 'exercises' | 'remoteUpdatedAt' | 'fetchedAt'
 > & {
   remoteTrainingId?: number;
+  fetchedAt?: string;
   exercises: (Omit<
     TransformMateNativeItem['exercises'][number],
     'protocolId' | 'remoteExerciseId' | 'exerciseId' | 'metrics'
@@ -121,14 +122,11 @@ export function NativeWorkout({
             const orders = [
               ...new Set([...planned, ...actual].map((set) => set.order)),
             ].sort((a, b) => a - b);
+            const exerciseKey = `${exercise.protocolId ?? 0}-${exercise.remoteExerciseId ?? exerciseIndex}`;
             return (
               <Stack gap="xs" key={exerciseIndex}>
                 <UnstyledButton
-                  onClick={() =>
-                    setInspecting(
-                      `${exercise.protocolId}-${exercise.remoteExerciseId}`,
-                    )
-                  }
+                  onClick={() => setInspecting(exerciseKey)}
                   disabled={!ownerId || !exercise.exerciseId}
                   style={{
                     minHeight: 44,
@@ -178,30 +176,31 @@ export function NativeWorkout({
                     </Table.Tbody>
                   </Table>
                 </ScrollArea>
-                {ownerId &&
-                  inspecting ===
-                    `${exercise.protocolId}-${exercise.remoteExerciseId}` && (
-                    <Drawer
-                      opened
-                      onClose={() => setInspecting(null)}
-                      title={exercise.name}
-                      position="right"
-                      size="min(480px, 100vw)"
-                    >
-                      <ExerciseDetails
-                        ownerId={ownerId}
-                        exerciseId={exercise.exerciseId!}
-                      />
-                    </Drawer>
-                  )}
+                {ownerId && inspecting === exerciseKey && (
+                  <Drawer
+                    opened
+                    onClose={() => setInspecting(null)}
+                    title={exercise.name}
+                    position="right"
+                    size="min(480px, 100vw)"
+                  >
+                    <ExerciseDetails
+                      ownerId={ownerId}
+                      exerciseId={exercise.exerciseId!}
+                    />
+                  </Drawer>
+                )}
 
                 {!orders.length && <Text size="sm">{m.nativeEmptySets}</Text>}
               </Stack>
             );
           })}
-        <Text size="xs">
-          {m.nativeFetched}: {new Date(item.fetchedAt).toLocaleString('ru-RU')}
-        </Text>
+        {item.fetchedAt && (
+          <Text size="xs">
+            {m.nativeFetched}:{' '}
+            {new Date(item.fetchedAt).toLocaleString('ru-RU')}
+          </Text>
+        )}
       </Stack>
     </Paper>
   );

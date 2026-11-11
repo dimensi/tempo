@@ -378,6 +378,10 @@ export const workoutMessages = {
   planned: 'План',
   actual: 'Факт',
   actualDetails: 'Все сохранённые результаты',
+  deletedLocalWorkout:
+    'Локальная тренировка удалена. В TransformMate она сохранилась и доступна для просмотра.',
+  deleteLinkedWorkoutHint:
+    'Тренировка в TransformMate не удалится и останется доступна здесь для просмотра.',
   nativeReadonly:
     'План и факт из TransformMate. Результаты доступны для просмотра. Чтобы изменить вес, повторения или другие результаты, откройте тренировку в TransformMate.',
   completedResultsHint:

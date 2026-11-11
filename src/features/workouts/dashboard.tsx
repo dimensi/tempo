@@ -39,6 +39,7 @@ import { DayEditor } from './day-editor';
 import { clearWorkoutDraft, dayWorkoutDraftKey } from './draft-storage';
 import { copyWorkoutToDate } from './copy-workout';
 import { NativeWorkout } from './native-workout';
+import { LinkedWorkout } from './linked-workout';
 import { WorkoutSync, useTransformMateSync } from './transformmate-sync';
 import { workoutMessages as m } from './messages';
 import classes from './day-workout.module.css';
@@ -508,16 +509,14 @@ export function WorkoutsDashboard({
           <NativeWorkout item={entry.native} ownerId={ownerId} fullView />
         </section>
       )}
-      {!create && entry?.remote && !entry.native && (
-        <section aria-label={m.remoteActual}>
-          {!entry.workout && (
-            <Text fw={600} mb="sm">
-              {m.remoteActual}
-            </Text>
-          )}
-          <WorkoutSync item={entry.remote} showActual={!entry.workout} />
-        </section>
-      )}
+      {!create &&
+        entry?.remote &&
+        !entry.native &&
+        (entry.workout ? (
+          <WorkoutSync item={entry.remote} showActual={false} />
+        ) : (
+          <LinkedWorkout item={entry.remote} ownerId={ownerId} />
+        ))}
       {sync.nativePage.nextCursor && (
         <Button
           variant="subtle"
@@ -563,6 +562,9 @@ export function WorkoutsDashboard({
       >
         <Stack>
           <Text>{m.confirmResultDelete}</Text>
+          {entry?.remote?.remoteTrainingId != null && (
+            <Text size="sm">{m.deleteLinkedWorkoutHint}</Text>
+          )}
           {error && <Alert color="red">{error}</Alert>}
           <Group justify="flex-end">
             <Button
