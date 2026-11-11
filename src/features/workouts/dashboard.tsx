@@ -171,7 +171,7 @@ export function WorkoutsDashboard({
   const requestedWorkout = params.get('workout');
   const entry =
     entries.find((item) => item.id === active) ??
-    entries.find((item) => item.workout?.id === requestedWorkout) ??
+    entries.find((item) => item.id === requestedWorkout) ??
     entries[0];
   const linkedIncomplete =
     sync.linkedIncomplete ||

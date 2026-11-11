@@ -1,203 +1,31 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
-import type {
-  WorkoutExercise,
-  Workout as LocalWorkout,
-} from '@/contracts/workouts';
-import type { TransformMateSyncItem } from '@/contracts/transformmate';
-import type { TransformMateNativeItem } from '@/contracts/transformmate-native';
-import type {
-  McpExerciseRef,
-  McpWorkoutRef,
-  McpWorkoutInput,
-  McpExerciseHistoryInput,
-  McpWorkoutExecutionStatus,
-} from '@/contracts/mcp';
+import type { McpWorkoutInput, McpExerciseHistoryInput } from '@/contracts/mcp';
 import { readWorkoutDetails } from '@/server/workouts/details';
 import {
   listSavedWorkouts,
   requireOwnerWorkoutRead,
 } from '@/server/workouts/saved-read';
+import { hasProviderSetData } from '@/server/workouts/execution-status';
 import {
-  hasProviderSetData,
-  providerExecutionStatus,
-} from './workout-execution';
+  localView,
+  linkedView,
+  nativeView,
+  type HistoryWorkout,
+  type SetData,
+  type HistoryExercise,
+  historyUnits as units,
+} from '@/server/workouts/history-views';
+export { exerciseHistoryRef } from '@/server/workouts/history-views';
 import { McpReadError, pageRows, readOffset } from './pagination';
 
-export function exerciseHistoryRef(
-  exerciseId: number | undefined,
-): McpExerciseRef | null {
-  return exerciseId === undefined
-    ? null
-    : { source: 'TransformMate', exerciseId };
-}
-type Metric = { name: string; unit: string; type: string; values: string[] };
-type SetData = {
-  order: number;
-  reps?: number;
-  weightKg?: number | null;
-  done?: boolean | null;
-  metrics?: Metric[];
-};
-type Exercise = {
-  name: string;
-  exerciseId?: string;
-  comment?: string;
-  fatigue?: number | null;
-  failure?: string | null;
-  occurrenceId: string;
-  phase: 'plan' | 'actual';
-  historyRef: McpExerciseRef | null;
-  sets: SetData[];
-};
-type Workout = {
-  workoutRef: McpWorkoutRef;
-  source: 'LOCAL' | 'TransformMate';
-  date: string;
-  title: string;
-  executionStatus: McpWorkoutExecutionStatus;
-  workoutId?: string;
-  revision?: number;
-  note?: string;
-  editable?: boolean;
-  planBasis?: 'saved_plan' | 'published_snapshot';
-  freshness: {
-    lastSavedAt: string | null;
-    lastFetchedAt: string | null;
-    lastCheckedAt: string | null;
-  };
-  exercises: Exercise[];
-  related: McpWorkoutRef[];
-};
-const units = {
-  weight: 'kg',
-  reps: 'repetitions',
-  providerMetrics: 'per_metric_unit',
-};
-function localExercises(
-  exercises: WorkoutExercise[],
-  phase: Exercise['phase'],
-): Exercise[] {
-  return exercises.map((e, index) => ({
-    name: e.name,
-    exerciseId: e.id,
-    comment: e.comment,
-    fatigue: e.fatigue ?? null,
-    failure: e.failure ?? null,
-    occurrenceId: `${phase}:${e.id ?? e.transformMate?.occurrenceKey ?? index + 1}`,
-    phase,
-    historyRef: exerciseHistoryRef(e.transformMate?.exerciseId),
-    sets: e.sets.map((s, order) => ({
-      order: order + 1,
-      reps: s.reps,
-      weightKg: s.weightKg,
-    })),
-  }));
-}
-function localView(workout: LocalWorkout): Workout {
-  return {
-    workoutRef: { kind: 'workout', id: workout.id, date: workout.date },
-    source: 'LOCAL',
-    date: workout.date,
-    title: workout.title,
-    executionStatus: workout.status,
-    workoutId: workout.id,
-    revision: workout.revision,
-    note: workout.note,
-    editable: true,
-    freshness: {
-      lastSavedAt: workout.updatedAt,
-      lastFetchedAt: null,
-      lastCheckedAt: null,
-    },
-    exercises: localExercises(
-      workout.exercises,
-      workout.status === 'planned' ? 'plan' : 'actual',
-    ),
-    related: [],
-  };
-}
-function linkedView(item: TransformMateSyncItem): Workout {
-  const actual = item.actual;
-  const plan = (item.publishedSnapshot ?? item.planSnapshot).workout;
-  const date = actual?.date ?? item.planSnapshot.workout.date;
-  return {
-    workoutRef: { kind: 'linked', id: item.id, date },
-    source: 'TransformMate',
-    editable: false,
-    date,
-    title: actual?.title ?? plan.title,
-    workoutId: item.workoutId,
-    executionStatus: providerExecutionStatus(
-      actual,
-      actual?.exercises.flatMap((e) => e.sets) ?? [],
-    ),
-    planBasis: item.publishedSnapshot ? 'published_snapshot' : 'saved_plan',
-    freshness: {
-      lastSavedAt: null,
-      lastFetchedAt: null,
-      lastCheckedAt:
-        [item.checkedAt, item.updateAttempt?.checkedAt]
-          .filter((v): v is string => v != null)
-          .sort((a, b) => Date.parse(a) - Date.parse(b))
-          .at(-1) ?? null,
-    },
-    exercises: [
-      ...localExercises(plan.exercises, 'plan'),
-      ...(actual?.exercises.map((e, index) => ({
-        name: e.name,
-        occurrenceId: `actual:${e.occurrenceKey ?? index + 1}`,
-        phase: 'actual' as const,
-        historyRef: exerciseHistoryRef(e.exerciseId),
-        sets: e.sets,
-      })) ?? []),
-    ],
-    related: [
-      {
-        kind: 'workout',
-        id: item.workoutId,
-        date: item.planSnapshot.workout.date,
-      },
-    ],
-  };
-}
-function nativeView(item: TransformMateNativeItem): Workout {
-  return {
-    workoutRef: { kind: 'native', id: item.remoteTrainingId, date: item.date },
-    source: 'TransformMate',
-    editable: false,
-    date: item.date,
-    title: item.title,
-    executionStatus: providerExecutionStatus(
-      item,
-      item.exercises.flatMap((e) =>
-        e.metrics.filter((m) => m.type === 'fact').flatMap((m) => m.sets),
-      ),
-    ),
-    freshness: {
-      lastSavedAt: null,
-      lastFetchedAt: item.fetchedAt,
-      lastCheckedAt: null,
-    },
-    exercises: item.exercises.flatMap((e) =>
-      e.metrics.map((group, groupIndex) => ({
-        name: e.name,
-        occurrenceId: `${group.type}:${e.protocolId}:${e.remoteExerciseId}:${groupIndex}`,
-        phase: group.type === 'plan' ? ('plan' as const) : ('actual' as const),
-        historyRef: exerciseHistoryRef(e.exerciseId),
-        sets: group.sets,
-      })),
-    ),
-    related: [],
-  };
-}
 function recorded(set: SetData) {
   return set.metrics === undefined
     ? set.reps !== undefined
     : hasProviderSetData({ done: set.done ?? null, metrics: set.metrics });
 }
 function* exerciseRows(
-  exercises: Exercise[],
+  exercises: HistoryExercise[],
   detail: 'summary' | 'records',
   exerciseId?: number,
 ): Generator<Record<string, unknown>> {
@@ -263,7 +91,7 @@ export async function readMcpWorkout(
   const detail = await readWorkoutDetails(headers, ownerId, resource, ref.date);
   await requireOwnerWorkoutRead(headers, ownerId);
   if (!detail) throw new McpReadError('not_found');
-  let workout: Workout;
+  let workout: HistoryWorkout;
   if (detail.kind === 'native') workout = nativeView(detail.item);
   else if (detail.kind === 'link') workout = linkedView(detail.item);
   else {
@@ -300,6 +128,7 @@ export async function readMcpExerciseHistory(
   ownerId: string,
   input: McpExerciseHistoryInput,
 ) {
+  await requireOwnerWorkoutRead(headers, ownerId);
   const { local, linked, native } = await listSavedWorkouts(headers, ownerId, {
     from: input.from,
     to: input.to,
@@ -314,7 +143,10 @@ export async function readMcpExerciseHistory(
       w.date <= input.to &&
       ['completed', 'in_progress'].includes(w.executionStatus),
   );
-  const matching: { workout: Workout; rows: Record<string, unknown>[] }[] = [];
+  const matching: {
+    workout: HistoryWorkout;
+    rows: Record<string, unknown>[];
+  }[] = [];
   let rowCount = 0;
   for (const workout of views) {
     const rows: Record<string, unknown>[] = [];
@@ -329,7 +161,7 @@ export async function readMcpExerciseHistory(
     }
     if (rows.length > 0) matching.push({ workout, rows });
   }
-  const key = (w: Workout) =>
+  const key = (w: HistoryWorkout) =>
     w.workoutId ? JSON.stringify([w.workoutId, w.date]) : null;
   const localKeys = new Set(
     matching
@@ -343,7 +175,7 @@ export async function readMcpExerciseHistory(
       .map((v) => key(v.workout))
       .filter((k) => k != null),
   );
-  const overlap = (w: Workout) => {
+  const overlap = (w: HistoryWorkout) => {
     const k = key(w);
     return k !== null && localKeys.has(k) && linkedKeys.has(k);
   };

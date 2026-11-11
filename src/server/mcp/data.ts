@@ -22,7 +22,7 @@ import type {
   McpWorkoutExecutionStatus,
 } from '@/contracts/mcp';
 import { McpReadError, pageRows, readOffset } from './pagination';
-import { providerExecutionStatus } from './workout-execution';
+import { providerExecutionStatus } from '@/server/workouts/execution-status';
 
 async function check(headers: Headers, ownerId: string) {
   for (const permission of [

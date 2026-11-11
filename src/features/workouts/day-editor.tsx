@@ -971,6 +971,7 @@ export function DayEditor({
         </Text>
       )}
       <ExerciseRows
+        date={value.date}
         onFeedbackChange={feedbackEditable ? changeFeedback : undefined}
         removalPending={pendingWrites}
         ownerId={ownerId}

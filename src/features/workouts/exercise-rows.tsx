@@ -5,6 +5,7 @@ import {
   Button,
   Group,
   Menu,
+  Modal,
   NumberInput,
   NativeSelect,
   Stack,
@@ -21,6 +22,17 @@ import {
   IconPlayerPlay,
 } from '@tabler/icons-react';
 import { useMediaQuery } from '@mantine/hooks';
+import { readResources } from '@/lib/read-descriptors';
+import { useReadResource } from '@/lib/use-read-resource';
+import {
+  previousDate,
+  progressRange,
+  repeatExerciseSets,
+} from '@/lib/exercise-progress';
+import type { ProgressOccurrence } from '@/contracts/exercise-progress';
+import { ExerciseHistory } from '@/components/shared/exercise-progress/history';
+import { PreviousExercise } from '@/components/shared/exercise-progress/previous';
+import { progressMessages as pm } from '@/components/shared/exercise-progress/messages';
 import { BottomSheet } from '@/components/shared/bottom-sheet';
 import { useReadOnline } from '@/lib/use-read-online';
 import { ExerciseOrder } from './exercise-order';
@@ -33,6 +45,7 @@ import styles from './day-workout.module.css';
 
 export function ExerciseRows({
   ownerId,
+  date,
   canLog,
   exercises,
   session,
@@ -46,6 +59,7 @@ export function ExerciseRows({
   removalPending = false,
 }: {
   ownerId: string;
+  date: string;
   canLog: boolean;
   exercises: DraftExercise[];
   session?: Workout;
@@ -94,6 +108,37 @@ export function ExerciseRows({
       pendingFocus.current = null;
     }
   }, [exercises]);
+  const [history, setHistory] = useState<{
+    exerciseId: number;
+    name: string;
+    occurrenceKey: string;
+  } | null>(null);
+  const [repeat, setRepeat] = useState<{
+    key: string;
+    row: ProgressOccurrence;
+  } | null>(null);
+  const ids = [
+    ...new Set(
+      exercises.flatMap((exercise) =>
+        exercise.transformMate ? [exercise.transformMate.exerciseId] : [],
+      ),
+    ),
+  ].sort((a, b) => a - b);
+  const summaryQuery = new URLSearchParams({
+    ownerId,
+    ...progressRange(previousDate(date), 366),
+    exerciseIds: ids.join(','),
+  });
+  if (session?.id) summaryQuery.set('workoutId', session.id);
+  const progress = useReadResource(
+    readResources.exerciseProgress(
+      ids.length
+        ? `/api/read/exercise-progress/summary?${summaryQuery}`
+        : undefined,
+    ),
+  );
+  const requestRepeat = (key: string, row: ProgressOccurrence) =>
+    setRepeat({ key, row });
   const online = useReadOnline();
   const uploaded = useUploadedVideos(ownerId, session?.id);
   const update = (index: number, next: DraftExercise) =>
@@ -246,6 +291,34 @@ export function ExerciseRows({
                   </Menu>
                 ))}
             </Group>
+            {exercise.transformMate ? (
+              <PreviousExercise
+                sources={
+                  progress.data?.exercises.find(
+                    (row) =>
+                      row.exerciseId === exercise.transformMate!.exerciseId,
+                  )?.sources
+                }
+                loaded={!!progress.data}
+                error={!!progress.error || !online}
+                onOpen={() =>
+                  setHistory({
+                    exerciseId: exercise.transformMate!.exerciseId,
+                    name: exercise.name,
+                    occurrenceKey: key,
+                  })
+                }
+                onRepeat={
+                  onChange && !disabled
+                    ? (row) => requestRepeat(key, row)
+                    : undefined
+                }
+              />
+            ) : (
+              <Text size="sm" c="dimmed" mb="sm">
+                {pm.manual}
+              </Text>
+            )}
             {exercise.id && uploaded.ids.has(exercise.id) && (
               <Button
                 variant="light"
@@ -517,6 +590,68 @@ export function ExerciseRows({
           </section>
         );
       })}
+      {history && (
+        <ExerciseHistory
+          key={`${ownerId}:${history.exerciseId}:${session?.id ?? date}`}
+          ownerId={ownerId}
+          {...history}
+          anchorDate={date}
+          onClose={() => setHistory(null)}
+          onRepeat={
+            onChange && !disabled
+              ? (row) => {
+                  const index = exercises.findIndex(
+                    (exercise, i) =>
+                      (exercise.id ??
+                        exercise.transformMate?.occurrenceKey ??
+                        String(i)) === history.occurrenceKey,
+                  );
+                  const target = exercises[index];
+                  if (target)
+                    requestRepeat(
+                      target.id ??
+                        target.transformMate?.occurrenceKey ??
+                        String(index),
+                      row,
+                    );
+                }
+              : undefined
+          }
+        />
+      )}
+      <Modal
+        opened={repeat !== null}
+        onClose={() => setRepeat(null)}
+        title={pm.replace}
+        centered
+      >
+        <Stack>
+          <Text>{pm.replaceHint}</Text>
+          <Group>
+            <Button
+              onClick={() => {
+                if (!repeat || !onChange || disabled) return;
+                onChange(
+                  exercises.map((exercise, index) =>
+                    (exercise.id ??
+                      exercise.transformMate?.occurrenceKey ??
+                      String(index)) === repeat.key
+                      ? (repeatExerciseSets(exercise, repeat.row) ?? exercise)
+                      : exercise,
+                  ),
+                );
+                setRepeat(null);
+                setHistory(null);
+              }}
+            >
+              {pm.confirm}
+            </Button>
+            <Button variant="default" onClick={() => setRepeat(null)}>
+              {pm.cancel}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
       {media
         .filter(
           (entry) =>

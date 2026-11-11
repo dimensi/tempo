@@ -107,6 +107,12 @@ const persistence = {
   },
 };
 function resourceCoverage(body: string, key: string): 'complete' | 'partial' {
+  const progressUrl = new URL(key, 'https://tempo.local');
+  if (
+    progressUrl.pathname === '/api/read/exercise-progress/history' &&
+    (progressUrl.searchParams.has('cursor') || JSON.parse(body).nextCursor)
+  )
+    return 'partial';
   if (
     new URL(key, 'https://tempo.local').pathname ===
     '/api/workouts/transformmate/exercises'

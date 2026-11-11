@@ -1,0 +1,106 @@
+.previous,
+.drawerHeader,
+.drawerBody,
+.overview {
+  --progress-muted: light-dark(
+    var(--mantine-color-gray-7),
+    var(--mantine-color-dark-1)
+  );
+}
+.overview input::placeholder {
+  color: var(--progress-muted);
+  opacity: 1;
+}
+.previous {
+  margin: 0 0 12px;
+  padding: 8px 0;
+  min-height: 70px;
+}
+.numbers {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.actions {
+  gap: 4px 12px;
+}
+.action {
+  padding-inline: 0;
+  height: auto;
+  min-height: 44px;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.action:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.drawerHeader {
+  padding-top: calc(16px + var(--tempo-safe-top));
+  padding-left: calc(20px + var(--tempo-safe-left));
+  padding-right: calc(20px + var(--tempo-safe-right));
+}
+.drawerBody {
+  padding: 8px calc(20px + var(--tempo-safe-right))
+    calc(24px + var(--tempo-safe-bottom)) calc(20px + var(--tempo-safe-left));
+}
+.section {
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding-top: 20px;
+}
+.record {
+  padding-block: 12px;
+}
+.record + .record {
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+.overview {
+  padding: var(--mantine-spacing-md);
+  min-width: 0;
+}
+.summaryRow {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.1fr) minmax(0, 2fr) 24px;
+  gap: 16px;
+  width: 100%;
+  padding: 16px 0;
+  text-align: left;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  border-radius: 0;
+}
+.summaryRow:hover {
+  background: var(--mantine-color-default-hover);
+}
+.summaryRow:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 3px;
+}
+.sourceSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+.summaryRow > *,
+.sourceSummary > * {
+  min-width: 0;
+}
+.chart {
+  min-width: 0;
+}
+@media (max-width: 47.99em) {
+  .summaryRow {
+    grid-template-columns: minmax(0, 1fr) 24px;
+    gap: 8px;
+  }
+  .summaryName {
+    grid-column: 1;
+  }
+  .summaryResults {
+    grid-column: 1;
+  }
+  .chevron {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+}
