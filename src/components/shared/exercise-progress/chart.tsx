@@ -15,7 +15,7 @@ import styles from './progress.module.css';
 
 export function ProgressChart({ points }: { points: ProgressStats[] }) {
   const [metric, setMetric] = useState('weight');
-  const latest = points.at(-1)?.best;
+  const latest = points.findLast((point) => point.best !== null)?.best;
   const [weight, setWeight] = useState(String(latest?.weightKg ?? 'none'));
   const weights = [
     ...new Set(
