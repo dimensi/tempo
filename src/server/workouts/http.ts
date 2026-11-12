@@ -4,6 +4,7 @@ import { exerciseFeedbackSchema, revisionSchema } from '@/contracts/workouts';
 import { WorkoutAccessError, WorkoutError } from './index';
 import { workoutMessages as m } from '@/features/workouts';
 import { hasTrustedOrigin } from '@/server/auth/origin';
+import { WorkoutDeletionError } from './transformmate/delete-training';
 import { SyncAccessError } from './transformmate/service';
 import { TransformMateStaleConnectionError } from '@/server/transformmate/token-store';
 export const workoutUpdateBody = z
@@ -85,7 +86,8 @@ export async function workoutResponse(operation: () => Promise<unknown>) {
     const status =
       error instanceof WorkoutAccessError ||
       error instanceof WorkoutError ||
-      error instanceof SyncAccessError
+      error instanceof SyncAccessError ||
+      error instanceof WorkoutDeletionError
         ? error.status
         : error instanceof TransformMateStaleConnectionError
           ? 409
@@ -93,15 +95,17 @@ export async function workoutResponse(operation: () => Promise<unknown>) {
             ? 400
             : 500;
     const message =
-      status === 409
-        ? m.conflict
-        : status === 404
-          ? m.notFound
-          : status === 403 || status === 401
-            ? m.forbidden
-            : status === 400
-              ? m.validation
-              : m.error;
+      error instanceof WorkoutDeletionError
+        ? m.deleteSyncError
+        : status === 409
+          ? m.conflict
+          : status === 404
+            ? m.notFound
+            : status === 403 || status === 401
+              ? m.forbidden
+              : status === 400
+                ? m.validation
+                : m.error;
     return Response.json(
       { error: message },
       { status, headers: { 'Cache-Control': 'private, no-store' } },

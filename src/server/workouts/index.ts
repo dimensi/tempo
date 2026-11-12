@@ -10,7 +10,11 @@ import {
   type WorkoutAction,
 } from '@/contracts/workouts';
 import { workoutRepository, WorkoutError } from './repository';
-import { saveAndSyncWorkout } from './transformmate/service';
+import {
+  saveAndSyncWorkout,
+  deleteWorkoutLinks,
+} from './transformmate/service';
+import { syncRepository } from './transformmate/repository';
 import { serializeOwner } from './transformmate/engine';
 export class WorkoutAccessError extends Error {
   constructor(public status: number) {
@@ -129,9 +133,23 @@ export async function deleteWorkout(
     await import('./videos');
   return withSessionVideoLock(ownerId, id, () =>
     serializeOwner(ownerId, async () => {
-      repository.assertRevision(ownerId, id, expected);
+      const guard = () => repository.assertRevision(ownerId, id, expected);
+      guard();
+      const cleanup = await deleteWorkoutLinks(
+        headers,
+        ownerId,
+        syncRepository(getDatabase().db)
+          .list(ownerId)
+          .filter((link) => link.planId === id),
+        guard,
+      );
       await cleanupVideoRows(sessionVideoRows(ownerId, id));
-      repository.delete(ownerId, id, expected);
+      await access(headers, ownerId, 'workouts:plan');
+      guard();
+      getDatabase().db.transaction(() => {
+        cleanup();
+        repository.delete(ownerId, id, expected);
+      });
     }),
   );
 }

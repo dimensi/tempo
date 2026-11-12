@@ -67,8 +67,14 @@ The verified write API sends a full training DTO. A single guarded PATCH support
 plan/workout title, comments, weights/repetitions, exercise order, adding/removing/replacing catalog
 exercises, and adding/removing planned sets. Straight weight/repetition metrics are required for
 catalog exercises. Own custom exercises advertise no metrics but explicitly accept the verified
-weight/reps DTO. Unsupported provider metrics remain an explicit blocking status. The integration never deletes remote workouts. Removing a local workout preserves its
-remote training and local linked history.
+weight/reps DTO. Unsupported provider metrics remain an explicit blocking status. Deleting a Tempo workout also deletes its linked TransformMate training after fresh
+owner/account/marker checks. DELETE is sent once without auth replay; a guarded GET 404 must
+confirm absence before deleting the local workout, link and any cached native projection.
+Failures retain the local workout for an explicit retry. The verified account scope is retained
+in link JSON so an ambiguous DELETE can be settled after restart. Unresolved creates are recovered
+by their unique marker before deletion; an empty or ambiguous listing does not permit local deletion.
+Previously preserved orphan links remain readable and can be explicitly deleted from the day menu.
+Unrelated provider-only trainings and exercise catalog entries are not deleted.
 
 Each update retains immutable original history and a separate last verified published snapshot.
 Local save and a bounded pending update intent commit together. Preflight reads current detail,

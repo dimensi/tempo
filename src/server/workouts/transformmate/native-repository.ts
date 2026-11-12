@@ -31,7 +31,7 @@ export function parseNativeCursor(cursor: string | undefined) {
 export function nativeRepository(
   db: Pick<
     ReturnType<typeof getDatabase>['db'],
-    'select' | 'insert' | 'update'
+    'select' | 'insert' | 'update' | 'delete'
   >,
 ) {
   const scope = (ownerId: string, accountScope: string) => {
@@ -118,6 +118,16 @@ export function nativeRepository(
             ? nativeCursor(last.date, last.remoteTrainingId)
             : null,
       };
+    },
+    remove(ownerId: string, accountScope: string, remoteTrainingId: number) {
+      db.delete(rows)
+        .where(
+          and(
+            scope(ownerId, accountScope),
+            eq(rows.remoteTrainingId, remoteTrainingId),
+          ),
+        )
+        .run();
     },
     save(
       ownerId: string,

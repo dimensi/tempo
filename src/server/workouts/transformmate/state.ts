@@ -23,6 +23,11 @@ export const syncStateSchema = z.object({
       /^\[yazio-dashboard:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]$/i,
     ),
   attempted: z.boolean(),
+  // Retain the verified account across an ambiguous DELETE and process restarts.
+  deletionAccountScope: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   status: transformMateSyncStatusSchema,
   reason: transformMateSyncItemSchema.shape.reason,
   expected: z

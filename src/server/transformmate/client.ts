@@ -359,6 +359,9 @@ export function createTransformMateClient(options: {
       const input = parseWriteInput(updateTrainingInputSchema, patch);
       return mutate(id, (body) => Object.assign(body, input));
     },
+    /** Caller verifies ownership and binding; never replay a destructive request. */
+    deleteTrainingOnce: (id: number, beforeSend?: () => Promise<void>) =>
+      get(detailPath(id), 'DELETE', undefined, false, beforeSend),
     deleteTraining: async (id: number) => {
       const detail = await getTraining(id);
       if (detail.body.id !== id || !detail.body.is_mine)
