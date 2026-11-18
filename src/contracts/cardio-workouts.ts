@@ -5,6 +5,7 @@ const distanceMeters = z.number().nonnegative().max(1_000_000);
 const energyKcal = z.number().nonnegative().max(100_000);
 const durationSeconds = z.number().positive().max(604_800);
 const time = z.iso.time({ precision: -1 });
+const equipment = z.string().trim().max(120).nullable();
 const note = z.string().trim().max(4000);
 export const cardioInputSchema = z.strictObject({
   date: z.iso.date(),
@@ -13,12 +14,14 @@ export const cardioInputSchema = z.strictObject({
   durationSeconds,
   distanceMeters: distanceMeters.nullable().default(null),
   energyKcal: energyKcal.nullable().default(null),
-  equipment: z.string().trim().max(120).nullable().default(null),
+  equipment: equipment.default(null),
   note: note.default(''),
 });
-export const cardioOverridesSchema = cardioInputSchema
-  .pick({ distanceMeters: true, equipment: true, note: true })
-  .partial();
+export const cardioOverridesSchema = z.strictObject({
+  distanceMeters: distanceMeters.nullable().optional(),
+  equipment: equipment.optional(),
+  note: note.optional(),
+});
 export const importedExerciseSchema = z.strictObject({
   bucket: z.enum(['training', 'custom_training']),
   providerId: z.string().min(1).max(190),

@@ -16,6 +16,9 @@ import * as bodyAdapterRuntime from '@/server/yazio/body-adapter';
 import { dailyGoalsRepository } from '@/server/yazio/goals';
 import { yazioHealthRepository } from '@/server/yazio/health-repository';
 import { nutritionSchedule } from '@/server/db/schema/nutrition-schedule';
+import { cardioCommandSchema } from '@/contracts/cardio-workouts';
+import { cardioMetrics } from '@/lib/cardio-workouts';
+import { readResources } from '@/lib/read-descriptors';
 import { cardioRepository } from '@/server/workouts/cardio-repository';
 import { normalizeYazioExercises } from '@/server/yazio/exercise-adapter';
 import type { NutritionDayUpstream } from '@/server/yazio/adapter';
@@ -182,7 +185,7 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
                   name: 'skiwalking',
                   date: day + ' 18:00:00',
                   duration: 17,
-                  distance: 0,
+                  distance: 3100,
                   energy: 82,
                   gateway: 'apple_health',
                   source: null,
@@ -319,6 +322,38 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
   expect(cardio.day('owner', date)).toMatchObject({
     workouts: savedCardio.workouts,
     coverage: { failedAt: null },
+  });
+  const descriptor = readResources.cardio('/api/workouts/cardio');
+  const firstCardio = () =>
+    descriptor.decode(JSON.stringify(cardio.day('owner', date))).workouts[0]!;
+  const imported = firstCardio();
+  expect(cardioMetrics(imported).distanceMeters).toBe(3100);
+  const patchImported = (
+    revision: number,
+    overrides: Record<string, unknown>,
+  ) =>
+    cardio.mutate(
+      'owner',
+      cardioCommandSchema.parse({
+        kind: 'update',
+        input: {
+          kind: 'imported',
+          id: imported.id,
+          revision,
+          requestId: crypto.randomUUID(),
+          overrides,
+        },
+      }),
+    );
+  const adjusted = patchImported(imported.revision, {
+    distanceMeters: 3200,
+    equipment: 'Synthetic gear',
+  });
+  patchImported(adjusted.revision, { note: 'Synthetic note' });
+  expect(cardioMetrics(firstCardio())).toMatchObject({
+    distanceMeters: 3200,
+    equipment: 'Synthetic gear',
+    note: 'Synthetic note',
   });
   expect(scheduler().liveStatus('owner').last).toEqual(beforeDayRefresh);
   expect(dailyGoalsRepository(database).day('owner', date).calories).toBe(
