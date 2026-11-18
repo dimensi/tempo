@@ -1,0 +1,50 @@
+.list {
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+}
+
+.row + .row {
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.clock {
+  flex: 0 0 3rem;
+  padding-top: 0.125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.metrics {
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  white-space: pre-wrap;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--mantine-spacing-sm);
+}
+
+@media (max-width: 36em) {
+  .row {
+    gap: var(--mantine-spacing-xs);
+    padding-inline: var(--mantine-spacing-sm);
+  }
+  .clock {
+    flex-basis: 2.75rem;
+  }
+}

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { cardioDaySchema } from './cardio-workouts';
 import {
   progressSummarySchema,
   progressHistorySchema,
@@ -141,6 +142,7 @@ export function readResponseSchema(path: string): z.ZodType | undefined {
   if (/^\/api\/nutrition\/days\/\d{4}-\d{2}-\d{2}$/.test(path))
     return nutritionDaySchema;
   if (path === '/api/workouts') return workoutsReadSchema;
+  if (path === '/api/workouts/cardio') return cardioDaySchema;
   if (path === '/api/anamnesis/overview') return anamnesisOverviewSchema;
   if (path === '/api/anamnesis/markers')
     return z.array(anamnesisMarkerSummarySchema);

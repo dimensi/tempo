@@ -814,7 +814,9 @@ export async function assertMcpAccess(
     });
     // Personal MCP has no HTTP, tool-call or parallelism throttle.
     for (let i = 0; i < 121; i++)
-      expect((await mcp.listTools()).tools).toHaveLength(16);
+      expect((await mcp.listTools()).tools).toHaveLength(
+        mcpTools.length + Object.keys(mcpExtraSchemas).length,
+      );
     for (let i = 0; i < 31; i++) {
       const profile = await mcp.callTool({
         name: 'get_profile',

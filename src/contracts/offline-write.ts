@@ -14,10 +14,15 @@ const payload = z.discriminatedUnion('kind', [
       kind: z.literal('workout'),
       data: workoutInputSchema,
       action: workoutActionSchema.optional(),
+      occurredAt: z.iso.datetime().optional(),
       feedback: exerciseFeedbackSchema.optional(),
     })
     .strict()
-    .refine((value) => !(value.action && value.feedback)),
+    .refine(
+      (value) =>
+        !(value.action && value.feedback) &&
+        (!value.occurredAt || !!value.action),
+    ),
 ]);
 export const offlineWriteSchema = z
   .object({

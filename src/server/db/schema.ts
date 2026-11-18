@@ -101,3 +101,7 @@ export const trainerAccess = sqliteTable('trainer_access', {
 });
 
 export { yazioBodyLinks, yazioBodyOutbox } from './schema/yazio-body';
+export {
+  cardioWorkouts,
+  yazioExerciseCoverage,
+} from './schema/cardio-workouts';

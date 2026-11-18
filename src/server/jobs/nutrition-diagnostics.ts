@@ -38,6 +38,7 @@ export type NutritionDiagnosticFields = {
   stepsFailures?: number;
   weightFailures?: number;
   goalsFailures?: number;
+  exerciseFailures?: number;
   bodyFailed?: boolean;
 };
 

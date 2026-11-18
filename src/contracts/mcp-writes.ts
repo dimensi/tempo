@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import {
+  createCardioInputSchema,
+  updateCardioInputSchema,
+} from './cardio-workouts';
+import {
   workoutInputSchema,
   workoutExerciseSchema,
   workoutActionSchema,
@@ -56,6 +60,8 @@ export const mcpExtraSchemas = {
   get_measurements: mcpMeasurements,
   search_exercises: mcpSearchExercises,
   create_workout: mcpCreateWorkout,
+  create_cardio_workout: createCardioInputSchema,
+  update_cardio_workout: updateCardioInputSchema,
   update_workout: mcpUpdateWorkout,
   transition_workout: mcpTransitionWorkout,
   update_exercise_feedback: mcpFeedback,

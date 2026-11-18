@@ -4,6 +4,8 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from '@/server/db/schema';
 import { offlineWriteRepository } from '@/server/offline/write-repository';
+import { cardioRepository } from '@/server/workouts/cardio-repository';
+import { normalizeYazioExercises } from '@/server/yazio/exercise-adapter';
 import { offlineWriteSchema } from '@/contracts/offline-write';
 
 vi.mock('server-only', () => ({}));
@@ -132,6 +134,7 @@ it('commits an offline receipt with its record and replays it without cross-owne
         kind: 'workout',
         data: { ...next.payload.data, status: 'in_progress' },
         action: 'start',
+        occurredAt: '2026-10-15T07:00:00Z',
       },
     }),
   );
@@ -144,10 +147,56 @@ it('commits an offline receipt with its record and replays it without cross-owne
       kind: 'workout',
       data: { ...active.payload.data, status: 'completed' },
       action: 'complete',
+      occurredAt: '2026-10-15T07:58:30Z',
     },
   });
   active = repository.apply('owner', completion);
   if (active.payload.kind !== 'workout') throw new Error('Expected workout');
+  const cardio = cardioRepository(drizzle(sqlite, { schema }));
+  const day = '2026-10-15';
+  const source = {
+    id: 'watch-session',
+    name: 'strengthtraining',
+    date: day + ' 10:01:00',
+    note: null,
+    external_id: null,
+    gateway: 'apple_health',
+    source: null,
+    duration: 58,
+    distance: 0,
+    energy: 250,
+  };
+  const collectedAt = '2026-10-16T12:00:00Z';
+  const importDay = (training: (typeof source)[]) =>
+    cardio.saveDay(
+      'owner',
+      day,
+      normalizeYazioExercises(
+        { training, custom_training: [] },
+        day,
+        'Europe/Moscow',
+      ),
+      collectedAt,
+    );
+  importDay([source, { ...source, id: 'second-candidate' }]);
+  expect(
+    cardio.day('owner', day).workouts.every((entry) => entry.link === null),
+  ).toBe(true);
+  importDay([source]);
+  const watch = cardio.day('owner', day).workouts[0]!;
+  expect(watch.link).toEqual({ kind: 'strength', id: workout.recordId });
+  cardio.mutate('owner', {
+    kind: 'update',
+    input: {
+      requestId: crypto.randomUUID(),
+      kind: 'link',
+      id: watch.id,
+      revision: watch.revision,
+      target: null,
+    },
+  });
+  importDay([source]);
+  expect(cardio.day('owner', day).workouts[0]?.link).toBeNull();
   const feedbackOperation = offlineWriteSchema.parse({
     ...next,
     id: crypto.randomUUID(),

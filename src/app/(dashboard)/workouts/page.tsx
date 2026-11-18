@@ -13,6 +13,7 @@ export default function Page() {
         userId={context.readerId}
         ownerId={context.ownerId}
         canLog={hasPermission(context.role, 'workouts:log')}
+        canManageCardio={context.role === 'OWNER'}
         renderPendingWrites={
           hasPermission(context.role, 'workouts:log')
             ? () => <OfflineWrites kind="workout" pendingOnly />

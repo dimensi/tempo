@@ -14,6 +14,7 @@ import {
   type WorkoutAction,
   type WorkoutsData,
 } from '@/contracts/workouts';
+import { cardioRepository } from './cardio-repository';
 import { syncRepository } from './transformmate/repository';
 
 export class WorkoutError extends Error {
@@ -140,6 +141,7 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
     data: WorkoutInput,
     action?: WorkoutAction,
     requestId?: string,
+    occurredAt?: string,
   ): Workout | null {
     if (!requestId) return null;
     const previous = db
@@ -154,7 +156,16 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
       .get();
     if (!previous) return null;
     const fingerprint = createHash('sha256')
-      .update(JSON.stringify({ kind: 'update', id, revision, data, action }))
+      .update(
+        JSON.stringify({
+          kind: 'update',
+          id,
+          revision,
+          data,
+          action,
+          occurredAt,
+        }),
+      )
       .digest('hex');
     if (previous.fingerprint !== fingerprint) throw new WorkoutError(409);
     return workoutSchema.parse(JSON.parse(previous.result));
@@ -184,6 +195,7 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
           )
             throw new WorkoutError(404);
           const data = {
+            ...(existing.execution ? { execution: existing.execution } : {}),
             ...workoutInputSchema.parse({
               date: existing.date,
               title: existing.title,
@@ -290,23 +302,38 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
       input: WorkoutInput,
       action?: WorkoutAction,
       requestId?: string,
+      occurredAt?: string,
     ) {
       const data = workoutInputSchema.parse(input);
       return receipt(
         ownerId,
         requestId,
-        { kind: 'update', id, revision, data, action },
+        { kind: 'update', id, revision, data, action, occurredAt },
         () => {
           validateUpdate(ownerId, id, revision, data, action);
+          const previous = get(ownerId, id);
+          let execution = previous.execution;
+          if (action === 'start')
+            execution = occurredAt
+              ? { startedAt: occurredAt, finishedAt: null }
+              : undefined;
+          if (action === 'complete')
+            execution =
+              execution && occurredAt && occurredAt > execution.startedAt
+                ? { ...execution, finishedAt: occurredAt }
+                : undefined;
+          // Reopening makes the original interval ambiguous.
+          if (action === 'resume') execution = undefined;
           const saved = dto(
             db
               .update(workouts)
               .set({
                 data: {
                   ...data,
-                  ...(get(ownerId, id).legacySource
-                    ? { legacySource: get(ownerId, id).legacySource }
+                  ...(previous.legacySource
+                    ? { legacySource: previous.legacySource }
                     : {}),
+                  ...(execution ? { execution } : {}),
                 },
                 date: data.date,
                 revision: revision + 1,
@@ -317,6 +344,10 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
               .get(),
           );
           syncRepository(db).ensure(ownerId, saved);
+          const cardio = cardioRepository(db);
+          cardio.refreshMatch(ownerId, saved.date);
+          if (previous.date !== saved.date)
+            cardio.refreshMatch(ownerId, previous.date);
           return saved;
         },
       );
@@ -324,9 +355,11 @@ export function workoutRepository(db: ReturnType<typeof getDatabase>['db']) {
     delete(ownerId: string, id: string, revision: number) {
       db.transaction(() => {
         assertRevision(ownerId, id, revision);
+        const { date } = get(ownerId, id);
         db.delete(workouts)
           .where(and(scope(ownerId, id), eq(workouts.revision, revision)))
           .run();
+        cardioRepository(db).refreshMatch(ownerId, date);
       });
     },
   };

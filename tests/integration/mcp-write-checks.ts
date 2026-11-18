@@ -13,6 +13,7 @@ import {
 } from '@/server/mcp/clients';
 import { completeMcpConsent, validMcpQuery } from '@/server/mcp/consent';
 import { handleMcp } from '@/server/mcp/http';
+import { cardioWorkouts } from '@/server/db/schema/cardio-workouts';
 import { mcpOutput } from '@/contracts/mcp';
 import { workoutRepository } from '@/server/workouts/repository';
 import { syncRepository } from '@/server/workouts/transformmate/repository';
@@ -270,6 +271,64 @@ export async function assertMcpWrites(
       tools.find((t) => t.name === 'get_measurements')?.annotations
         ?.readOnlyHint,
     ).toBe(true);
+    const cardioInput = {
+      requestId: randomUUID(),
+      data: { date: '2026-06-06', type: 'rowing', durationSeconds: 840 },
+    };
+    const deniedCardio = await readonlyClient.callTool({
+      name: 'create_cardio_workout',
+      arguments: cardioInput,
+    });
+    expect(deniedCardio.isError).toBe(true);
+    const savedCardio = await ok('create_cardio_workout', cardioInput);
+    expect(await ok('create_cardio_workout', cardioInput)).toEqual(savedCardio);
+    const editCardio = {
+      requestId: randomUUID(),
+      id: savedCardio.id,
+      revision: savedCardio.revision,
+      kind: 'manual',
+      data: { ...cardioInput.data, energyKcal: 120, note: 'Synthetic drill' },
+    };
+    try {
+      const edited = await ok('update_cardio_workout', editCardio);
+      expect(await ok('update_cardio_workout', editCardio)).toEqual(edited);
+      expect(edited.revision).toBe(2);
+      expect(
+        (
+          await call('update_cardio_workout', {
+            ...editCardio,
+            requestId: randomUUID(),
+          })
+        ).isError,
+      ).toBe(true);
+      expect(
+        await ok('get_workout', { workoutRef: edited.workoutRef }),
+      ).toMatchObject({
+        metrics: {
+          durationSeconds: 840,
+          energyKcal: 120,
+          distanceMeters: null,
+        },
+        manual: { note: 'Synthetic drill' },
+      });
+      expect(
+        await ok('get_workouts', {
+          from: cardioInput.data.date,
+          to: cardioInput.data.date,
+        }),
+      ).toMatchObject({
+        summary: {
+          completedSessions: 1,
+          cardioSessions: 1,
+          cardioTotals: { durationSeconds: { sum: 840, observed: 1 } },
+        },
+      });
+    } finally {
+      connection.db
+        .delete(cardioWorkouts)
+        .where(eq(cardioWorkouts.id, String(savedCardio.id)))
+        .run();
+    }
     const exerciseId = randomUUID();
     const input = {
       requestId: randomUUID(),

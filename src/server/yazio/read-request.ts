@@ -7,6 +7,7 @@ import {
 
 type ReadContext = {
   operation:
+    | 'exercises'
     | 'items'
     | 'summary'
     | 'photos'

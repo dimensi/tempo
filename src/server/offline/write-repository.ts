@@ -175,6 +175,8 @@ export function offlineWriteRepository(database = getDatabase()) {
               Number(previous.version),
               payload.data,
               payload.action,
+              undefined,
+              payload.occurredAt,
             );
           }
         } else {
