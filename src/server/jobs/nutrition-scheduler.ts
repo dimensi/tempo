@@ -14,6 +14,7 @@ import { and, eq, gt, lte, or, isNull, sql } from 'drizzle-orm';
 import { getDatabase } from '@/server/db';
 import { user } from '@/server/db/schema';
 import { nutritionSchedule } from '@/server/db/schema/nutrition-schedule';
+import { yazioExerciseCoverage } from '@/server/db/schema/cardio-workouts';
 import { yazioSyncProgress } from '@/server/db/schema/yazio-sync-progress';
 import { readServerEnv } from '@/server/env';
 import {
@@ -38,11 +39,13 @@ import {
   type NutritionRepository,
 } from '@/server/nutrition/repository';
 import {
+  boundedMap,
   NutritionSyncBusyError,
   periodDates,
   syncNutritionPeriod,
 } from '@/server/jobs/nutrition-sync';
 import { yazioHealthRepository } from '@/server/yazio/health-repository';
+import { cardioRepository } from '@/server/workouts/cardio-repository';
 import { syncYazioSteps, syncYazioWeight } from './yazio-health-sync';
 import { fetchCdnImage, storeImage } from '@/server/nutrition/images';
 import { syncParts, syncProgress } from '@/server/yazio/sync-progress';
@@ -57,6 +60,7 @@ type RunOptions = {
   mode: 'manual' | 'recent' | 'day-refresh' | 'automatic';
   timezone?: string;
   trigger?: 'timer' | 'overview';
+  exercisesOnly?: boolean;
 };
 type ErrorCode = NonNullable<NutritionScheduleStatus['lastError']>;
 type ActiveRun = {
@@ -178,6 +182,9 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       // Explicit credentials/token replacement invalidates the previous account's checkpoints.
       db.delete(yazioSyncProgress)
         .where(eq(yazioSyncProgress.ownerId, ownerId))
+        .run();
+      db.delete(yazioExerciseCoverage)
+        .where(eq(yazioExerciseCoverage.ownerId, ownerId))
         .run();
       db.update(nutritionSchedule)
         .set({
@@ -509,6 +516,64 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
       const dates = periodDates(period);
       if (options.mode === 'automatic' || options.mode === 'recent')
         dates.reverse();
+      const observedAt = new Date(now()).toISOString();
+      const importExercises = async () => {
+        if (!source.exercises) return [];
+        const cardio = cardioRepository(db);
+        const history = recentPeriod(today, 90, acquired.initialFrom);
+        const failed: string[] = [];
+        const coverage = new Map(
+          cardio
+            .coverage(ownerId, history.from, history.to)
+            .map((day) => [day.date, day]),
+        );
+        const automaticHistory =
+          options.mode === 'automatic' && history.from <= history.to
+            ? periodDates(history)
+                .reverse()
+                .filter((date) => {
+                  const day = coverage.get(date);
+                  return !day?.fetchedAt || !!day.failedAt;
+                })
+            : [];
+        // Progress through never-attempted history before retrying old failures.
+        const backfill = automaticHistory
+          .filter((date) => !dates.includes(date))
+          .sort(
+            (a, b) =>
+              Number(!!coverage.get(a)?.failedAt) -
+                Number(!!coverage.get(b)?.failedAt) ||
+              (coverage.get(a)?.failedAt ?? '').localeCompare(
+                coverage.get(b)?.failedAt ?? '',
+              ),
+          )
+          .slice(0, 7);
+        const selected = [...dates, ...backfill];
+        await boundedMap(selected, 2, async (date) => {
+          const started = Date.now();
+          try {
+            const records = await guardedSource.exercises!(date, timezone);
+            assertCurrent();
+            cardio.saveDay(ownerId, date, records, observedAt);
+          } catch (error) {
+            assertCurrent();
+            cardio.failDay(ownerId, date, observedAt);
+            syncReadFailure('exercises', date, started, error);
+            failed.push(date);
+          }
+        });
+        return failed;
+      };
+      if (options.exercisesOnly) {
+        const failedExerciseDates = await importExercises();
+        nutritionDiagnostic('sync_completed', {
+          ...context,
+          durationMs: now() - started,
+          outcome: failedExerciseDates.length ? 'failed' : 'success',
+          exerciseFailures: failedExerciseDates.length,
+        });
+        return { ...repository.status(ownerId), failedExerciseDates };
+      }
       const force = options.mode === 'day-refresh' || options.mode === 'recent';
       const work = progress.plan(ownerId, dates, today, force);
       assertCurrent();
@@ -538,7 +603,6 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         activity[part] = activity[part].filter((pending) => pending !== date);
         activity.revision++;
       }
-      const observedAt = new Date(now()).toISOString();
       const healthRepository =
         deps.healthRepository ?? yazioHealthRepository(db);
       const steps = syncYazioSteps(
@@ -607,14 +671,21 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         activity.revision++;
         return { completedGoals, failedGoalsDates, ...weight };
       });
-      const settled = await Promise.allSettled([nutrition, steps, auxiliary]);
+      const exercises = importExercises();
+      const settled = await Promise.allSettled([
+        nutrition,
+        steps,
+        auxiliary,
+        exercises,
+      ]);
       const failure = settled.find((entry) => entry.status === 'rejected');
       if (failure?.status === 'rejected') throw failure.reason;
       const [
         result,
         stepResult,
         { completedGoals, failedGoalsDates, ...weightResult },
-      ] = await Promise.all([nutrition, steps, auxiliary]);
+        failedExerciseDates,
+      ] = await Promise.all([nutrition, steps, auxiliary, exercises]);
       assertCurrent();
       // Body sync uses its own auth client. Start it after the nutrition client
       // has finished upstream reads so both cannot refresh the same token at once.
@@ -652,6 +723,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         failedStepsDates: health.failedStepsDates,
         failedWeightDates: health.failedWeightDates,
         failedGoalsDates,
+        failedExerciseDates,
       };
       repository.saveStatus(ownerId, status);
       const foodSucceeded = result.failedDates.length === 0;
@@ -688,6 +760,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         stepsFailures: health.failedStepsDates.length,
         weightFailures: health.failedWeightDates.length,
         goalsFailures: failedGoalsDates.length,
+        exerciseFailures: failedExerciseDates.length,
         bodyFailed,
       };
       nutritionDiagnostic('sync_completed', {
@@ -709,7 +782,7 @@ export function createNutritionScheduler(deps: NutritionSchedulerDependencies) {
         { ...context, code, durationMs: now() - started },
         error,
       );
-      if (!foodCompleted) complete(code);
+      if (!foodCompleted && !options.exercisesOnly) complete(code);
       throw new NutritionScheduleError(code);
     } finally {
       // A rejected sibling in Promise.all must not free the logical owner lease

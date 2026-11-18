@@ -1,4 +1,6 @@
 import 'server-only';
+import { standaloneCardio } from '@/lib/cardio-workouts';
+import { cardioUnits, mcpCardioRange } from './cardio';
 import { createHash } from 'node:crypto';
 import { getAnalytics } from '@/server/analytics';
 import {
@@ -102,6 +104,13 @@ export async function readMcpData(
       ownerId,
       range,
     );
+    const cardio = mcpCardioRange(ownerId, from, to);
+    const distinct = standaloneCardio(cardio.rows).map(cardio.view);
+    const linkedStrength = new Map(
+      cardio.rows
+        .filter((row) => row.link?.kind === 'strength')
+        .map((row) => [row.link!.id, row]),
+    );
     const within = (date: string) => date >= from && date <= to;
     // Each local workout occurs once; status determines plan versus execution semantics.
     const workoutRows: Array<{
@@ -125,6 +134,9 @@ export async function readMcpData(
           revision: w.revision,
           note: w.note,
           editable: true,
+          watchMetrics: linkedStrength.has(w.id)
+            ? cardio.view(linkedStrength.get(w.id)!)
+            : null,
           date: w.date,
           title: w.title,
           executionStatus: w.status,
@@ -238,6 +250,7 @@ export async function readMcpData(
           : {}),
       })),
     );
+    workoutRows.push(...distinct);
     workoutRows.sort(
       (a, b) =>
         a.date.localeCompare(b.date) ||
@@ -259,27 +272,74 @@ export async function readMcpData(
         ),
     );
     const paged = pageRows(workoutRows, offset, limit, binding);
+    const endurance = distinct.filter((row) => row.activity === 'cardio');
+    const totals = {
+      durationSeconds: { sum: 0, observed: 0 },
+      distanceMeters: { sum: 0, observed: 0 },
+      energyKcal: { sum: 0, observed: 0 },
+    };
+    for (const { metrics } of endurance) {
+      for (const key of [
+        'durationSeconds',
+        'distanceMeters',
+        'energyKcal',
+      ] as const) {
+        const value = metrics[key];
+        if (value === null) continue;
+        totals[key].sum += value;
+        totals[key].observed++;
+      }
+    }
+    const cardioTotals = Object.fromEntries(
+      Object.entries(totals).map(([key, { observed, sum }]) => [
+        key,
+        { observed, sum: observed ? sum : null },
+      ]),
+    );
+    const fetchedDays = cardio.coverage.filter((day) => day.fetchedAt).length;
+    const failedDays = cardio.coverage.filter((day) => day.failedAt).length;
+    const rangeDays = 1 + (Date.parse(to) - Date.parse(from)) / 86400000;
     data = {
       range,
-      units,
-      sources: ['LOCAL', 'TransformMate'],
+      units: { ...units, ...cardioUnits },
+      sources: ['LOCAL', 'TransformMate', 'YAZIO'],
       summary: {
         completedSessions: completionCountAmbiguous ? null : completed.length,
         completionCountAmbiguous,
+        cardioSessions: endurance.length,
+        cardioTotals,
+        linkedStrengthSessions: linkedStrength.size,
       },
       coverage: {
         scope: 'locally_saved_records',
         recordCounts: Object.fromEntries(
-          ['workout', 'linked', 'native'].map((kind) => [
+          ['workout', 'linked', 'native', 'cardio'].map((kind) => [
             kind,
             workoutRows.filter((row) => row.kind === kind).length,
           ]),
         ),
         upstreamCompleteness: 'unknown',
         noRecordsMeans: 'no_saved_workout_not_confirmed_rest',
+        yazioExercises: {
+          fetchedDays,
+          failedDays,
+          missingDays: rangeDays - fetchedDays,
+        },
         executionStatusRequiredForCounting: true,
       },
       freshness: {
+        yazioExercises: {
+          latestSuccessfulFetchAt:
+            cardio.coverage
+              .flatMap((day) => (day.fetchedAt ? [day.fetchedAt] : []))
+              .sort()
+              .at(-1) ?? null,
+          latestFailureAt:
+            cardio.coverage
+              .flatMap((day) => (day.failedAt ? [day.failedAt] : []))
+              .sort()
+              .at(-1) ?? null,
+        },
         transformmateLinked: summarizeSavedSource(
           'TransformMate',
           workoutRows

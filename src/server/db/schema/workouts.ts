@@ -9,7 +9,7 @@ export const workouts = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     data: text('data', { mode: 'json' })
-      .$type<WorkoutInput & Pick<Workout, 'legacySource'>>()
+      .$type<WorkoutInput & Pick<Workout, 'legacySource' | 'execution'>>()
       .notNull(),
     date: text('date').notNull(),
     revision: integer('revision').notNull().default(1),

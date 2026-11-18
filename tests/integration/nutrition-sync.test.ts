@@ -16,6 +16,8 @@ import * as bodyAdapterRuntime from '@/server/yazio/body-adapter';
 import { dailyGoalsRepository } from '@/server/yazio/goals';
 import { yazioHealthRepository } from '@/server/yazio/health-repository';
 import { nutritionSchedule } from '@/server/db/schema/nutrition-schedule';
+import { cardioRepository } from '@/server/workouts/cardio-repository';
+import { normalizeYazioExercises } from '@/server/yazio/exercise-adapter';
 import type { NutritionDayUpstream } from '@/server/yazio/adapter';
 
 vi.mock('server-only', () => ({}));
@@ -122,6 +124,7 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
 
   let clock = Date.parse('2026-01-02T12:00:00Z');
   let failGoals = false;
+  let failExercises = false;
   const foodGate = Promise.withResolvers<void>();
   const photoGate = Promise.withResolvers<void>();
   const photosStarted = Promise.withResolvers<void>();
@@ -168,6 +171,44 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
           unitContext: null,
         }),
         weight: async () => null,
+        exercises: async (day, timezone) => {
+          if (failExercises) throw new Error('Synthetic exercise outage');
+          if (day !== date) return [];
+          return normalizeYazioExercises(
+            {
+              training: [
+                {
+                  id: 'ski-fixture',
+                  name: 'skiwalking',
+                  date: day + ' 18:00:00',
+                  duration: 17,
+                  distance: 0,
+                  energy: 82,
+                  gateway: 'apple_health',
+                  source: null,
+                  external_id: null,
+                  note: null,
+                },
+              ],
+              custom_training: [
+                {
+                  id: 'rowing-fixture',
+                  name: 'rowing',
+                  date: day + ' 19:00:00',
+                  duration: 14,
+                  distance: 0,
+                  energy: 130,
+                  gateway: 'apple_health',
+                  source: null,
+                  external_id: null,
+                  note: null,
+                },
+              ],
+            },
+            day,
+            timezone,
+          );
+        },
       }),
       images: {
         fetch: async () => {
@@ -240,10 +281,46 @@ it('persists a completed day once and keeps the last durable snapshot on an upst
   });
   await scheduler().overview('owner', 'UTC');
   expect(goalRead).toHaveBeenCalledTimes(2);
+  const cardio = cardioRepository(database.db);
+  const savedCardio = cardio.day('owner', date);
+  expect(
+    savedCardio.workouts.map(({ imported }) => [
+      imported?.type,
+      imported?.durationSeconds,
+    ]),
+  ).toEqual([
+    ['skiwalking', 1020],
+    ['rowing', 840],
+  ]);
+  expect(cardio.day('owner', today)).toMatchObject({
+    workouts: [],
+    coverage: { fetchedAt: expect.any(String) },
+  });
   clock += 3600001;
   failGoals = true;
+  failExercises = true;
   await scheduler().overview('owner', 'Pacific/Honolulu');
   expect(goalRead).toHaveBeenCalledTimes(4);
+  const failedCardio = cardio.day('owner', date);
+  expect(failedCardio.workouts).toEqual(savedCardio.workouts);
+  expect(failedCardio.coverage).toMatchObject({
+    fetchedAt: savedCardio.coverage.fetchedAt,
+    failedAt: expect.any(String),
+  });
+  failExercises = false;
+  const beforeDayRefresh = scheduler().liveStatus('owner').last;
+  await expect(
+    scheduler().run(
+      'owner',
+      { from: date, to: date },
+      { mode: 'day-refresh', exercisesOnly: true },
+    ),
+  ).resolves.toMatchObject({ failedExerciseDates: [] });
+  expect(cardio.day('owner', date)).toMatchObject({
+    workouts: savedCardio.workouts,
+    coverage: { failedAt: null },
+  });
+  expect(scheduler().liveStatus('owner').last).toEqual(beforeDayRefresh);
   expect(dailyGoalsRepository(database).day('owner', date).calories).toBe(
     '2000',
   );

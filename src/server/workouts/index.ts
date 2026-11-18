@@ -67,6 +67,7 @@ export async function updateWorkout(
   input: unknown,
   action?: WorkoutAction,
   requestId?: string,
+  occurredAt?: string,
 ) {
   const { repository } = await access(
     headers,
@@ -90,6 +91,7 @@ export async function updateWorkout(
         data,
         transition,
         key,
+        occurredAt,
       );
       if (replay) return replay;
       repository.validateUpdate(ownerId, id, expected, data, transition);
@@ -99,7 +101,15 @@ export async function updateWorkout(
             !data.exercises.some((exercise) => exercise.id === row.exerciseId),
         ),
       );
-      return repository.update(ownerId, id, expected, data, transition, key);
+      return repository.update(
+        ownerId,
+        id,
+        expected,
+        data,
+        transition,
+        key,
+        occurredAt,
+      );
     });
   });
 }

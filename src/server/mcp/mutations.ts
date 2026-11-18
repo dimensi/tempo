@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { mcpExtraSchemas, type McpExtraTool } from '@/contracts/mcp-writes';
 import { authorize } from '@/server/auth/guards';
 import { getDataSession } from '@/server/auth/data-session';
+import { executeCardioCommand } from '@/server/workouts/cardio';
+import { cardioDate } from '@/lib/cardio-workouts';
 import { executeWorkoutCommand } from '@/server/workouts/commands';
 import {
   listMeasurements,
@@ -22,6 +24,8 @@ const toolScopes = {
   get_measurements: 'tempo:read',
   search_exercises: 'tempo:read',
   create_workout: 'tempo:workouts:write',
+  create_cardio_workout: 'tempo:workouts:write',
+  update_cardio_workout: 'tempo:workouts:write',
   update_workout: 'tempo:workouts:write',
   transition_workout: 'tempo:workouts:write',
   update_exercise_feedback: 'tempo:workouts:write',
@@ -102,6 +106,32 @@ export async function executeMcpTool(
     const page = pageRows(records, readOffset(cursor, binding), limit, binding);
     data.records = page.records;
     next_cursor = page.next_cursor;
+  } else if (
+    name === 'create_cardio_workout' ||
+    name === 'update_cardio_workout'
+  ) {
+    const command =
+      name === 'create_cardio_workout'
+        ? {
+            kind: 'create' as const,
+            input: mcpExtraSchemas.create_cardio_workout.parse(raw),
+          }
+        : {
+            kind: 'update' as const,
+            input: mcpExtraSchemas.update_cardio_workout.parse(raw),
+          };
+    const saved = await executeCardioCommand(
+      headers,
+      ownerId,
+      namespace,
+      command,
+    );
+    const { id, revision } = saved;
+    data = {
+      id,
+      revision,
+      workoutRef: { kind: 'cardio', id, date: cardioDate(saved) },
+    };
   } else if (name === 'create_measurement' || name === 'update_measurement') {
     const input =
       name === 'create_measurement'

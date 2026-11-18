@@ -18,6 +18,7 @@ import {
 import { useMediaQuery } from '@mantine/hooks';
 import {
   IconArrowsSort,
+  IconActivity,
   IconCalendarPlus,
   IconDots,
   IconRefresh,
@@ -35,6 +36,8 @@ import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
 import { useReadOnline } from '@/lib/use-read-online';
 import { workoutTitle } from '@/lib/workout-title';
+import { cardioMessages as cardioLabels } from './cardio-messages';
+import { CardioDayView, refreshCardioRequest } from './cardio-day';
 import { DayEditor } from './day-editor';
 import { clearWorkoutDraft, dayWorkoutDraftKey } from './draft-storage';
 import { copyWorkoutToDate } from './copy-workout';
@@ -49,12 +52,14 @@ export function WorkoutsDashboard({
   ownerId,
   userId,
   canLog,
+  canManageCardio,
   renderComments,
   renderPendingWrites,
 }: {
   ownerId: string;
   userId: string;
   canLog: boolean;
+  canManageCardio: boolean;
   renderComments?: (sessionId: string) => ReactNode;
   renderPendingWrites?: () => ReactNode;
 }) {
@@ -70,6 +75,29 @@ export function WorkoutsDashboard({
     ),
   );
   const data = resource.data;
+  const cardio = useReadResource(
+    readResources.cardio(
+      `/api/workouts/cardio?ownerId=${encodeURIComponent(ownerId)}&date=${date}`,
+    ),
+  );
+  const refreshCardio = cardio.refresh;
+  const [createCardioDate, setCreateCardioDate] = useState<string | null>(null);
+  const [cardioFeedback, setCardioFeedback] = useState<{
+    date: string;
+    state: 'running' | 'done' | 'error';
+  }>();
+  const cardioBusy = cardioFeedback?.state === 'running';
+  async function refreshYazio() {
+    if (cardioBusy) return;
+    setCardioFeedback({ date, state: 'running' });
+    try {
+      const refreshed = await refreshCardioRequest(ownerId, date);
+      await refreshCardio(true);
+      setCardioFeedback({ date, state: refreshed ? 'done' : 'error' });
+    } catch {
+      setCardioFeedback({ date, state: 'error' });
+    }
+  }
   const online = useReadOnline();
   const sync = useTransformMateSync(ownerId, date);
   const refreshWorkouts = resource.refresh;
@@ -90,7 +118,11 @@ export function WorkoutsDashboard({
       void (async () => {
         do {
           pending = false;
-          await Promise.allSettled([refreshWorkouts(), reloadSync()]);
+          await Promise.allSettled([
+            refreshWorkouts(),
+            refreshCardio(),
+            reloadSync(),
+          ]);
         } while (pending && !disposed);
         refreshing = false;
       })();
@@ -102,7 +134,7 @@ export function WorkoutsDashboard({
       events.close();
       window.removeEventListener('focus', refresh);
     };
-  }, [ownerId, online, refreshWorkouts, reloadSync]);
+  }, [ownerId, online, refreshWorkouts, refreshCardio, reloadSync]);
   const mobile = useMediaQuery('(max-width: 47.99em)');
   const [dayActions, setDayActions] = useState(false);
   const [reorderTarget, setReorderTarget] = useState<string | null>(null);
@@ -195,7 +227,7 @@ export function WorkoutsDashboard({
   const pendingWrites = usePendingWorkoutWrites(entry?.workout?.id, canLog);
   const create = creating?.date === date;
   const done = async (background = false) => {
-    await Promise.all([resource.refresh(), sync.reload()]);
+    await Promise.all([resource.refresh(), sync.reload(), refreshCardio()]);
     if (create && !background) setCreating(null);
   };
   async function remove() {
@@ -259,7 +291,7 @@ export function WorkoutsDashboard({
       setEditorVersion((version) => version + 1);
       setDraftDirty(false);
       setDeletion(null);
-      void Promise.all([resource.refresh(), sync.reload()]);
+      void Promise.all([resource.refresh(), sync.reload(), refreshCardio()]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.error);
     } finally {
@@ -276,6 +308,22 @@ export function WorkoutsDashboard({
         setCreating({ date });
       },
     },
+    ...(canManageCardio
+      ? [
+          {
+            label: cardioLabels.add,
+            icon: <IconActivity size={20} />,
+            disabled: !online,
+            run: () => setCreateCardioDate(date),
+          },
+          {
+            label: cardioBusy ? cardioLabels.refreshing : cardioLabels.refresh,
+            icon: <IconRefresh size={20} />,
+            disabled: cardioBusy || !online,
+            run: () => void refreshYazio(),
+          },
+        ]
+      : []),
     ...(entry?.workout
       ? [
           {
@@ -404,6 +452,7 @@ export function WorkoutsDashboard({
           date={date}
           onSelect={(value) => {
             setCreating(null);
+            setCreateCardioDate(null);
             setCopied(null);
             setActive(null);
             setReorderTarget(null);
@@ -452,7 +501,7 @@ export function WorkoutsDashboard({
           onChange={setActive}
         />
       )}
-      {data && !create && !entry && (
+      {data && !create && !entry && !cardio.data?.workouts.length && (
         <div className={classes.empty}>
           <Stack align="center" gap="md">
             <Title order={2} size="h3">
@@ -508,6 +557,48 @@ export function WorkoutsDashboard({
           onCancel={() => setCreating(null)}
         />
       )}
+      {cardioFeedback?.date === date && (
+        <Text
+          size="sm"
+          role="status"
+          c={cardioFeedback.state === 'error' ? 'orange' : 'dimmed'}
+        >
+          {cardioFeedback.state === 'running'
+            ? cardioLabels.refreshing
+            : cardioFeedback.state === 'done'
+              ? cardioLabels.refreshed
+              : cardioLabels.refreshFailed}
+        </Text>
+      )}
+      {cardio.error && (
+        <Group gap="xs">
+          <Text size="sm" role="status">
+            {cardioLabels.readFailed}
+          </Text>
+          <Button
+            size="compact-sm"
+            variant="subtle"
+            onClick={() => void refreshCardio()}
+          >
+            {m.refresh}
+          </Button>
+        </Group>
+      )}
+      <CardioDayView
+        key={date}
+        date={date}
+        data={cardio.data}
+        ownerId={ownerId}
+        create={createCardioDate === date}
+        onCloseCreate={() => setCreateCardioDate(null)}
+        canEdit={canManageCardio}
+        online={online}
+        refreshed={() => refreshCardio(true)}
+        activeStrengthId={create ? undefined : entry?.workout?.id}
+        strength={entries.flatMap((item) =>
+          item.workout ? [item.workout] : [],
+        )}
+      />
       {!create && entry && entry.workout && (
         <DayEditor
           key={`${ownerId}:${date}:${entry.id}:${editorVersion}`}

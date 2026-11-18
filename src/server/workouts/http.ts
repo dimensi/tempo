@@ -2,6 +2,8 @@ import 'server-only';
 import { z, ZodError } from 'zod';
 import { exerciseFeedbackSchema, revisionSchema } from '@/contracts/workouts';
 import { WorkoutAccessError, WorkoutError } from './index';
+import { CardioError } from './cardio-repository';
+import { WriteConflict } from '@/server/write-receipts';
 import { workoutMessages as m } from '@/features/workouts';
 import { hasTrustedOrigin } from '@/server/auth/origin';
 import { WorkoutDeletionError } from './transformmate/delete-training';
@@ -31,6 +33,7 @@ export const workoutCreateBody = z.strictObject({
 });
 export const workoutTransitionBody = workoutUpdateBody.extend({
   action: z.enum(['start', 'complete', 'resume']),
+  occurredAt: z.iso.datetime().optional(),
 });
 
 /** Bound bytes before parsing private notes/large plan arrays; never include body in errors. */
@@ -86,6 +89,8 @@ export async function workoutResponse(operation: () => Promise<unknown>) {
     const status =
       error instanceof WorkoutAccessError ||
       error instanceof WorkoutError ||
+      error instanceof CardioError ||
+      error instanceof WriteConflict ||
       error instanceof SyncAccessError ||
       error instanceof WorkoutDeletionError
         ? error.status

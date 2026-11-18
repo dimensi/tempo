@@ -2,6 +2,7 @@ import 'server-only';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
 import type { DailyGoals } from '@/contracts/daily-goals';
+import { normalizeYazioExercises } from './exercise-adapter';
 import { yazioHealthUpstream } from './health-adapter';
 import { normalizeHealthSummary } from './health-normalize';
 import { mealKindSchema, diaryDateTimeSchema } from '@/contracts/nutrition';
@@ -13,6 +14,7 @@ import {
 } from './client';
 import {
   getUserConsumedItems,
+  getUserExercises,
   getUserDailySummary,
   getUserMealImages,
   getProduct,
@@ -94,6 +96,10 @@ export interface NutritionDayUpstream {
   recipe(id: string): Promise<Recipe | null>;
 }
 export interface NutritionUpstream extends NutritionDayUpstream {
+  exercises?(
+    date: string,
+    timezone: string,
+  ): Promise<ReturnType<typeof normalizeYazioExercises>>;
   goals(
     date: string,
   ): Promise<Pick<DailyGoals, 'date' | 'calories' | 'steps' | 'weight'>>;
@@ -184,6 +190,16 @@ export async function nutritionUpstream(
     healthSummary: async (date) =>
       normalizeHealthSummary(await rawSummary(date), date),
     weight: health.weight,
+    exercises: (date, timezone) =>
+      projectRead(async () =>
+        normalizeYazioExercises(
+          await read('exercises', date, (token) =>
+            getUserExercises(token, { date }),
+          ),
+          date,
+          timezone,
+        ),
+      ),
     items: (date) =>
       projectRead(
         async () =>

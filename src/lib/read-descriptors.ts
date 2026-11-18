@@ -25,6 +25,7 @@ import {
   workoutsReadSchema,
 } from '@/contracts/read-resources';
 import { readSettingsSchema } from '@/contracts/read-settings';
+import { cardioDaySchema } from '@/contracts/cardio-workouts';
 import { workoutDetailSchema } from '@/contracts/read-workout';
 import { transformMateCatalogResultSchema } from '@/contracts/transformmate';
 import { z } from 'zod';
@@ -62,6 +63,7 @@ export const readResources = {
   analytics: definition(analyticsDataSchema),
   settings: definition(readSettingsSchema),
   workout: definition(workoutDetailSchema),
+  cardio: definition(cardioDaySchema),
   context: definition(readContextSchema),
   overview: definition(overviewReadSchema),
   workouts: definition(workoutsReadSchema, (value) => value.data),

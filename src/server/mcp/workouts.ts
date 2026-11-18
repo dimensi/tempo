@@ -17,6 +17,7 @@ import {
   historyUnits as units,
 } from '@/server/workouts/history-views';
 export { exerciseHistoryRef } from '@/server/workouts/history-views';
+import { cardioUnits, findMcpCardioRow, mcpCardioRange } from './cardio';
 import { McpReadError, pageRows, readOffset } from './pagination';
 
 function recorded(set: SetData) {
@@ -86,6 +87,16 @@ export async function readMcpWorkout(
 ) {
   await requireOwnerWorkoutRead(headers, ownerId);
   const ref = input.workoutRef;
+  if (ref.kind === 'cardio') {
+    const row = findMcpCardioRow(ownerId, ref.id);
+    if (!row) throw new McpReadError('not_found');
+    const page = paginate(ownerId, 'get_workout', input, []);
+    return {
+      version: 1 as const,
+      data: { ...row, units: cardioUnits, records: page.records },
+      next_cursor: page.next_cursor,
+    };
+  }
   const resource =
     ref.kind === 'linked' ? { kind: 'link' as const, id: ref.id } : ref;
   const detail = await readWorkoutDetails(headers, ownerId, resource, ref.date);
@@ -109,11 +120,21 @@ export async function readMcpWorkout(
   }
   const page = paginate(ownerId, 'get_workout', input, rows);
   await requireOwnerWorkoutRead(headers, ownerId);
+  let watchMetrics;
+  if (detail.kind === 'workout') {
+    const { id, date } = detail.workout;
+    const cardio = mcpCardioRange(ownerId, date, date);
+    const wearable = cardio.rows.find(
+      (row) => row.link?.kind === 'strength' && row.link.id === id,
+    );
+    watchMetrics = wearable ? cardio.view(wearable) : null;
+  }
   return {
     version: 1 as const,
     data: {
       ...metadata,
-      units,
+      ...(detail.kind === 'workout' ? { watchMetrics } : {}),
+      units: { ...units, ...cardioUnits },
       coverage: {
         scope: 'locally_saved_records',
         upstreamCompleteness: 'unknown',

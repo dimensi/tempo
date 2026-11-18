@@ -50,6 +50,7 @@ export const syncStatusSchema = z.object({
   photoFailedDates: z.array(diaryDateSchema),
   failedStepsDates: z.array(diaryDateSchema).optional(),
   failedWeightDates: z.array(diaryDateSchema).optional(),
+  failedExerciseDates: z.array(z.iso.date()).optional(),
   failedGoalsDates: z.array(diaryDateSchema).optional(),
 });
 export type SyncStatus = z.infer<typeof syncStatusSchema>;

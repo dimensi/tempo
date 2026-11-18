@@ -62,6 +62,11 @@ const referenceDate = z.iso.date();
 const providerId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const mcpWorkoutRef = z.discriminatedUnion('kind', [
   z.strictObject({
+    kind: z.literal('cardio'),
+    id: z.string().min(1).max(200),
+    date: referenceDate,
+  }),
+  z.strictObject({
     kind: z.literal('workout'),
     id: referenceId,
     date: referenceDate,

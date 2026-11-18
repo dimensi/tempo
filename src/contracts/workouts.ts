@@ -56,12 +56,17 @@ export const workoutInputSchema = z
         message: 'duplicate exercise occurrence',
       });
   });
+export const workoutExecutionSchema = z.strictObject({
+  startedAt: z.iso.datetime(),
+  finishedAt: z.iso.datetime().nullable(),
+});
 export const workoutSchema = workoutInputSchema.safeExtend({
   id,
   ownerId: id,
   revision: z.number().int().positive(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+  execution: workoutExecutionSchema.optional(),
   // Identity only, for the one-time restoration of pre-migration drafts.
   legacySource: z
     .strictObject({

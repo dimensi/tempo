@@ -19,6 +19,7 @@ export const POST = withApiErrors(async (request: Request, context: Context) =>
       body.data,
       body.action,
       body.requestId,
+      body.occurredAt,
     );
   }),
 );

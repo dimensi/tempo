@@ -56,6 +56,13 @@ const envelopeSchema = z.object({
   value: workoutDraftSchema,
   recordId: z.string().optional(),
   alternative: workoutDraftSchema.optional(),
+  transition: z
+    .object({
+      requestId: z.uuid(),
+      action: z.enum(['start', 'complete', 'resume']),
+      occurredAt: z.iso.datetime(),
+    })
+    .optional(),
 });
 function DraftPreview({ draft }: { draft: WorkoutDraft }) {
   return (
@@ -161,6 +168,8 @@ export function DayEditor({
   const mounted = useRef(false);
   const sequence = useRef(0);
   const requestId = useRef('');
+  const directTransition =
+    useRef<z.infer<typeof envelopeSchema>['transition']>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const commitRef = useRef<
     (
@@ -186,6 +195,10 @@ export function DayEditor({
       revision: revision.current ?? null,
       value: next,
       recordId,
+      transition:
+        directTransition.current?.requestId === requestId.current
+          ? directTransition.current
+          : undefined,
     });
     setStored(ok);
     if (ok && currentKey !== key) clearWorkoutDraft(key);
@@ -262,6 +275,7 @@ export function DayEditor({
       if (!mounted.current || generation !== sessionGeneration()) return;
       if (restored) {
         requestId.current = restored.requestId;
+        directTransition.current = restored.value.transition;
         if (restored.value.recordId) setRecordId(restored.value.recordId);
         if (restored.value.alternative)
           setAlternative(restored.value.alternative);
@@ -683,6 +697,7 @@ export function DayEditor({
       setError(m.removeExerciseOffline);
       return;
     }
+    const occurredAt = action ? new Date().toISOString() : undefined;
     pending.current = true;
     if (action) setBusy(true);
     setError(null);
@@ -732,7 +747,11 @@ export function DayEditor({
           if (acknowledged) revision.current = Number(acknowledged.version);
         }
         const operation = await saveDeviceWrite(
-          { kind: 'workout', data: parsed.data, ...(action ? { action } : {}) },
+          {
+            kind: 'workout',
+            data: parsed.data,
+            ...(action ? { action, occurredAt } : {}),
+          },
           recordId,
           revision.current ? String(revision.current) : undefined,
         );
@@ -766,6 +785,19 @@ export function DayEditor({
             throw new Error(m.queued);
         }
         const prior = saved.current;
+        if (action && occurredAt) {
+          if (
+            directTransition.current?.requestId !== requestId.current ||
+            directTransition.current.action !== action
+          ) {
+            directTransition.current = {
+              requestId: requestId.current,
+              action,
+              occurredAt,
+            };
+            persist(current.current);
+          }
+        }
         const response = await apiFetch(
           `/api/workouts${prior ? `/${prior.id}${action ? '/transition' : ''}` : ''}`,
           {
@@ -776,7 +808,9 @@ export function DayEditor({
               requestId: prior ? requestId.current : recordId,
               ...(prior ? { revision: revision.current } : {}),
               data: parsed.data,
-              ...(action ? { action } : {}),
+              ...(action
+                ? { action, occurredAt: directTransition.current?.occurredAt }
+                : {}),
             }),
           },
         );
