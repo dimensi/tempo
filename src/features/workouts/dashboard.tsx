@@ -120,7 +120,7 @@ export function WorkoutsDashboard({
           pending = false;
           await Promise.allSettled([
             refreshWorkouts(),
-            refreshCardio(),
+            refreshCardio(true),
             reloadSync(),
           ]);
         } while (pending && !disposed);
@@ -227,7 +227,7 @@ export function WorkoutsDashboard({
   const pendingWrites = usePendingWorkoutWrites(entry?.workout?.id, canLog);
   const create = creating?.date === date;
   const done = async (background = false) => {
-    await Promise.all([resource.refresh(), sync.reload(), refreshCardio()]);
+    await Promise.all([resource.refresh(), sync.reload(), refreshCardio(true)]);
     if (create && !background) setCreating(null);
   };
   async function remove() {
@@ -291,7 +291,11 @@ export function WorkoutsDashboard({
       setEditorVersion((version) => version + 1);
       setDraftDirty(false);
       setDeletion(null);
-      void Promise.all([resource.refresh(), sync.reload(), refreshCardio()]);
+      void Promise.all([
+        resource.refresh(),
+        sync.reload(),
+        refreshCardio(true),
+      ]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.error);
     } finally {
