@@ -64,9 +64,9 @@ function CardioEditor({
   const [duration, setDuration] = useState<number | string>(
     values?.durationSeconds != null ? values.durationSeconds / 60 : '',
   );
-  const [distance, setDistance] = useState<number | string>(
-    values?.distanceMeters != null ? values.distanceMeters / 1000 : '',
-  );
+  const initialDistance =
+    values?.distanceMeters != null ? values.distanceMeters / 1000 : '';
+  const [distance, setDistance] = useState<number | string>(initialDistance);
   const [energy, setEnergy] = useState<number | string>(
     values?.energyKcal ?? '',
   );
@@ -107,7 +107,7 @@ function CardioEditor({
                   ? {
                       kind: 'imported',
                       overrides: {
-                        ...(values?.distanceMeters !== meters
+                        ...(asNumber(distance) !== asNumber(initialDistance)
                           ? { distanceMeters: meters }
                           : {}),
                         ...(values?.equipment !== data.equipment
