@@ -2,6 +2,9 @@ import 'server-only';
 import { standaloneCardio } from '@/lib/cardio-workouts';
 import { cardioUnits, mcpCardioRange } from './cardio';
 import { createHash } from 'node:crypto';
+import type { BodyObservation } from '@/contracts/analytics';
+import { getCommentCounts } from '@/server/comments/reads';
+import { commentReference } from './comments';
 import { getAnalytics } from '@/server/analytics';
 import {
   getSavedDataFreshness,
@@ -52,7 +55,10 @@ const units = {
 };
 
 export async function readMcpData(
-  tool: Exclude<McpTool, 'get_workout' | 'get_exercise_history'>,
+  tool: Exclude<
+    McpTool,
+    'get_workout' | 'get_exercise_history' | 'get_comments'
+  >,
   headers: Headers,
   ownerId: string,
   query?: McpHistoryInput,
@@ -257,6 +263,19 @@ export async function readMcpData(
       })),
     );
     workoutRows.push(...distinct);
+    const commentCounts = await getCommentCounts(
+      headers,
+      ownerId,
+      'workout',
+      workoutRows.flatMap((row) => (row.workoutId ? [row.workoutId] : [])),
+    );
+    for (const row of workoutRows)
+      row.comments = row.workoutId
+        ? commentReference(
+            { type: 'workout', id: row.workoutId },
+            commentCounts.get(row.workoutId) ?? 0,
+          )
+        : null;
     workoutRows.sort(
       (a, b) =>
         a.date.localeCompare(b.date) ||
@@ -435,9 +454,35 @@ export async function readMcpData(
         );
     } else if (tool === 'get_body_metrics') {
       if (b.state !== 'ready') throw new McpReadError('data_unavailable');
+      const commentCounts = await getCommentCounts(
+        headers,
+        ownerId,
+        'measurement',
+        b.data.measurements.map((row) => row.id),
+      );
+      const withComments = (observation: BodyObservation | null) =>
+        observation
+          ? {
+              ...observation,
+              comments:
+                observation.source === 'LOCAL'
+                  ? commentReference(
+                      { type: 'measurement', id: observation.id },
+                      commentCounts.get(observation.id) ?? 0,
+                    )
+                  : null,
+            }
+          : null;
       data = {
         ...data,
         coverage: bodyCoverage,
+        comments: {
+          count: [...commentCounts.values()].reduce(
+            (total, value) => total + value,
+            0,
+          ),
+          details: { tool: 'get_measurements', arguments: range },
+        },
         metrics: Object.fromEntries(
           measurementMetrics.map((metric) => {
             const { first, latest, delta, weeklyRate, ambiguousEndpoints } =
@@ -445,8 +490,8 @@ export async function readMcpData(
             return [
               metric,
               {
-                first,
-                latest,
+                first: withComments(first),
+                latest: withComments(latest),
                 delta,
                 weeklyRate,
                 ambiguousEndpoints,
@@ -459,7 +504,7 @@ export async function readMcpData(
       if (detail !== 'summary')
         rows = measurementMetrics.flatMap((metric) =>
           b.data.metrics[metric].observations.map((o) => ({
-            ...o,
+            ...withComments(o),
             metric,
             unit: metric === 'weight' ? 'kg' : 'cm',
           })),

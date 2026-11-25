@@ -11,6 +11,8 @@ import {
   saveVersionedMeasurement,
   MeasurementError,
 } from '@/server/measurements';
+import { getCommentCounts } from '@/server/comments/reads';
+import { commentReference } from './comments';
 import { measurementVersion } from '@/server/measurements/version';
 import { searchSavedExercises } from '@/server/transformmate/catalog';
 import { McpReadError, pageRows, readOffset } from './pagination';
@@ -67,17 +69,25 @@ export async function executeMcpTool(
         : mcpExtraSchemas.search_exercises.parse(raw);
     let records: unknown[];
     if (name === 'get_measurements' && 'from' in input) {
-      const rows = await listMeasurements(headers, ownerId);
-      records = rows
-        .filter(
-          (row) => row.measuredAt >= input.from && row.measuredAt <= input.to,
-        )
-        .map((row) => ({
-          ...withoutOwner(row),
-          source: 'LOCAL',
-          editable: true,
-          version: measurementVersion(row),
-        }));
+      const rows = (await listMeasurements(headers, ownerId)).filter(
+        (row) => row.measuredAt >= input.from && row.measuredAt <= input.to,
+      );
+      const commentCounts = await getCommentCounts(
+        headers,
+        ownerId,
+        'measurement',
+        rows.map((row) => row.id),
+      );
+      records = rows.map((row) => ({
+        ...withoutOwner(row),
+        source: 'LOCAL',
+        editable: true,
+        version: measurementVersion(row),
+        comments: commentReference(
+          { type: 'measurement', id: row.id },
+          commentCounts.get(row.id) ?? 0,
+        ),
+      }));
       data = {
         source: 'LOCAL',
         units: { weight: 'kg', circumference: 'cm' },

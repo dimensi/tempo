@@ -9,6 +9,7 @@ export const permissions = [
   'workouts:read',
   'workouts:plan',
   'workouts:log',
+  'comments:read',
   'comments:write',
   'reports:export',
   'anamnesis:read',
@@ -26,6 +27,7 @@ const trainerPermissions: readonly Permission[] = [
   'workouts:read',
   'workouts:plan',
   'workouts:log',
+  'comments:read',
   'comments:write',
   'reports:export',
   // Тренер читает анамнез и строит отчёты только по выданным грантам;

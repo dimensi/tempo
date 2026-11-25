@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { commentTarget } from '@/contracts/comments';
 import { analyticsRangeSchema } from '@/contracts/analytics';
 import { timezoneSchema } from '@/contracts/nutrition-sync-dates';
 
@@ -9,6 +10,7 @@ export const mcpTools = [
   'get_activity',
   'get_sleep_recovery',
   'get_workouts',
+  'get_comments',
   'get_workout',
   'get_exercise_history',
   'get_data_coverage',
@@ -114,3 +116,10 @@ export const mcpExerciseHistoryInput = z
     'Use an ordered range of at most 366 days',
   );
 export type McpExerciseHistoryInput = z.infer<typeof mcpExerciseHistoryInput>;
+
+export const mcpCommentsInput = z.strictObject({
+  target: commentTarget.optional(),
+  limit: z.number().int().min(1).max(50).default(20),
+  cursor: z.string().max(2048).optional(),
+});
+export type McpCommentsInput = z.infer<typeof mcpCommentsInput>;

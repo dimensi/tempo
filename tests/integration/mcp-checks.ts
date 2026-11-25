@@ -1,5 +1,6 @@
 import { expect } from 'vitest';
 import { mcpExtraSchemas } from '@/contracts/mcp-writes';
+import { assertCommentTools } from './mcp-comment-checks';
 import { assertMcpWrites } from './mcp-write-checks';
 import { assertWorkoutTools } from './mcp-workout-checks';
 import { createHash, randomUUID } from 'node:crypto';
@@ -194,6 +195,7 @@ export async function assertMcpAccess(
     false,
   );
   for (const permission of [
+    'comments:write',
     'nutrition:write',
     'workouts:plan',
     'anamnesis:read',
@@ -322,6 +324,10 @@ export async function assertMcpAccess(
       [...mcpTools, ...Object.keys(mcpExtraSchemas)].sort(),
     );
     await assertMcpWrites(auth, connection, ownerHeaders, mcp, trainerHeaders);
+    await assertCommentTools(mcp, connection, headers, trainerHeaders, {
+      id: completed.id,
+      date: completed.date,
+    });
     const range = { from: '2026-10-01', to: '2026-10-04' };
     const firstWorkout = mcpOutput.parse(
       (
@@ -820,7 +826,7 @@ export async function assertMcpAccess(
         result: await mcp.callTool({
           name,
           arguments:
-            name === 'get_profile'
+            name === 'get_profile' || name === 'get_comments'
               ? {}
               : name === 'get_workout'
                 ? {
