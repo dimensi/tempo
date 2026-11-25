@@ -4,14 +4,16 @@ import { IconChevronRight } from '@tabler/icons-react';
 import { NavLink, Stack } from '@mantine/core';
 import { PageHeader } from './page-header';
 import { AccountControls } from './application-shell-frame';
-import { moreSections } from './navigation';
+import { moreSections, visibleNavigation } from './navigation';
+import { useReadContext } from '@/lib/client-session';
 import { ru } from '@/config/messages';
 export function MorePage() {
+  const { role } = useReadContext();
   return (
     <Stack gap="xl" maw={600} mx="auto" w="100%">
       <PageHeader>{ru.mobileNavigation.more}</PageHeader>
       <Stack gap={0}>
-        {moreSections.map((section) => {
+        {visibleNavigation(moreSections, role).map((section) => {
           const Icon = section.icon;
           return (
             <NavLink

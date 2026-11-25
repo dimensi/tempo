@@ -204,6 +204,13 @@
       "when": 1795027938652,
       "tag": "0028_first_overlord",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1795590596525,
+      "tag": "0029_health_auto_export",
+      "breakpoints": true
     }
   ]
 }

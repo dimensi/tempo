@@ -9,6 +9,7 @@ import {
   IconSettings,
   IconDots,
   IconListDetails,
+  IconMoonStars,
 } from '@tabler/icons-react';
 import { ru } from '@/config/messages';
 const icons = {
@@ -17,6 +18,7 @@ const icons = {
   '/workouts': IconBarbell,
   '/measurements': IconRuler,
   '/anamnesis': IconActivityHeartbeat,
+  '/recovery': IconMoonStars,
   '/analytics': IconChartLine,
   '/reports': IconFileText,
   '/settings': IconSettings,
@@ -44,10 +46,23 @@ export const exerciseCatalogSection = {
 };
 export const moreSections = [
   exerciseCatalogSection,
-  ...['/measurements', '/analytics', '/anamnesis', '/reports', '/settings'].map(
-    (href) => sections.find((section) => section.href === href)!,
-  ),
+  ...[
+    '/measurements',
+    '/recovery',
+    '/analytics',
+    '/anamnesis',
+    '/reports',
+    '/settings',
+  ].map((href) => sections.find((section) => section.href === href)!),
 ];
+export function visibleNavigation<T extends { href: string }>(
+  items: T[],
+  role: string,
+) {
+  return role === 'OWNER'
+    ? items
+    : items.filter(({ href }) => href !== '/recovery');
+}
 export function isSectionActive(pathname: string, href: string): boolean {
   if (href === '/more')
     return (

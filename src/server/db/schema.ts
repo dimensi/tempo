@@ -105,3 +105,7 @@ export {
   cardioWorkouts,
   yazioExerciseCoverage,
 } from './schema/cardio-workouts';
+export {
+  healthAutoExportConnections,
+  healthAutoExportSamples,
+} from './schema/health-auto-export';

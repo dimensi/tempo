@@ -7,6 +7,7 @@ import { ru } from '@/config/messages';
 import { transformMateConnectionMessages } from '@/contracts/transformmate-connection';
 import classes from './settings.module.css';
 import { mcpMessages } from '@/config/mcp-messages';
+import { healthAutoExportMessages } from '@/features/recovery';
 
 const sections = [
   { id: 'appearance', label: ru.appearance.title },
@@ -14,6 +15,7 @@ const sections = [
   { id: 'goals', label: goalMessages.settingsTitle },
   { id: 'sync', label: ru.settings.syncTitle },
   { id: 'transformmate', label: transformMateConnectionMessages.title },
+  { id: 'apple-health', label: healthAutoExportMessages.title },
   { id: 'trainers', label: ru.trainerSettings },
   { id: 'mcp', label: mcpMessages.settingsTitle },
 ];

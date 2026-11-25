@@ -1,0 +1,18 @@
+.value {
+  font-variant-numeric: tabular-nums;
+}
+
+.source {
+  overflow-wrap: anywhere;
+}
+
+.observation + .observation {
+  padding-top: var(--mantine-spacing-xs);
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.touchLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}

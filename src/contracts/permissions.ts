@@ -5,6 +5,7 @@ export const permissions = [
   'nutrition:write',
   'measurements:read',
   'measurements:write',
+  'recovery:read',
   'workouts:read',
   'workouts:plan',
   'workouts:log',

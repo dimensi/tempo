@@ -20,11 +20,13 @@ import { measurementMetrics } from '@/contracts/measurements';
 import { healthRangeDates } from '@/contracts/health';
 import type {
   McpHistoryInput,
+  McpOutput,
   McpTool,
   McpWorkoutExecutionStatus,
 } from '@/contracts/mcp';
 import { McpReadError, pageRows, readOffset } from './pagination';
 import { providerExecutionStatus } from '@/server/workouts/execution-status';
+import { readMcpRecovery } from './recovery';
 
 async function check(headers: Headers, ownerId: string) {
   for (const permission of [
@@ -54,7 +56,11 @@ export async function readMcpData(
   headers: Headers,
   ownerId: string,
   query?: McpHistoryInput,
-) {
+): Promise<McpOutput> {
+  if (tool === 'get_sleep_recovery') {
+    if (!query) throw new McpReadError('invalid_arguments');
+    return readMcpRecovery(headers, ownerId, query);
+  }
   await check(headers, ownerId);
   if (tool === 'get_profile') {
     const goal = await getDailyGoals(

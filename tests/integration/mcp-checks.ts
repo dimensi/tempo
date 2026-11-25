@@ -763,7 +763,49 @@ export async function assertMcpAccess(
         ],
       },
     });
-    // ChatGPT fans out a single analytics question across all eight tools.
+    const recoveryRange = {
+      from: '2026-10-24',
+      to: '2026-10-25',
+      timezone: 'Europe/Berlin',
+      detail: 'daily',
+      limit: 1,
+    };
+    const missingNight = await mcp.callTool({
+      name: 'get_sleep_recovery',
+      arguments: recoveryRange,
+    });
+    expect(missingNight.structuredContent).toMatchObject({
+      data: {
+        source: 'HEALTH_AUTO_EXPORT',
+        lastSuccessAt: expect.any(String),
+        summary: { observedDays: 1, missingDays: 1 },
+        records: [{ date: '2026-10-24', sleep: null, coverage: 'missing' }],
+      },
+      next_cursor: expect.any(String),
+    });
+    const observedNight = await mcp.callTool({
+      name: 'get_sleep_recovery',
+      arguments: {
+        ...recoveryRange,
+        cursor: mcpOutput.parse(missingNight.structuredContent).next_cursor,
+      },
+    });
+    expect(observedNight.structuredContent).toMatchObject({
+      data: {
+        records: [
+          {
+            date: '2026-10-25',
+            sleep: [{ durationSeconds: 27900 }],
+            coverage: 'observed',
+          },
+        ],
+      },
+      next_cursor: null,
+    });
+    expect(JSON.stringify(observedNight)).not.toContain(
+      'Synthetic Apple Watch',
+    );
+    // ChatGPT fans out a single analytics question across the read tools.
     const parallel = await Promise.all(
       mcpTools.map(async (name) => ({
         name,
