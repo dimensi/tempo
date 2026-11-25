@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e7135f5c-a139-43f6-a43c-9eb8985a9b34",
+  "id": "e845f1a8-b9e6-4754-b227-635e8415c16c",
   "prevId": "2acc3c82-61f6-4628-80f4-1101cb8eb838",
   "tables": {
     "account": {
@@ -308,6 +308,13 @@
         "last_inserted": {
           "name": "last_inserted",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_error_at": {
+          "name": "last_error_at",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

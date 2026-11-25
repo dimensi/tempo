@@ -41,13 +41,19 @@ export async function assertHealthAutoExport(
     units,
     data,
   });
-  const segment = (start: string, end: string, value: string, qty: number) => ({
+  const segment = (
+    start: string,
+    end: string,
+    value: string,
+    qty: number,
+    device = source,
+  ) => ({
     date: start,
     startDate: start,
     endDate: end,
     value,
     qty,
-    source,
+    source: device,
   });
   try {
     selectSession('TRAINER');
@@ -99,6 +105,13 @@ export async function assertHealthAutoExport(
           8.5,
         ),
         segment(
+          '2026-10-25 00:15:00 +0200',
+          '2026-10-25 00:45:00 +0200',
+          'Awake',
+          0.5,
+          'Synthetic Other Tracker',
+        ),
+        segment(
           '2026-10-25 02:30:00 +0100',
           '2026-10-25 02:45:00 +0100',
           'Бодрствование',
@@ -116,6 +129,18 @@ export async function assertHealthAutoExport(
           'Unspecified',
           1,
         ),
+        segment(
+          '2026-10-25 13:00:00 +0100',
+          '2026-10-25 13:30:00 +0100',
+          'Core',
+          0.5,
+        ),
+        segment(
+          '2026-10-26 11:00:00 +0100',
+          '2026-10-26 11:30:00 +0100',
+          'Asleep',
+          0.5,
+        ),
       ]),
       selected('heart_rate', 'count/min', [
         {
@@ -126,7 +151,10 @@ export async function assertHealthAutoExport(
           source,
         },
         { Avg: 54, date: '2026-10-25 03:30:00 +0100' },
+        { Avg: 95, date: '2026-10-25 00:20:00 +0200', source },
         { Avg: 90, date: '2026-10-25 02:40:00 +0100', source },
+        { Avg: 72, date: '2026-10-25 13:10:00 +0100', source },
+        { Avg: 74, date: '2026-10-26 11:10:00 +0100', source },
       ]),
     ];
     const delivery = await send(token, first);
@@ -137,15 +165,19 @@ export async function assertHealthAutoExport(
       inserted: 0,
       duplicates: 2,
     });
-    expect(
-      (
-        await send(token, [
-          selected('heart_rate_variability', 'ms', [
-            { qty: 40, date: '2026-10-23 06:00:00 +0200', source },
-          ]),
-        ])
-      ).status,
-    ).toBe(200);
+    const history = [
+      selected('heart_rate_variability', 'ms', [
+        { qty: 40, date: '2026-10-23 06:00:00 +0200', source },
+        { qty: 60, date: '2026-10-23 06:00:00 +0200', source },
+      ]),
+    ];
+    expect(await (await send(token, history)).json()).toMatchObject({
+      inserted: 2,
+    });
+    expect(await (await send(token, history)).json()).toMatchObject({
+      inserted: 0,
+      duplicates: 2,
+    });
 
     const invalid = await send(token, [
       selected('heart_rate_variability', 'ms', [
@@ -156,9 +188,17 @@ export async function assertHealthAutoExport(
       ]),
     ]);
     expect(invalid.status).toBe(422);
-    expect(await (await status(settings('GET'))).json()).toMatchObject({
+    const failedStatus = await (await status(settings('GET'))).json();
+    expect(failedStatus).toMatchObject({
       lastSuccessAt: expect.any(String),
       lastErrorCode: 'invalid_payload',
+      lastErrorAt: expect.any(String),
+    });
+    expect((await send(token, later)).status).toBe(200);
+    expect(await (await status(settings('GET'))).json()).toMatchObject({
+      lastInserted: 0,
+      lastErrorCode: 'invalid_payload',
+      lastErrorAt: failedStatus.lastErrorAt,
     });
     const recovery = await getRecovery(new Headers(), 'owner', range);
     expect(recovery.days).toMatchObject([
@@ -166,7 +206,7 @@ export async function assertHealthAutoExport(
         date: '2026-10-23',
         sleep: [],
         metrics: {
-          heart_rate_variability: { value: 40, unit: 'ms', count: 1 },
+          heart_rate_variability: { value: 50, unit: 'ms', count: 2 },
         },
       },
       { date: '2026-10-24', sleep: [], metrics: {} },
@@ -174,18 +214,33 @@ export async function assertHealthAutoExport(
         date: '2026-10-25',
         sleep: [
           {
-            durationSeconds: 27900,
-            stages: { core: 10800, deep: 3600, rem: 11700, unspecified: 1800 },
-            awakeSeconds: 900,
+            durationSeconds: 26100,
+            isNight: true,
+            stages: { core: 9000, deep: 3600, rem: 11700, unspecified: 1800 },
+            awakeSeconds: 2700,
             inBedSeconds: 28800,
-            sources: [source],
+            sources: [source, 'Synthetic Other Tracker'],
           },
+          { durationSeconds: 1800, isNight: false },
         ],
         metrics: { night_heart_rate: { value: 54, unit: 'bpm', count: 1 } },
       },
-      { date: '2026-10-26', sleep: [], metrics: {} },
+      {
+        date: '2026-10-26',
+        sleep: [{ durationSeconds: 1800, isNight: false }],
+        metrics: {},
+      },
     ]);
-    expect(recovery.summary.observedDays).toBe(2);
+    expect(recovery.days[3]?.metrics).toEqual({});
+    expect(recovery.summary).toMatchObject({
+      observedDays: 3,
+      sleep: {
+        nights: 1,
+        observedDays: 2,
+        episodes: 3,
+        averageDurationSeconds: 14850,
+      },
+    });
     await expect(
       getRecovery(new Headers(), 'another-owner', range),
     ).rejects.toMatchObject({ status: 403 });

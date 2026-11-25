@@ -795,7 +795,15 @@ export async function assertMcpAccess(
         records: [
           {
             date: '2026-10-25',
-            sleep: [{ durationSeconds: 27900 }],
+            sleep: [
+              {
+                durationSeconds: 26100,
+                isNight: true,
+                awakeWithinEpisodeSeconds: 2700,
+              },
+              { durationSeconds: 1800, isNight: false },
+            ],
+            metrics: { night_heart_rate: { value: 54, count: 1 } },
             coverage: 'observed',
           },
         ],

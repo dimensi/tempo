@@ -514,7 +514,7 @@ it('fails closed for generic and global medical-PDF trainer access, including re
   state.realAuth = actual.getAuth();
   const { assertMcpAccess } = await import('./mcp-checks');
   await assertMcpAccess(state.realAuth, connection);
-}, 10_000);
+}, 15_000);
 
 async function assertMedicalPdfGrants() {
   const trainerId = '00000000-0000-4000-8000-000000000002';

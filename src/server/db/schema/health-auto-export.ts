@@ -26,6 +26,7 @@ export const healthAutoExportConnections = sqliteTable(
     lastAttemptAt: text('last_attempt_at'),
     lastSuccessAt: text('last_success_at'),
     lastInserted: integer('last_inserted'),
+    lastErrorAt: text('last_error_at'),
     lastErrorCode: text('last_error_code', {
       enum: healthAutoExportErrorCodes,
     }),

@@ -4,6 +4,7 @@ CREATE TABLE `health_auto_export_connections` (
 	`last_attempt_at` text,
 	`last_success_at` text,
 	`last_inserted` integer,
+	`last_error_at` text,
 	`last_error_code` text,
 	FOREIGN KEY (`owner_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade,
 	CONSTRAINT "health_auto_export_token_digest_length" CHECK("health_auto_export_connections"."token_digest" is null or length("health_auto_export_connections"."token_digest") = 64)

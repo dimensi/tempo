@@ -6,6 +6,7 @@ export const recoveryMessages = {
   source: 'Apple Health через Health Auto Export',
   settings: 'Настройки Apple Health',
   recent: 'Основной сон последнего дня',
+  recentNight: 'Последний ночной сон',
   duration: 'Продолжительность сна',
   fellAsleep: 'Засыпание',
   wokeUp: 'Пробуждение',
@@ -43,7 +44,7 @@ export const recoveryMessages = {
   metrics: {
     heart_rate_variability: 'Вариабельность сердечного ритма (HRV)',
     resting_heart_rate: 'Пульс в покое',
-    night_heart_rate: 'Пульс во сне',
+    night_heart_rate: 'Ночной пульс',
     respiratory_rate: 'Частота дыхания',
     apple_sleeping_wrist_temperature: 'Температура запястья во сне',
     blood_oxygen_saturation: 'Насыщение крови кислородом',

@@ -1,4 +1,7 @@
 import 'server-only';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 import type { HealthAutoExportSample } from '@/contracts/health-auto-export';
 import { healthRangeDates } from '@/contracts/health';
 import {
@@ -9,6 +12,9 @@ import {
   type RecoveryRange,
 } from '@/contracts/recovery';
 import { projectSleep } from './sleep';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 type MetricAccumulator = {
   value: number;
@@ -83,8 +89,10 @@ export function projectRecovery(
     month: '2-digit',
     day: '2-digit',
   });
-  const localDate = (instant: string) => {
-    const parts = formatter.formatToParts(new Date(instant));
+  const localDate = (instant: string | number) => {
+    const parts = formatter.formatToParts(
+      typeof instant === 'number' ? instant : new Date(instant),
+    );
     const part = (type: Intl.DateTimeFormatPartTypes) =>
       parts.find((entry) => entry.type === type)!.value;
     return `${part('year')}-${part('month')}-${part('day')}`;
@@ -95,14 +103,30 @@ export function projectRecovery(
     { date: string; sleep: RecoveryDay['sleep']; metrics: Metrics }
   >(dates.map((date) => [date, { date, sleep: [], metrics: {} }]));
   const nightWindows: NightWindow[] = [];
+  const nightBounds = new Map<string, { morning: number; evening: number }>();
+  function overlapsLocalNight({ start, end }: { start: number; end: number }) {
+    const date = localDate(start);
+    let bounds = nightBounds.get(date);
+    if (!bounds) {
+      bounds = {
+        morning: dayjs.tz(`${date}T06:00:00`, range.timezone).valueOf(),
+        evening: dayjs.tz(`${date}T22:00:00`, range.timezone).valueOf(),
+      };
+      nightBounds.set(date, bounds);
+    }
+    return start < bounds.morning || end > bounds.evening;
+  }
   let totalSleepDuration = 0;
   let episodes = 0;
   for (const { episode, windows } of projectSleep(samples)) {
     const date = localDate(episode.endAt);
     const day = byDate.get(date);
     if (!day) continue;
-    day.sleep.push(episode);
-    for (const window of windows) nightWindows.push({ ...window, date });
+    const isNight = windows.some(overlapsLocalNight);
+    day.sleep.push({ ...episode, isNight });
+    if (isNight) {
+      for (const window of windows) nightWindows.push({ ...window, date });
+    }
     totalSleepDuration += episode.durationSeconds;
     episodes++;
   }
@@ -139,7 +163,7 @@ export function projectRecovery(
     sleep,
     metrics: summarize(metrics),
   }));
-  const nights = days.filter((day) => day.sleep.length).length;
+  const observedSleepDays = days.filter((day) => day.sleep.length).length;
   return {
     range,
     source: 'HEALTH_AUTO_EXPORT',
@@ -149,9 +173,14 @@ export function projectRecovery(
         (day) => day.sleep.length || Object.keys(day.metrics).length,
       ).length,
       sleep: {
-        nights,
+        nights: days.filter((day) =>
+          day.sleep.some((episode) => episode.isNight),
+        ).length,
+        observedDays: observedSleepDays,
         episodes,
-        averageDurationSeconds: nights ? totalSleepDuration / nights : null,
+        averageDurationSeconds: observedSleepDays
+          ? totalSleepDuration / observedSleepDays
+          : null,
       },
       metrics: summarize(rangeMetrics),
     },

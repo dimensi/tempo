@@ -81,7 +81,9 @@ function SyncDetails({ status }: { status: HealthAutoExportStatus }) {
     },
     {
       label: m.lastError,
-      value: status.lastErrorCode ? m.errors[status.lastErrorCode] : m.noError,
+      value: status.lastErrorCode
+        ? `${formatTime(status.lastErrorAt)} · ${m.errors[status.lastErrorCode]}`
+        : m.noError,
       error: !!status.lastErrorCode,
     },
   ];

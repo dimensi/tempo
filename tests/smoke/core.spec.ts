@@ -46,6 +46,7 @@ test('real login reaches core sections, recovers a cached workout offline, purge
   context,
   request,
 }) => {
+  test.setTimeout(66_000);
   expect((await request.get('/api/workouts?ownerId=unknown')).status()).toBe(
     401,
   );

@@ -243,10 +243,15 @@ export function RecoveryDashboard({
 }) {
   const { range, summary } = history;
   const reverse = [...history.days].reverse();
-  const latest = reverse.find((day) => day.sleep.length);
-  const latestSleep = latest?.sleep.reduce((longest, episode) =>
-    episode.durationSeconds >= longest.durationSeconds ? episode : longest,
+  const latestNight = reverse.find((day) =>
+    day.sleep.some((episode) => episode.isNight),
   );
+  const latest = latestNight ?? reverse.find((day) => day.sleep.length);
+  const latestSleep = latest?.sleep
+    .filter((episode) => !latestNight || episode.isNight)
+    .reduce((longest, episode) =>
+      episode.durationSeconds >= longest.durationSeconds ? episode : longest,
+    );
   const observed = reverse.filter(
     (day) => day.sleep.length || Object.keys(day.metrics).length,
   );
@@ -275,7 +280,7 @@ export function RecoveryDashboard({
           <Stack gap="md">
             <Group justify="space-between" align="baseline" gap="xs">
               <Title id="recovery-last-sleep" order={2} size="h4">
-                {m.recent}
+                {latestNight ? m.recentNight : m.recent}
               </Title>
               <Text size="sm">{calendarDay.format(new Date(latest.date))}</Text>
             </Group>
@@ -289,7 +294,7 @@ export function RecoveryDashboard({
           {m.trend}
         </Title>
         <RecoveryRangeControls {...range} today={today} days={days} />
-        {summary.sleep.nights > 0 ? (
+        {summary.sleep.observedDays > 0 ? (
           <Stack gap="sm">
             <Title order={3} size="h5">
               {m.sleepChart}
@@ -306,7 +311,7 @@ export function RecoveryDashboard({
               <Text size="sm" className={classes.value}>
                 {m.count} ·{' '}
                 <strong>
-                  {summary.sleep.nights}/{history.days.length}
+                  {summary.sleep.observedDays}/{history.days.length}
                 </strong>
               </Text>
             </Group>

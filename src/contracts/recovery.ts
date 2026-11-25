@@ -31,6 +31,7 @@ export type RecoverySleepEpisode = {
   startAt: string;
   endAt: string;
   durationSeconds: number;
+  isNight: boolean;
   stages: Partial<Record<RecoverySleepStage, number>>;
   awakeSeconds: number | null;
   inBedSeconds: number | null;
@@ -60,6 +61,7 @@ export type RecoveryHistory = {
     observedDays: number;
     sleep: {
       nights: number;
+      observedDays: number;
       episodes: number;
       averageDurationSeconds: number | null;
     };

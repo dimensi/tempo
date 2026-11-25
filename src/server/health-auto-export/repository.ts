@@ -40,13 +40,14 @@ export function readHealthAutoExportStatus(
     lastAttemptAt: connection?.lastAttemptAt ?? null,
     lastSuccessAt: connection?.lastSuccessAt ?? null,
     lastInserted: connection?.lastInserted ?? null,
+    lastErrorAt: connection?.lastErrorAt ?? null,
     lastErrorCode: connection?.lastErrorCode ?? null,
   };
 }
 
 export function issueHealthAutoExportToken(ownerId: string) {
   const token = `hae_${randomBytes(32).toString('base64url')}`;
-  const change = { tokenDigest: sha256(token), lastErrorCode: null };
+  const change = { tokenDigest: sha256(token) };
   getDatabase()
     .db.insert(connections)
     .values({ ownerId, ...change })
@@ -95,11 +96,13 @@ export function recordHealthAutoExportFailure(
   credential: ImportCredential,
   error: HealthAutoExportErrorCode,
 ) {
+  const now = new Date().toISOString();
   return (
     getDatabase()
       .db.update(connections)
       .set({
-        lastAttemptAt: new Date().toISOString(),
+        lastAttemptAt: now,
+        lastErrorAt: now,
         lastErrorCode: error,
       })
       .where(sameCredential(credential))
@@ -116,6 +119,8 @@ function sampleKey(sample: HealthAutoExportSample) {
       sample.endAt,
       sample.stage,
       source,
+      // Exports have no sample ID and may contain different values at the same time.
+      sample.stage === null ? [sample.value, sample.min, sample.max] : null,
     ]),
   );
 }
@@ -157,7 +162,6 @@ export function saveHealthAutoExportSamples(
           lastAttemptAt: now,
           lastSuccessAt: now,
           lastInserted: inserted,
-          lastErrorCode: null,
         })
         .where(sameCredential(credential))
         .run();

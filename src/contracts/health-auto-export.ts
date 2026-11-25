@@ -57,6 +57,7 @@ export const healthAutoExportStatusSchema = z
     lastAttemptAt: z.iso.datetime().nullable(),
     lastSuccessAt: z.iso.datetime().nullable(),
     lastInserted: z.number().int().nonnegative().nullable(),
+    lastErrorAt: z.iso.datetime().nullable(),
     lastErrorCode: z.enum(healthAutoExportErrorCodes).nullable(),
   })
   .strict();
