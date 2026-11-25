@@ -33,9 +33,12 @@ export async function authorize(
     (!ownerId ||
       session.user.role !== 'OWNER' ||
       !(
-        (['nutrition:read', 'measurements:read', 'workouts:read'].includes(
-          permission,
-        ) &&
+        ([
+          'nutrition:read',
+          'measurements:read',
+          'recovery:read',
+          'workouts:read',
+        ].includes(permission) &&
           'scopes' in session &&
           session.scopes.includes('tempo:read')) ||
         (['workouts:plan', 'workouts:log'].includes(permission) &&

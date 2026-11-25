@@ -10,6 +10,7 @@ Sessions and their cookies last seven days, with renewal due after one day. `def
 | nutrition:write      | yes   | no               |
 | measurements:read    | yes   | with owner grant |
 | measurements:write   | yes   | no               |
+| recovery:read        | yes   | no               |
 | workouts:read        | yes   | with owner grant |
 | workouts:plan        | yes   | with owner grant |
 | workouts:log         | yes   | with owner grant |

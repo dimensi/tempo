@@ -4,6 +4,7 @@ import { ru } from '@/config/messages';
 import { useReadContext } from '@/lib/client-session';
 import { AccessPanel } from '@/features/anamnesis';
 import { TrainerSettings } from '@/features/trainer';
+import { HealthAutoExportSettings } from '@/features/recovery';
 import { readResources } from '@/lib/read-descriptors';
 import { useReadResource } from '@/lib/use-read-resource';
 import { Skeleton, Stack, Text } from '@mantine/core';
@@ -58,6 +59,7 @@ export default function Page() {
                 initial={data.transformMate}
                 embedded
               />
+              <HealthAutoExportSettings />
               <section
                 id="trainers"
                 tabIndex={-1}

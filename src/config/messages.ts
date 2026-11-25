@@ -1,4 +1,5 @@
 // Replace the dictionary resolver when adding another locale.
+const recoveryTitle = 'Сон и восстановление';
 export const ru = {
   appName: 'Темпо',
   exerciseCatalog: 'Каталог упражнений',
@@ -18,6 +19,7 @@ export const ru = {
   theme: 'Переключить тему',
   trainerSettings: 'Доступ тренеров',
   yazioSettings: 'Подключение YAZIO',
+  recoveryTitle,
   loginError: 'Не удалось войти. Проверьте почту и пароль.',
   settings: {
     navigation: 'Разделы настроек',
@@ -60,6 +62,12 @@ export const ru = {
       title: 'Анамнез',
       description: 'Лабораторные показатели, документы и отчёты.',
       area: 'anamnesis',
+    },
+    {
+      href: '/recovery',
+      title: recoveryTitle,
+      description: 'История сна и показателей Apple Health.',
+      area: 'recovery',
     },
     {
       href: '/analytics',

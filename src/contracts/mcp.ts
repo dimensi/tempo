@@ -7,6 +7,7 @@ export const mcpTools = [
   'get_nutrition',
   'get_body_metrics',
   'get_activity',
+  'get_sleep_recovery',
   'get_workouts',
   'get_workout',
   'get_exercise_history',
@@ -56,6 +57,7 @@ export const mcpOutput = z.strictObject({
   data: z.record(z.string(), z.unknown()),
   next_cursor: z.string().nullable(),
 });
+export type McpOutput = z.infer<typeof mcpOutput>;
 
 const referenceId = z.string().min(1).max(128);
 const referenceDate = z.iso.date();

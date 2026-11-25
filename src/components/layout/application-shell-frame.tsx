@@ -16,6 +16,7 @@ import {
   mobileSections,
   isSectionActive,
   exerciseCatalogSection,
+  visibleNavigation,
 } from './navigation';
 import classes from './application-shell.module.css';
 import { offlineDeviceMessages } from '@/lib/offline-device';
@@ -154,7 +155,7 @@ export function ApplicationShellFrame({
                   </UnstyledButton>
                 </Group>
                 <nav aria-label={ru.navigation} style={{ flex: 1 }}>
-                  {sections.map((section) => {
+                  {visibleNavigation(sections, role).map((section) => {
                     const Icon = section.icon;
                     return (
                       <div key={section.href}>

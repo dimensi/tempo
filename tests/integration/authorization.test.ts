@@ -487,6 +487,13 @@ it('fails closed for generic and global medical-PDF trainer access, including re
     .values({ trainerId, ownerId, createdAt: new Date() })
     .run();
   await assertMedicalPdfGrants();
+  const { assertHealthAutoExport } =
+    await import('./health-auto-export-checks');
+  await assertHealthAutoExport((role) => {
+    state.session = {
+      user: { id: role === 'OWNER' ? ownerId : trainerId, role },
+    };
+  });
   // Extend the existing access-boundary scenario: no extra test case or browser infrastructure.
   const actual =
     await vi.importActual<typeof import('@/server/auth')>('@/server/auth');
@@ -507,7 +514,7 @@ it('fails closed for generic and global medical-PDF trainer access, including re
   state.realAuth = actual.getAuth();
   const { assertMcpAccess } = await import('./mcp-checks');
   await assertMcpAccess(state.realAuth, connection);
-}, 10_000);
+}, 15_000);
 
 async function assertMedicalPdfGrants() {
   const trainerId = '00000000-0000-4000-8000-000000000002';
