@@ -1,4 +1,6 @@
 import 'server-only';
+import { getCommentCounts } from '@/server/comments/reads';
+import { commentReference } from './comments';
 import { createHash } from 'node:crypto';
 import type { McpWorkoutInput, McpExerciseHistoryInput } from '@/contracts/mcp';
 import { readWorkoutDetails } from '@/server/workouts/details';
@@ -93,7 +95,12 @@ export async function readMcpWorkout(
     const page = paginate(ownerId, 'get_workout', input, []);
     return {
       version: 1 as const,
-      data: { ...row, units: cardioUnits, records: page.records },
+      data: {
+        ...row,
+        comments: null,
+        units: cardioUnits,
+        records: page.records,
+      },
       next_cursor: page.next_cursor,
     };
   }
@@ -109,6 +116,18 @@ export async function readMcpWorkout(
     workout = localView(detail.workout);
     workout.related = detail.sync ? [linkedView(detail.sync).workoutRef] : [];
   }
+  const commentCounts = await getCommentCounts(
+    headers,
+    ownerId,
+    'workout',
+    workout.workoutId ? [workout.workoutId] : [],
+  );
+  const comments = workout.workoutId
+    ? commentReference(
+        { type: 'workout', id: workout.workoutId },
+        commentCounts.get(workout.workoutId) ?? 0,
+      )
+    : null;
   // Related references are page rows too; no unbounded arrays or silent truncation.
   const { exercises, related, ...metadata } = workout;
   const rows: Record<string, unknown>[] = [];
@@ -133,6 +152,7 @@ export async function readMcpWorkout(
     version: 1 as const,
     data: {
       ...metadata,
+      comments,
       ...(detail.kind === 'workout' ? { watchMetrics } : {}),
       units: { ...units, ...cardioUnits },
       coverage: {

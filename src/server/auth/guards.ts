@@ -38,6 +38,7 @@ export async function authorize(
           'measurements:read',
           'recovery:read',
           'workouts:read',
+          'comments:read',
         ].includes(permission) &&
           'scopes' in session &&
           session.scopes.includes('tempo:read')) ||
